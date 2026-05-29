@@ -13,8 +13,9 @@ The first implementation is intentionally small:
 - manual reload while Scene Mode is open
 - a dialogue/inspection panel
 - local action status for inspection and document targets
-- a Tile Debugger view for scene source, load status, layers, entities, sprite
-  ids, positions, flags, and metadata
+- a Tile Debugger view for scene source, load status, action state, selected
+  choice, pending action, layers, entities, sprite ids, positions, flags, and
+  metadata
 
 This does not vendor or emulate Ren'Py, Ink, Yarn, mGBA, SameBoy, or ares. Those projects are references for architecture and workflow only. GameTerm keeps its scene model native so it can remain terminal-first and integrated with panes, commands, scripts, and future structured state.
 
@@ -163,7 +164,8 @@ See [the example sprite manifest](examples/gameterm-scene-sprites.json).
 ## Smoke test
 
 The noninteractive verification harness checks scene fixtures, authoring init
-behavior, authoring validation, JSON validity, and focused Rust tests:
+behavior, authoring validation, JSON validity, debugger state, and focused Rust
+tests:
 
 ```sh
 ci/gameterm-scene-verify.sh --all

@@ -76,12 +76,12 @@ Implemented verification behavior:
 4. Use `ci/gameterm-scene-author.sh validate <path>` for local scene authoring
    checks backed by the Rust scene parser.
 
-## Tile Debugger Path And Status
+## Tile Debugger Path, Action, And Status
 
 The Tile Debugger should show scene runtime source details alongside layer,
-entity, sprite, position, flag, and metadata inspection.
+action, entity, sprite, position, flag, and metadata inspection.
 
-Minimum fields:
+Implemented source fields:
 
 - `Scene path`: absolute resolved path for `default.json`, or `bundled default`
   when the fallback scene is active.
@@ -90,10 +90,21 @@ Minimum fields:
   load.
 - `Error`: concise parse, schema, or I/O failure text when the current status is
   `reload failed` or `invalid`.
+- `Action base dir`: directory used to resolve relative action targets.
+
+Implemented action fields:
+
+- `Status`: the last action, reload, or validation status shown in Scene Mode.
+- `Selected choice`: selected choice index.
+- `Choice label`: selected choice label from the scene JSON.
+- `Choice kind`: `Inspect`, `OpenFile`, `RunCommand`, or `Navigate`.
+- `Choice detail`: resolved action authoring detail, such as `path=...`,
+  `argv=...`, or `target=...`.
+- `Pending action`: the action waiting for GUI dispatch, or `none`.
 
 The path/status line should be visible without selecting an entity. Entity
 selection should continue to drive entity-specific debugger rows, but source
-status belongs to the scene as a whole.
+status and action status belong to the scene as a whole.
 
 The runtime also exposes a structured `VisualSceneDebugReport` so tests and
 authoring tools can assert debugger state without scraping rendered text.

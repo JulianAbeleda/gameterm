@@ -156,6 +156,7 @@ pub struct VisualSceneDebugReport {
     pub load_status: String,
     pub reload_count: u64,
     pub last_error: Option<String>,
+    pub action_base_dir: String,
     pub title: String,
     pub background: String,
     pub width: usize,
@@ -169,6 +170,11 @@ pub struct VisualSceneDebugReport {
     pub selected_entity_flags: Vec<String>,
     pub selected_entity_metadata: Vec<(String, String)>,
     pub selected_choice: usize,
+    pub selected_choice_label: Option<String>,
+    pub selected_choice_kind: Option<String>,
+    pub selected_choice_detail: Option<String>,
+    pub pending_action_kind: Option<String>,
+    pub pending_action_detail: Option<String>,
     pub status: String,
 }
 
@@ -804,11 +810,14 @@ impl SceneRuntime {
 
     pub fn debug_report(&self) -> VisualSceneDebugReport {
         let selected_entity = self.selected_entity();
+        let selected_choice = self.scene.choices.get(self.selected_choice);
+        let pending_action = self.pending_action.as_ref();
         VisualSceneDebugReport {
             scene_path: self.scene_source.scene_path.clone(),
             load_status: self.scene_source.load_status.as_str().to_string(),
             reload_count: self.scene_source.reload_count,
             last_error: self.scene_source.last_error.clone(),
+            action_base_dir: self.action_base_dir.display().to_string(),
             title: self.scene.title.clone(),
             background: self.scene.background.clone(),
             width: self.scene.width,
@@ -826,6 +835,11 @@ impl SceneRuntime {
                 .map(|entity| entity.metadata.clone())
                 .unwrap_or_default(),
             selected_choice: self.selected_choice,
+            selected_choice_label: selected_choice.map(|choice| choice.label.clone()),
+            selected_choice_kind: selected_choice.map(|choice| action_kind_name(&choice.kind)),
+            selected_choice_detail: selected_choice.map(|choice| action_kind_detail(&choice.kind)),
+            pending_action_kind: pending_action.map(action_request_name),
+            pending_action_detail: pending_action.map(action_request_detail),
             status: self.status.clone(),
         }
     }
@@ -935,14 +949,41 @@ impl SceneRuntime {
         let mut out = String::new();
         out.push_str("GameTerm Tile Debugger\r\n");
         out.push_str("[tab: scene] [arrows/hjkl: select entity] [esc/q: close]\r\n\r\n");
+        out.push_str("Source:\r\n");
+        out.push_str(&format!("  Scene path: {}\r\n", report.scene_path));
+        out.push_str(&format!("  Load status: {}\r\n", report.load_status));
+        out.push_str(&format!("  Reload counter: {}\r\n", report.reload_count));
         out.push_str(&format!(
-            "Scene path: {}\r\nLoad status: {}\r\nReload counter: {}\r\n",
-            report.scene_path, report.load_status, report.reload_count
+            "  Action base dir: {}\r\n",
+            report.action_base_dir
         ));
         if let Some(error) = &report.last_error {
-            out.push_str(&format!("Error: {error}\r\n"));
+            out.push_str(&format!("  Error: {error}\r\n"));
         }
-        out.push_str(&format!("Action status: {}\r\n", report.status));
+        out.push_str("\r\nAction:\r\n");
+        out.push_str(&format!("  Status: {}\r\n", report.status));
+        out.push_str(&format!(
+            "  Selected choice: {}\r\n",
+            report.selected_choice
+        ));
+        if let Some(label) = &report.selected_choice_label {
+            out.push_str(&format!("  Choice label: {label}\r\n"));
+        }
+        if let Some(kind) = &report.selected_choice_kind {
+            out.push_str(&format!("  Choice kind: {kind}\r\n"));
+        }
+        if let Some(detail) = &report.selected_choice_detail {
+            out.push_str(&format!("  Choice detail: {detail}\r\n"));
+        }
+        match (&report.pending_action_kind, &report.pending_action_detail) {
+            (Some(kind), Some(detail)) => {
+                out.push_str(&format!("  Pending action: {kind} {detail}\r\n"));
+            }
+            (Some(kind), None) => {
+                out.push_str(&format!("  Pending action: {kind}\r\n"));
+            }
+            _ => out.push_str("  Pending action: none\r\n"),
+        }
         out.push_str("\r\n");
         out.push_str(&format!(
             "scene={} background={} size={}x{} entities={} choices={}\r\n\r\n",
@@ -986,6 +1027,54 @@ impl SceneRuntime {
             }
         }
         truncate_to_screen(out, cols, rows)
+    }
+}
+
+fn action_kind_name(kind: &SceneActionKind) -> String {
+    match kind {
+        SceneActionKind::Inspect => "Inspect",
+        SceneActionKind::OpenFile { .. } => "OpenFile",
+        SceneActionKind::RunCommand { .. } => "RunCommand",
+        SceneActionKind::Navigate { .. } => "Navigate",
+    }
+    .to_string()
+}
+
+fn action_kind_detail(kind: &SceneActionKind) -> String {
+    match kind {
+        SceneActionKind::Inspect => "selected entity".to_string(),
+        SceneActionKind::OpenFile { path } => format!("path={path}"),
+        SceneActionKind::RunCommand { argv, cwd } => {
+            let mut detail = format!("argv={}", argv.join(" "));
+            if let Some(cwd) = cwd {
+                detail.push_str(&format!(" cwd={cwd}"));
+            }
+            detail
+        }
+        SceneActionKind::Navigate { target } => format!("target={target}"),
+    }
+}
+
+fn action_request_name(action: &VisualActionRequest) -> String {
+    match action {
+        VisualActionRequest::OpenFile { .. } => "OpenFile",
+        VisualActionRequest::RunCommand { .. } => "RunCommand",
+        VisualActionRequest::Navigate { .. } => "Navigate",
+    }
+    .to_string()
+}
+
+fn action_request_detail(action: &VisualActionRequest) -> String {
+    match action {
+        VisualActionRequest::OpenFile { path } => format!("path={}", path.display()),
+        VisualActionRequest::RunCommand { argv, cwd } => {
+            let mut detail = format!("argv={}", argv.join(" "));
+            if let Some(cwd) = cwd {
+                detail.push_str(&format!(" cwd={}", cwd.display()));
+            }
+            detail
+        }
+        VisualActionRequest::Navigate { target } => format!("target={target}"),
     }
 }
 
@@ -1596,7 +1685,9 @@ mod tests {
         assert!(frame.contains("Scene path: /tmp/default.json"));
         assert!(frame.contains("Load status: loaded"));
         assert!(frame.contains("Reload counter: 3"));
-        assert!(frame.contains("Action status: Inspecting GameTerm"));
+        assert!(frame.contains("Status: Inspecting GameTerm"));
+        assert!(frame.contains("Choice kind: Inspect"));
+        assert!(frame.contains("Pending action: none"));
     }
 
     #[test]
@@ -1612,6 +1703,7 @@ mod tests {
         assert_eq!(report.scene_path, "/tmp/default.json");
         assert_eq!(report.load_status, "loaded");
         assert_eq!(report.reload_count, 3);
+        assert!(!report.action_base_dir.is_empty());
         assert_eq!(report.title, "GameTerm Scene Mode");
         assert_eq!(report.background, "workspace-map");
         assert_eq!(report.width, 18);
@@ -1631,7 +1723,50 @@ mod tests {
             .iter()
             .any(|(key, value)| key == "reference" && value == "Ren'Py scene flow"));
         assert_eq!(report.selected_choice, 1);
+        assert_eq!(
+            report.selected_choice_label.as_deref(),
+            Some("Open MIGRATION.md")
+        );
+        assert_eq!(report.selected_choice_kind.as_deref(), Some("OpenFile"));
+        assert_eq!(
+            report.selected_choice_detail.as_deref(),
+            Some("path=MIGRATION.md")
+        );
+        assert_eq!(report.pending_action_kind.as_deref(), None);
+        assert_eq!(report.pending_action_detail.as_deref(), None);
         assert!(report.status.starts_with("OpenFile "));
+    }
+
+    #[test]
+    fn debug_report_contains_pending_action_state() {
+        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        runtime.select_next_choice();
+        runtime.select_next_choice();
+        runtime.activate_choice();
+
+        let report = runtime.debug_report();
+
+        assert_eq!(report.selected_choice, 2);
+        assert_eq!(
+            report.selected_choice_label.as_deref(),
+            Some("Run cargo check -p gameterm-visual")
+        );
+        assert_eq!(report.selected_choice_kind.as_deref(), Some("RunCommand"));
+        assert_eq!(
+            report.selected_choice_detail.as_deref(),
+            Some("argv=cargo check -p gameterm-visual")
+        );
+        assert_eq!(report.pending_action_kind.as_deref(), Some("RunCommand"));
+        assert_eq!(
+            report.pending_action_detail.as_deref(),
+            Some("argv=cargo check -p gameterm-visual")
+        );
+
+        runtime.toggle_debugger();
+        let frame = runtime.render_text_frame(100, 32);
+        assert!(frame.contains("Choice label: Run cargo check -p gameterm-visual"));
+        assert!(frame.contains("Choice kind: RunCommand"));
+        assert!(frame.contains("Pending action: RunCommand argv=cargo check -p gameterm-visual"));
     }
 
     #[test]
