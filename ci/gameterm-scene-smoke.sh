@@ -20,6 +20,10 @@ Options:
                            renderer-rows.
   --patch-inbox PATH       Set GAMETERM_SCENE_PATCH_FILE to PATH when
                            launching. Use "auto" to create a temporary inbox.
+  --submit-mux-patch PATH  After --launch wait, submit PATCH through
+                           gameterm cli scene-patch before capture.
+  --submit-target-pane-id ID
+                           Target pane id for --submit-mux-patch. Optional.
   --wait-before-capture N  Seconds to wait after launch before capture.
                            Use this time to press Ctrl+Shift+G. Default: 10.
   --device DEVICE          AVFoundation device string. Default: 0:none.
@@ -48,6 +52,8 @@ ffmpeg_bin="${FFMPEG:-}"
 gui_pid=""
 tmp_home=""
 patch_inbox=""
+submit_mux_patch=""
+submit_target_pane_id=""
 log_file="/tmp/gameterm-scene-smoke-ffmpeg.log"
 
 while [[ $# -gt 0 ]]; do
@@ -66,6 +72,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --patch-inbox)
       patch_inbox="$2"
+      shift 2
+      ;;
+    --submit-mux-patch)
+      submit_mux_patch="$2"
+      shift 2
+      ;;
+    --submit-target-pane-id)
+      submit_target_pane_id="$2"
       shift 2
       ;;
     --wait-before-capture)
@@ -213,6 +227,11 @@ if [[ "${check_assets}" -eq 1 ]]; then
   fi
 fi
 
+if [[ -n "${submit_mux_patch}" && "${launch}" -eq 0 ]]; then
+  echo "--submit-mux-patch requires --launch" >&2
+  exit 2
+fi
+
 if ! ffmpeg_bin="$(resolve_ffmpeg)"; then
   cat >&2 <<'EOF'
 ffmpeg was not found.
@@ -278,8 +297,21 @@ EOF
     echo "Patch audit: after opening Scene Mode, run:"
     echo "  ci/gameterm-scene-patch.sh write-inbox --inbox '${patch_inbox}' --patch ci/fixtures/gameterm-scene/patch-status.json"
   fi
+  if [[ -n "${submit_mux_patch}" ]]; then
+    echo "Mux patch audit: open Scene Mode before the wait expires; the script will submit:"
+    echo "  ${submit_mux_patch}"
+  fi
   echo "Waiting ${wait_before_capture}s before capture..."
   sleep "${wait_before_capture}"
+
+  if [[ -n "${submit_mux_patch}" ]]; then
+    submit_args=(submit-mux --patch "${submit_mux_patch}")
+    if [[ -n "${submit_target_pane_id}" ]]; then
+      submit_args+=(--target-pane-id "${submit_target_pane_id}")
+    fi
+    "${repo_root}/ci/gameterm-scene-patch.sh" "${submit_args[@]}"
+    sleep 1
+  fi
 fi
 
 rm -f "${output}" "${log_file}"
