@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use std::ops::Range;
 use std::path::{Path, PathBuf};
+
+pub mod render;
+pub use render::{intersecting_entities_for_row, visible_tiles_for_row};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VisualPosition {
@@ -275,44 +277,6 @@ impl VisualSceneSource {
             last_error: Some(error),
         }
     }
-}
-
-pub fn visible_tiles_for_row(
-    snapshot: &VisualRenderSnapshot,
-    row: usize,
-    columns: Range<usize>,
-) -> Vec<&VisualRenderTile> {
-    if row >= snapshot.height {
-        return Vec::new();
-    }
-
-    let columns = clipped_columns(columns, snapshot.width);
-    snapshot
-        .tiles
-        .iter()
-        .filter(|tile| tile.position.y == row && columns.contains(&tile.position.x))
-        .collect()
-}
-
-pub fn intersecting_entities_for_row(
-    snapshot: &VisualRenderSnapshot,
-    row: usize,
-    columns: Range<usize>,
-) -> Vec<&VisualRenderEntity> {
-    if row >= snapshot.height {
-        return Vec::new();
-    }
-
-    let columns = clipped_columns(columns, snapshot.width);
-    snapshot
-        .entities
-        .iter()
-        .filter(|entity| entity.position.y == row && columns.contains(&entity.position.x))
-        .collect()
-}
-
-fn clipped_columns(columns: Range<usize>, width: usize) -> Range<usize> {
-    columns.start.min(width)..columns.end.min(width)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -708,6 +672,14 @@ impl SceneRuntime {
 
     pub fn action_base_dir(&self) -> &Path {
         &self.action_base_dir
+    }
+
+    pub fn scene(&self) -> &VisualScene {
+        &self.scene
+    }
+
+    pub fn scene_json_pretty(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string_pretty(&self.scene)
     }
 
     pub fn take_pending_action(&mut self) -> Option<VisualActionRequest> {
@@ -2276,7 +2248,10 @@ mod tests {
         let report = runtime.debug_report();
 
         assert_eq!(report.status, "Fixture patch applied");
-        assert_eq!(report.selected_entity_id.as_deref(), Some("project-harness"));
+        assert_eq!(
+            report.selected_entity_id.as_deref(),
+            Some("project-harness")
+        );
         assert_eq!(report.selected_entity_flags, vec!["loaded", "verified"]);
         assert!(report
             .selected_entity_metadata

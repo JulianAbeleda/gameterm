@@ -286,10 +286,12 @@ run_doctor_check() {
 
 run_patch_check() {
   local tmp_home authored_patch inbox
+  local exported_scene
   tmp_home="$(mktemp -d /tmp/gameterm-scene-patch-verify.XXXXXX)"
   tmp_paths+=("${tmp_home}")
   authored_patch="${tmp_home}/patches/project.json"
   inbox="${tmp_home}/inbox/scene-patch.json"
+  exported_scene="${tmp_home}/exported/default.json"
 
   cargo run -q -p gameterm-visual --example scene_patch_apply -- \
     "${fixture_root}/default.json" \
@@ -333,6 +335,18 @@ run_patch_check() {
     --inbox "${inbox}" \
     --patch "${authored_patch}" >/dev/null
   cmp "${authored_patch}" "${inbox}"
+  "${repo_root}/ci/gameterm-scene-patch.sh" \
+    export-scene \
+    --scene "${fixture_root}/default.json" \
+    --patch "${authored_patch}" \
+    --output "${exported_scene}" >/dev/null
+  "${repo_root}/ci/gameterm-scene-author.sh" \
+    validate "${exported_scene}" >/dev/null
+  jq -e '
+    any(.entities[]; .id == "project-harness"
+      and (.state_flags == ["loaded", "authored"])
+      and (.metadata | any(.[0] == "source" and .[1] == "verify")))
+  ' "${exported_scene}" >/dev/null
 
   echo "scene patch: ok"
 }

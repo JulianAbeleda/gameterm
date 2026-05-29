@@ -223,6 +223,18 @@ ci/gameterm-scene-patch.sh write-inbox \
   --patch ci/fixtures/gameterm-scene/patch-status.json
 ```
 
+To persist a patched runtime state intentionally, export a new scene file:
+
+```sh
+ci/gameterm-scene-patch.sh export-scene \
+  --scene ci/fixtures/gameterm-scene/default.json \
+  --patch /tmp/gameterm-scene-patch.json \
+  --output /tmp/gameterm-scene-export.json
+```
+
+This is an explicit authoring step. Scene Mode never silently rewrites the
+active scene file when a patch is applied.
+
 ## Sprite manifest
 
 Scene Mode can render scene sprite ids through image files listed in:

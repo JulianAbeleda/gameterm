@@ -247,6 +247,11 @@ ci/gameterm-scene-patch.sh set-entity-status \
 ci/gameterm-scene-patch.sh write-inbox \
   --inbox /tmp/gameterm-scene-patch.json \
   --patch ci/fixtures/gameterm-scene/patch-status.json
+
+ci/gameterm-scene-patch.sh export-scene \
+  --scene ci/fixtures/gameterm-scene/default.json \
+  --patch ci/fixtures/gameterm-scene/patch-status.json \
+  --output /tmp/gameterm-scene-export.json
 ```
 
 Implemented transport behavior:
@@ -257,6 +262,8 @@ Implemented transport behavior:
 - Rejected patches update Scene Mode status without mutating scene state.
 - The patch file is not copied into the scene JSON and is not treated as
   persistent storage.
+- Persistence is available only through the explicit `export-scene` helper,
+  which writes a new scene JSON file after applying a patch.
 
 Next transport step:
 

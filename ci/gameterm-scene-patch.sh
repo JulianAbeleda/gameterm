@@ -9,6 +9,7 @@ Patch helper for GameTerm Scene Mode in-memory state updates.
 
 Commands:
   apply                         Apply a patch to a scene with the Rust runtime.
+  export-scene                  Apply a patch and write a new scene JSON file.
   validate                      Validate a patch by applying it to a scene.
   write-inbox                   Atomically write a patch to a Scene Mode inbox.
   set-entity-status             Create a patch for one entity's flags/metadata.
@@ -16,6 +17,12 @@ Commands:
 Options for apply and validate:
   --scene PATH                  Scene file. Required.
   --patch PATH                  Patch file. Required.
+
+Options for export-scene:
+  --scene PATH                  Scene file. Required.
+  --patch PATH                  Patch file. Required.
+  --output PATH                 Patched scene output path. Required.
+  --force                       Overwrite an existing output file.
 
 Options for write-inbox:
   --inbox PATH                  GAMETERM_SCENE_PATCH_FILE path. Required.
@@ -37,6 +44,11 @@ Examples:
   ci/gameterm-scene-patch.sh write-inbox \
     --inbox /tmp/gameterm-scene-patch.json \
     --patch ci/fixtures/gameterm-scene/patch-status.json
+
+  ci/gameterm-scene-patch.sh export-scene \
+    --scene ci/fixtures/gameterm-scene/default.json \
+    --patch ci/fixtures/gameterm-scene/patch-status.json \
+    --output /tmp/patched-scene.json --force
 EOF
 }
 
@@ -149,6 +161,24 @@ write_inbox() {
   echo "Wrote Scene Mode patch inbox: ${inbox_path}"
 }
 
+export_scene() {
+  require_value "--scene" "${scene_path}"
+  require_value "--patch" "${patch_path}"
+  require_value "--output" "${output_path}"
+  if [[ -e "${output_path}" && "${force}" -ne 1 ]]; then
+    cat >&2 <<EOF
+${output_path} already exists.
+
+Rerun with --force to overwrite it.
+EOF
+    exit 1
+  fi
+  cargo run -q -p gameterm-visual --example scene_patch_export -- \
+    "${scene_path}" \
+    "${patch_path}" \
+    "${output_path}"
+}
+
 create_entity_status_patch() {
   require_value "--output" "${output_path}"
   require_value "--entity-id" "${entity_id}"
@@ -194,6 +224,9 @@ cd "${repo_root}"
 case "${command}" in
   apply)
     apply_patch_to_scene
+    ;;
+  export-scene)
+    export_scene
     ;;
   validate)
     apply_patch_to_scene >/dev/null
