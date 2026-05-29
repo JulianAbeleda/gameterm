@@ -65,16 +65,26 @@ ci/gameterm-scene-author.sh add-entity ~/.config/gameterm/scenes/experiment.json
   --id task-demo --kind Task --label "Demo Task" --x 2 --y 2 --sprite task_tile
 ci/gameterm-scene-author.sh add-choice ~/.config/gameterm/scenes/experiment.json \
   --label "Run visual check" --run-argv '["cargo","check","-p","gameterm-visual"]'
+ci/gameterm-scene-author.sh update-choice ~/.config/gameterm/scenes/experiment.json \
+  --choice-index 1 --label "Open docs" --open-file docs/gameterm-scene-mode.md
+ci/gameterm-scene-author.sh remove-choice ~/.config/gameterm/scenes/experiment.json \
+  --choice-index 1
 ci/gameterm-scene-author.sh move-entity ~/.config/gameterm/scenes/experiment.json \
   --id task-demo --x 3 --y 2
 ci/gameterm-scene-author.sh set-dialogue ~/.config/gameterm/scenes/experiment.json \
   --speaker "Author" --text "Updated locally."
 ci/gameterm-scene-author.sh format ~/.config/gameterm/scenes/experiment.json
+ci/gameterm-scene-doctor.sh
 ```
 
 `validate` runs the same Rust scene parser used by Scene Mode and prints a
 short summary of the scene dimensions, entity count, choices, and initial
 selection.
+
+`doctor` checks the configured scene and sprite manifest together. It validates
+the scene, reports missing navigation and document targets, checks sprite
+manifest shape, checks sprite asset paths, and warns when scene sprite ids have
+no manifest entry. Use `--strict` when warnings should fail a local or CI run.
 
 ## Scene file
 
@@ -164,8 +174,8 @@ See [the example sprite manifest](examples/gameterm-scene-sprites.json).
 ## Smoke test
 
 The noninteractive verification harness checks scene fixtures, authoring init
-behavior, authoring validation, JSON validity, debugger state, and focused Rust
-tests:
+behavior, authoring validation, doctor output, JSON validity, debugger state,
+and focused Rust tests:
 
 ```sh
 ci/gameterm-scene-verify.sh --all

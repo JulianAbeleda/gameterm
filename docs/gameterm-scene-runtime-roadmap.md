@@ -75,6 +75,8 @@ Implemented verification behavior:
    smoke runs against the same fixture set.
 4. Use `ci/gameterm-scene-author.sh validate <path>` for local scene authoring
    checks backed by the Rust scene parser.
+5. Use `ci/gameterm-scene-doctor.sh` for combined scene, action target, sprite
+   manifest, sprite asset, and sprite id coverage diagnostics.
 
 ## Tile Debugger Path, Action, And Status
 
