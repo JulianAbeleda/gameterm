@@ -321,9 +321,19 @@ pub struct TermWizTerminal {
     renderer: TerminfoRenderer,
     grab_mouse: bool,
     metadata: Arc<Mutex<BTreeMap<Value, Value>>>,
+    pane_id: Option<PaneId>,
+    window_id: Option<WindowId>,
 }
 
 impl TermWizTerminal {
+    pub fn pane_id(&self) -> Option<PaneId> {
+        self.pane_id
+    }
+
+    pub fn window_id(&self) -> Option<WindowId> {
+        self.window_id
+    }
+
     pub fn no_grab_mouse_in_raw_mode(&mut self) {
         self.grab_mouse = false;
     }
@@ -485,6 +495,8 @@ pub fn allocate(
         renderer,
         grab_mouse: true,
         metadata: Arc::clone(&metadata),
+        pane_id: None,
+        window_id: None,
     };
 
     let domain_id = 0;
@@ -526,24 +538,6 @@ pub async fn run<
     let (input_tx, input_rx) = channel();
     let should_close_window = window_id.is_none();
     let metadata = Arc::new(Mutex::new(BTreeMap::new()));
-
-    let renderer = termwiz_funcs::new_gameterm_terminfo_renderer();
-
-    let tw_term = TermWizTerminal {
-        render_tx: TermWizTerminalRenderTty {
-            render_tx: BufWriter::new(render_pipe.write),
-            screen_size: ScreenSize {
-                cols: size.cols as usize,
-                rows: size.rows as usize,
-                xpixel: (size.pixel_width / size.cols) as usize,
-                ypixel: (size.pixel_height / size.rows) as usize,
-            },
-        },
-        input_rx,
-        renderer,
-        grab_mouse: true,
-        metadata: Arc::clone(&metadata),
-    };
 
     async fn register_tab(
         input_tx: Sender<InputEvent>,
@@ -593,10 +587,30 @@ pub async fn run<
         Ok((pane.pane_id(), window_id))
     }
 
+    let terminal_metadata = Arc::clone(&metadata);
     let (pane_id, window_id) = promise::spawn::spawn_into_main_thread(async move {
         register_tab(input_tx, render_rx, size, window_id, term_config, metadata).await
     })
     .await?;
+
+    let renderer = termwiz_funcs::new_gameterm_terminfo_renderer();
+    let tw_term = TermWizTerminal {
+        render_tx: TermWizTerminalRenderTty {
+            render_tx: BufWriter::new(render_pipe.write),
+            screen_size: ScreenSize {
+                cols: size.cols as usize,
+                rows: size.rows as usize,
+                xpixel: (size.pixel_width / size.cols) as usize,
+                ypixel: (size.pixel_height / size.rows) as usize,
+            },
+        },
+        input_rx,
+        renderer,
+        grab_mouse: true,
+        metadata: terminal_metadata,
+        pane_id: Some(pane_id),
+        window_id: Some(window_id),
+    };
 
     let result = promise::spawn::spawn_into_new_thread(move || f(tw_term)).await;
 

@@ -729,16 +729,13 @@ impl SceneRuntime {
         self.bump_generation();
     }
 
-    pub fn mark_run_command_started(&mut self, argv: &[String], pid: u32) {
-        self.status = format!("RunCommand started pid={pid}: {}", argv.join(" "));
+    pub fn mark_run_command_spawning(&mut self, argv: &[String]) {
+        self.status = format!("RunCommand opening tab: {}", argv.join(" "));
         self.bump_generation();
     }
 
-    pub fn mark_run_command_finished(&mut self, argv: &[String], status: std::process::ExitStatus) {
-        self.status = match status.code() {
-            Some(code) => format!("RunCommand exited code={code}: {}", argv.join(" ")),
-            None => format!("RunCommand exited by signal: {}", argv.join(" ")),
-        };
+    pub fn mark_run_command_spawned(&mut self, argv: &[String], pane_id: usize) {
+        self.status = format!("RunCommand opened pane {pane_id}: {}", argv.join(" "));
         self.bump_generation();
     }
 
@@ -1457,10 +1454,16 @@ mod tests {
         let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
         let argv = vec!["true".to_string()];
 
-        runtime.mark_run_command_started(&argv, 123);
+        runtime.mark_run_command_spawning(&argv);
         assert_eq!(
             runtime.debug_report().status,
-            "RunCommand started pid=123: true"
+            "RunCommand opening tab: true"
+        );
+
+        runtime.mark_run_command_spawned(&argv, 123);
+        assert_eq!(
+            runtime.debug_report().status,
+            "RunCommand opened pane 123: true"
         );
 
         runtime.mark_run_command_failed(&argv, "spawn failed");

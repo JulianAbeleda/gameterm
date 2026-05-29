@@ -1,15 +1,18 @@
 use anyhow::Context;
+use config::keyassignment::SpawnTabDomain;
 use gameterm_dynamic::Value;
 use gameterm_term::color::ColorAttribute;
+use gameterm_term::TerminalSize;
 use gameterm_visual::{
     truncate_to_screen, SceneRuntime, VisualActionRequest, VisualInput, VisualMode,
     VisualModeOutcome, VisualResolvedSprite, VisualScene, VisualSceneLoadStatus, VisualSceneSource,
     VisualSpriteManifest, VisualSpriteManifestStatus,
 };
 use mux::termwiztermtab::TermWizTerminal;
+use mux::Mux;
+use portable_pty::CommandBuilder;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::mpsc;
 use std::time::Duration;
 use termwiz::input::{InputEvent, KeyCode, KeyEvent};
@@ -36,8 +39,8 @@ pub fn show_visual_scene_overlay(mut term: TermWizTerminal) -> anyhow::Result<()
         while let Ok(result) = command_rx.try_recv() {
             if let Some(runtime) = runtime.as_mut() {
                 match result {
-                    RunCommandResult::Exited { argv, status } => {
-                        runtime.mark_run_command_finished(&argv, status);
+                    RunCommandResult::Spawned { argv, pane_id } => {
+                        runtime.mark_run_command_spawned(&argv, pane_id);
                     }
                     RunCommandResult::Failed { argv, error } => {
                         runtime.mark_run_command_failed(&argv, error);
@@ -98,11 +101,24 @@ pub fn show_visual_scene_overlay(mut term: TermWizTerminal) -> anyhow::Result<()
                     if runtime.handle_input(visual_input) == VisualModeOutcome::Exit {
                         break;
                     }
+                    let size = term.get_screen_size()?;
                     dispatch_pending_action(
                         runtime,
                         &mut scene_path,
                         &mut reload_count,
-                        command_tx.clone(),
+                        RunCommandDispatch {
+                            window_id: term
+                                .window_id()
+                                .context("Scene Mode terminal is not attached to a mux window")?,
+                            terminal_size: TerminalSize {
+                                rows: size.rows,
+                                cols: size.cols,
+                                pixel_width: size.xpixel.saturating_mul(size.cols),
+                                pixel_height: size.ypixel.saturating_mul(size.rows),
+                                dpi: 0,
+                            },
+                            command_tx: command_tx.clone(),
+                        },
                     )?;
                     render_runtime(&mut term, runtime, &sprite_manifest)?;
                 }
@@ -130,9 +146,9 @@ pub fn show_visual_scene_overlay(mut term: TermWizTerminal) -> anyhow::Result<()
 }
 
 enum RunCommandResult {
-    Exited {
+    Spawned {
         argv: Vec<String>,
-        status: std::process::ExitStatus,
+        pane_id: mux::pane::PaneId,
     },
     Failed {
         argv: Vec<String>,
@@ -140,11 +156,18 @@ enum RunCommandResult {
     },
 }
 
+#[derive(Clone)]
+struct RunCommandDispatch {
+    window_id: mux::window::WindowId,
+    terminal_size: TerminalSize,
+    command_tx: mpsc::Sender<RunCommandResult>,
+}
+
 fn dispatch_pending_action(
     runtime: &mut SceneRuntime,
     scene_path: &mut PathBuf,
     reload_count: &mut u64,
-    command_tx: mpsc::Sender<RunCommandResult>,
+    command_dispatch: RunCommandDispatch,
 ) -> anyhow::Result<()> {
     let Some(action) = runtime.take_pending_action() else {
         return Ok(());
@@ -156,7 +179,7 @@ fn dispatch_pending_action(
             runtime.mark_open_file_dispatched(&path);
         }
         VisualActionRequest::RunCommand { argv, cwd } => {
-            dispatch_run_command(runtime, argv, cwd, command_tx);
+            dispatch_run_command(runtime, argv, cwd, command_dispatch);
         }
         VisualActionRequest::Navigate { target } => {
             *reload_count = reload_count.saturating_add(1);
@@ -182,33 +205,41 @@ fn dispatch_run_command(
     runtime: &mut SceneRuntime,
     argv: Vec<String>,
     cwd: Option<PathBuf>,
-    command_tx: mpsc::Sender<RunCommandResult>,
+    dispatch: RunCommandDispatch,
 ) {
-    let mut command = Command::new(&argv[0]);
-    command.args(&argv[1..]);
-    if let Some(cwd) = cwd {
-        command.current_dir(cwd);
-    }
+    runtime.mark_run_command_spawning(&argv);
+    promise::spawn::spawn(async move {
+        let command_dir = cwd.as_ref().map(|cwd| cwd.display().to_string());
+        let mut builder = CommandBuilder::from_argv(argv.iter().map(Into::into).collect());
+        if let Some(cwd) = cwd.as_ref() {
+            builder.cwd(cwd);
+        }
 
-    match command.spawn() {
-        Ok(mut child) => {
-            let pid = child.id();
-            runtime.mark_run_command_started(&argv, pid);
-            std::thread::spawn(move || {
-                let result = match child.wait() {
-                    Ok(status) => RunCommandResult::Exited { argv, status },
-                    Err(err) => RunCommandResult::Failed {
-                        argv,
-                        error: err.to_string(),
-                    },
-                };
-                let _ = command_tx.send(result);
-            });
-        }
-        Err(err) => {
-            runtime.mark_run_command_failed(&argv, err);
-        }
-    }
+        let result = match Mux::get()
+            .spawn_tab_or_window(
+                Some(dispatch.window_id),
+                SpawnTabDomain::DefaultDomain,
+                Some(builder),
+                command_dir,
+                dispatch.terminal_size,
+                None,
+                Mux::get().active_workspace(),
+                None,
+            )
+            .await
+        {
+            Ok((_tab, pane, _window_id)) => RunCommandResult::Spawned {
+                argv,
+                pane_id: pane.pane_id(),
+            },
+            Err(err) => RunCommandResult::Failed {
+                argv,
+                error: err.to_string(),
+            },
+        };
+        let _ = dispatch.command_tx.send(result);
+    })
+    .detach();
 }
 
 fn initial_scene_state(
@@ -636,7 +667,11 @@ mod tests {
             &mut runtime,
             &mut active_path,
             &mut reload_count,
-            command_tx,
+            RunCommandDispatch {
+                window_id: 0,
+                terminal_size: TerminalSize::default(),
+                command_tx,
+            },
         )
         .unwrap();
         let snapshot = runtime.render_snapshot();
