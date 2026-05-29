@@ -77,6 +77,10 @@ pub enum MuxNotification {
         name: Option<String>,
         data: Arc<Vec<u8>>,
     },
+    GameTermScenePatch {
+        patch_json: String,
+        source_pane_id: Option<PaneId>,
+    },
     TabAddedToWindow {
         tab_id: TabId,
         window_id: WindowId,

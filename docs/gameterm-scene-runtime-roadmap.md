@@ -258,33 +258,25 @@ Implemented transport behavior:
 
 - The overlay records the patch file's current modification time at startup.
 - A patch is applied only after the watched file appears or changes.
+- Active Scene Mode overlays subscribe to local
+  `MuxNotification::GameTermScenePatch { patch_json, source_pane_id }`
+  notifications and apply those patches through the same runtime path as the
+  file inbox.
 - Accepted patches update the active runtime and bump visual generation.
 - Rejected patches update Scene Mode status without mutating scene state.
 - The patch file is not copied into the scene JSON and is not treated as
   persistent storage.
 - Persistence is available only through the explicit `export-scene` helper,
   which writes a new scene JSON file after applying a patch.
+- The mux notification is local-only. GUI/frontend/server/client notification
+  handlers ignore it unless they are the active Scene Mode overlay subscriber.
 
 Next transport step:
 
-1. Add a first-class mux/IPC message for submitting a `VisualScenePatch` to the
-   active Scene Mode overlay without relying on a shared file path.
-2. Preserve the same runtime application semantics as
-   `SceneRuntime::apply_scene_patch`.
-3. Keep persistence as a separate authoring action.
-
-Candidate first-class mux design:
-
-1. Add a `MuxNotification::GameTermScenePatch { patch, source_pane_id }` or a
-   narrower GameTerm-specific notification type. Keep it local-only until the
-   serialization boundary is explicit.
-2. Track the active Scene Mode overlay pane id and route patch notifications to
-   that overlay's event loop, not directly to renderer metadata.
-3. Convert notification delivery into the same internal patch queue used by the
-   file inbox. The overlay should remain the only owner that mutates
-   `SceneRuntime`.
-4. Return delivery errors separately from patch validation errors. "No active
+1. Track and target a single active Scene Mode overlay when multiple overlays
+   exist.
+2. Add a script or CLI command that submits the patch through mux/IPC, then keep
+   `GAMETERM_SCENE_PATCH_FILE` as the portable fallback and smoke-test path.
+3. Return delivery errors separately from patch validation errors. "No active
    Scene Mode overlay" is a transport failure; "unknown entity id" is a runtime
    patch failure.
-5. Add a script or CLI command that submits the patch through mux/IPC, then keep
-   `GAMETERM_SCENE_PATCH_FILE` as the portable fallback and smoke-test path.

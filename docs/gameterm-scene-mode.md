@@ -202,8 +202,8 @@ ci/gameterm-scene-patch.sh validate \
   --patch /tmp/gameterm-scene-patch.json
 ```
 
-The GUI transport from panes or agents into the active Scene Mode overlay is the
-first implemented as an explicit local patch file. Start GameTerm with:
+The portable GUI transport from panes or agents into the active Scene Mode
+overlay is an explicit local patch file. Start GameTerm with:
 
 ```sh
 GAMETERM_SCENE_PATCH_FILE=/tmp/gameterm-scene-patch.json target/debug/gameterm-gui start
@@ -214,6 +214,13 @@ to that path. The overlay polls for modification-time changes between input
 events, applies valid patches to the active runtime, and reports malformed
 patches or unknown entity ids in the Scene Mode status and Tile Debugger. The
 patch file is a transport inbox, not persistent scene storage.
+
+In-process GameTerm callers can also publish a local mux notification:
+`MuxNotification::GameTermScenePatch { patch_json, source_pane_id }`. Active
+Scene Mode overlays subscribe to that notification and apply the same patch
+schema used by the file inbox. This notification is intentionally local-only;
+the mux server/client protocol ignores it until the remote IPC boundary is
+designed explicitly.
 
 Use the helper to write the inbox atomically:
 

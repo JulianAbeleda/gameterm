@@ -11,12 +11,14 @@ use gameterm_visual::{
 use mux::domain::SplitSource;
 use mux::tab::{SplitDirection, SplitRequest, SplitSize};
 use mux::termwiztermtab::TermWizTerminal;
-use mux::Mux;
+use mux::{Mux, MuxNotification};
 use portable_pty::CommandBuilder;
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use termwiz::input::{InputEvent, KeyCode, KeyEvent};
 use termwiz::surface::Change;
@@ -38,6 +40,8 @@ pub fn show_visual_scene_overlay(mut term: TermWizTerminal) -> anyhow::Result<()
         initial_scene_state(&mut term, &scene_path, &sprite_manifest_path, reload_count)?;
     let mut file_watcher = SceneFileWatcher::from_env(&scene_path, &sprite_manifest_path);
     let mut patch_inbox = ScenePatchInbox::from_env();
+    let (scene_patch_tx, scene_patch_rx) = mpsc::channel();
+    let _scene_patch_subscription = ScenePatchNotificationSubscription::new(scene_patch_tx);
 
     loop {
         let mut needs_render = false;
@@ -86,6 +90,11 @@ pub fn show_visual_scene_overlay(mut term: TermWizTerminal) -> anyhow::Result<()
                     apply_scene_patch_file(&mut term, runtime, &sprite_manifest, &path)?;
                 }
                 patch_inbox.refresh();
+            }
+            while let Ok(patch_json) = scene_patch_rx.try_recv() {
+                if let Some(runtime) = runtime.as_mut() {
+                    apply_scene_patch_json(&mut term, runtime, &sprite_manifest, &patch_json)?;
+                }
             }
             continue;
         };
@@ -157,6 +166,33 @@ pub fn show_visual_scene_overlay(mut term: TermWizTerminal) -> anyhow::Result<()
     }
 
     Ok(())
+}
+
+struct ScenePatchNotificationSubscription {
+    dead: Arc<AtomicBool>,
+}
+
+impl ScenePatchNotificationSubscription {
+    fn new(scene_patch_tx: mpsc::Sender<String>) -> Self {
+        let dead = Arc::new(AtomicBool::new(false));
+        let subscription_dead = Arc::clone(&dead);
+        Mux::get().subscribe(move |notification| {
+            if subscription_dead.load(Ordering::Relaxed) {
+                return false;
+            }
+            if let MuxNotification::GameTermScenePatch { patch_json, .. } = notification {
+                let _ = scene_patch_tx.send(patch_json);
+            }
+            true
+        });
+        Self { dead }
+    }
+}
+
+impl Drop for ScenePatchNotificationSubscription {
+    fn drop(&mut self) {
+        self.dead.store(true, Ordering::Relaxed);
+    }
 }
 
 fn reload_active_scene(
@@ -314,6 +350,22 @@ fn apply_scene_patch_file(
         Ok(()) => {}
         Err(err) => {
             runtime.mark_action_status(format!("Scene patch failed: {}: {err}", path.display()));
+        }
+    }
+    render_runtime(term, runtime, sprite_manifest)
+}
+
+fn apply_scene_patch_json(
+    term: &mut TermWizTerminal,
+    runtime: &mut SceneRuntime,
+    sprite_manifest: &VisualSpriteManifestStatus,
+    patch_json: &str,
+) -> anyhow::Result<()> {
+    match VisualScenePatch::from_json(patch_json).and_then(|patch| runtime.apply_scene_patch(patch))
+    {
+        Ok(()) => {}
+        Err(err) => {
+            runtime.mark_action_status(format!("Scene patch failed from mux: {err}"));
         }
     }
     render_runtime(term, runtime, sprite_manifest)
