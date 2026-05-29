@@ -6,6 +6,22 @@ Scene Mode is the first GameTerm-native visual state surface. It displays a symb
 
 By default, it loads `~/.config/gameterm/scenes/default.json` when present. If the file is absent, it uses the built-in demo scene.
 
+Scene Mode also looks for `~/.config/gameterm/scenes/sprites.json`. This JSON
+file maps scene sprite ids to image files:
+
+```json
+{
+  "sprites": [
+    { "id": "project_core", "path": "sprites/project_core.png" },
+    { "id": "agent_idle", "path": "sprites/agent_idle.png" }
+  ]
+}
+```
+
+Relative sprite paths are resolved against the directory containing
+`sprites.json`. Missing or invalid sprite entries fall back to visible
+placeholder blocks so Scene Mode remains usable while the manifest is fixed.
+
 Default key assignment:
 
 ```lua

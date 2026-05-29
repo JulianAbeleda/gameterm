@@ -1,0 +1,24 @@
+{
+  "sprites": [
+    {
+      "id": "debug_floor",
+      "path": "sprites/debug_floor.png"
+    },
+    {
+      "id": "project_core",
+      "path": "sprites/project_core.png"
+    },
+    {
+      "id": "agent_idle",
+      "path": "sprites/agent_idle.png"
+    },
+    {
+      "id": "task_tile",
+      "path": "sprites/task_tile.png"
+    },
+    {
+      "id": "memory_note",
+      "path": "sprites/memory_note.png"
+    }
+  ]
+}

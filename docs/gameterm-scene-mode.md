@@ -6,6 +6,7 @@ The first implementation is intentionally small:
 
 - a built-in demo scene
 - optional JSON scene loading from `~/.config/gameterm/scenes/default.json`
+- optional sprite manifest loading from `~/.config/gameterm/scenes/sprites.json`
 - symbolic project/task/agent entities
 - keyboard selection
 - a dialogue/inspection panel
@@ -37,6 +38,35 @@ $XDG_CONFIG_HOME/gameterm/scenes/default.json
 If the file is missing, Scene Mode uses the built-in demo scene. If the file is present but invalid, Scene Mode shows an error frame and stays open so the problem is visible.
 
 The scene file uses the same JSON shape as `VisualScene`: title, background, width, height, entities, dialogue speaker/text, and choices. See [the example scene](examples/gameterm-scene-default.json).
+
+## Sprite manifest
+
+Scene Mode can render scene sprite ids through image files listed in:
+
+```text
+~/.config/gameterm/scenes/sprites.json
+```
+
+The manifest maps sprite ids used by the scene `background` and entity `sprite`
+fields to image paths. Relative paths are resolved against the directory that
+contains `sprites.json`.
+
+```json
+{
+  "sprites": [
+    { "id": "debug_floor", "path": "sprites/debug_floor.png" },
+    { "id": "project_core", "path": "sprites/project_core.png" },
+    { "id": "agent_idle", "path": "sprites/agent_idle.png" }
+  ]
+}
+```
+
+If the manifest is missing, invalid, or references files that cannot be read,
+Scene Mode still opens and uses deterministic placeholder blocks for unresolved
+sprite ids. Warnings are shown in the scene frame and logged for renderer-side
+file loading failures.
+
+See [the example sprite manifest](examples/gameterm-scene-sprites.json).
 
 ## Smoke test
 
