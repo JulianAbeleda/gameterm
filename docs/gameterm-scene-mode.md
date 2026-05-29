@@ -12,7 +12,7 @@ The first implementation is intentionally small:
 - keyboard selection
 - manual reload while Scene Mode is open
 - a dialogue/inspection panel
-- placeholder command actions
+- local action status for inspection and document targets
 - a Tile Debugger view for scene source, load status, layers, entities, sprite
   ids, positions, flags, and metadata
 
@@ -47,6 +47,10 @@ If reload fails after a valid scene is already active, Scene Mode keeps the
 previous scene visible and reports the reload error in the scene status and Tile
 Debugger. Selection is preserved across successful reloads when the selected
 entity id still exists.
+
+`OpenFile` choices resolve their configured path against GameTerm's current
+working directory and report whether the target file exists. They do not execute
+shell commands or open files yet.
 
 ## Sprite manifest
 

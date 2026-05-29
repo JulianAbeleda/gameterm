@@ -472,6 +472,7 @@ pub enum VisualView {
 pub struct SceneRuntime {
     scene: VisualScene,
     scene_source: VisualSceneSource,
+    action_base_dir: PathBuf,
     selected_entity: usize,
     selected_choice: usize,
     view: VisualView,
@@ -491,10 +492,20 @@ impl SceneRuntime {
         scene: VisualScene,
         scene_source: VisualSceneSource,
     ) -> Result<Self, VisualSceneError> {
+        let action_base_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        Self::new_with_source_and_action_base_dir(scene, scene_source, action_base_dir)
+    }
+
+    pub fn new_with_source_and_action_base_dir(
+        scene: VisualScene,
+        scene_source: VisualSceneSource,
+        action_base_dir: impl Into<PathBuf>,
+    ) -> Result<Self, VisualSceneError> {
         scene.validate()?;
         Ok(Self {
             scene,
             scene_source,
+            action_base_dir: action_base_dir.into(),
             selected_entity: 0,
             selected_choice: 0,
             view: VisualView::Scene,
@@ -513,6 +524,10 @@ impl SceneRuntime {
 
     pub fn scene_source(&self) -> &VisualSceneSource {
         &self.scene_source
+    }
+
+    pub fn action_base_dir(&self) -> &Path {
+        &self.action_base_dir
     }
 
     pub fn mark_reload_failed(&mut self, reload_count: u64, error: String) {
@@ -603,9 +618,7 @@ impl SceneRuntime {
                     .selected_entity()
                     .map(|entity| format!("Inspecting {} ({})", entity.label, entity.id))
                     .unwrap_or_else(|| "No entity selected".to_string()),
-                SceneActionKind::OpenFile { path } => {
-                    format!("Action placeholder: open file `{path}`")
-                }
+                SceneActionKind::OpenFile { path } => self.open_file_action_status(path),
                 SceneActionKind::RunCommand { command } => {
                     format!("Action placeholder: run `{command}`")
                 }
@@ -619,6 +632,23 @@ impl SceneRuntime {
 
     pub fn selected_entity(&self) -> Option<&VisualEntity> {
         self.scene.entities.get(self.selected_entity)
+    }
+
+    fn open_file_action_status(&self, path: &str) -> String {
+        let raw_path = PathBuf::from(path);
+        let resolved = if raw_path.is_absolute() {
+            raw_path
+        } else {
+            self.action_base_dir.join(raw_path)
+        };
+        let display_path = resolved.display();
+        match std::fs::metadata(&resolved) {
+            Ok(metadata) if metadata.is_file() => {
+                format!("OpenFile ready: {display_path}")
+            }
+            Ok(_) => format!("OpenFile target is not a file: {display_path}"),
+            Err(err) => format!("OpenFile missing: {display_path}: {err}"),
+        }
     }
 
     pub fn render_text_frame(&self, cols: usize, rows: usize) -> String {
@@ -767,6 +797,7 @@ impl SceneRuntime {
         if let Some(error) = &self.scene_source.last_error {
             out.push_str(&format!("Error: {error}\r\n"));
         }
+        out.push_str(&format!("Action status: {}\r\n", self.status));
         out.push_str("\r\n");
         out.push_str(&format!(
             "scene={} background={} size={}x{}\r\n\r\n",
@@ -1017,6 +1048,82 @@ mod tests {
     }
 
     #[test]
+    fn open_file_action_resolves_relative_path_against_base_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let docs_dir = dir.path().join("docs");
+        std::fs::create_dir(&docs_dir).unwrap();
+        std::fs::write(docs_dir.join("scene.md"), "scene docs").unwrap();
+        let mut scene = VisualScene::demo();
+        scene.choices = vec![SceneAction {
+            label: "Open scene docs".to_string(),
+            kind: SceneActionKind::OpenFile {
+                path: "docs/scene.md".to_string(),
+            },
+        }];
+        let mut runtime = SceneRuntime::new_with_source_and_action_base_dir(
+            scene,
+            VisualSceneSource::new("/tmp/default.json", VisualSceneLoadStatus::Loaded, 1),
+            dir.path(),
+        )
+        .unwrap();
+
+        runtime.activate_choice();
+        let snapshot = runtime.render_snapshot();
+
+        assert!(snapshot.status.starts_with("OpenFile ready: "));
+        assert!(snapshot.status.contains("docs/scene.md"));
+    }
+
+    #[test]
+    fn open_file_action_reports_missing_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut scene = VisualScene::demo();
+        scene.choices = vec![SceneAction {
+            label: "Open missing docs".to_string(),
+            kind: SceneActionKind::OpenFile {
+                path: "missing.md".to_string(),
+            },
+        }];
+        let mut runtime = SceneRuntime::new_with_source_and_action_base_dir(
+            scene,
+            VisualSceneSource::new("/tmp/default.json", VisualSceneLoadStatus::Loaded, 1),
+            dir.path(),
+        )
+        .unwrap();
+
+        runtime.activate_choice();
+        let snapshot = runtime.render_snapshot();
+
+        assert!(snapshot.status.starts_with("OpenFile missing: "));
+        assert!(snapshot.status.contains("missing.md"));
+    }
+
+    #[test]
+    fn open_file_action_reports_directory_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut scene = VisualScene::demo();
+        scene.choices = vec![SceneAction {
+            label: "Open directory".to_string(),
+            kind: SceneActionKind::OpenFile {
+                path: ".".to_string(),
+            },
+        }];
+        let mut runtime = SceneRuntime::new_with_source_and_action_base_dir(
+            scene,
+            VisualSceneSource::new("/tmp/default.json", VisualSceneLoadStatus::Loaded, 1),
+            dir.path(),
+        )
+        .unwrap();
+
+        runtime.activate_choice();
+        let snapshot = runtime.render_snapshot();
+
+        assert!(snapshot
+            .status
+            .starts_with("OpenFile target is not a file: "));
+    }
+
+    #[test]
     fn reload_failure_updates_source_status_and_preserves_scene() {
         let mut runtime = SceneRuntime::new_with_source(
             VisualScene::demo(),
@@ -1133,11 +1240,13 @@ mod tests {
         let source = VisualSceneSource::new("/tmp/default.json", VisualSceneLoadStatus::Loaded, 3);
         let mut runtime = SceneRuntime::new_with_source(VisualScene::demo(), source).unwrap();
         runtime.toggle_debugger();
+        runtime.activate_choice();
         let frame = runtime.render_text_frame(80, 24);
 
         assert!(frame.contains("Scene path: /tmp/default.json"));
         assert!(frame.contains("Load status: loaded"));
         assert!(frame.contains("Reload counter: 3"));
+        assert!(frame.contains("Action status: Inspecting GameTerm"));
     }
 
     #[test]

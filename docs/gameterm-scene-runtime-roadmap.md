@@ -35,16 +35,13 @@ Implemented reload behavior:
 2. Use the bundled default scene when no default scene file exists.
 3. Add a manual reload action from inside Scene Mode so authors can update
    `default.json`, return to GameTerm, and refresh without closing the window.
-
-Remaining reload behavior:
-
-1. Keep the previous valid scene visible if a reload fails. The error should be
+4. Keep the previous valid scene visible if a reload fails. The error should be
    surfaced in Scene Mode and the Tile Debugger status instead of replacing the
    scene with a blank or partial state.
-2. Use the bundled default scene only when no default scene file exists at load
+5. Use the bundled default scene only when no default scene file exists at load
    time. If a previously valid default scene later fails to parse, keep the
    previous scene and report the failed reload.
-3. Reset selection only when the reloaded scene no longer contains the selected
+6. Reset selection only when the reloaded scene no longer contains the selected
    entity id. If the id still exists, preserve selection and update the
    inspection panel from the new entity data.
 
@@ -94,16 +91,19 @@ entity details without leaving the scene.
 
 ### OpenFile
 
-Future `OpenFile` behavior:
+Implemented `OpenFile` behavior:
 
 1. Resolve relative paths against the current workspace or process working
    directory used by GameTerm, not against the JSON file path unless a separate
    `base` field is introduced.
 2. Normalize and display the resolved path in the Tile Debugger action status.
-3. Open the file through the existing terminal/application file-opening path
-   once that runtime hook exists.
-4. Report missing files as an action error in Scene Mode without closing the
+3. Report missing files as an action error in Scene Mode without closing the
    scene.
+
+Remaining `OpenFile` behavior:
+
+1. Open the file through the existing terminal/application file-opening path
+   once that runtime hook exists.
 
 `OpenFile` should not execute shell commands. It is a document/navigation
 action, even when the target file extension is executable.
