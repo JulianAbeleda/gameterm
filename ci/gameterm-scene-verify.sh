@@ -111,6 +111,7 @@ run_fixture_setup_check() {
 run_static_checks() {
   for script in \
     "${repo_root}/ci/gameterm-scene-author.sh" \
+    "${repo_root}/ci/gameterm-scene-doctor.sh" \
     "${repo_root}/ci/gameterm-scene-init.sh" \
     "${repo_root}/ci/gameterm-scene-smoke.sh" \
     "${repo_root}/ci/gameterm-scene-verify.sh"
@@ -188,6 +189,16 @@ run_author_helper_check() {
     --run-argv '["true"]' \
     "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
   "${repo_root}/ci/gameterm-scene-author.sh" \
+    update-choice \
+    --choice-index 1 \
+    --label "Open docs" \
+    --open-file docs/gameterm-scene-mode.md \
+    "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
+  "${repo_root}/ci/gameterm-scene-author.sh" \
+    remove-choice \
+    --choice-index 1 \
+    "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
+  "${repo_root}/ci/gameterm-scene-author.sh" \
     move-entity \
     --id author-task \
     --x 2 \
@@ -222,6 +233,37 @@ run_author_helper_check() {
   echo "author helper: ok"
 }
 
+run_doctor_check() {
+  "${repo_root}/ci/gameterm-scene-doctor.sh" \
+    --scene "${fixture_root}/default.json" \
+    --sprites "${fixture_root}/sprites.json" \
+    >/tmp/gameterm-scene-doctor-verify-ok.out
+  grep -q "Doctor summary: 0 error(s), 0 warning(s)" \
+    /tmp/gameterm-scene-doctor-verify-ok.out
+
+  "${repo_root}/ci/gameterm-scene-doctor.sh" \
+    --scene "${fixture_root}/default.json" \
+    --sprites "${fixture_root}/sprites-missing.json" \
+    >/tmp/gameterm-scene-doctor-verify-warn.out
+  grep -q "WARN: sprite asset missing" \
+    /tmp/gameterm-scene-doctor-verify-warn.out
+
+  set +e
+  "${repo_root}/ci/gameterm-scene-doctor.sh" \
+    --scene "${fixture_root}/default.json" \
+    --sprites "${fixture_root}/sprites-missing.json" \
+    --strict \
+    >/tmp/gameterm-scene-doctor-verify-strict.out
+  strict_rc=$?
+  set -e
+  if [[ "${strict_rc}" -eq 0 ]]; then
+    echo "expected doctor --strict to fail on warning fixture" >&2
+    exit 1
+  fi
+
+  echo "doctor: ok"
+}
+
 run_cargo_checks() {
   cargo test -p gameterm-visual scene_fixture
   cargo test -p gameterm-visual open_file
@@ -234,6 +276,7 @@ run_all() {
   run_static_checks
   run_init_helper_check
   run_author_helper_check
+  run_doctor_check
   for fixture in basic navigate invalid sprites missing-sprite; do
     run_fixture_setup_check "${fixture}"
   done

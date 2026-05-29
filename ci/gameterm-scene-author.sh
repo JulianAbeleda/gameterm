@@ -12,6 +12,8 @@ Commands:
   new-scene PATH                Create a minimal editable scene file.
   add-entity PATH               Add an entity to a scene file.
   add-choice PATH               Add a choice to a scene file.
+  remove-choice PATH            Remove a choice by zero-based index.
+  update-choice PATH            Replace a choice by zero-based index.
   remove-entity PATH            Remove an entity by id.
   move-entity PATH              Move an entity by id.
   set-dialogue PATH             Set dialogue speaker and text.
@@ -51,6 +53,18 @@ Options for add-choice:
                                 '["cargo","check","-p","gameterm-visual"]'
   --cwd PATH                    Optional cwd for --run-argv.
 
+Options for remove-choice:
+  --choice-index N
+
+Options for update-choice:
+  --choice-index N
+  --label TEXT
+  --inspect
+  --open-file PATH
+  --navigate TARGET
+  --run-argv JSON_ARRAY
+  --cwd PATH
+
 Fixtures:
   basic, navigate, invalid, sprites, missing-sprite
 EOF
@@ -84,6 +98,7 @@ choice_label=""
 choice_kind=""
 choice_payload=""
 choice_cwd=""
+choice_index=""
 flags=()
 metadata=()
 
@@ -174,6 +189,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --cwd)
       choice_cwd="$2"
+      shift 2
+      ;;
+    --choice-index)
+      choice_index="$2"
       shift 2
       ;;
     -h|--help)
@@ -343,6 +362,86 @@ add_choice() {
   echo "Added choice ${choice_label} to ${target}"
 }
 
+choice_json_filter() {
+  case "${choice_kind}" in
+    Inspect)
+      printf '{ label: $label, kind: "Inspect" }'
+      ;;
+    OpenFile)
+      require_value "--open-file" "${choice_payload}"
+      printf '{ label: $label, kind: { OpenFile: { path: $payload } } }'
+      ;;
+    Navigate)
+      require_value "--navigate" "${choice_payload}"
+      printf '{ label: $label, kind: { Navigate: { target: $payload } } }'
+      ;;
+    RunCommand)
+      require_value "--run-argv" "${choice_payload}"
+      if [[ -n "${choice_cwd}" ]]; then
+        printf '{ label: $label, kind: { RunCommand: { argv: $argv, cwd: $cwd } } }'
+      else
+        printf '{ label: $label, kind: { RunCommand: { argv: $argv } } }'
+      fi
+      ;;
+    *)
+      require_value "choice action" "${choice_kind}"
+      ;;
+  esac
+}
+
+remove_choice() {
+  local target="$1"
+  require_value "--choice-index" "${choice_index}"
+
+  jq --argjson index "${choice_index}" '
+    if (.choices | has($index)) then
+      .choices |= del(.[$index])
+    else
+      error("choice index not found: " + ($index | tostring))
+    end
+  ' "${target}" | write_json "${target}"
+  validate_scene_file "${target}" >/dev/null
+  echo "Removed choice ${choice_index} from ${target}"
+}
+
+update_choice() {
+  local target="$1"
+  require_value "--choice-index" "${choice_index}"
+  require_value "--label" "${choice_label}"
+  require_value "choice action" "${choice_kind}"
+
+  local filter
+  filter="$(choice_json_filter)"
+
+  if [[ "${choice_kind}" == "RunCommand" ]]; then
+    if [[ -n "${choice_cwd}" ]]; then
+      jq --argjson index "${choice_index}" \
+        --arg label "${choice_label}" \
+        --argjson argv "${choice_payload}" \
+        --arg cwd "${choice_cwd}" \
+        --arg payload "${choice_payload}" \
+        "if (.choices | has(\$index)) then .choices[\$index] = ${filter} else error(\"choice index not found: \" + (\$index | tostring)) end" \
+        "${target}" | write_json "${target}"
+    else
+      jq --argjson index "${choice_index}" \
+        --arg label "${choice_label}" \
+        --argjson argv "${choice_payload}" \
+        --arg payload "${choice_payload}" \
+        "if (.choices | has(\$index)) then .choices[\$index] = ${filter} else error(\"choice index not found: \" + (\$index | tostring)) end" \
+        "${target}" | write_json "${target}"
+    fi
+  else
+    jq --argjson index "${choice_index}" \
+      --arg label "${choice_label}" \
+      --arg payload "${choice_payload}" \
+      "if (.choices | has(\$index)) then .choices[\$index] = ${filter} else error(\"choice index not found: \" + (\$index | tostring)) end" \
+      "${target}" | write_json "${target}"
+  fi
+
+  validate_scene_file "${target}" >/dev/null
+  echo "Updated choice ${choice_index} in ${target}"
+}
+
 remove_entity() {
   local target="$1"
   require_value "--id" "${entity_id}"
@@ -457,6 +556,20 @@ case "${command}" in
       exit 2
     fi
     add_choice "${positionals[0]}"
+    ;;
+  remove-choice)
+    if [[ "${#positionals[@]}" -ne 1 ]]; then
+      usage >&2
+      exit 2
+    fi
+    remove_choice "${positionals[0]}"
+    ;;
+  update-choice)
+    if [[ "${#positionals[@]}" -ne 1 ]]; then
+      usage >&2
+      exit 2
+    fi
+    update_choice "${positionals[0]}"
     ;;
   remove-entity)
     if [[ "${#positionals[@]}" -ne 1 ]]; then
