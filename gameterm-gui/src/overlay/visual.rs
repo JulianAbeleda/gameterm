@@ -199,7 +199,6 @@ fn load_sprite_manifest_status(path: &PathBuf) -> VisualSpriteManifestStatus {
 }
 
 fn bundled_sprite_manifest_status(user_path: &PathBuf) -> VisualSpriteManifestStatus {
-    let sprite_path = bundled_sprite_asset_path();
     let mut warnings = Vec::new();
     let sprite_ids = match bundled_scene_sprite_ids() {
         Ok(ids) => ids,
@@ -210,41 +209,71 @@ fn bundled_sprite_manifest_status(user_path: &PathBuf) -> VisualSpriteManifestSt
             Vec::new()
         }
     };
-    if let Err(err) = std::fs::metadata(&sprite_path) {
-        warnings.push(format!(
-            "bundled sprite asset could not read {}: {}",
-            sprite_path.display(),
-            err
-        ));
-    }
+    let sprites = sprite_ids
+        .into_iter()
+        .map(|id| {
+            let sprite_path = bundled_sprite_asset_path(&id);
+            if let Err(err) = std::fs::metadata(&sprite_path) {
+                warnings.push(format!(
+                    "bundled sprite asset `{}` could not read {}: {}",
+                    id,
+                    sprite_path.display(),
+                    err
+                ));
+            }
+            VisualResolvedSprite {
+                id,
+                path: sprite_path.display().to_string(),
+            }
+        })
+        .collect();
 
     VisualSpriteManifestStatus {
         manifest_path: Some(format!(
             "bundled defaults because {} was not found",
             user_path.display()
         )),
-        sprites: sprite_ids
-            .into_iter()
-            .map(|id| VisualResolvedSprite {
-                id,
-                path: sprite_path.display().to_string(),
-            })
-            .collect(),
+        sprites,
         warnings,
     }
 }
 
-fn bundled_sprite_asset_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .map(|root| root.join("assets").join("icon").join("terminal.png"))
-        .unwrap_or_else(|| PathBuf::from("assets/icon/terminal.png"))
+fn bundled_sprite_asset_path(sprite_id: &str) -> PathBuf {
+    let file_name = match sprite_id {
+        "workspace-map" => "workspace-map.png",
+        "project_core" => "project-core.png",
+        "task_tile" => "task-tile.png",
+        "agent_idle" => "agent-idle.png",
+        _ => "terminal.png",
+    };
+    let asset_dir = if file_name == "terminal.png" {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .map(|root| root.join("assets").join("icon"))
+    } else {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .map(|root| root.join("assets").join("gameterm-scene"))
+    };
+
+    asset_dir.map(|dir| dir.join(file_name)).unwrap_or_else(|| {
+        if file_name == "terminal.png" {
+            PathBuf::from("assets").join("icon").join(file_name)
+        } else {
+            PathBuf::from("assets")
+                .join("gameterm-scene")
+                .join(file_name)
+        }
+    })
 }
 
 fn bundled_scene_sprite_ids() -> anyhow::Result<Vec<String>> {
     let scene = VisualScene::from_json(BUNDLED_SCENE_JSON).context("parse bundled scene")?;
     let mut seen = HashSet::new();
     let mut ids = Vec::new();
+    if seen.insert(scene.background.clone()) {
+        ids.push(scene.background);
+    }
     for entity in scene.entities {
         if seen.insert(entity.sprite.clone()) {
             ids.push(entity.sprite);
@@ -306,20 +335,29 @@ mod tests {
     fn bundled_sprite_ids_are_derived_from_bundled_scene() {
         let scene = VisualScene::from_json(BUNDLED_SCENE_JSON).unwrap();
         let mut seen = HashSet::new();
-        let expected: Vec<_> = scene
-            .entities
-            .into_iter()
-            .filter_map(|entity| {
-                if seen.insert(entity.sprite.clone()) {
-                    Some(entity.sprite)
-                } else {
-                    None
-                }
-            })
-            .collect();
+        let mut expected = Vec::new();
+        if seen.insert(scene.background.clone()) {
+            expected.push(scene.background);
+        }
+        expected.extend(scene.entities.into_iter().filter_map(|entity| {
+            if seen.insert(entity.sprite.clone()) {
+                Some(entity.sprite)
+            } else {
+                None
+            }
+        }));
         let actual = bundled_scene_sprite_ids().unwrap();
 
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn bundled_sprite_assets_are_id_specific() {
+        assert!(bundled_sprite_asset_path("workspace-map").ends_with("workspace-map.png"));
+        assert!(bundled_sprite_asset_path("project_core").ends_with("project-core.png"));
+        assert!(bundled_sprite_asset_path("task_tile").ends_with("task-tile.png"));
+        assert!(bundled_sprite_asset_path("agent_idle").ends_with("agent-idle.png"));
+        assert!(bundled_sprite_asset_path("other").ends_with("terminal.png"));
     }
 
     #[test]

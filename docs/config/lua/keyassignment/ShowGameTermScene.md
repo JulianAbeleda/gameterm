@@ -18,8 +18,8 @@ file maps scene sprite ids to image files:
 ```json
 {
   "sprites": [
-    { "id": "project_core", "path": "sprites/project_core.png" },
-    { "id": "agent_idle", "path": "sprites/agent_idle.png" }
+    { "id": "project_core", "path": "sprites/project-core.png" },
+    { "id": "agent_idle", "path": "sprites/agent-idle.png" }
   ]
 }
 ```

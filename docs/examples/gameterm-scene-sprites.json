@@ -1,20 +1,20 @@
 {
   "sprites": [
     {
-      "id": "debug_floor",
-      "path": "sprites/debug_floor.png"
+      "id": "workspace-map",
+      "path": "sprites/workspace-map.png"
     },
     {
       "id": "project_core",
-      "path": "sprites/project_core.png"
+      "path": "sprites/project-core.png"
     },
     {
       "id": "agent_idle",
-      "path": "sprites/agent_idle.png"
+      "path": "sprites/agent-idle.png"
     },
     {
       "id": "task_tile",
-      "path": "sprites/task_tile.png"
+      "path": "sprites/task-tile.png"
     },
     {
       "id": "memory_note",
