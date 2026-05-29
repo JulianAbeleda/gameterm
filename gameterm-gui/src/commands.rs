@@ -798,6 +798,14 @@ pub fn derive_command_from_key_assignment(action: &KeyAssignment) -> Option<Comm
             menubar: &["Help"],
             icon: Some("cod_debug"),
         },
+        ShowGameTermScene => CommandDef {
+            brief: "Show GameTerm Scene".into(),
+            doc: "Activates the GameTerm visual scene mode and tile debugger".into(),
+            keys: vec![(Modifiers::CTRL.union(Modifiers::SHIFT), "g".into())],
+            args: &[ArgType::ActiveWindow],
+            menubar: &["View"],
+            icon: Some("cod_symbol_color"),
+        },
         InputSelector(_) => CommandDef {
             brief: "Prompt the user to choose from a list".into(),
             doc: "Activates the selector overlay and wait for input".into(),
@@ -2063,6 +2071,7 @@ fn compute_default_actions() -> Vec<KeyAssignment> {
         ScrollByPage(NotNan::new(1.0).unwrap()),
         ScrollToTop,
         ScrollToBottom,
+        ShowGameTermScene,
         // ----------------- Window
         ToggleFullScreen,
         ToggleAlwaysOnTop,

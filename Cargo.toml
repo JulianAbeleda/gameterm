@@ -16,6 +16,7 @@ members = [
   "gameterm-ssh",
   "gameterm-surface",
   "gameterm-uds",
+  "gameterm-visual",
 ]
 resolver = "2"
 exclude = [
@@ -260,6 +261,7 @@ gameterm-term = { path = "term" }
 gameterm-toast-notification = { path = "gameterm-toast-notification" }
 gameterm-uds = { path = "gameterm-uds" }
 gameterm-version = { path = "gameterm-version" }
+gameterm-visual = { path = "gameterm-visual" }
 wgpu = "25.0.2"
 whoami = "1.5"
 winapi = "0.3.9"

@@ -103,6 +103,7 @@ gameterm-open-url.workspace = true
 gameterm-ssh.workspace = true
 gameterm-term.workspace = true
 gameterm-toast-notification.workspace = true
+gameterm-visual.workspace = true
 wgpu.workspace = true
 window-funcs.workspace = true
 window.workspace = true

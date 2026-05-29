@@ -2276,6 +2276,7 @@ dependencies = [
  "gameterm-ssh",
  "gameterm-term",
  "gameterm-toast-notification",
+ "gameterm-visual",
  "hdrhistogram",
  "http_req",
  "image",
@@ -2529,6 +2530,16 @@ name = "gameterm-version"
 version = "0.1.0"
 dependencies = [
  "git2",
+]
+
+[[package]]
+name = "gameterm-visual"
+version = "0.1.0"
+dependencies = [
+ "k9",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
 ]
 
 [[package]]

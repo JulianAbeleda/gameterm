@@ -2777,6 +2777,17 @@ impl TermWindow {
             ScrollToBottom => self.scroll_to_bottom(pane),
             ShowTabNavigator => self.show_tab_navigator(),
             ShowDebugOverlay => self.show_debug_overlay(),
+            ShowGameTermScene => {
+                let tab = match Mux::get().get_active_tab_for_window(self.mux_window_id) {
+                    Some(tab) => tab,
+                    None => anyhow::bail!("no active tab!?"),
+                };
+                let (overlay, future) = start_overlay(self, &tab, move |_tab_id, term| {
+                    crate::overlay::show_visual_scene_overlay(term)
+                });
+                self.assign_overlay(tab.tab_id(), overlay);
+                promise::spawn::spawn(future).detach();
+            }
             ShowLauncher => self.show_launcher(),
             ShowLauncherArgs(args) => {
                 let title = args.title.clone().unwrap_or("Launcher".to_string());
