@@ -50,7 +50,7 @@ Reload status should distinguish these cases:
 - `bundled`: no default scene file exists, so the bundled default scene is
   active.
 - `loaded`: the default scene file loaded successfully.
-- `reload failed`: the default scene file exists but the latest reload failed;
+- `reload_failed`: the default scene file exists but the latest reload failed;
   the previous valid scene remains active.
 - `invalid`: the scene file failed during initial load and there is no previous
   valid scene to keep.
