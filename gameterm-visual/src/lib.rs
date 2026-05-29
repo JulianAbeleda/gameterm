@@ -127,6 +127,7 @@ pub struct VisualRenderEntity {
 pub struct VisualRenderSnapshot {
     pub generation: u64,
     pub view: VisualView,
+    pub scene_source: VisualSceneSource,
     pub title: String,
     pub background: String,
     pub width: usize,
@@ -139,6 +140,66 @@ pub struct VisualRenderSnapshot {
     pub dialogue: String,
     pub status: String,
     pub choices: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum VisualSceneLoadStatus {
+    Bundled,
+    Loaded,
+    ReloadFailed,
+    Invalid,
+}
+
+impl VisualSceneLoadStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Bundled => "bundled",
+            Self::Loaded => "loaded",
+            Self::ReloadFailed => "reload_failed",
+            Self::Invalid => "invalid",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VisualSceneSource {
+    pub scene_path: String,
+    pub load_status: VisualSceneLoadStatus,
+    pub reload_count: u64,
+    pub last_error: Option<String>,
+}
+
+impl VisualSceneSource {
+    pub fn new(
+        scene_path: impl Into<String>,
+        load_status: VisualSceneLoadStatus,
+        reload_count: u64,
+    ) -> Self {
+        Self {
+            scene_path: scene_path.into(),
+            load_status,
+            reload_count,
+            last_error: None,
+        }
+    }
+
+    pub fn invalid(scene_path: impl Into<String>, reload_count: u64, error: String) -> Self {
+        Self {
+            scene_path: scene_path.into(),
+            load_status: VisualSceneLoadStatus::Invalid,
+            reload_count,
+            last_error: Some(error),
+        }
+    }
+
+    pub fn reload_failed(&self, reload_count: u64, error: String) -> Self {
+        Self {
+            scene_path: self.scene_path.clone(),
+            load_status: VisualSceneLoadStatus::ReloadFailed,
+            reload_count,
+            last_error: Some(error),
+        }
+    }
 }
 
 pub fn visible_tiles_for_row(
@@ -410,6 +471,7 @@ pub enum VisualView {
 #[derive(Debug, Clone)]
 pub struct SceneRuntime {
     scene: VisualScene,
+    scene_source: VisualSceneSource,
     selected_entity: usize,
     selected_choice: usize,
     view: VisualView,
@@ -419,9 +481,20 @@ pub struct SceneRuntime {
 
 impl SceneRuntime {
     pub fn new(scene: VisualScene) -> Result<Self, VisualSceneError> {
+        Self::new_with_source(
+            scene,
+            VisualSceneSource::new("runtime scene", VisualSceneLoadStatus::Loaded, 0),
+        )
+    }
+
+    pub fn new_with_source(
+        scene: VisualScene,
+        scene_source: VisualSceneSource,
+    ) -> Result<Self, VisualSceneError> {
         scene.validate()?;
         Ok(Self {
             scene,
+            scene_source,
             selected_entity: 0,
             selected_choice: 0,
             view: VisualView::Scene,
@@ -436,6 +509,47 @@ impl SceneRuntime {
 
     pub fn view(&self) -> VisualView {
         self.view
+    }
+
+    pub fn scene_source(&self) -> &VisualSceneSource {
+        &self.scene_source
+    }
+
+    pub fn mark_reload_failed(&mut self, reload_count: u64, error: String) {
+        self.scene_source = self.scene_source.reload_failed(reload_count, error.clone());
+        self.status = format!("Reload failed: {error}");
+        self.bump_generation();
+    }
+
+    pub fn replace_scene_preserving_state(
+        &mut self,
+        scene: VisualScene,
+        scene_source: VisualSceneSource,
+    ) -> Result<(), VisualSceneError> {
+        scene.validate()?;
+        let selected_entity_id = self.selected_entity().map(|entity| entity.id.clone());
+        self.scene = scene;
+        self.scene_source = scene_source;
+        self.status = "Ready".to_string();
+
+        self.selected_entity = selected_entity_id
+            .and_then(|id| {
+                self.scene
+                    .entities
+                    .iter()
+                    .position(|entity| entity.id == id)
+            })
+            .unwrap_or(0);
+        if self.scene.entities.is_empty() {
+            self.selected_entity = 0;
+        }
+        if self.scene.choices.is_empty() {
+            self.selected_choice = 0;
+        } else if self.selected_choice >= self.scene.choices.len() {
+            self.selected_choice = self.scene.choices.len() - 1;
+        }
+        self.bump_generation();
+        Ok(())
     }
 
     pub fn toggle_debugger(&mut self) {
@@ -519,6 +633,7 @@ impl SceneRuntime {
         VisualRenderSnapshot {
             generation: self.generation,
             view: self.view,
+            scene_source: self.scene_source.clone(),
             title: self.scene.title.clone(),
             background: self.scene.background.clone(),
             width: self.scene.width,
@@ -579,6 +694,11 @@ impl SceneRuntime {
         let mut out = String::new();
         out.push_str(&format!("{}\r\n", self.scene.title));
         out.push_str("Scene Mode  [arrows/hjkl: select] [enter: action] [tab: debugger] [r: reload] [esc/q: close]\r\n\r\n");
+        if self.scene_source.load_status == VisualSceneLoadStatus::ReloadFailed {
+            if let Some(error) = &self.scene_source.last_error {
+                out.push_str(&format!("Reload failed: {error}\r\n\r\n"));
+            }
+        }
 
         let mut grid = vec![vec!['.'; self.scene.width]; self.scene.height];
         for (idx, entity) in self.scene.entities.iter().enumerate() {
@@ -638,6 +758,16 @@ impl SceneRuntime {
         let mut out = String::new();
         out.push_str("GameTerm Tile Debugger\r\n");
         out.push_str("[tab: scene] [arrows/hjkl: select entity] [esc/q: close]\r\n\r\n");
+        out.push_str(&format!(
+            "Scene path: {}\r\nLoad status: {}\r\nReload counter: {}\r\n",
+            self.scene_source.scene_path,
+            self.scene_source.load_status.as_str(),
+            self.scene_source.reload_count
+        ));
+        if let Some(error) = &self.scene_source.last_error {
+            out.push_str(&format!("Error: {error}\r\n"));
+        }
+        out.push_str("\r\n");
         out.push_str(&format!(
             "scene={} background={} size={}x{}\r\n\r\n",
             self.scene.title, self.scene.background, self.scene.width, self.scene.height
@@ -731,6 +861,7 @@ mod tests {
         VisualRenderSnapshot {
             generation: 7,
             view: VisualView::Scene,
+            scene_source: VisualSceneSource::new("fixture", VisualSceneLoadStatus::Loaded, 1),
             title: "Filter Fixture".to_string(),
             background: "floor".to_string(),
             width: 4,
@@ -877,6 +1008,87 @@ mod tests {
     }
 
     #[test]
+    fn runtime_snapshot_includes_scene_source_status() {
+        let source = VisualSceneSource::new("bundled default", VisualSceneLoadStatus::Bundled, 1);
+        let runtime = SceneRuntime::new_with_source(VisualScene::demo(), source.clone()).unwrap();
+        let snapshot = runtime.render_snapshot();
+
+        assert_eq!(snapshot.scene_source, source);
+    }
+
+    #[test]
+    fn reload_failure_updates_source_status_and_preserves_scene() {
+        let mut runtime = SceneRuntime::new_with_source(
+            VisualScene::demo(),
+            VisualSceneSource::new("/tmp/default.json", VisualSceneLoadStatus::Loaded, 1),
+        )
+        .unwrap();
+        let selected_before = runtime.render_snapshot().selected_entity_id;
+
+        runtime.mark_reload_failed(2, "bad scene json".to_string());
+        let snapshot = runtime.render_snapshot();
+
+        assert_eq!(snapshot.selected_entity_id, selected_before);
+        assert_eq!(
+            snapshot.scene_source.load_status,
+            VisualSceneLoadStatus::ReloadFailed
+        );
+        assert_eq!(snapshot.scene_source.reload_count, 2);
+        assert_eq!(
+            snapshot.scene_source.last_error.as_deref(),
+            Some("bad scene json")
+        );
+        assert!(snapshot.status.contains("Reload failed"));
+    }
+
+    #[test]
+    fn reload_success_preserves_selected_entity_id() {
+        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        runtime.select_next_entity();
+        assert_eq!(
+            runtime.render_snapshot().selected_entity_id.as_deref(),
+            Some("task-render")
+        );
+
+        let mut reloaded = VisualScene::demo();
+        reloaded.entities.swap(0, 1);
+        runtime
+            .replace_scene_preserving_state(
+                reloaded,
+                VisualSceneSource::new("/tmp/default.json", VisualSceneLoadStatus::Loaded, 2),
+            )
+            .unwrap();
+
+        assert_eq!(
+            runtime.render_snapshot().selected_entity_id.as_deref(),
+            Some("task-render")
+        );
+        assert_eq!(runtime.render_snapshot().scene_source.reload_count, 2);
+    }
+
+    #[test]
+    fn reload_success_resets_missing_selected_entity() {
+        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        runtime.select_next_entity();
+
+        let mut reloaded = VisualScene::demo();
+        reloaded
+            .entities
+            .retain(|entity| entity.id != "task-render");
+        runtime
+            .replace_scene_preserving_state(
+                reloaded,
+                VisualSceneSource::new("/tmp/default.json", VisualSceneLoadStatus::Loaded, 2),
+            )
+            .unwrap();
+
+        assert_eq!(
+            runtime.render_snapshot().selected_entity_id.as_deref(),
+            Some("project-gameterm")
+        );
+    }
+
+    #[test]
     fn mode_close_input_exits() {
         let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
         let initial_generation = runtime.generation();
@@ -914,6 +1126,18 @@ mod tests {
         let runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
         let frame = runtime.render_text_frame(80, 24);
         assert!(frame.contains("Selected: GameTerm"));
+    }
+
+    #[test]
+    fn debugger_frame_contains_scene_source_status() {
+        let source = VisualSceneSource::new("/tmp/default.json", VisualSceneLoadStatus::Loaded, 3);
+        let mut runtime = SceneRuntime::new_with_source(VisualScene::demo(), source).unwrap();
+        runtime.toggle_debugger();
+        let frame = runtime.render_text_frame(80, 24);
+
+        assert!(frame.contains("Scene path: /tmp/default.json"));
+        assert!(frame.contains("Load status: loaded"));
+        assert!(frame.contains("Reload counter: 3"));
     }
 
     #[test]

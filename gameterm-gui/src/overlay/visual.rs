@@ -3,7 +3,8 @@ use gameterm_dynamic::Value;
 use gameterm_term::color::ColorAttribute;
 use gameterm_visual::{
     truncate_to_screen, SceneRuntime, VisualInput, VisualMode, VisualModeOutcome,
-    VisualResolvedSprite, VisualScene, VisualSpriteManifest, VisualSpriteManifestStatus,
+    VisualResolvedSprite, VisualScene, VisualSceneLoadStatus, VisualSceneSource,
+    VisualSpriteManifest, VisualSpriteManifestStatus,
 };
 use mux::termwiztermtab::TermWizTerminal;
 use std::collections::HashSet;
@@ -22,8 +23,9 @@ pub fn show_visual_scene_overlay(mut term: TermWizTerminal) -> anyhow::Result<()
     let mut sprite_manifest;
     let mut load_error;
     let mut runtime;
+    let mut reload_count = 1;
     (runtime, sprite_manifest, load_error) =
-        reload_scene_state(&mut term, &scene_path, &sprite_manifest_path)?;
+        initial_scene_state(&mut term, &scene_path, &sprite_manifest_path, reload_count)?;
 
     while let Some(input) = term.poll_input(None)? {
         match input {
@@ -33,8 +35,36 @@ pub fn show_visual_scene_overlay(mut term: TermWizTerminal) -> anyhow::Result<()
                     break;
                 }
                 if visual_input == VisualInput::Reload {
-                    (runtime, sprite_manifest, load_error) =
-                        reload_scene_state(&mut term, &scene_path, &sprite_manifest_path)?;
+                    reload_count = reload_count.saturating_add(1);
+                    sprite_manifest = load_sprite_manifest_status(&sprite_manifest_path);
+                    match load_scene(&scene_path, reload_count) {
+                        Ok((scene, source)) => {
+                            if let Some(runtime) = runtime.as_mut() {
+                                runtime.replace_scene_preserving_state(scene, source)?;
+                                render_runtime(&mut term, runtime, &sprite_manifest)?;
+                            } else {
+                                let loaded = SceneRuntime::new_with_source(scene, source)?;
+                                render_runtime(&mut term, &loaded, &sprite_manifest)?;
+                                runtime = Some(loaded);
+                            }
+                            load_error = None;
+                        }
+                        Err(err) => {
+                            let error = err.to_string();
+                            if let Some(runtime) = runtime.as_mut() {
+                                runtime.mark_reload_failed(reload_count, error);
+                                render_runtime(&mut term, runtime, &sprite_manifest)?;
+                            } else {
+                                let source = VisualSceneSource::invalid(
+                                    scene_path.display().to_string(),
+                                    reload_count,
+                                    error.clone(),
+                                );
+                                render_error(&mut term, &source)?;
+                                load_error = Some(error);
+                            }
+                        }
+                    }
                     continue;
                 }
                 if let Some(runtime) = runtime.as_mut() {
@@ -51,7 +81,12 @@ pub fn show_visual_scene_overlay(mut term: TermWizTerminal) -> anyhow::Result<()
                     let error = load_error
                         .as_deref()
                         .unwrap_or("scene failed to load for an unknown reason");
-                    render_error(&mut term, &scene_path, error)?;
+                    let source = VisualSceneSource::invalid(
+                        scene_path.display().to_string(),
+                        reload_count,
+                        error.to_string(),
+                    );
+                    render_error(&mut term, &source)?;
                 }
             }
             _ => {}
@@ -61,24 +96,31 @@ pub fn show_visual_scene_overlay(mut term: TermWizTerminal) -> anyhow::Result<()
     Ok(())
 }
 
-fn reload_scene_state(
+fn initial_scene_state(
     term: &mut TermWizTerminal,
     scene_path: &PathBuf,
     sprite_manifest_path: &PathBuf,
+    reload_count: u64,
 ) -> anyhow::Result<(
     Option<SceneRuntime>,
     VisualSpriteManifestStatus,
     Option<String>,
 )> {
     let sprite_manifest = load_sprite_manifest_status(sprite_manifest_path);
-    match load_scene_runtime(scene_path) {
-        Ok(runtime) => {
+    match load_scene(scene_path, reload_count) {
+        Ok((scene, source)) => {
+            let runtime = SceneRuntime::new_with_source(scene, source)?;
             render_runtime(term, &runtime, &sprite_manifest)?;
             Ok((Some(runtime), sprite_manifest, None))
         }
         Err(err) => {
             let error = err.to_string();
-            render_error(term, scene_path, &error)?;
+            let source = VisualSceneSource::invalid(
+                scene_path.display().to_string(),
+                reload_count,
+                error.clone(),
+            );
+            render_error(term, &source)?;
             Ok((None, sprite_manifest, Some(error)))
         }
     }
@@ -86,13 +128,32 @@ fn reload_scene_state(
 
 const BUNDLED_SCENE_JSON: &str = include_str!("../../../docs/examples/gameterm-scene-default.json");
 
-fn load_scene_runtime(scene_path: &PathBuf) -> anyhow::Result<SceneRuntime> {
-    let scene = if scene_path.exists() {
-        VisualScene::load_from_path(scene_path)?
+fn load_scene(
+    scene_path: &PathBuf,
+    reload_count: u64,
+) -> anyhow::Result<(VisualScene, VisualSceneSource)> {
+    if scene_path.exists() {
+        let scene = VisualScene::load_from_path(scene_path)?;
+        Ok((
+            scene,
+            VisualSceneSource::new(
+                scene_path.display().to_string(),
+                VisualSceneLoadStatus::Loaded,
+                reload_count,
+            ),
+        ))
     } else {
-        VisualScene::from_json(BUNDLED_SCENE_JSON).context("load bundled Scene Mode default")?
-    };
-    Ok(SceneRuntime::new(scene)?)
+        let scene = VisualScene::from_json(BUNDLED_SCENE_JSON)
+            .context("load bundled Scene Mode default")?;
+        Ok((
+            scene,
+            VisualSceneSource::new(
+                "bundled default",
+                VisualSceneLoadStatus::Bundled,
+                reload_count,
+            ),
+        ))
+    }
 }
 
 fn default_scene_path() -> PathBuf {
@@ -260,23 +321,51 @@ mod tests {
 
         assert_eq!(actual, expected);
     }
+
+    #[test]
+    fn missing_scene_uses_bundled_source_status() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("missing.json");
+        let (_scene, source) = load_scene(&path, 4).unwrap();
+
+        assert_eq!(source.scene_path, "bundled default");
+        assert_eq!(source.load_status, VisualSceneLoadStatus::Bundled);
+        assert_eq!(source.reload_count, 4);
+        assert_eq!(source.last_error, None);
+    }
+
+    #[test]
+    fn scene_file_uses_loaded_source_status() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("scene.json");
+        std::fs::write(&path, BUNDLED_SCENE_JSON).unwrap();
+        let (_scene, source) = load_scene(&path, 2).unwrap();
+
+        assert_eq!(source.scene_path, path.display().to_string());
+        assert_eq!(source.load_status, VisualSceneLoadStatus::Loaded);
+        assert_eq!(source.reload_count, 2);
+        assert_eq!(source.last_error, None);
+    }
 }
 
-fn render_error(
-    term: &mut TermWizTerminal,
-    scene_path: &PathBuf,
-    error: &str,
-) -> anyhow::Result<()> {
+fn render_error(term: &mut TermWizTerminal, source: &VisualSceneSource) -> anyhow::Result<()> {
     let size = term.get_screen_size()?;
     let frame = format!(
         "GameTerm Scene Mode\r\n\
          Scene file failed to load.\r\n\r\n\
          Path: {}\r\n\
+         Load status: {}\r\n\
+         Reload counter: {}\r\n\
          Error: {}\r\n\r\n\
          Fix the scene JSON, or remove the file to use the bundled default.\r\n\
          [r: reload] [esc/q: close]\r\n",
-        scene_path.display(),
-        error
+        source.scene_path,
+        source.load_status.as_str(),
+        source.reload_count,
+        source
+            .last_error
+            .as_deref()
+            .unwrap_or("scene failed to load for an unknown reason")
     );
     term.render(&[
         Change::ClearScreen(ColorAttribute::Default),
