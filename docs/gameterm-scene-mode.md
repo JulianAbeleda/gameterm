@@ -219,7 +219,9 @@ In-process GameTerm callers can also publish a local mux notification:
 `MuxNotification::GameTermScenePatch { patch_json, target_pane_id,
 source_pane_id }`. Active Scene Mode overlays register their pane id with the
 mux, and patch notifications are routed to the requested target pane or the
-currently active Scene Mode overlay.
+currently active Scene Mode overlay. Multiple Scene Mode overlays may exist;
+the most recently opened overlay is the active default target, and explicit
+`--target-pane-id` submission is the stable way to address an older overlay.
 
 The command-line submit path uses the mux protocol and returns the target Scene
 Mode pane id on success:
@@ -231,9 +233,11 @@ ci/gameterm-scene-patch.sh submit-mux \
   --patch ci/fixtures/gameterm-scene/patch-status.json
 ```
 
-If no Scene Mode overlay is active, submission fails as a transport error.
-Malformed JSON or unknown entity ids are runtime patch errors and are shown in
-Scene Mode status without mutating the active scene.
+If no Scene Mode overlay is active, or if an explicit target pane no longer
+exists, submission fails as a transport error. Malformed JSON or unknown entity
+ids are runtime patch errors and are shown in Scene Mode status without
+mutating the active scene. The Tile Debugger reports the last patch transport
+and source pane when that information is available.
 
 Use the helper to write the inbox atomically:
 
@@ -331,6 +335,15 @@ ci/gameterm-scene-smoke.sh --launch --fixture basic --patch-inbox auto
 
 After Scene Mode opens, write a patch with `ci/gameterm-scene-patch.sh
 write-inbox` using the inbox path printed by the smoke script.
+
+To live-audit mux submission, let the smoke script launch GameTerm, open Scene
+Mode before the wait timer expires, and have the script submit a patch before
+capture:
+
+```sh
+ci/gameterm-scene-smoke.sh --launch --fixture basic \
+  --submit-mux-patch ci/fixtures/gameterm-scene/patch-status.json
+```
 
 Use `--min-bytes N` to make capture output checks stricter for local visual
 regression runs.

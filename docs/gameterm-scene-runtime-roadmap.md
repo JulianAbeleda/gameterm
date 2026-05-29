@@ -268,8 +268,10 @@ Implemented transport behavior:
   protocol and prints the target Scene Mode pane id on success.
 - Accepted patches update the active runtime and bump visual generation.
 - Rejected patches update Scene Mode status without mutating scene state.
-- Missing active overlays fail as transport errors before runtime patch
-  validation.
+- Missing active overlays and missing explicit target panes fail as transport
+  errors before runtime patch validation.
+- Runtime status and the Tile Debugger record the last patch transport and
+  source pane when the submitter provides one.
 - The patch file is not copied into the scene JSON and is not treated as
   persistent storage.
 - Persistence is available only through the explicit `export-scene` helper,
@@ -277,9 +279,11 @@ Implemented transport behavior:
 
 Next transport step:
 
-1. Add a live smoke flow that opens Scene Mode and submits a mux patch through
-   `gameterm cli scene-patch`.
-2. Decide whether multiple simultaneous Scene Mode overlays should be allowed
-   long-term, or whether opening one should replace the previous active overlay.
+1. Run the live smoke flow regularly: open Scene Mode during
+   `ci/gameterm-scene-smoke.sh --launch --submit-mux-patch PATCH` and confirm
+   the captured scene reflects the submitted patch.
+2. Keep multiple simultaneous Scene Mode overlays allowed, with the most
+   recently opened overlay as the default active target and explicit pane ids
+   for older overlays.
 3. Keep `GAMETERM_SCENE_PATCH_FILE` as the portable fallback and smoke-test
    path.
