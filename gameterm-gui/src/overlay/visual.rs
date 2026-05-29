@@ -14,9 +14,10 @@ use mux::termwiztermtab::TermWizTerminal;
 use mux::Mux;
 use portable_pty::CommandBuilder;
 use std::collections::HashSet;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 use termwiz::input::{InputEvent, KeyCode, KeyEvent};
 use termwiz::surface::Change;
 use termwiz::terminal::Terminal;
@@ -35,6 +36,7 @@ pub fn show_visual_scene_overlay(mut term: TermWizTerminal) -> anyhow::Result<()
     let (command_tx, command_rx) = mpsc::channel();
     (runtime, sprite_manifest, load_error) =
         initial_scene_state(&mut term, &scene_path, &sprite_manifest_path, reload_count)?;
+    let mut file_watcher = SceneFileWatcher::from_env(&scene_path, &sprite_manifest_path);
 
     loop {
         let mut needs_render = false;
@@ -66,6 +68,18 @@ pub fn show_visual_scene_overlay(mut term: TermWizTerminal) -> anyhow::Result<()
         }
 
         let Some(input) = term.poll_input(Some(Duration::from_millis(100)))? else {
+            if file_watcher.changed(&scene_path, &sprite_manifest_path) {
+                reload_active_scene(
+                    &mut term,
+                    &scene_path,
+                    &sprite_manifest_path,
+                    &mut reload_count,
+                    &mut runtime,
+                    &mut sprite_manifest,
+                    &mut load_error,
+                )?;
+                file_watcher.refresh(&scene_path, &sprite_manifest_path);
+            }
             continue;
         };
         match input {
@@ -75,36 +89,16 @@ pub fn show_visual_scene_overlay(mut term: TermWizTerminal) -> anyhow::Result<()
                     break;
                 }
                 if visual_input == VisualInput::Reload {
-                    reload_count = reload_count.saturating_add(1);
-                    sprite_manifest = load_sprite_manifest_status(&sprite_manifest_path);
-                    match load_scene(&scene_path, reload_count) {
-                        Ok((scene, source)) => {
-                            if let Some(runtime) = runtime.as_mut() {
-                                runtime.replace_scene_preserving_state(scene, source)?;
-                                render_runtime(&mut term, runtime, &sprite_manifest)?;
-                            } else {
-                                let loaded = SceneRuntime::new_with_source(scene, source)?;
-                                render_runtime(&mut term, &loaded, &sprite_manifest)?;
-                                runtime = Some(loaded);
-                            }
-                            load_error = None;
-                        }
-                        Err(err) => {
-                            let error = err.to_string();
-                            if let Some(runtime) = runtime.as_mut() {
-                                runtime.mark_reload_failed(reload_count, error);
-                                render_runtime(&mut term, runtime, &sprite_manifest)?;
-                            } else {
-                                let source = VisualSceneSource::invalid(
-                                    scene_path.display().to_string(),
-                                    reload_count,
-                                    error.clone(),
-                                );
-                                render_error(&mut term, &source)?;
-                                load_error = Some(error);
-                            }
-                        }
-                    }
+                    reload_active_scene(
+                        &mut term,
+                        &scene_path,
+                        &sprite_manifest_path,
+                        &mut reload_count,
+                        &mut runtime,
+                        &mut sprite_manifest,
+                        &mut load_error,
+                    )?;
+                    file_watcher.refresh(&scene_path, &sprite_manifest_path);
                     continue;
                 }
                 if let Some(runtime) = runtime.as_mut() {
@@ -131,6 +125,7 @@ pub fn show_visual_scene_overlay(mut term: TermWizTerminal) -> anyhow::Result<()
                             command_tx: command_tx.clone(),
                         },
                     )?;
+                    file_watcher.refresh(&scene_path, &sprite_manifest_path);
                     render_runtime(&mut term, runtime, &sprite_manifest)?;
                 }
             }
@@ -154,6 +149,102 @@ pub fn show_visual_scene_overlay(mut term: TermWizTerminal) -> anyhow::Result<()
     }
 
     Ok(())
+}
+
+fn reload_active_scene(
+    term: &mut TermWizTerminal,
+    scene_path: &PathBuf,
+    sprite_manifest_path: &PathBuf,
+    reload_count: &mut u64,
+    runtime: &mut Option<SceneRuntime>,
+    sprite_manifest: &mut VisualSpriteManifestStatus,
+    load_error: &mut Option<String>,
+) -> anyhow::Result<()> {
+    *reload_count = reload_count.saturating_add(1);
+    *sprite_manifest = load_sprite_manifest_status(sprite_manifest_path);
+    match load_scene(scene_path, *reload_count) {
+        Ok((scene, source)) => {
+            if let Some(runtime) = runtime.as_mut() {
+                runtime.replace_scene_preserving_state(scene, source)?;
+                render_runtime(term, runtime, sprite_manifest)?;
+            } else {
+                let loaded = SceneRuntime::new_with_source(scene, source)?;
+                render_runtime(term, &loaded, sprite_manifest)?;
+                *runtime = Some(loaded);
+            }
+            *load_error = None;
+        }
+        Err(err) => {
+            let error = err.to_string();
+            if let Some(runtime) = runtime.as_mut() {
+                runtime.mark_reload_failed(*reload_count, error);
+                render_runtime(term, runtime, sprite_manifest)?;
+            } else {
+                let source = VisualSceneSource::invalid(
+                    scene_path.display().to_string(),
+                    *reload_count,
+                    error.clone(),
+                );
+                render_error(term, &source)?;
+                *load_error = Some(error);
+            }
+        }
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone)]
+struct SceneFileWatcher {
+    enabled: bool,
+    scene_stamp: Option<SystemTime>,
+    sprite_stamp: Option<SystemTime>,
+    scene_dir_stamp: Option<SystemTime>,
+}
+
+impl SceneFileWatcher {
+    fn disabled() -> Self {
+        Self {
+            enabled: false,
+            scene_stamp: None,
+            sprite_stamp: None,
+            scene_dir_stamp: None,
+        }
+    }
+
+    fn from_env(scene_path: &Path, sprite_path: &Path) -> Self {
+        if std::env::var("GAMETERM_SCENE_AUTO_RELOAD").ok().as_deref() != Some("1") {
+            return Self::disabled();
+        }
+        Self::enabled(scene_path, sprite_path)
+    }
+
+    fn enabled(scene_path: &Path, sprite_path: &Path) -> Self {
+        let mut watcher = Self {
+            enabled: true,
+            scene_stamp: None,
+            sprite_stamp: None,
+            scene_dir_stamp: None,
+        };
+        watcher.refresh(scene_path, sprite_path);
+        watcher
+    }
+
+    fn refresh(&mut self, scene_path: &Path, sprite_path: &Path) {
+        self.scene_stamp = modified_time(scene_path);
+        self.sprite_stamp = modified_time(sprite_path);
+        self.scene_dir_stamp = scene_path.parent().and_then(modified_time);
+    }
+
+    fn changed(&self, scene_path: &Path, sprite_path: &Path) -> bool {
+        self.enabled
+            && (self.scene_stamp != modified_time(scene_path)
+                || self.sprite_stamp != modified_time(sprite_path)
+                || self.scene_dir_stamp != scene_path.parent().and_then(modified_time))
+    }
+}
+
+fn modified_time(path: &Path) -> Option<SystemTime> {
+    fs::metadata(path).and_then(|metadata| metadata.modified()).ok()
 }
 
 enum RunCommandResult {
@@ -741,6 +832,41 @@ mod tests {
             snapshot.scene_source.scene_path,
             active_path.display().to_string()
         );
+    }
+
+    #[test]
+    fn scene_file_watcher_detects_scene_and_sprite_changes() {
+        let dir = tempfile::tempdir().unwrap();
+        let scene = dir.path().join("default.json");
+        let sprites = dir.path().join("sprites.json");
+        std::fs::write(&scene, BUNDLED_SCENE_JSON).unwrap();
+        std::fs::write(&sprites, "{\"sprites\":[]}").unwrap();
+        let mut watcher = SceneFileWatcher::enabled(&scene, &sprites);
+
+        assert!(!watcher.changed(&scene, &sprites));
+
+        std::thread::sleep(Duration::from_millis(5));
+        std::fs::write(&sprites, "{\"sprites\":[{\"id\":\"a\",\"path\":\"a.png\"}]}").unwrap();
+        assert!(watcher.changed(&scene, &sprites));
+
+        watcher.refresh(&scene, &sprites);
+        assert!(!watcher.changed(&scene, &sprites));
+
+        std::thread::sleep(Duration::from_millis(5));
+        std::fs::write(&scene, BUNDLED_SCENE_JSON.replace("GameTerm", "GameTerm Reloaded"))
+            .unwrap();
+        assert!(watcher.changed(&scene, &sprites));
+    }
+
+    #[test]
+    fn disabled_scene_file_watcher_never_reports_changes() {
+        let dir = tempfile::tempdir().unwrap();
+        let scene = dir.path().join("default.json");
+        let sprites = dir.path().join("sprites.json");
+        std::fs::write(&scene, BUNDLED_SCENE_JSON).unwrap();
+        let watcher = SceneFileWatcher::disabled();
+
+        assert!(!watcher.changed(&scene, &sprites));
     }
 }
 
