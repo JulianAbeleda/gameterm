@@ -59,6 +59,11 @@ For fixture-driven authoring, use:
 ci/gameterm-scene-author.sh list-fixtures
 ci/gameterm-scene-author.sh install-fixture navigate --force
 ci/gameterm-scene-author.sh validate ~/.config/gameterm/scenes/default.json
+ci/gameterm-scene-author.sh new-scene ~/.config/gameterm/scenes/experiment.json
+ci/gameterm-scene-author.sh add-entity ~/.config/gameterm/scenes/experiment.json \
+  --id task-demo --kind Task --label "Demo Task" --x 2 --y 2 --sprite task_tile
+ci/gameterm-scene-author.sh add-choice ~/.config/gameterm/scenes/experiment.json \
+  --label "Run visual check" --run-argv '["cargo","check","-p","gameterm-visual"]'
 ```
 
 `validate` runs the same Rust scene parser used by Scene Mode and prints a
@@ -94,6 +99,24 @@ working directory. If the target is a file, Scene Mode asks the platform to open
 it with the default application. Missing paths and directory targets are
 reported in Scene Mode without closing the scene. `OpenFile` does not execute
 shell commands.
+
+`RunCommand` choices execute an explicit argv array without invoking a shell:
+
+```json
+{
+  "label": "Run visual check",
+  "kind": {
+    "RunCommand": {
+      "argv": ["cargo", "check", "-p", "gameterm-visual"],
+      "cwd": "/path/to/workspace"
+    }
+  }
+}
+```
+
+`cwd` is optional. Scene Mode reports command start, spawn failure, and exit
+status in the status line and Tile Debugger. Command output belongs to the child
+process; it does not mutate the scene JSON.
 
 `Navigate` choices load another scene JSON file. Relative navigation targets
 are resolved against the directory of the currently active scene file. After a
