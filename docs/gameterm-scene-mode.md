@@ -38,4 +38,18 @@ If the file is missing, Scene Mode uses the built-in demo scene. If the file is 
 
 The scene file uses the same JSON shape as `VisualScene`: title, background, width, height, entities, dialogue speaker/text, and choices. See [the example scene](examples/gameterm-scene-default.json).
 
+## Smoke test
+
+The macOS visual smoke test uses `ffmpeg` screen capture through AVFoundation:
+
+```sh
+ci/gameterm-scene-smoke.sh --launch
+```
+
+After GameTerm opens, press `Ctrl+Shift+G` before the capture timer expires.
+
+macOS requires Screen Recording permission for the terminal or host app that
+runs the script. Enable it in System Settings -> Privacy & Security -> Screen
+Recording, then fully quit and reopen that app before rerunning the smoke test.
+
 For the next native bitmap rendering step, see [GameTerm Renderer Path](gameterm-renderer-path.md).
