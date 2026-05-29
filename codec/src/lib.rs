@@ -441,7 +441,7 @@ macro_rules! pdu {
 /// The overall version of the codec.
 /// This must be bumped when backwards incompatible changes
 /// are made to the types and protocol.
-pub const CODEC_VERSION: usize = 45;
+pub const CODEC_VERSION: usize = 46;
 
 // Defines the Pdu enum.
 // Each struct has an explicit identifying number.
@@ -502,6 +502,8 @@ pdu! {
     GetPaneDirection: 60,
     GetPaneDirectionResponse: 61,
     AdjustPaneSize: 62,
+    SubmitGameTermScenePatch: 63,
+    SubmitGameTermScenePatchResponse: 64,
 }
 
 impl Pdu {
@@ -517,6 +519,7 @@ impl Pdu {
             | Self::Resize(_)
             | Self::SetClipboard(_)
             | Self::SetPaneZoomed(_)
+            | Self::SubmitGameTermScenePatch(_)
             | Self::SpawnV2(_) => true,
             _ => false,
         }
@@ -707,6 +710,18 @@ pub struct SpawnResponse {
 pub struct WriteToPane {
     pub pane_id: PaneId,
     pub data: Vec<u8>,
+}
+
+#[derive(Deserialize, Serialize, PartialEq, Debug)]
+pub struct SubmitGameTermScenePatch {
+    pub patch_json: String,
+    pub target_pane_id: Option<PaneId>,
+    pub source_pane_id: Option<PaneId>,
+}
+
+#[derive(Deserialize, Serialize, PartialEq, Debug)]
+pub struct SubmitGameTermScenePatchResponse {
+    pub target_pane_id: PaneId,
 }
 
 #[derive(Deserialize, Serialize, PartialEq, Debug)]

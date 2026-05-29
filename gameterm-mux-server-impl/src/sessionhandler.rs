@@ -450,6 +450,30 @@ impl SessionHandler {
                 })
                 .detach();
             }
+            Pdu::SubmitGameTermScenePatch(SubmitGameTermScenePatch {
+                patch_json,
+                target_pane_id,
+                source_pane_id,
+            }) => {
+                spawn_into_main_thread(async move {
+                    catch(
+                        move || {
+                            let target_pane_id = Mux::get()
+                                .submit_gameterm_scene_patch(
+                                    patch_json,
+                                    target_pane_id,
+                                    source_pane_id,
+                                )
+                                .map_err(anyhow::Error::new)?;
+                            Ok(Pdu::SubmitGameTermScenePatchResponse(
+                                SubmitGameTermScenePatchResponse { target_pane_id },
+                            ))
+                        },
+                        send_response,
+                    );
+                })
+                .detach();
+            }
             Pdu::EraseScrollbackRequest(EraseScrollbackRequest {
                 pane_id,
                 erase_mode,
@@ -1010,6 +1034,7 @@ impl SessionHandler {
             | Pdu::MovePaneToNewTabResponse { .. }
             | Pdu::TabAddedToWindow { .. }
             | Pdu::GetPaneRenderableDimensionsResponse { .. }
+            | Pdu::SubmitGameTermScenePatchResponse { .. }
             | Pdu::ErrorResponse { .. } => {
                 send_response(Err(anyhow!("expected a request, got {:?}", decoded.pdu)))
             }

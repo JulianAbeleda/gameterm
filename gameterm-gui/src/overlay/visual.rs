@@ -28,6 +28,10 @@ pub fn show_visual_scene_overlay(mut term: TermWizTerminal) -> anyhow::Result<()
     term.no_grab_mouse_in_raw_mode();
     term.set_raw_mode()?;
     term.render(&[Change::Title("GameTerm Scene".to_string())])?;
+    let pane_id = term
+        .pane_id()
+        .context("Scene Mode terminal is not attached to a mux pane")?;
+    let _active_scene_overlay = ActiveSceneOverlay::new(pane_id);
 
     let mut scene_path = default_scene_path();
     let sprite_manifest_path = default_sprite_manifest_path();
@@ -41,7 +45,8 @@ pub fn show_visual_scene_overlay(mut term: TermWizTerminal) -> anyhow::Result<()
     let mut file_watcher = SceneFileWatcher::from_env(&scene_path, &sprite_manifest_path);
     let mut patch_inbox = ScenePatchInbox::from_env();
     let (scene_patch_tx, scene_patch_rx) = mpsc::channel();
-    let _scene_patch_subscription = ScenePatchNotificationSubscription::new(scene_patch_tx);
+    let _scene_patch_subscription =
+        ScenePatchNotificationSubscription::new(pane_id, scene_patch_tx);
 
     loop {
         let mut needs_render = false;
@@ -173,19 +178,46 @@ struct ScenePatchNotificationSubscription {
 }
 
 impl ScenePatchNotificationSubscription {
-    fn new(scene_patch_tx: mpsc::Sender<String>) -> Self {
+    fn new(pane_id: mux::pane::PaneId, scene_patch_tx: mpsc::Sender<String>) -> Self {
         let dead = Arc::new(AtomicBool::new(false));
         let subscription_dead = Arc::clone(&dead);
         Mux::get().subscribe(move |notification| {
             if subscription_dead.load(Ordering::Relaxed) {
                 return false;
             }
-            if let MuxNotification::GameTermScenePatch { patch_json, .. } = notification {
+            if let MuxNotification::GameTermScenePatch {
+                patch_json,
+                target_pane_id,
+                ..
+            } = notification
+            {
+                if target_pane_id.or_else(|| Mux::get().active_gameterm_scene_pane())
+                    != Some(pane_id)
+                {
+                    return true;
+                }
                 let _ = scene_patch_tx.send(patch_json);
             }
             true
         });
         Self { dead }
+    }
+}
+
+struct ActiveSceneOverlay {
+    pane_id: mux::pane::PaneId,
+}
+
+impl ActiveSceneOverlay {
+    fn new(pane_id: mux::pane::PaneId) -> Self {
+        Mux::get().set_active_gameterm_scene_pane(pane_id);
+        Self { pane_id }
+    }
+}
+
+impl Drop for ActiveSceneOverlay {
+    fn drop(&mut self) {
+        Mux::get().clear_active_gameterm_scene_pane(self.pane_id);
     }
 }
 

@@ -79,6 +79,7 @@ pub enum MuxNotification {
     },
     GameTermScenePatch {
         patch_json: String,
+        target_pane_id: Option<PaneId>,
         source_pane_id: Option<PaneId>,
     },
     TabAddedToWindow {
@@ -101,6 +102,12 @@ pub enum MuxNotification {
     },
 }
 
+#[derive(Debug, Error)]
+pub enum GameTermScenePatchSubmitError {
+    #[error("no active GameTerm Scene Mode overlay")]
+    NoActiveOverlay,
+}
+
 static SUB_ID: AtomicUsize = AtomicUsize::new(0);
 
 pub struct Mux {
@@ -111,6 +118,7 @@ pub struct Mux {
     domains: RwLock<HashMap<DomainId, Arc<dyn Domain>>>,
     domains_by_name: RwLock<HashMap<String, Arc<dyn Domain>>>,
     subscribers: RwLock<HashMap<usize, Box<dyn Fn(MuxNotification) -> bool + Send + Sync>>>,
+    active_gameterm_scene_pane: RwLock<Option<PaneId>>,
     banner: RwLock<Option<String>>,
     clients: RwLock<HashMap<ClientId, ClientInfo>>,
     identity: RwLock<Option<Arc<ClientId>>>,
@@ -446,6 +454,7 @@ impl Mux {
             domains_by_name: RwLock::new(domains_by_name),
             domains: RwLock::new(domains),
             subscribers: RwLock::new(HashMap::new()),
+            active_gameterm_scene_pane: RwLock::new(None),
             banner: RwLock::new(None),
             clients: RwLock::new(HashMap::new()),
             identity: RwLock::new(None),
@@ -708,6 +717,40 @@ impl Mux {
         subscribers.retain(|_, notify| notify(notification.clone()));
     }
 
+    pub fn set_active_gameterm_scene_pane(&self, pane_id: PaneId) {
+        self.active_gameterm_scene_pane.write().replace(pane_id);
+    }
+
+    pub fn clear_active_gameterm_scene_pane(&self, pane_id: PaneId) {
+        let mut active = self.active_gameterm_scene_pane.write();
+        if *active == Some(pane_id) {
+            active.take();
+        }
+    }
+
+    pub fn active_gameterm_scene_pane(&self) -> Option<PaneId> {
+        *self.active_gameterm_scene_pane.read()
+    }
+
+    pub fn submit_gameterm_scene_patch(
+        &self,
+        patch_json: String,
+        target_pane_id: Option<PaneId>,
+        source_pane_id: Option<PaneId>,
+    ) -> Result<PaneId, GameTermScenePatchSubmitError> {
+        let target_pane_id = target_pane_id
+            .or_else(|| self.active_gameterm_scene_pane())
+            .ok_or(GameTermScenePatchSubmitError::NoActiveOverlay)?;
+
+        self.notify(MuxNotification::GameTermScenePatch {
+            patch_json,
+            target_pane_id: Some(target_pane_id),
+            source_pane_id,
+        });
+
+        Ok(target_pane_id)
+    }
+
     pub fn notify_from_any_thread(notification: MuxNotification) {
         if let Some(mux) = Mux::try_get() {
             if mux.is_main_thread() {
@@ -817,6 +860,7 @@ impl Mux {
         log::debug!("removing pane {}", pane_id);
         let mut changed = false;
         if let Some(pane) = self.panes.write().remove(&pane_id).clone() {
+            self.clear_active_gameterm_scene_pane(pane_id);
             log::debug!("killing pane {}", pane_id);
             pane.kill();
             self.notify(MuxNotification::PaneRemoved(pane_id));
