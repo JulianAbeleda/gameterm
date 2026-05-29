@@ -20,6 +20,7 @@ Options:
   --device DEVICE          AVFoundation device string. Default: 0:none.
   --output PATH            Capture output path. Default:
                            /tmp/gameterm-scene-smoke.png.
+  --min-bytes N            Minimum acceptable capture size. Default: 1000.
   --capture-timeout N      Seconds to wait for one frame before diagnosing a
                            hang. Default: 12.
   --ffmpeg PATH            ffmpeg binary. Defaults to PATH lookup, then common
@@ -32,6 +33,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fixture_root="${repo_root}/ci/fixtures/gameterm-scene"
 device="0:none"
 output="/tmp/gameterm-scene-smoke.png"
+min_bytes=1000
 capture_timeout=12
 launch=0
 fixture="renderer-rows"
@@ -61,6 +63,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --output)
       output="$2"
+      shift 2
+      ;;
+    --min-bytes)
+      min_bytes="$2"
       shift 2
       ;;
     --capture-timeout)
@@ -250,6 +256,13 @@ if [[ ! -s "${output}" ]]; then
   cat "${log_file}" >&2 || true
   echo "ffmpeg exited but did not produce a non-empty output file." >&2
   exit 4
+fi
+
+actual_bytes="$(wc -c <"${output}" | tr -d ' ')"
+if [[ "${actual_bytes}" -lt "${min_bytes}" ]]; then
+  cat "${log_file}" >&2 || true
+  echo "capture output is too small: ${actual_bytes} bytes, expected at least ${min_bytes}" >&2
+  exit 5
 fi
 
 file "${output}"
