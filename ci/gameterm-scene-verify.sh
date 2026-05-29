@@ -151,10 +151,12 @@ run_init_helper_check() {
 
 run_author_helper_check() {
   local tmp_home
+  local fixtures
   tmp_home="$(mktemp -d /tmp/gameterm-scene-author-verify.XXXXXX)"
   tmp_paths+=("${tmp_home}")
 
-  "${repo_root}/ci/gameterm-scene-author.sh" list-fixtures | grep -qx navigate
+  fixtures="$("${repo_root}/ci/gameterm-scene-author.sh" list-fixtures)"
+  grep -qx navigate <<<"${fixtures}"
   "${repo_root}/ci/gameterm-scene-author.sh" \
     install-fixture \
     --config-home "${tmp_home}" \
@@ -164,6 +166,29 @@ run_author_helper_check() {
     "${tmp_home}/gameterm/scenes/memory.json"
   "${repo_root}/ci/gameterm-scene-author.sh" \
     validate "${tmp_home}/gameterm/scenes/default.json" >/dev/null
+  "${repo_root}/ci/gameterm-scene-author.sh" \
+    new-scene \
+    --force \
+    --title "Author Check" \
+    "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
+  "${repo_root}/ci/gameterm-scene-author.sh" \
+    add-entity \
+    --id author-task \
+    --kind Task \
+    --label "Author Task" \
+    --x 1 \
+    --y 1 \
+    --sprite task_tile \
+    --flag ready \
+    --metadata source=verify \
+    "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
+  "${repo_root}/ci/gameterm-scene-author.sh" \
+    add-choice \
+    --label "Run true" \
+    --run-argv '["true"]' \
+    "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
+  "${repo_root}/ci/gameterm-scene-author.sh" \
+    validate "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
 
   set +e
   "${repo_root}/ci/gameterm-scene-author.sh" \
