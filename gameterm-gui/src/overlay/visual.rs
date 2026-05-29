@@ -1,6 +1,7 @@
 use gameterm_term::color::ColorAttribute;
 use gameterm_visual::{SceneRuntime, VisualScene};
 use mux::termwiztermtab::TermWizTerminal;
+use std::path::PathBuf;
 use termwiz::input::{InputEvent, KeyCode, KeyEvent};
 use termwiz::surface::Change;
 use termwiz::terminal::Terminal;
@@ -10,25 +11,69 @@ pub fn show_visual_scene_overlay(mut term: TermWizTerminal) -> anyhow::Result<()
     term.set_raw_mode()?;
     term.render(&[Change::Title("GameTerm Scene".to_string())])?;
 
-    let mut runtime = SceneRuntime::new(VisualScene::demo())?;
-    render_runtime(&mut term, &runtime)?;
+    let scene_path = default_scene_path();
+    let mut load_error = None;
+    let mut runtime = match load_scene_runtime(&scene_path) {
+        Ok(runtime) => {
+            render_runtime(&mut term, &runtime)?;
+            Some(runtime)
+        }
+        Err(err) => {
+            let error = err.to_string();
+            render_error(&mut term, &scene_path, &error)?;
+            load_error.replace(error);
+            None
+        }
+    };
 
     while let Some(input) = term.poll_input(None)? {
         match input {
             InputEvent::Key(KeyEvent { key, .. }) => {
-                if handle_key(&mut runtime, key) {
+                if matches!(
+                    key,
+                    KeyCode::Escape | KeyCode::Char('q') | KeyCode::Char('Q')
+                ) {
                     break;
                 }
-                render_runtime(&mut term, &runtime)?;
+                if let Some(runtime) = runtime.as_mut() {
+                    if handle_key(runtime, key) {
+                        break;
+                    }
+                    render_runtime(&mut term, runtime)?;
+                }
             }
             InputEvent::Resized { .. } => {
-                render_runtime(&mut term, &runtime)?;
+                if let Some(runtime) = runtime.as_ref() {
+                    render_runtime(&mut term, runtime)?;
+                } else {
+                    let error = load_error
+                        .as_deref()
+                        .unwrap_or("scene failed to load for an unknown reason");
+                    render_error(&mut term, &scene_path, error)?;
+                }
             }
             _ => {}
         }
     }
 
     Ok(())
+}
+
+fn load_scene_runtime(scene_path: &PathBuf) -> anyhow::Result<SceneRuntime> {
+    let scene = if scene_path.exists() {
+        VisualScene::load_from_path(scene_path)?
+    } else {
+        VisualScene::demo()
+    };
+    Ok(SceneRuntime::new(scene)?)
+}
+
+fn default_scene_path() -> PathBuf {
+    let config_home = config::CONFIG_DIRS
+        .first()
+        .cloned()
+        .unwrap_or_else(|| config::HOME_DIR.join(".config").join("gameterm"));
+    config_home.join("scenes").join("default.json")
 }
 
 fn handle_key(runtime: &mut SceneRuntime, key: KeyCode) -> bool {
@@ -65,4 +110,40 @@ fn render_runtime(term: &mut TermWizTerminal, runtime: &SceneRuntime) -> anyhow:
     ])?;
     term.flush()?;
     Ok(())
+}
+
+fn render_error(
+    term: &mut TermWizTerminal,
+    scene_path: &PathBuf,
+    error: &str,
+) -> anyhow::Result<()> {
+    let size = term.get_screen_size()?;
+    let frame = format!(
+        "GameTerm Scene Mode\r\n\
+         Scene file failed to load.\r\n\r\n\
+         Path: {}\r\n\
+         Error: {}\r\n\r\n\
+         Fix the scene JSON, or remove the file to use the built-in demo.\r\n\
+         [esc/q: close]\r\n",
+        scene_path.display(),
+        error
+    );
+    term.render(&[
+        Change::ClearScreen(ColorAttribute::Default),
+        Change::Text(truncate_to_screen(frame, size.cols, size.rows)),
+    ])?;
+    term.flush()?;
+    Ok(())
+}
+
+fn truncate_to_screen(text: String, cols: usize, rows: usize) -> String {
+    let max_cols = cols.max(1);
+    text.lines()
+        .take(rows.max(1))
+        .map(|line| {
+            let mut clipped = line.chars().take(max_cols).collect::<String>();
+            clipped.push_str("\r\n");
+            clipped
+        })
+        .collect()
 }

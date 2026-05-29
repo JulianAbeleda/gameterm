@@ -1,0 +1,44 @@
+{
+  "title": "GameTerm Project Map",
+  "background": "workspace-map",
+  "width": 12,
+  "height": 7,
+  "entities": [
+    {
+      "id": "project-gameterm",
+      "kind": "Project",
+      "label": "GameTerm",
+      "position": { "x": 2, "y": 2 },
+      "sprite": "project_core",
+      "state_flags": ["active"],
+      "metadata": [["repo", "JulianAbeleda/gameterm"]]
+    },
+    {
+      "id": "task-scene-files",
+      "kind": "Task",
+      "label": "Scene Files",
+      "position": { "x": 6, "y": 3 },
+      "sprite": "task_tile",
+      "state_flags": ["ready"],
+      "metadata": [["format", "json"]]
+    },
+    {
+      "id": "agent-render",
+      "kind": "Agent",
+      "label": "Render Agent",
+      "position": { "x": 9, "y": 2 },
+      "sprite": "agent_idle",
+      "state_flags": ["watching"],
+      "metadata": [["role", "renderer research"]]
+    }
+  ],
+  "dialogue_speaker": "GameTerm",
+  "dialogue": "This scene was loaded from ~/.config/gameterm/scenes/default.json.",
+  "choices": [
+    { "label": "Inspect selected entity", "kind": "Inspect" },
+    {
+      "label": "Open scene docs",
+      "kind": { "OpenFile": { "path": "docs/gameterm-scene-mode.md" } }
+    }
+  ]
+}

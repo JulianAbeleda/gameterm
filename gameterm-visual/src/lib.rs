@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VisualPosition {
@@ -65,6 +66,8 @@ pub enum VisualSceneError {
     EntityOutOfBounds { id: String, x: usize, y: usize },
     #[error("scene json error: {0}")]
     Json(String),
+    #[error("scene file error for `{path}`: {message}")]
+    File { path: String, message: String },
 }
 
 impl VisualScene {
@@ -73,6 +76,15 @@ impl VisualScene {
             serde_json::from_str(json).map_err(|err| VisualSceneError::Json(err.to_string()))?;
         scene.validate()?;
         Ok(scene)
+    }
+
+    pub fn load_from_path(path: impl AsRef<Path>) -> Result<Self, VisualSceneError> {
+        let path = path.as_ref();
+        let json = std::fs::read_to_string(path).map_err(|err| VisualSceneError::File {
+            path: path.display().to_string(),
+            message: err.to_string(),
+        })?;
+        Self::from_json(&json)
     }
 
     pub fn validate(&self) -> Result<(), VisualSceneError> {
@@ -403,5 +415,60 @@ mod tests {
         let runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
         let frame = runtime.render_text_frame(80, 24);
         assert!(frame.contains("Selected: GameTerm"));
+    }
+
+    #[test]
+    fn valid_scene_json_loads_from_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("scene.json");
+        std::fs::write(
+            &path,
+            r#"{
+                "title": "Loaded Scene",
+                "background": "test",
+                "width": 2,
+                "height": 2,
+                "entities": [{
+                    "id": "task-one",
+                    "kind": "Task",
+                    "label": "Task One",
+                    "position": { "x": 1, "y": 1 },
+                    "sprite": "task"
+                }],
+                "dialogue_speaker": "Loader",
+                "dialogue": "Loaded from disk.",
+                "choices": [{
+                    "label": "Open docs",
+                    "kind": { "OpenFile": { "path": "docs/gameterm-scene-mode.md" } }
+                }]
+            }"#,
+        )
+        .unwrap();
+
+        let scene = VisualScene::load_from_path(path).unwrap();
+        assert_eq!(scene.title, "Loaded Scene");
+        assert_eq!(scene.entities[0].id, "task-one");
+        assert!(matches!(
+            scene.choices[0].kind,
+            SceneActionKind::OpenFile { .. }
+        ));
+    }
+
+    #[test]
+    fn malformed_json_returns_scene_json_error() {
+        assert!(matches!(
+            VisualScene::from_json("{"),
+            Err(VisualSceneError::Json(_))
+        ));
+    }
+
+    #[test]
+    fn out_of_bounds_entity_is_rejected() {
+        let mut scene = VisualScene::demo();
+        scene.entities[0].position.x = scene.width;
+        assert!(matches!(
+            scene.validate(),
+            Err(VisualSceneError::EntityOutOfBounds { .. })
+        ));
     }
 }

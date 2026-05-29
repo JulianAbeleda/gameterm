@@ -2539,6 +2539,7 @@ dependencies = [
  "k9",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 1.0.69",
 ]
 
