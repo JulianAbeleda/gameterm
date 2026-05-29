@@ -188,6 +188,23 @@ run_author_helper_check() {
     --run-argv '["true"]' \
     "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
   "${repo_root}/ci/gameterm-scene-author.sh" \
+    move-entity \
+    --id author-task \
+    --x 2 \
+    --y 2 \
+    "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
+  "${repo_root}/ci/gameterm-scene-author.sh" \
+    set-dialogue \
+    --speaker "Author" \
+    --text "Updated by verifier." \
+    "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
+  "${repo_root}/ci/gameterm-scene-author.sh" \
+    format "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
+  "${repo_root}/ci/gameterm-scene-author.sh" \
+    remove-entity \
+    --id author-task \
+    "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
+  "${repo_root}/ci/gameterm-scene-author.sh" \
     validate "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
 
   set +e

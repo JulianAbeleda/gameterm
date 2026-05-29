@@ -12,6 +12,10 @@ Commands:
   new-scene PATH                Create a minimal editable scene file.
   add-entity PATH               Add an entity to a scene file.
   add-choice PATH               Add a choice to a scene file.
+  remove-entity PATH            Remove an entity by id.
+  move-entity PATH              Move an entity by id.
+  set-dialogue PATH             Set dialogue speaker and text.
+  format PATH                   Rewrite a scene file with stable JSON format.
   install-fixture NAME          Install a fixture into the Scene Mode config dir.
   list-fixtures                 List available authoring fixtures.
 
@@ -28,6 +32,15 @@ Options for add-entity:
   --id ID --kind KIND --label TEXT --x N --y N --sprite ID
   --flag FLAG                   Add one state flag. May be repeated.
   --metadata KEY=VALUE          Add one metadata pair. May be repeated.
+
+Options for remove-entity:
+  --id ID
+
+Options for move-entity:
+  --id ID --x N --y N
+
+Options for set-dialogue:
+  --speaker TEXT --text TEXT
 
 Options for add-choice:
   --label TEXT
@@ -65,6 +78,8 @@ entity_label=""
 entity_x=""
 entity_y=""
 entity_sprite=""
+dialogue_speaker=""
+dialogue_text=""
 choice_label=""
 choice_kind=""
 choice_payload=""
@@ -120,6 +135,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --sprite)
       entity_sprite="$2"
+      shift 2
+      ;;
+    --speaker)
+      dialogue_speaker="$2"
+      shift 2
+      ;;
+    --text)
+      dialogue_text="$2"
       shift 2
       ;;
     --flag)
@@ -320,6 +343,57 @@ add_choice() {
   echo "Added choice ${choice_label} to ${target}"
 }
 
+remove_entity() {
+  local target="$1"
+  require_value "--id" "${entity_id}"
+
+  jq --arg id "${entity_id}" '
+    if any(.entities[]?; .id == $id) then
+      .entities |= map(select(.id != $id))
+    else
+      error("entity id not found: " + $id)
+    end
+  ' "${target}" | write_json "${target}"
+  validate_scene_file "${target}" >/dev/null
+  echo "Removed entity ${entity_id} from ${target}"
+}
+
+move_entity() {
+  local target="$1"
+  require_value "--id" "${entity_id}"
+  require_value "--x" "${entity_x}"
+  require_value "--y" "${entity_y}"
+
+  jq --arg id "${entity_id}" --argjson x "${entity_x}" --argjson y "${entity_y}" '
+    if any(.entities[]?; .id == $id) then
+      .entities |= map(if .id == $id then .position = { x: $x, y: $y } else . end)
+    else
+      error("entity id not found: " + $id)
+    end
+  ' "${target}" | write_json "${target}"
+  validate_scene_file "${target}" >/dev/null
+  echo "Moved entity ${entity_id} in ${target}"
+}
+
+set_dialogue() {
+  local target="$1"
+  require_value "--speaker" "${dialogue_speaker}"
+  require_value "--text" "${dialogue_text}"
+
+  jq --arg speaker "${dialogue_speaker}" --arg text "${dialogue_text}" '
+    .dialogue_speaker = $speaker | .dialogue = $text
+  ' "${target}" | write_json "${target}"
+  validate_scene_file "${target}" >/dev/null
+  echo "Updated dialogue in ${target}"
+}
+
+format_scene() {
+  local target="$1"
+  jq '.' "${target}" | write_json "${target}"
+  validate_scene_file "${target}" >/dev/null
+  echo "Formatted ${target}"
+}
+
 install_fixture() {
   local fixture="$1"
   local scene_dir="${config_home}/gameterm/scenes"
@@ -383,6 +457,34 @@ case "${command}" in
       exit 2
     fi
     add_choice "${positionals[0]}"
+    ;;
+  remove-entity)
+    if [[ "${#positionals[@]}" -ne 1 ]]; then
+      usage >&2
+      exit 2
+    fi
+    remove_entity "${positionals[0]}"
+    ;;
+  move-entity)
+    if [[ "${#positionals[@]}" -ne 1 ]]; then
+      usage >&2
+      exit 2
+    fi
+    move_entity "${positionals[0]}"
+    ;;
+  set-dialogue)
+    if [[ "${#positionals[@]}" -ne 1 ]]; then
+      usage >&2
+      exit 2
+    fi
+    set_dialogue "${positionals[0]}"
+    ;;
+  format)
+    if [[ "${#positionals[@]}" -ne 1 ]]; then
+      usage >&2
+      exit 2
+    fi
+    format_scene "${positionals[0]}"
     ;;
   install-fixture)
     if [[ "${#positionals[@]}" -ne 1 ]]; then
