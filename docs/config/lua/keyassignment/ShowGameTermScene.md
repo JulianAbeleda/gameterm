@@ -6,6 +6,12 @@ Scene Mode is the first GameTerm-native visual state surface. It displays a symb
 
 By default, it loads `~/.config/gameterm/scenes/default.json` when present. If the file is absent, it uses the bundled default scene.
 
+To create an editable scene config from the bundled example, run:
+
+```sh
+ci/gameterm-scene-init.sh
+```
+
 Scene Mode also looks for `~/.config/gameterm/scenes/sprites.json`. This JSON
 file maps scene sprite ids to image files:
 

@@ -33,15 +33,17 @@ Implemented reload behavior:
 
 1. Load the default scene when Scene Mode opens.
 2. Use the bundled default scene when no default scene file exists.
-3. Add a manual reload action from inside Scene Mode so authors can update
+3. Provide `ci/gameterm-scene-init.sh` so authors can create editable config
+   from the bundled example without hand-building the config directory.
+4. Add a manual reload action from inside Scene Mode so authors can update
    `default.json`, return to GameTerm, and refresh without closing the window.
-4. Keep the previous valid scene visible if a reload fails. The error should be
+5. Keep the previous valid scene visible if a reload fails. The error should be
    surfaced in Scene Mode and the Tile Debugger status instead of replacing the
    scene with a blank or partial state.
-5. Use the bundled default scene only when no default scene file exists at load
+6. Use the bundled default scene only when no default scene file exists at load
    time. If a previously valid default scene later fails to parse, keep the
    previous scene and report the failed reload.
-6. Reset selection only when the reloaded scene no longer contains the selected
+7. Reset selection only when the reloaded scene no longer contains the selected
    entity id. If the id still exists, preserve selection and update the
    inspection panel from the new entity data.
 

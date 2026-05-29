@@ -24,6 +24,35 @@ Open the scene with:
 { key = 'g', mods = 'CTRL|SHIFT', action = gameterm.action.ShowGameTermScene },
 ```
 
+## Authoring quickstart
+
+Create an editable copy of the bundled scene with:
+
+```sh
+ci/gameterm-scene-init.sh
+```
+
+This writes:
+
+```text
+~/.config/gameterm/scenes/default.json
+```
+
+Edit that file, return to Scene Mode, and press `r` to reload it without
+restarting GameTerm. If the edited JSON is invalid, Scene Mode keeps the
+previous valid scene visible when possible and shows the error in the scene
+status and Tile Debugger.
+
+The helper does not overwrite existing files unless `--force` is passed. To
+also copy the starter sprite manifest, run:
+
+```sh
+ci/gameterm-scene-init.sh --with-sprites
+```
+
+The sprite manifest is optional because Scene Mode can use bundled sprite
+defaults while custom sprite files are being created.
+
 ## Scene file
 
 Scene Mode looks for a default scene at:
