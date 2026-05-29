@@ -1,7 +1,8 @@
 # GameTerm Renderer Path
 
-This note records the immediate renderer implementation plan after Scene Mode
-file loading. It is documentation only; no renderer code is changed here.
+This note records the renderer path for Scene Mode. The original placeholder
+quad plan has now landed; this document tracks the current state and the next
+renderer cleanup lane.
 
 The first bitmap sprite/tile step should stay inside the existing pane render
 path, not introduce a new compositor. The implementation should extend
@@ -24,7 +25,42 @@ Useful existing pieces:
   scene records, selected flags, labels, and generation counter that the GUI
   renderer should consume.
 
-## Immediate Implementation Plan
+## Implemented Renderer Path
+
+Scene Mode now threads `VisualRenderSnapshot` metadata through the pane render
+path and emits visual records inside the normal pane ordering. The renderer:
+
+- reads `gameterm_visual_snapshot` pane metadata once per pane render path;
+- keys line quad caching with the visual generation;
+- filters visual tiles and entities by row before emitting quads;
+- renders deterministic placeholder blocks when no sprite image is available;
+- resolves sprite manifest entries into cached image quads when images are
+  available;
+- keeps sprite image data cached per pane metadata and prunes that cache when
+  panes are removed.
+
+This keeps Scene Mode additive: no non-GameTerm terminal path needs a separate
+compositor, and pane borders/modal UI still draw above Scene Mode content.
+
+## Next Renderer Cleanup Lane
+
+The remaining renderer work is no longer "make sprites appear"; it is about
+making the visual path cheaper, easier to audit, and ready for richer state.
+
+1. Move row-filter helpers and visual quad population into a small dedicated
+   module under `gameterm-gui/src/termwindow/render/`.
+2. Keep the cache identity contract explicit: every visual property that
+   changes emitted geometry, tint, sprite frame, or selection treatment must be
+   represented in `VisualRenderSnapshot.generation` or a future cache key field.
+3. Add fixture-backed tests for row filtering and cache invalidation at the
+   helper boundary instead of relying only on full renderer smoke checks.
+4. Keep missing sprite ids recoverable. A sprite manifest reload must be able to
+   replace placeholders without restarting the pane.
+5. Defer a true packed atlas until there are enough distinct sprites to justify
+   the complexity. The current cached image path is sufficient for the
+   authoring MVP.
+
+## Historical Implementation Plan
 
 ### 1. Thread real snapshots
 

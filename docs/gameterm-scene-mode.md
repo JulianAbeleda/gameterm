@@ -8,6 +8,7 @@ The first implementation is intentionally small:
 - optional JSON scene loading from `~/.config/gameterm/scenes/default.json`
 - optional sprite manifest loading from `~/.config/gameterm/scenes/sprites.json`
 - a bundled sprite fallback for first-run rendering
+- optional auto-reload with `GAMETERM_SCENE_AUTO_RELOAD=1`
 - symbolic project/task/agent entities
 - keyboard selection
 - manual reload while Scene Mode is open
@@ -84,8 +85,9 @@ selection.
 
 `doctor` checks the configured scene and sprite manifest together. It validates
 the scene, reports missing navigation and document targets, checks sprite
-manifest shape, checks sprite asset paths, and warns when scene sprite ids have
-no manifest entry. Use `--strict` when warnings should fail a local or CI run.
+manifest shape, checks sprite asset paths, verifies RunCommand targets and
+optional cwd directories, and warns when scene sprite ids have no manifest
+entry. Use `--strict` when warnings should fail a local or CI run.
 
 ## Scene file
 
@@ -110,6 +112,17 @@ If reload fails after a valid scene is already active, Scene Mode keeps the
 previous scene visible and reports the reload error in the scene status and Tile
 Debugger. Selection is preserved across successful reloads when the selected
 entity id still exists.
+
+For authoring sessions that need live refresh, start GameTerm with:
+
+```sh
+GAMETERM_SCENE_AUTO_RELOAD=1 target/debug/gameterm-gui start
+```
+
+Auto-reload watches the active scene file, the sprite manifest, and the scene
+directory for modification-time changes. It uses the same reload path as `r`, so
+failed reloads preserve the previous valid scene when one exists. Manual `r`
+reload remains the deterministic fallback.
 
 `OpenFile` choices resolve their configured path against GameTerm's current
 working directory. If the target is a file, Scene Mode asks the platform to open
@@ -201,6 +214,16 @@ The smoke test can launch with a specific fixture:
 ```sh
 ci/gameterm-scene-smoke.sh --launch --fixture sprites
 ```
+
+To live-audit RunCommand pane targets, use:
+
+```sh
+cargo build -p gameterm-gui
+ci/gameterm-scene-smoke.sh --launch --fixture run-command-targets
+```
+
+After opening Scene Mode, trigger the three choices in order to verify `tab`,
+`split_right`, and `split_down` behavior in the real mux/window path.
 
 Use `--min-bytes N` to make capture output checks stricter for local visual
 regression runs.

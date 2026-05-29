@@ -59,9 +59,17 @@ Reload status should distinguish these cases:
 - `invalid`: the scene file failed during initial load and there is no previous
   valid scene to keep.
 
-Automatic file watching can come later. The first implementation should favor a
-predictable manual reload because it avoids platform watcher differences and
-keeps parse errors tied to an explicit user action.
+Automatic file watching is available as an opt-in authoring helper with:
+
+```sh
+GAMETERM_SCENE_AUTO_RELOAD=1
+```
+
+The watcher checks the active scene file, sprite manifest, and scene directory
+between input polls. It intentionally uses the same reload path as `r` so parse
+errors, sprite warnings, and previous-valid-scene preservation behave the same
+way. Manual reload remains the default because it is predictable across
+platforms and keeps parse errors tied to an explicit action.
 
 ## Verification Harness
 
@@ -77,6 +85,9 @@ Implemented verification behavior:
    checks backed by the Rust scene parser.
 5. Use `ci/gameterm-scene-doctor.sh` for combined scene, action target, sprite
    manifest, sprite asset, and sprite id coverage diagnostics.
+6. Use `ci/gameterm-scene-smoke.sh --launch --fixture run-command-targets` for
+   live mux/window checks of `tab`, `split_right`, and `split_down` command
+   targets.
 
 ## Tile Debugger Path, Action, And Status
 
@@ -175,3 +186,37 @@ Implemented `Navigate` behavior:
   `OpenFile` paths?
 - Should `RunCommand` support additional split sizing or domain selection
   beyond the current `tab`, `split_right`, and `split_down` targets?
+
+## State Update Channel
+
+The next major architecture lane is a structured update channel from panes,
+agents, or external tools back into Scene Mode. This is intentionally not
+coupled to `RunCommand` stdout today: command output remains pane output until a
+schema exists for state updates.
+
+Candidate first contract:
+
+```json
+{
+  "scene_patch_version": 1,
+  "updates": [
+    {
+      "entity_id": "task-render",
+      "state_flags": ["running", "verified"],
+      "metadata": [["status", "tests passed"]]
+    }
+  ],
+  "status": "Verification passed"
+}
+```
+
+Initial constraints:
+
+- Apply patches only to the active scene runtime, not directly to the source
+  JSON file.
+- Reject unknown entity ids and malformed patches with visible Scene Mode
+  status.
+- Bump the visual generation after every accepted patch so render caches
+  invalidate correctly.
+- Keep persistence as a later explicit authoring action rather than silently
+  rewriting local config.
