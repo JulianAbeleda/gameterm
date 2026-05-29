@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use std::ops::Range;
 use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -101,6 +102,44 @@ pub struct VisualRenderSnapshot {
     pub dialogue: String,
     pub status: String,
     pub choices: Vec<String>,
+}
+
+pub fn visible_tiles_for_row(
+    snapshot: &VisualRenderSnapshot,
+    row: usize,
+    columns: Range<usize>,
+) -> Vec<&VisualRenderTile> {
+    if row >= snapshot.height {
+        return Vec::new();
+    }
+
+    let columns = clipped_columns(columns, snapshot.width);
+    snapshot
+        .tiles
+        .iter()
+        .filter(|tile| tile.position.y == row && columns.contains(&tile.position.x))
+        .collect()
+}
+
+pub fn intersecting_entities_for_row(
+    snapshot: &VisualRenderSnapshot,
+    row: usize,
+    columns: Range<usize>,
+) -> Vec<&VisualRenderEntity> {
+    if row >= snapshot.height {
+        return Vec::new();
+    }
+
+    let columns = clipped_columns(columns, snapshot.width);
+    snapshot
+        .entities
+        .iter()
+        .filter(|entity| entity.position.y == row && columns.contains(&entity.position.x))
+        .collect()
+}
+
+fn clipped_columns(columns: Range<usize>, width: usize) -> Range<usize> {
+    columns.start.min(width)..columns.end.min(width)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -507,6 +546,77 @@ pub fn truncate_to_screen(text: String, cols: usize, rows: usize) -> String {
 mod tests {
     use super::*;
 
+    fn snapshot_for_filtering() -> VisualRenderSnapshot {
+        VisualRenderSnapshot {
+            generation: 7,
+            view: VisualView::Scene,
+            title: "Filter Fixture".to_string(),
+            background: "floor".to_string(),
+            width: 4,
+            height: 3,
+            selected_entity_id: None,
+            selected_choice: 0,
+            tiles: vec![
+                VisualRenderTile {
+                    position: VisualPosition { x: 0, y: 1 },
+                    sprite: "left".to_string(),
+                    layer: VisualRenderLayer::Tile,
+                },
+                VisualRenderTile {
+                    position: VisualPosition { x: 1, y: 1 },
+                    sprite: "middle".to_string(),
+                    layer: VisualRenderLayer::Tile,
+                },
+                VisualRenderTile {
+                    position: VisualPosition { x: 3, y: 1 },
+                    sprite: "right".to_string(),
+                    layer: VisualRenderLayer::Tile,
+                },
+                VisualRenderTile {
+                    position: VisualPosition { x: 1, y: 2 },
+                    sprite: "other-row".to_string(),
+                    layer: VisualRenderLayer::Tile,
+                },
+            ],
+            entities: vec![
+                VisualRenderEntity {
+                    id: "row-one-left".to_string(),
+                    kind: VisualEntityKind::Task,
+                    label: "Row One Left".to_string(),
+                    position: VisualPosition { x: 0, y: 1 },
+                    sprite: "task".to_string(),
+                    layer: VisualRenderLayer::Entity,
+                    selected: false,
+                    state_flags: Vec::new(),
+                },
+                VisualRenderEntity {
+                    id: "row-one-right".to_string(),
+                    kind: VisualEntityKind::Agent,
+                    label: "Row One Right".to_string(),
+                    position: VisualPosition { x: 3, y: 1 },
+                    sprite: "agent".to_string(),
+                    layer: VisualRenderLayer::Entity,
+                    selected: false,
+                    state_flags: Vec::new(),
+                },
+                VisualRenderEntity {
+                    id: "row-two".to_string(),
+                    kind: VisualEntityKind::Memory,
+                    label: "Row Two".to_string(),
+                    position: VisualPosition { x: 1, y: 2 },
+                    sprite: "memory".to_string(),
+                    layer: VisualRenderLayer::Entity,
+                    selected: false,
+                    state_flags: Vec::new(),
+                },
+            ],
+            dialogue_speaker: String::new(),
+            dialogue: String::new(),
+            status: String::new(),
+            choices: Vec::new(),
+        }
+    }
+
     #[test]
     fn demo_scene_validates() {
         k9::assert_ok!(VisualScene::demo().validate());
@@ -656,10 +766,7 @@ mod tests {
 
         assert!(activated.generation > initial.generation);
         assert_ne!(activated.status, initial.status);
-        assert_eq!(
-            activated.status,
-            "Inspecting GameTerm (project-gameterm)"
-        );
+        assert_eq!(activated.status, "Inspecting GameTerm (project-gameterm)");
     }
 
     #[test]
@@ -706,5 +813,51 @@ mod tests {
             .entities
             .iter()
             .all(|entity| entity.layer == VisualRenderLayer::Entity));
+    }
+
+    #[test]
+    fn visible_tiles_for_row_matches_only_requested_row() {
+        let snapshot = snapshot_for_filtering();
+        let tiles = visible_tiles_for_row(&snapshot, 1, 0..snapshot.width);
+
+        assert_eq!(tiles.len(), 3);
+        assert_eq!(tiles[0].sprite, "left");
+        assert_eq!(tiles[1].sprite, "middle");
+        assert_eq!(tiles[2].sprite, "right");
+        assert!(tiles.iter().all(|tile| tile.position.y == 1));
+    }
+
+    #[test]
+    fn visible_tiles_for_row_clips_to_viewport_columns() {
+        let snapshot = snapshot_for_filtering();
+        let tiles = visible_tiles_for_row(&snapshot, 1, 1..99);
+
+        assert_eq!(tiles.len(), 2);
+        assert_eq!(tiles[0].position.x, 1);
+        assert_eq!(tiles[1].position.x, 3);
+    }
+
+    #[test]
+    fn intersecting_entities_for_row_matches_row_and_columns() {
+        let snapshot = snapshot_for_filtering();
+        let entities = intersecting_entities_for_row(&snapshot, 1, 1..4);
+
+        assert_eq!(entities.len(), 1);
+        assert_eq!(entities[0].id, "row-one-right");
+        assert_eq!(entities[0].position, VisualPosition { x: 3, y: 1 });
+    }
+
+    #[test]
+    fn row_filter_helpers_return_empty_for_empty_data() {
+        let mut snapshot = snapshot_for_filtering();
+        snapshot.tiles.clear();
+        snapshot.entities.clear();
+
+        assert!(visible_tiles_for_row(&snapshot, 1, 0..snapshot.width).is_empty());
+        assert!(intersecting_entities_for_row(&snapshot, 1, 0..snapshot.width).is_empty());
+        assert!(visible_tiles_for_row(&snapshot, snapshot.height, 0..snapshot.width).is_empty());
+        assert!(
+            intersecting_entities_for_row(&snapshot, snapshot.height, 0..snapshot.width).is_empty()
+        );
     }
 }
