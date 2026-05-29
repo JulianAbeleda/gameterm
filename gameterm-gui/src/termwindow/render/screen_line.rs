@@ -8,15 +8,32 @@ use crate::termwindow::LineToElementShapeItem;
 use ::window::DeadKeyStatus;
 use anyhow::Context;
 use config::{HsbTransform, TextStyle};
+use gameterm_bidi::Direction;
+use gameterm_term::color::ColorAttribute;
+use gameterm_term::CellAttributes;
+use gameterm_visual::{
+    intersecting_entities_for_row, visible_tiles_for_row, VisualRenderEntity, VisualRenderTile,
+};
 use std::ops::Range;
 use std::rc::Rc;
 use std::time::Instant;
 use termwiz::cell::{unicode_column_width, Blink};
 use termwiz::color::LinearRgba;
 use termwiz::surface::CursorShape;
-use gameterm_bidi::Direction;
-use gameterm_term::color::ColorAttribute;
-use gameterm_term::CellAttributes;
+
+fn visual_placeholder_color(sprite: &str, alpha: f32, floor: f32) -> LinearRgba {
+    let mut hash = 0xcbf29ce484222325u64;
+    for byte in sprite.bytes() {
+        hash ^= byte as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+
+    let channel = |shift: u32| {
+        let raw = ((hash >> shift) & 0xff_u64) as f32 / 255.0;
+        floor + raw * (1.0 - floor)
+    };
+    LinearRgba::with_components(channel(0), channel(8), channel(16), alpha)
+}
 
 impl crate::TermWindow {
     /// "Render" a line of the terminal screen into the vertex buffer.
@@ -184,6 +201,20 @@ impl crate::TermWindow {
                 )
                 .context("filled_rectangle")?;
             quad.set_hsv(hsv);
+        }
+
+        if let (Some(snapshot), Some(row)) = (params.visual_snapshot, params.visual_row) {
+            for tile in visible_tiles_for_row(snapshot, row, 0..num_cols) {
+                self.populate_visual_tile_placeholder(
+                    tile,
+                    layers,
+                    &params,
+                    cell_width,
+                    cell_height,
+                    hsv,
+                )
+                .context("populate_visual_tile_placeholder")?;
+            }
         }
 
         // Assume that we are drawing retro tab bar if there is no
@@ -710,11 +741,80 @@ impl crate::TermWindow {
             .context("populate_image_quad")?;
         }
 
+        if let (Some(snapshot), Some(row)) = (params.visual_snapshot, params.visual_row) {
+            for entity in intersecting_entities_for_row(snapshot, row, 0..num_cols) {
+                self.populate_visual_entity_placeholder(
+                    entity,
+                    layers,
+                    &params,
+                    cell_width,
+                    cell_height,
+                    hsv,
+                )
+                .context("populate_visual_entity_placeholder")?;
+            }
+        }
+
         metrics::histogram!("render_screen_line").record(start.elapsed());
 
         Ok(RenderScreenLineResult {
             invalidate_on_hover_change,
         })
+    }
+
+    fn populate_visual_tile_placeholder(
+        &self,
+        tile: &VisualRenderTile,
+        layers: &mut TripleLayerQuadAllocator,
+        params: &RenderScreenLineParams,
+        cell_width: f32,
+        cell_height: f32,
+        hsv: Option<HsbTransform>,
+    ) -> anyhow::Result<()> {
+        let rect = euclid::rect(
+            params.left_pixel_x + tile.position.x as f32 * cell_width,
+            params.top_pixel_y,
+            cell_width,
+            cell_height,
+        );
+        let mut quad = self.filled_rectangle(
+            layers,
+            0,
+            rect,
+            visual_placeholder_color(&tile.sprite, 0.26, 0.18),
+        )?;
+        quad.set_hsv(hsv);
+        Ok(())
+    }
+
+    fn populate_visual_entity_placeholder(
+        &self,
+        entity: &VisualRenderEntity,
+        layers: &mut TripleLayerQuadAllocator,
+        params: &RenderScreenLineParams,
+        cell_width: f32,
+        cell_height: f32,
+        hsv: Option<HsbTransform>,
+    ) -> anyhow::Result<()> {
+        let inset = if entity.selected { 1.0 } else { 2.0 };
+        let rect = euclid::rect(
+            params.left_pixel_x + entity.position.x as f32 * cell_width + inset,
+            params.top_pixel_y + inset,
+            (cell_width - inset * 2.0).max(1.0),
+            (cell_height - inset * 2.0).max(1.0),
+        );
+        let mut quad = self.filled_rectangle(
+            layers,
+            2,
+            rect,
+            visual_placeholder_color(
+                &entity.sprite,
+                if entity.selected { 0.92 } else { 0.72 },
+                if entity.selected { 0.86 } else { 0.66 },
+            ),
+        )?;
+        quad.set_hsv(hsv);
+        Ok(())
     }
 
     fn build_line_element_shape(

@@ -17,6 +17,12 @@ use config::{
     VerticalWindowContentAlignment, VisualBellTarget,
 };
 use euclid::num::Zero;
+use gameterm_font::shaper::PresentationWidth;
+use gameterm_font::units::{IntPixelLength, PixelLength};
+use gameterm_font::{ClearShapeCache, GlyphInfo, LoadedFont};
+use gameterm_term::color::{ColorAttribute, ColorPalette};
+use gameterm_term::{CellAttributes, Line, StableRowIndex};
+use gameterm_visual::VisualRenderSnapshot;
 use mux::pane::{Pane, PaneId};
 use mux::renderable::{RenderableDimensions, StableCursorPosition};
 use ordered_float::NotNan;
@@ -27,12 +33,6 @@ use std::time::Instant;
 use termwiz::cellcluster::CellCluster;
 use termwiz::hyperlink::Hyperlink;
 use termwiz::surface::{CursorShape, CursorVisibility, SequenceNo};
-use gameterm_font::shaper::PresentationWidth;
-use gameterm_font::units::{IntPixelLength, PixelLength};
-use gameterm_font::{ClearShapeCache, GlyphInfo, LoadedFont};
-use gameterm_term::color::{ColorAttribute, ColorPalette};
-use gameterm_term::{CellAttributes, Line, StableRowIndex};
-use gameterm_visual::VisualRenderSnapshot;
 use window::color::LinearRgba;
 
 pub mod borders;
@@ -134,6 +134,7 @@ pub struct RenderScreenLineParams<'a> {
     pub left_pixel_x: f32,
     pub pixel_width: f32,
     pub stable_line_idx: Option<StableRowIndex>,
+    pub visual_row: Option<usize>,
     pub line: &'a Line,
     pub selection: Range<usize>,
     pub cursor: &'a StableCursorPosition,

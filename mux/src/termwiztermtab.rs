@@ -17,9 +17,15 @@ use async_trait::async_trait;
 use config::keyassignment::ScrollbackEraseMode;
 use crossbeam::channel::{unbounded as channel, Receiver, Sender};
 use filedescriptor::{FileDescriptor, Pipe};
+use gameterm_dynamic::Value;
+use gameterm_term::color::ColorPalette;
+use gameterm_term::{
+    KeyCode, KeyModifiers, MouseEvent, StableRowIndex, TerminalConfiguration, TerminalSize,
+};
 use parking_lot::{MappedMutexGuard, Mutex, MutexGuard};
 use portable_pty::*;
 use rangeset::RangeSet;
+use std::collections::BTreeMap;
 use std::io::{BufWriter, Write};
 use std::ops::Range;
 use std::sync::Arc;
@@ -30,10 +36,6 @@ use termwiz::surface::{Change, Line, SequenceNo};
 use termwiz::terminal::{ScreenSize, TerminalWaker};
 use termwiz::Context;
 use url::Url;
-use gameterm_term::color::ColorPalette;
-use gameterm_term::{
-    KeyCode, KeyModifiers, MouseEvent, StableRowIndex, TerminalConfiguration, TerminalSize,
-};
 
 struct TermWizTerminalDomain {
     domain_id: DomainId,
@@ -93,6 +95,7 @@ pub struct TermWizTerminalPane {
     dead: Mutex<bool>,
     writer: Mutex<Vec<u8>>,
     render_rx: FileDescriptor,
+    metadata: Arc<Mutex<BTreeMap<Value, Value>>>,
 }
 
 impl TermWizTerminalPane {
@@ -102,6 +105,7 @@ impl TermWizTerminalPane {
         input_tx: Sender<InputEvent>,
         render_rx: FileDescriptor,
         term_config: Option<Arc<dyn TerminalConfiguration + Send + Sync>>,
+        metadata: Arc<Mutex<BTreeMap<Value, Value>>>,
     ) -> Self {
         let pane_id = alloc_pane_id();
 
@@ -121,6 +125,7 @@ impl TermWizTerminalPane {
             render_rx,
             input_tx,
             dead: Mutex::new(false),
+            metadata,
         }
     }
 }
@@ -136,6 +141,10 @@ impl Pane for TermWizTerminalPane {
 
     fn get_current_seqno(&self) -> SequenceNo {
         self.terminal.lock().current_seqno()
+    }
+
+    fn get_metadata(&self) -> Value {
+        Value::Object(self.metadata.lock().clone().into())
     }
 
     fn get_changed_since(
@@ -227,8 +236,8 @@ impl Pane for TermWizTerminalPane {
     }
 
     fn mouse_event(&self, event: MouseEvent) -> anyhow::Result<()> {
-        use termwiz::input::MouseButtons as Buttons;
         use gameterm_term::input::MouseButton;
+        use termwiz::input::MouseButtons as Buttons;
 
         let mouse_buttons = match event.button {
             MouseButton::Left => Buttons::LEFT,
@@ -311,11 +320,18 @@ pub struct TermWizTerminal {
     input_rx: Receiver<InputEvent>,
     renderer: TerminfoRenderer,
     grab_mouse: bool,
+    metadata: Arc<Mutex<BTreeMap<Value, Value>>>,
 }
 
 impl TermWizTerminal {
     pub fn no_grab_mouse_in_raw_mode(&mut self) {
         self.grab_mouse = false;
+    }
+
+    pub fn set_metadata(&mut self, key: impl Into<String>, value: Value) {
+        self.metadata
+            .lock()
+            .insert(Value::String(key.into()), value);
     }
 }
 
@@ -451,6 +467,7 @@ pub fn allocate(
     let render_pipe = Pipe::new().expect("Pipe creation not to fail");
 
     let (input_tx, input_rx) = channel();
+    let metadata = Arc::new(Mutex::new(BTreeMap::new()));
 
     let renderer = termwiz_funcs::new_gameterm_terminfo_renderer();
 
@@ -467,10 +484,18 @@ pub fn allocate(
         input_rx,
         renderer,
         grab_mouse: true,
+        metadata: Arc::clone(&metadata),
     };
 
     let domain_id = 0;
-    let pane = TermWizTerminalPane::new(domain_id, size, input_tx, render_pipe.read, Some(config));
+    let pane = TermWizTerminalPane::new(
+        domain_id,
+        size,
+        input_tx,
+        render_pipe.read,
+        Some(config),
+        metadata,
+    );
 
     // Add the tab to the mux so that the output is processed
     let pane: Arc<dyn Pane> = Arc::new(pane);
@@ -500,6 +525,7 @@ pub async fn run<
     let render_rx = render_pipe.read;
     let (input_tx, input_rx) = channel();
     let should_close_window = window_id.is_none();
+    let metadata = Arc::new(Mutex::new(BTreeMap::new()));
 
     let renderer = termwiz_funcs::new_gameterm_terminfo_renderer();
 
@@ -516,6 +542,7 @@ pub async fn run<
         input_rx,
         renderer,
         grab_mouse: true,
+        metadata: Arc::clone(&metadata),
     };
 
     async fn register_tab(
@@ -524,6 +551,7 @@ pub async fn run<
         size: TerminalSize,
         window_id: Option<WindowId>,
         term_config: Option<Arc<dyn TerminalConfiguration + Send + Sync>>,
+        metadata: Arc<Mutex<BTreeMap<Value, Value>>>,
     ) -> anyhow::Result<(PaneId, WindowId)> {
         let mux = Mux::get();
 
@@ -540,8 +568,14 @@ pub async fn run<
             }
         };
 
-        let pane =
-            TermWizTerminalPane::new(domain.domain_id(), size, input_tx, render_rx, term_config);
+        let pane = TermWizTerminalPane::new(
+            domain.domain_id(),
+            size,
+            input_tx,
+            render_rx,
+            term_config,
+            metadata,
+        );
         let pane: Arc<dyn Pane> = Arc::new(pane);
 
         let tab = Arc::new(Tab::new(&size));
@@ -560,7 +594,7 @@ pub async fn run<
     }
 
     let (pane_id, window_id) = promise::spawn::spawn_into_main_thread(async move {
-        register_tab(input_tx, render_rx, size, window_id, term_config).await
+        register_tab(input_tx, render_rx, size, window_id, term_config, metadata).await
     })
     .await?;
 

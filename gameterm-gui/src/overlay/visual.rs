@@ -1,3 +1,4 @@
+use gameterm_dynamic::Value;
 use gameterm_term::color::ColorAttribute;
 use gameterm_visual::{truncate_to_screen, SceneRuntime, VisualScene};
 use mux::termwiztermtab::TermWizTerminal;
@@ -103,6 +104,10 @@ fn handle_key(runtime: &mut SceneRuntime, key: KeyCode) -> bool {
 
 fn render_runtime(term: &mut TermWizTerminal, runtime: &SceneRuntime) -> anyhow::Result<()> {
     let size = term.get_screen_size()?;
+    term.set_metadata(
+        "gameterm_visual_snapshot",
+        Value::String(serde_json::to_string(&runtime.render_snapshot())?),
+    );
     let frame = runtime.render_text_frame(size.cols, size.rows);
     term.render(&[
         Change::ClearScreen(ColorAttribute::Default),

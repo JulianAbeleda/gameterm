@@ -10,14 +10,15 @@ use ::window::bitmaps::TextureRect;
 use ::window::DeadKeyStatus;
 use anyhow::Context;
 use config::VisualBellTarget;
+use gameterm_dynamic::Value;
+use gameterm_term::color::{ColorAttribute, ColorPalette};
+use gameterm_term::{Line, StableRowIndex};
+use gameterm_visual::VisualRenderSnapshot;
 use mux::pane::{PaneId, WithPaneLines};
 use mux::renderable::{RenderableDimensions, StableCursorPosition};
 use mux::tab::PositionedPane;
 use ordered_float::NotNan;
 use std::time::Instant;
-use gameterm_dynamic::Value;
-use gameterm_term::color::{ColorAttribute, ColorPalette};
-use gameterm_term::{Line, StableRowIndex};
 use window::color::LinearRgba;
 
 impl crate::TermWindow {
@@ -301,6 +302,7 @@ impl crate::TermWindow {
         let cursor_bg = palette.cursor_bg.to_linear();
         let cursor_is_default_color =
             palette.cursor_fg == global_cursor_fg && palette.cursor_bg == global_cursor_bg;
+        let visual_snapshot = visual_snapshot_for_pane(pos);
 
         {
             let stable_range = match current_viewport {
@@ -333,6 +335,7 @@ impl crate::TermWindow {
                 white_space: TextureRect,
                 filled_box: TextureRect,
                 window_is_transparent: bool,
+                visual_snapshot: Option<VisualRenderSnapshot>,
                 layers: &'a mut TripleLayerQuadAllocator<'b>,
                 error: Option<anyhow::Error>,
             }
@@ -363,6 +366,7 @@ impl crate::TermWindow {
                 white_space,
                 filled_box,
                 window_is_transparent,
+                visual_snapshot,
                 layers,
                 error: None,
             };
@@ -375,6 +379,7 @@ impl crate::TermWindow {
                     line: &&mut Line,
                 ) -> anyhow::Result<()> {
                     let stable_row = stable_top + line_idx as StableRowIndex;
+                    let visual_snapshot = self.visual_snapshot.as_ref();
                     let selrange = self
                         .selrange
                         .map_or(0..0, |sel| sel.cols_for_row(stable_row, self.rectangular));
@@ -430,7 +435,7 @@ impl crate::TermWindow {
                         config_generation: self.term_window.config.generation(),
                         shape_generation: self.term_window.shape_generation,
                         quad_generation: self.term_window.quad_generation,
-                        visual_generation: None,
+                        visual_generation: visual_snapshot.map(|snapshot| snapshot.generation),
                         composing: composing.clone(),
                         selection: selrange.clone(),
                         cursor,
@@ -496,13 +501,14 @@ impl crate::TermWindow {
                                 pixel_width: self.dims.cols as f32
                                     * self.term_window.render_metrics.cell_size.width as f32,
                                 stable_line_idx: Some(stable_row),
+                                visual_row: visual_snapshot.map(|_| line_idx),
                                 line: &line,
                                 selection: selrange.clone(),
                                 cursor: &self.cursor,
                                 palette: &self.palette,
                                 dims: &self.dims,
                                 config: &self.term_window.config,
-                                visual_snapshot: None,
+                                visual_snapshot,
                                 cursor_border_color: self.cursor_border_color,
                                 foreground: self.foreground,
                                 is_active: self.pos.is_active,
@@ -687,5 +693,15 @@ impl crate::TermWindow {
             baseline: 1.0,
             content: ComputedElementContent::Children(vec![]),
         })
+    }
+}
+
+fn visual_snapshot_for_pane(pos: &PositionedPane) -> Option<VisualRenderSnapshot> {
+    match pos.pane.get_metadata() {
+        Value::Object(metadata) => match metadata.get_by_str("gameterm_visual_snapshot") {
+            Some(Value::String(snapshot)) => serde_json::from_str(snapshot).ok(),
+            _ => None,
+        },
+        _ => None,
     }
 }

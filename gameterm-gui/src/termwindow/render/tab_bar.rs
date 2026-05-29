@@ -2,8 +2,8 @@ use crate::quad::TripleLayerQuadAllocator;
 use crate::termwindow::render::RenderScreenLineParams;
 use crate::utilsprites::RenderMetrics;
 use config::ConfigHandle;
-use mux::renderable::RenderableDimensions;
 use gameterm_term::color::ColorAttribute;
+use mux::renderable::RenderableDimensions;
 use window::color::LinearRgba;
 
 impl crate::TermWindow {
@@ -57,6 +57,7 @@ impl crate::TermWindow {
                 left_pixel_x: 0.,
                 pixel_width: self.dimensions.pixel_width as f32,
                 stable_line_idx: None,
+                visual_row: None,
                 line: self.tab_bar.line(),
                 selection: 0..0,
                 cursor: &Default::default(),
