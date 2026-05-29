@@ -247,6 +247,8 @@ run_doctor_check() {
     >/tmp/gameterm-scene-doctor-verify-warn.out
   grep -q "WARN: sprite asset missing" \
     /tmp/gameterm-scene-doctor-verify-warn.out
+  grep -q "SUGGEST: create" \
+    /tmp/gameterm-scene-doctor-verify-warn.out
 
   set +e
   "${repo_root}/ci/gameterm-scene-doctor.sh" \
@@ -264,6 +266,11 @@ run_doctor_check() {
   echo "doctor: ok"
 }
 
+run_smoke_asset_check() {
+  "${repo_root}/ci/gameterm-scene-smoke.sh" --check-assets >/dev/null
+  echo "smoke assets: ok"
+}
+
 run_cargo_checks() {
   cargo test -p gameterm-visual scene_fixture
   cargo test -p gameterm-visual open_file
@@ -277,6 +284,7 @@ run_all() {
   run_init_helper_check
   run_author_helper_check
   run_doctor_check
+  run_smoke_asset_check
   for fixture in basic navigate invalid sprites missing-sprite; do
     run_fixture_setup_check "${fixture}"
   done

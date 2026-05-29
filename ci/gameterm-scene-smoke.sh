@@ -12,6 +12,8 @@ capture from "0:none".
 Options:
   --launch                 Launch target/debug/gameterm-gui with the renderer
                            row fixture in a temporary XDG_CONFIG_HOME.
+  --check-assets           Check bundled Scene Mode PNG assets and fixture
+                           sprite manifests without launching or capturing.
   --fixture NAME           Fixture to install when --launch is used: basic,
                            navigate, invalid, sprites, missing-sprite, or
                            renderer-rows. Default: renderer-rows.
@@ -36,6 +38,7 @@ output="/tmp/gameterm-scene-smoke.png"
 min_bytes=1000
 capture_timeout=12
 launch=0
+check_assets=0
 fixture="renderer-rows"
 wait_before_capture=10
 ffmpeg_bin="${FFMPEG:-}"
@@ -47,6 +50,10 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --launch)
       launch=1
+      shift
+      ;;
+    --check-assets)
+      check_assets=1
       shift
       ;;
     --fixture)
@@ -156,6 +163,43 @@ install_scene_fixture() {
       ;;
   esac
 }
+
+check_bundled_assets() {
+  local expected=(
+    workspace-map.png
+    project-core.png
+    task-tile.png
+    agent-idle.png
+    memory-note.png
+  )
+  local asset
+  for asset in "${expected[@]}"; do
+    local path="${repo_root}/assets/gameterm-scene/${asset}"
+    if [[ ! -f "${path}" ]]; then
+      echo "missing bundled Scene Mode asset: ${path}" >&2
+      exit 6
+    fi
+    if ! file "${path}" | grep -q 'PNG image data, 32 x 32'; then
+      file "${path}" >&2 || true
+      echo "bundled Scene Mode asset is not a 32x32 PNG: ${path}" >&2
+      exit 6
+    fi
+  done
+
+  "${repo_root}/ci/gameterm-scene-doctor.sh" \
+    --scene "${fixture_root}/default.json" \
+    --sprites "${fixture_root}/sprites.json" \
+    --strict >/tmp/gameterm-scene-smoke-doctor.out
+
+  echo "Bundled Scene Mode asset check succeeded."
+}
+
+if [[ "${check_assets}" -eq 1 ]]; then
+  check_bundled_assets
+  if [[ "${launch}" -eq 0 ]]; then
+    exit 0
+  fi
+fi
 
 if ! ffmpeg_bin="$(resolve_ffmpeg)"; then
   cat >&2 <<'EOF'

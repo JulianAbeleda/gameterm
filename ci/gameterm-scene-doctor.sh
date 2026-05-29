@@ -72,6 +72,10 @@ warn() {
   echo "WARN: $*"
 }
 
+suggest() {
+  echo "SUGGEST: $*"
+}
+
 error() {
   errors=$((errors + 1))
   echo "ERROR: $*"
@@ -94,6 +98,7 @@ scene_dir_for() {
 validate_scene() {
   if [[ ! -f "${scene_path}" ]]; then
     warn "scene file missing at ${scene_path}; Scene Mode will use the bundled default"
+    suggest "create one with: ci/gameterm-scene-init.sh"
     return
   fi
 
@@ -104,6 +109,7 @@ validate_scene() {
   else
     error "scene file is invalid: ${scene_path}"
     cat /tmp/gameterm-scene-doctor-scene.err >&2
+    suggest "fix the reported scene schema issue, then rerun: ci/gameterm-scene-author.sh validate ${scene_path}"
   fi
 }
 
@@ -122,6 +128,7 @@ check_navigate_targets() {
       ok "Navigate target exists: ${target}"
     else
       warn "Navigate target missing: ${target} -> ${resolved}"
+      suggest "create ${resolved} or update this Navigate target in ${scene_path}"
     fi
   done < <(jq -r '.choices[]? | select(.kind.Navigate?) | .kind.Navigate.target' "${scene_path}")
 }
@@ -139,6 +146,7 @@ check_open_file_targets() {
       ok "OpenFile target exists: ${target}"
     else
       warn "OpenFile target missing from repo root: ${target} -> ${resolved}"
+      suggest "update the OpenFile path or create ${resolved}"
     fi
   done < <(jq -r '.choices[]? | select(.kind.OpenFile?) | .kind.OpenFile.path' "${scene_path}")
 }
@@ -146,6 +154,7 @@ check_open_file_targets() {
 validate_sprite_manifest() {
   if [[ ! -f "${sprites_path}" ]]; then
     warn "sprite manifest missing at ${sprites_path}; Scene Mode will use bundled sprites and placeholders"
+    suggest "create starter config with: ci/gameterm-scene-init.sh --with-sprites"
     return
   fi
 
@@ -154,6 +163,7 @@ validate_sprite_manifest() {
     sprite_manifest_valid=1
   else
     error "sprite manifest must contain a sprites array: ${sprites_path}"
+    suggest "use the shape from docs/examples/gameterm-scene-sprites.json"
     return
   fi
 
@@ -164,14 +174,17 @@ validate_sprite_manifest() {
 
   if [[ "${empty_ids}" != "0" ]]; then
     error "sprite manifest has ${empty_ids} empty sprite id(s)"
+    suggest "set every sprite entry id to a non-empty scene sprite id"
   fi
   if [[ -n "${duplicate_ids}" ]]; then
     while IFS= read -r id; do
       error "sprite manifest has duplicate sprite id: ${id}"
+      suggest "keep one entry for sprite id ${id}"
     done <<<"${duplicate_ids}"
   fi
   if [[ "${empty_paths}" != "0" ]]; then
     error "sprite manifest has ${empty_paths} empty sprite path(s)"
+    suggest "set every sprite entry path to a PNG file path"
   fi
 
   local manifest_dir
@@ -184,6 +197,7 @@ validate_sprite_manifest() {
       ok "sprite asset exists: ${id} -> ${resolved}"
     else
       warn "sprite asset missing: ${id} -> ${resolved}"
+      suggest "create ${resolved} or update sprite id ${id} in ${sprites_path}"
     fi
   done < <(jq -r '.sprites[]? | [.id, .path] | @tsv' "${sprites_path}")
 }
@@ -205,6 +219,7 @@ check_scene_sprite_coverage() {
   else
     while IFS= read -r id; do
       warn "scene sprite id has no manifest entry: ${id}"
+      suggest "add to ${sprites_path}: {\"id\":\"${id}\",\"path\":\"sprites/${id}.png\"}"
     done <<<"${missing_ids}"
   fi
 
