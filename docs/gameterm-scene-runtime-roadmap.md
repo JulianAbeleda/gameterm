@@ -145,7 +145,8 @@ Implemented `RunCommand` behavior:
 1. Require an explicit `argv` array in the scene JSON. Scene Mode does not infer
    commands from labels, metadata, or file paths.
 2. Execute the argv directly without invoking a shell.
-3. Open the command in a new GameTerm tab in the same window.
+3. Open the command in the same GameTerm window. `target` defaults to `tab` and
+   can opt into `split_right` or `split_down`.
 4. Keep Scene Mode responsive while the command pane is spawned.
 5. Show command spawn and failure state in the Tile Debugger action status.
 6. Treat command output as pane output, not as scene JSON mutation, until a
@@ -172,5 +173,5 @@ Implemented `Navigate` behavior:
 
 - Should future scene files be able to specify a base directory for relative
   `OpenFile` paths?
-- Should `RunCommand` support a split-pane target in addition to the current
-  new-tab target?
+- Should `RunCommand` support additional split sizing or domain selection
+  beyond the current `tab`, `split_right`, and `split_down` targets?

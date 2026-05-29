@@ -187,6 +187,7 @@ run_author_helper_check() {
     add-choice \
     --label "Run true" \
     --run-argv '["true"]' \
+    --target split_down \
     "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
   "${repo_root}/ci/gameterm-scene-author.sh" \
     update-choice \

@@ -64,7 +64,8 @@ ci/gameterm-scene-author.sh new-scene ~/.config/gameterm/scenes/experiment.json
 ci/gameterm-scene-author.sh add-entity ~/.config/gameterm/scenes/experiment.json \
   --id task-demo --kind Task --label "Demo Task" --x 2 --y 2 --sprite task_tile
 ci/gameterm-scene-author.sh add-choice ~/.config/gameterm/scenes/experiment.json \
-  --label "Run visual check" --run-argv '["cargo","check","-p","gameterm-visual"]'
+  --label "Run visual check" --run-argv '["cargo","check","-p","gameterm-visual"]' \
+  --target split_right
 ci/gameterm-scene-author.sh update-choice ~/.config/gameterm/scenes/experiment.json \
   --choice-index 1 --label "Open docs" --open-file docs/gameterm-scene-mode.md
 ci/gameterm-scene-author.sh remove-choice ~/.config/gameterm/scenes/experiment.json \
@@ -124,13 +125,15 @@ shell commands.
   "kind": {
     "RunCommand": {
       "argv": ["cargo", "check", "-p", "gameterm-visual"],
-      "cwd": "/path/to/workspace"
+      "cwd": "/path/to/workspace",
+      "target": "split_right"
     }
   }
 }
 ```
 
-`cwd` is optional. Scene Mode opens the command in a new GameTerm tab in the
+`cwd` is optional. `target` is optional and defaults to `tab`; supported values
+are `tab`, `split_right`, and `split_down`. Scene Mode opens the command in the
 same window, then reports the spawned pane id or spawn failure in the status
 line and Tile Debugger. Command output belongs to the spawned pane; it does not
 mutate the scene JSON.

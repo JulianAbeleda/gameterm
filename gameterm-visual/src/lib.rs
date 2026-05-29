@@ -41,10 +41,31 @@ pub enum SceneActionKind {
         argv: Vec<String>,
         #[serde(default)]
         cwd: Option<String>,
+        #[serde(default)]
+        target: RunCommandTarget,
     },
     Navigate {
         target: String,
     },
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RunCommandTarget {
+    #[default]
+    Tab,
+    SplitRight,
+    SplitDown,
+}
+
+impl RunCommandTarget {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Tab => "tab",
+            Self::SplitRight => "split_right",
+            Self::SplitDown => "split_down",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -301,6 +322,7 @@ pub enum VisualActionRequest {
     RunCommand {
         argv: Vec<String>,
         cwd: Option<PathBuf>,
+        target: RunCommandTarget,
     },
     Navigate {
         target: String,
@@ -449,7 +471,7 @@ impl VisualScene {
         }
 
         for choice in &self.choices {
-            if let SceneActionKind::RunCommand { argv, cwd } = &choice.kind {
+            if let SceneActionKind::RunCommand { argv, cwd, .. } = &choice.kind {
                 if argv.is_empty() || argv.iter().any(|arg| arg.trim().is_empty()) {
                     return Err(VisualSceneError::EmptyRunCommand {
                         label: choice.label.clone(),
@@ -530,6 +552,7 @@ impl VisualScene {
                             "gameterm-visual".to_string(),
                         ],
                         cwd: None,
+                        target: RunCommandTarget::Tab,
                     },
                 },
             ],
@@ -706,12 +729,13 @@ impl SceneRuntime {
                     pending_action = action;
                     status
                 }
-                SceneActionKind::RunCommand { argv, cwd } => {
+                SceneActionKind::RunCommand { argv, cwd, target } => {
                     pending_action = Some(VisualActionRequest::RunCommand {
                         argv: argv.clone(),
                         cwd: cwd.as_ref().map(PathBuf::from),
+                        target: *target,
                     });
-                    format!("RunCommand ready: {}", argv.join(" "))
+                    format!("RunCommand ready ({}): {}", target.as_str(), argv.join(" "))
                 }
                 SceneActionKind::Navigate { target } => {
                     pending_action = Some(VisualActionRequest::Navigate {
@@ -735,18 +759,36 @@ impl SceneRuntime {
         self.bump_generation();
     }
 
-    pub fn mark_run_command_spawning(&mut self, argv: &[String]) {
-        self.status = format!("RunCommand opening tab: {}", argv.join(" "));
+    pub fn mark_run_command_spawning(&mut self, argv: &[String], target: RunCommandTarget) {
+        self.status = format!("RunCommand opening {}: {}", target.as_str(), argv.join(" "));
         self.bump_generation();
     }
 
-    pub fn mark_run_command_spawned(&mut self, argv: &[String], pane_id: usize) {
-        self.status = format!("RunCommand opened pane {pane_id}: {}", argv.join(" "));
+    pub fn mark_run_command_spawned(
+        &mut self,
+        argv: &[String],
+        target: RunCommandTarget,
+        pane_id: usize,
+    ) {
+        self.status = format!(
+            "RunCommand opened {} pane {pane_id}: {}",
+            target.as_str(),
+            argv.join(" ")
+        );
         self.bump_generation();
     }
 
-    pub fn mark_run_command_failed(&mut self, argv: &[String], error: impl std::fmt::Display) {
-        self.status = format!("RunCommand failed: {}: {error}", argv.join(" "));
+    pub fn mark_run_command_failed(
+        &mut self,
+        argv: &[String],
+        target: RunCommandTarget,
+        error: impl std::fmt::Display,
+    ) {
+        self.status = format!(
+            "RunCommand failed ({}): {}: {error}",
+            target.as_str(),
+            argv.join(" ")
+        );
         self.bump_generation();
     }
 
@@ -1044,11 +1086,12 @@ fn action_kind_detail(kind: &SceneActionKind) -> String {
     match kind {
         SceneActionKind::Inspect => "selected entity".to_string(),
         SceneActionKind::OpenFile { path } => format!("path={path}"),
-        SceneActionKind::RunCommand { argv, cwd } => {
+        SceneActionKind::RunCommand { argv, cwd, target } => {
             let mut detail = format!("argv={}", argv.join(" "));
             if let Some(cwd) = cwd {
                 detail.push_str(&format!(" cwd={cwd}"));
             }
+            detail.push_str(&format!(" target={}", target.as_str()));
             detail
         }
         SceneActionKind::Navigate { target } => format!("target={target}"),
@@ -1067,11 +1110,12 @@ fn action_request_name(action: &VisualActionRequest) -> String {
 fn action_request_detail(action: &VisualActionRequest) -> String {
     match action {
         VisualActionRequest::OpenFile { path } => format!("path={}", path.display()),
-        VisualActionRequest::RunCommand { argv, cwd } => {
+        VisualActionRequest::RunCommand { argv, cwd, target } => {
             let mut detail = format!("argv={}", argv.join(" "));
             if let Some(cwd) = cwd {
                 detail.push_str(&format!(" cwd={}", cwd.display()));
             }
+            detail.push_str(&format!(" target={}", target.as_str()));
             detail
         }
         VisualActionRequest::Navigate { target } => format!("target={target}"),
@@ -1504,6 +1548,7 @@ mod tests {
             kind: SceneActionKind::RunCommand {
                 argv: vec!["true".to_string()],
                 cwd: Some("/tmp".to_string()),
+                target: RunCommandTarget::SplitRight,
             },
         }];
         let mut runtime = SceneRuntime::new(scene).unwrap();
@@ -1511,12 +1556,13 @@ mod tests {
         runtime.activate_choice();
         let snapshot = runtime.render_snapshot();
 
-        assert_eq!(snapshot.status, "RunCommand ready: true");
+        assert_eq!(snapshot.status, "RunCommand ready (split_right): true");
         assert_eq!(
             runtime.take_pending_action(),
             Some(VisualActionRequest::RunCommand {
                 argv: vec!["true".to_string()],
-                cwd: Some(PathBuf::from("/tmp"))
+                cwd: Some(PathBuf::from("/tmp")),
+                target: RunCommandTarget::SplitRight,
             })
         );
     }
@@ -1529,6 +1575,7 @@ mod tests {
             kind: SceneActionKind::RunCommand {
                 argv: Vec::new(),
                 cwd: None,
+                target: RunCommandTarget::Tab,
             },
         }];
 
@@ -1543,22 +1590,22 @@ mod tests {
         let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
         let argv = vec!["true".to_string()];
 
-        runtime.mark_run_command_spawning(&argv);
+        runtime.mark_run_command_spawning(&argv, RunCommandTarget::Tab);
         assert_eq!(
             runtime.debug_report().status,
             "RunCommand opening tab: true"
         );
 
-        runtime.mark_run_command_spawned(&argv, 123);
+        runtime.mark_run_command_spawned(&argv, RunCommandTarget::SplitDown, 123);
         assert_eq!(
             runtime.debug_report().status,
-            "RunCommand opened pane 123: true"
+            "RunCommand opened split_down pane 123: true"
         );
 
-        runtime.mark_run_command_failed(&argv, "spawn failed");
+        runtime.mark_run_command_failed(&argv, RunCommandTarget::SplitRight, "spawn failed");
         assert_eq!(
             runtime.debug_report().status,
-            "RunCommand failed: true: spawn failed"
+            "RunCommand failed (split_right): true: spawn failed"
         );
     }
 
@@ -1754,19 +1801,20 @@ mod tests {
         assert_eq!(report.selected_choice_kind.as_deref(), Some("RunCommand"));
         assert_eq!(
             report.selected_choice_detail.as_deref(),
-            Some("argv=cargo check -p gameterm-visual")
+            Some("argv=cargo check -p gameterm-visual target=tab")
         );
         assert_eq!(report.pending_action_kind.as_deref(), Some("RunCommand"));
         assert_eq!(
             report.pending_action_detail.as_deref(),
-            Some("argv=cargo check -p gameterm-visual")
+            Some("argv=cargo check -p gameterm-visual target=tab")
         );
 
         runtime.toggle_debugger();
         let frame = runtime.render_text_frame(100, 32);
         assert!(frame.contains("Choice label: Run cargo check -p gameterm-visual"));
         assert!(frame.contains("Choice kind: RunCommand"));
-        assert!(frame.contains("Pending action: RunCommand argv=cargo check -p gameterm-visual"));
+        assert!(frame
+            .contains("Pending action: RunCommand argv=cargo check -p gameterm-visual target=tab"));
     }
 
     #[test]

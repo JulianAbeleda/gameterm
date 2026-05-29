@@ -52,6 +52,8 @@ Options for add-choice:
   --run-argv JSON_ARRAY         Explicit argv array, for example:
                                 '["cargo","check","-p","gameterm-visual"]'
   --cwd PATH                    Optional cwd for --run-argv.
+  --target TARGET               Optional RunCommand target: tab, split_right,
+                                or split_down. Default: tab.
 
 Options for remove-choice:
   --choice-index N
@@ -64,6 +66,7 @@ Options for update-choice:
   --navigate TARGET
   --run-argv JSON_ARRAY
   --cwd PATH
+  --target TARGET
 
 Fixtures:
   basic, navigate, invalid, sprites, missing-sprite
@@ -98,6 +101,7 @@ choice_label=""
 choice_kind=""
 choice_payload=""
 choice_cwd=""
+choice_target="tab"
 choice_index=""
 flags=()
 metadata=()
@@ -189,6 +193,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --cwd)
       choice_cwd="$2"
+      shift 2
+      ;;
+    --target)
+      choice_target="$2"
       shift 2
       ;;
     --choice-index)
@@ -347,12 +355,14 @@ add_choice() {
         jq --arg label "${choice_label}" \
           --argjson argv "${choice_payload}" \
           --arg cwd "${choice_cwd}" \
-          '.choices += [{ label: $label, kind: { RunCommand: { argv: $argv, cwd: $cwd } } }]' \
+          --arg target "${choice_target}" \
+          '.choices += [{ label: $label, kind: { RunCommand: { argv: $argv, cwd: $cwd, target: $target } } }]' \
           "${target}" | write_json "${target}"
       else
         jq --arg label "${choice_label}" \
           --argjson argv "${choice_payload}" \
-          '.choices += [{ label: $label, kind: { RunCommand: { argv: $argv } } }]' \
+          --arg target "${choice_target}" \
+          '.choices += [{ label: $label, kind: { RunCommand: { argv: $argv, target: $target } } }]' \
           "${target}" | write_json "${target}"
       fi
       ;;
@@ -378,9 +388,9 @@ choice_json_filter() {
     RunCommand)
       require_value "--run-argv" "${choice_payload}"
       if [[ -n "${choice_cwd}" ]]; then
-        printf '{ label: $label, kind: { RunCommand: { argv: $argv, cwd: $cwd } } }'
+        printf '{ label: $label, kind: { RunCommand: { argv: $argv, cwd: $cwd, target: $target } } }'
       else
-        printf '{ label: $label, kind: { RunCommand: { argv: $argv } } }'
+        printf '{ label: $label, kind: { RunCommand: { argv: $argv, target: $target } } }'
       fi
       ;;
     *)
@@ -419,6 +429,7 @@ update_choice() {
         --arg label "${choice_label}" \
         --argjson argv "${choice_payload}" \
         --arg cwd "${choice_cwd}" \
+        --arg target "${choice_target}" \
         --arg payload "${choice_payload}" \
         "if (.choices | has(\$index)) then .choices[\$index] = ${filter} else error(\"choice index not found: \" + (\$index | tostring)) end" \
         "${target}" | write_json "${target}"
@@ -426,6 +437,7 @@ update_choice() {
       jq --argjson index "${choice_index}" \
         --arg label "${choice_label}" \
         --argjson argv "${choice_payload}" \
+        --arg target "${choice_target}" \
         --arg payload "${choice_payload}" \
         "if (.choices | has(\$index)) then .choices[\$index] = ${filter} else error(\"choice index not found: \" + (\$index | tostring)) end" \
         "${target}" | write_json "${target}"
