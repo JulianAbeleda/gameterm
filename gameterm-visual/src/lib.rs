@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::ops::Range;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VisualPosition {
@@ -55,6 +55,43 @@ pub struct VisualScene {
     pub dialogue_speaker: String,
     pub dialogue: String,
     pub choices: Vec<SceneAction>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VisualSpriteDefinition {
+    pub id: String,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VisualSpriteManifest {
+    pub sprites: Vec<VisualSpriteDefinition>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VisualResolvedSprite {
+    pub id: String,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VisualSpriteManifestStatus {
+    pub manifest_path: Option<String>,
+    pub sprites: Vec<VisualResolvedSprite>,
+    pub warnings: Vec<String>,
+}
+
+impl VisualSpriteManifestStatus {
+    pub fn missing(path: impl AsRef<Path>) -> Self {
+        Self {
+            manifest_path: Some(path.as_ref().display().to_string()),
+            sprites: Vec::new(),
+            warnings: vec![format!(
+                "sprite manifest not found at {}",
+                path.as_ref().display()
+            )],
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -177,6 +214,86 @@ pub enum VisualSceneError {
     Json(String),
     #[error("scene file error for `{path}`: {message}")]
     File { path: String, message: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum VisualSpriteManifestError {
+    #[error("sprite manifest json error: {0}")]
+    Json(String),
+    #[error("sprite manifest file error for `{path}`: {message}")]
+    File { path: String, message: String },
+    #[error("sprite id must be non-empty")]
+    EmptySpriteId,
+    #[error("sprite path for `{id}` must be non-empty")]
+    EmptySpritePath { id: String },
+    #[error("duplicate sprite id `{0}`")]
+    DuplicateSpriteId(String),
+}
+
+impl VisualSpriteManifest {
+    pub fn from_json(json: &str) -> Result<Self, VisualSpriteManifestError> {
+        let manifest: Self = serde_json::from_str(json)
+            .map_err(|err| VisualSpriteManifestError::Json(err.to_string()))?;
+        manifest.validate()?;
+        Ok(manifest)
+    }
+
+    pub fn load_from_path(path: impl AsRef<Path>) -> Result<Self, VisualSpriteManifestError> {
+        let path = path.as_ref();
+        let json =
+            std::fs::read_to_string(path).map_err(|err| VisualSpriteManifestError::File {
+                path: path.display().to_string(),
+                message: err.to_string(),
+            })?;
+        Self::from_json(&json)
+    }
+
+    pub fn validate(&self) -> Result<(), VisualSpriteManifestError> {
+        let mut ids = HashSet::new();
+        for sprite in &self.sprites {
+            if sprite.id.trim().is_empty() {
+                return Err(VisualSpriteManifestError::EmptySpriteId);
+            }
+            if sprite.path.trim().is_empty() {
+                return Err(VisualSpriteManifestError::EmptySpritePath {
+                    id: sprite.id.clone(),
+                });
+            }
+            if !ids.insert(sprite.id.as_str()) {
+                return Err(VisualSpriteManifestError::DuplicateSpriteId(
+                    sprite.id.clone(),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    pub fn resolve_against(&self, manifest_path: impl AsRef<Path>) -> VisualSpriteManifestStatus {
+        let manifest_path = manifest_path.as_ref();
+        let base_dir = manifest_path.parent().unwrap_or_else(|| Path::new(""));
+        let sprites = self
+            .sprites
+            .iter()
+            .map(|sprite| {
+                let path = PathBuf::from(&sprite.path);
+                let path = if path.is_absolute() {
+                    path
+                } else {
+                    base_dir.join(path)
+                };
+                VisualResolvedSprite {
+                    id: sprite.id.clone(),
+                    path: path.display().to_string(),
+                }
+            })
+            .collect();
+
+        VisualSpriteManifestStatus {
+            manifest_path: Some(manifest_path.display().to_string()),
+            sprites,
+            warnings: Vec::new(),
+        }
+    }
 }
 
 impl VisualScene {
@@ -834,6 +951,63 @@ mod tests {
         assert!(matches!(
             VisualScene::from_json("{"),
             Err(VisualSceneError::Json(_))
+        ));
+    }
+
+    #[test]
+    fn valid_sprite_manifest_resolves_relative_paths() {
+        let manifest = VisualSpriteManifest::from_json(
+            r#"{
+                "sprites": [
+                    { "id": "project_core", "path": "sprites/project.png" },
+                    { "id": "agent_idle", "path": "/tmp/agent.png" }
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        let status = manifest.resolve_against("/tmp/gameterm/scenes/sprites.json");
+
+        assert_eq!(status.sprites.len(), 2);
+        assert_eq!(status.sprites[0].id, "project_core");
+        assert_eq!(
+            status.sprites[0].path,
+            "/tmp/gameterm/scenes/sprites/project.png"
+        );
+        assert_eq!(status.sprites[1].path, "/tmp/agent.png");
+        assert!(status.warnings.is_empty());
+    }
+
+    #[test]
+    fn duplicate_sprite_ids_are_rejected() {
+        assert!(matches!(
+            VisualSpriteManifest::from_json(
+                r#"{
+                    "sprites": [
+                        { "id": "task_tile", "path": "a.png" },
+                        { "id": "task_tile", "path": "b.png" }
+                    ]
+                }"#
+            ),
+            Err(VisualSpriteManifestError::DuplicateSpriteId(_))
+        ));
+    }
+
+    #[test]
+    fn empty_sprite_id_is_rejected() {
+        assert!(matches!(
+            VisualSpriteManifest::from_json(
+                r#"{ "sprites": [{ "id": " ", "path": "sprite.png" }] }"#
+            ),
+            Err(VisualSpriteManifestError::EmptySpriteId)
+        ));
+    }
+
+    #[test]
+    fn empty_sprite_path_is_rejected() {
+        assert!(matches!(
+            VisualSpriteManifest::from_json(r#"{ "sprites": [{ "id": "task", "path": "" }] }"#),
+            Err(VisualSpriteManifestError::EmptySpritePath { .. })
         ));
     }
 
