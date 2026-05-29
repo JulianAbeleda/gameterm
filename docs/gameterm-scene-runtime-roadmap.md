@@ -132,11 +132,11 @@ Implemented `RunCommand` behavior:
 1. Require an explicit `argv` array in the scene JSON. Scene Mode does not infer
    commands from labels, metadata, or file paths.
 2. Execute the argv directly without invoking a shell.
-3. Keep Scene Mode responsive while the child process runs.
-4. Show command start, exit, and failure state in the Tile Debugger action
-   status.
-5. Treat command output as child-process output, not as scene JSON mutation,
-   until a separate structured-state update channel is designed.
+3. Open the command in a new GameTerm tab in the same window.
+4. Keep Scene Mode responsive while the command pane is spawned.
+5. Show command spawn and failure state in the Tile Debugger action status.
+6. Treat command output as pane output, not as scene JSON mutation, until a
+   separate structured-state update channel is designed.
 
 `RunCommand` is opt-in and visibly represented in the UI before execution. The
 JSON scene file is local configuration, but command execution still needs a
@@ -159,5 +159,5 @@ Implemented `Navigate` behavior:
 
 - Should future scene files be able to specify a base directory for relative
   `OpenFile` paths?
-- Should `RunCommand` eventually route through a spawned pane so command output
-  is always visible inside GameTerm?
+- Should `RunCommand` support a split-pane target in addition to the current
+  new-tab target?

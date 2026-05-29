@@ -64,6 +64,11 @@ ci/gameterm-scene-author.sh add-entity ~/.config/gameterm/scenes/experiment.json
   --id task-demo --kind Task --label "Demo Task" --x 2 --y 2 --sprite task_tile
 ci/gameterm-scene-author.sh add-choice ~/.config/gameterm/scenes/experiment.json \
   --label "Run visual check" --run-argv '["cargo","check","-p","gameterm-visual"]'
+ci/gameterm-scene-author.sh move-entity ~/.config/gameterm/scenes/experiment.json \
+  --id task-demo --x 3 --y 2
+ci/gameterm-scene-author.sh set-dialogue ~/.config/gameterm/scenes/experiment.json \
+  --speaker "Author" --text "Updated locally."
+ci/gameterm-scene-author.sh format ~/.config/gameterm/scenes/experiment.json
 ```
 
 `validate` runs the same Rust scene parser used by Scene Mode and prints a
@@ -114,9 +119,10 @@ shell commands.
 }
 ```
 
-`cwd` is optional. Scene Mode reports command start, spawn failure, and exit
-status in the status line and Tile Debugger. Command output belongs to the child
-process; it does not mutate the scene JSON.
+`cwd` is optional. Scene Mode opens the command in a new GameTerm tab in the
+same window, then reports the spawned pane id or spawn failure in the status
+line and Tile Debugger. Command output belongs to the spawned pane; it does not
+mutate the scene JSON.
 
 `Navigate` choices load another scene JSON file. Relative navigation targets
 are resolved against the directory of the currently active scene file. After a
@@ -180,6 +186,9 @@ The smoke test can launch with a specific fixture:
 ```sh
 ci/gameterm-scene-smoke.sh --launch --fixture sprites
 ```
+
+Use `--min-bytes N` to make capture output checks stricter for local visual
+regression runs.
 
 After GameTerm opens, press `Ctrl+Shift+G` before the capture timer expires.
 
