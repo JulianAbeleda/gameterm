@@ -8,7 +8,7 @@ use gameterm_visual::{
 };
 use mux::termwiztermtab::TermWizTerminal;
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use termwiz::input::{InputEvent, KeyCode, KeyEvent};
 use termwiz::surface::Change;
 use termwiz::terminal::Terminal;
@@ -18,7 +18,7 @@ pub fn show_visual_scene_overlay(mut term: TermWizTerminal) -> anyhow::Result<()
     term.set_raw_mode()?;
     term.render(&[Change::Title("GameTerm Scene".to_string())])?;
 
-    let scene_path = default_scene_path();
+    let mut scene_path = default_scene_path();
     let sprite_manifest_path = default_sprite_manifest_path();
     let mut sprite_manifest;
     let mut load_error;
@@ -71,7 +71,7 @@ pub fn show_visual_scene_overlay(mut term: TermWizTerminal) -> anyhow::Result<()
                     if runtime.handle_input(visual_input) == VisualModeOutcome::Exit {
                         break;
                     }
-                    dispatch_pending_action(runtime);
+                    dispatch_pending_action(runtime, &mut scene_path, &mut reload_count)?;
                     render_runtime(&mut term, runtime, &sprite_manifest)?;
                 }
             }
@@ -97,9 +97,13 @@ pub fn show_visual_scene_overlay(mut term: TermWizTerminal) -> anyhow::Result<()
     Ok(())
 }
 
-fn dispatch_pending_action(runtime: &mut SceneRuntime) {
+fn dispatch_pending_action(
+    runtime: &mut SceneRuntime,
+    scene_path: &mut PathBuf,
+    reload_count: &mut u64,
+) -> anyhow::Result<()> {
     let Some(action) = runtime.take_pending_action() else {
-        return;
+        return Ok(());
     };
 
     match action {
@@ -107,7 +111,24 @@ fn dispatch_pending_action(runtime: &mut SceneRuntime) {
             gameterm_open_url::open_url(&path.to_string_lossy());
             runtime.mark_open_file_dispatched(&path);
         }
+        VisualActionRequest::Navigate { target } => {
+            *reload_count = reload_count.saturating_add(1);
+            let target_path = resolve_scene_target(scene_path, &target);
+            match load_scene_required(&target_path, *reload_count) {
+                Ok((scene, source)) => {
+                    runtime.replace_scene_preserving_state(scene, source)?;
+                    *scene_path = target_path;
+                }
+                Err(err) => {
+                    runtime.mark_action_status(format!(
+                        "Navigate failed: {}: {err}",
+                        target_path.display()
+                    ));
+                }
+            }
+        }
     }
+    Ok(())
 }
 
 fn initial_scene_state(
@@ -168,6 +189,33 @@ fn load_scene(
             ),
         ))
     }
+}
+
+fn load_scene_required(
+    scene_path: &Path,
+    reload_count: u64,
+) -> anyhow::Result<(VisualScene, VisualSceneSource)> {
+    let scene = VisualScene::load_from_path(scene_path)?;
+    Ok((
+        scene,
+        VisualSceneSource::new(
+            scene_path.display().to_string(),
+            VisualSceneLoadStatus::Loaded,
+            reload_count,
+        ),
+    ))
+}
+
+fn resolve_scene_target(current_scene_path: &Path, target: &str) -> PathBuf {
+    let raw_target = PathBuf::from(target);
+    if raw_target.is_absolute() {
+        return raw_target;
+    }
+
+    current_scene_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(raw_target)
 }
 
 fn default_scene_path() -> PathBuf {
@@ -397,6 +445,72 @@ mod tests {
         assert_eq!(source.load_status, VisualSceneLoadStatus::Loaded);
         assert_eq!(source.reload_count, 2);
         assert_eq!(source.last_error, None);
+    }
+
+    #[test]
+    fn navigate_targets_resolve_against_current_scene_dir() {
+        let current = PathBuf::from("/tmp/gameterm/scenes/default.json");
+
+        assert_eq!(
+            resolve_scene_target(&current, "memory.json"),
+            PathBuf::from("/tmp/gameterm/scenes/memory.json")
+        );
+        assert_eq!(
+            resolve_scene_target(&current, "worlds/debug.json"),
+            PathBuf::from("/tmp/gameterm/scenes/worlds/debug.json")
+        );
+        assert_eq!(
+            resolve_scene_target(&current, "/tmp/other.json"),
+            PathBuf::from("/tmp/other.json")
+        );
+    }
+
+    #[test]
+    fn navigate_load_requires_scene_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("missing.json");
+
+        assert!(load_scene_required(&missing, 3).is_err());
+    }
+
+    #[test]
+    fn dispatch_navigate_loads_target_scene_and_updates_active_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let default_path = dir.path().join("default.json");
+        let target_path = dir.path().join("memory.json");
+        let mut first_scene = VisualScene::demo();
+        first_scene.choices = vec![gameterm_visual::SceneAction {
+            label: "Open memory".to_string(),
+            kind: gameterm_visual::SceneActionKind::Navigate {
+                target: "memory.json".to_string(),
+            },
+        }];
+        let mut target_scene = VisualScene::demo();
+        target_scene.title = "Memory Scene".to_string();
+        std::fs::write(&target_path, serde_json::to_string(&target_scene).unwrap()).unwrap();
+        let mut runtime = SceneRuntime::new_with_source(
+            first_scene,
+            VisualSceneSource::new(
+                default_path.display().to_string(),
+                VisualSceneLoadStatus::Loaded,
+                1,
+            ),
+        )
+        .unwrap();
+        let mut active_path = default_path;
+        let mut reload_count = 1;
+
+        runtime.activate_choice();
+        dispatch_pending_action(&mut runtime, &mut active_path, &mut reload_count).unwrap();
+        let snapshot = runtime.render_snapshot();
+
+        assert_eq!(active_path, target_path);
+        assert_eq!(reload_count, 2);
+        assert_eq!(snapshot.title, "Memory Scene");
+        assert_eq!(
+            snapshot.scene_source.scene_path,
+            active_path.display().to_string()
+        );
     }
 }
 

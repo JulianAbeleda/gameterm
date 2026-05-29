@@ -126,6 +126,19 @@ Future `RunCommand` behavior:
 before execution. The JSON scene file is local configuration, but command
 execution still needs a clear user action boundary.
 
+### Navigate
+
+Implemented `Navigate` behavior:
+
+1. Emit a navigation request from the scene runtime instead of treating
+   navigation as a local status placeholder.
+2. Resolve relative navigation targets against the current scene file's
+   directory.
+3. Load the target scene and update the active scene path so later `r` reloads
+   refresh the navigated scene.
+4. Keep the current scene visible and report an action error if navigation
+   fails.
+
 ## Open Questions
 
 - Should future scene files be able to specify a base directory for relative

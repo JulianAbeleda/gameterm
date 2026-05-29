@@ -83,6 +83,12 @@ it with the default application. Missing paths and directory targets are
 reported in Scene Mode without closing the scene. `OpenFile` does not execute
 shell commands.
 
+`Navigate` choices load another scene JSON file. Relative navigation targets
+are resolved against the directory of the currently active scene file. After a
+successful navigation, `r` reloads the active scene rather than returning to
+`default.json`. If navigation fails, Scene Mode keeps the current scene visible
+and reports the error in the scene status.
+
 ## Sprite manifest
 
 Scene Mode can render scene sprite ids through image files listed in:

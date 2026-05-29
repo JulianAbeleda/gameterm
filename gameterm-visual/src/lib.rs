@@ -260,6 +260,7 @@ pub enum VisualModeOutcome {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VisualActionRequest {
     OpenFile { path: PathBuf },
+    Navigate { target: String },
 }
 
 pub trait VisualMode {
@@ -640,12 +641,20 @@ impl SceneRuntime {
                     format!("Action placeholder: run `{command}`")
                 }
                 SceneActionKind::Navigate { target } => {
-                    format!("Action placeholder: navigate to `{target}`")
+                    pending_action = Some(VisualActionRequest::Navigate {
+                        target: target.clone(),
+                    });
+                    format!("Navigate ready: {target}")
                 }
             };
             self.pending_action = pending_action;
             self.bump_generation();
         }
+    }
+
+    pub fn mark_action_status(&mut self, status: impl Into<String>) {
+        self.status = status.into();
+        self.bump_generation();
     }
 
     pub fn mark_open_file_dispatched(&mut self, path: &Path) {
@@ -1172,6 +1181,29 @@ mod tests {
 
         assert!(snapshot.status.starts_with("OpenFile opening: "));
         assert!(runtime.generation() > generation_before);
+    }
+
+    #[test]
+    fn navigate_action_emits_pending_request() {
+        let mut scene = VisualScene::demo();
+        scene.choices = vec![SceneAction {
+            label: "Go to memory".to_string(),
+            kind: SceneActionKind::Navigate {
+                target: "memory.json".to_string(),
+            },
+        }];
+        let mut runtime = SceneRuntime::new(scene).unwrap();
+
+        runtime.activate_choice();
+        let snapshot = runtime.render_snapshot();
+
+        assert_eq!(snapshot.status, "Navigate ready: memory.json");
+        assert_eq!(
+            runtime.take_pending_action(),
+            Some(VisualActionRequest::Navigate {
+                target: "memory.json".to_string()
+            })
+        );
     }
 
     #[test]
