@@ -188,7 +188,17 @@ cargo run -q -p gameterm-visual --example scene_patch_apply -- \
 ```
 
 The GUI transport from panes or agents into the active Scene Mode overlay is the
-next implementation step.
+first implemented as an explicit local patch file. Start GameTerm with:
+
+```sh
+GAMETERM_SCENE_PATCH_FILE=/tmp/gameterm-scene-patch.json target/debug/gameterm-gui start
+```
+
+While Scene Mode is open, a pane, script, or agent can atomically write a patch
+to that path. The overlay polls for modification-time changes between input
+events, applies valid patches to the active runtime, and reports malformed
+patches or unknown entity ids in the Scene Mode status and Tile Debugger. The
+patch file is a transport inbox, not persistent scene storage.
 
 ## Sprite manifest
 

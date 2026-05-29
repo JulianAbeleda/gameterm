@@ -6,7 +6,7 @@ use gameterm_term::TerminalSize;
 use gameterm_visual::{
     truncate_to_screen, RunCommandTarget, SceneRuntime, VisualActionRequest, VisualInput,
     VisualMode, VisualModeOutcome, VisualResolvedSprite, VisualScene, VisualSceneLoadStatus,
-    VisualSceneSource, VisualSpriteManifest, VisualSpriteManifestStatus,
+    VisualScenePatch, VisualSceneSource, VisualSpriteManifest, VisualSpriteManifestStatus,
 };
 use mux::domain::SplitSource;
 use mux::tab::{SplitDirection, SplitRequest, SplitSize};
@@ -37,6 +37,7 @@ pub fn show_visual_scene_overlay(mut term: TermWizTerminal) -> anyhow::Result<()
     (runtime, sprite_manifest, load_error) =
         initial_scene_state(&mut term, &scene_path, &sprite_manifest_path, reload_count)?;
     let mut file_watcher = SceneFileWatcher::from_env(&scene_path, &sprite_manifest_path);
+    let mut patch_inbox = ScenePatchInbox::from_env();
 
     loop {
         let mut needs_render = false;
@@ -79,6 +80,12 @@ pub fn show_visual_scene_overlay(mut term: TermWizTerminal) -> anyhow::Result<()
                     &mut load_error,
                 )?;
                 file_watcher.refresh(&scene_path, &sprite_manifest_path);
+            }
+            if let Some(path) = patch_inbox.changed_path() {
+                if let Some(runtime) = runtime.as_mut() {
+                    apply_scene_patch_file(&mut term, runtime, &sprite_manifest, &path)?;
+                }
+                patch_inbox.refresh();
             }
             continue;
         };
@@ -126,6 +133,7 @@ pub fn show_visual_scene_overlay(mut term: TermWizTerminal) -> anyhow::Result<()
                         },
                     )?;
                     file_watcher.refresh(&scene_path, &sprite_manifest_path);
+                    patch_inbox.refresh();
                     render_runtime(&mut term, runtime, &sprite_manifest)?;
                 }
             }
@@ -244,7 +252,71 @@ impl SceneFileWatcher {
 }
 
 fn modified_time(path: &Path) -> Option<SystemTime> {
-    fs::metadata(path).and_then(|metadata| metadata.modified()).ok()
+    fs::metadata(path)
+        .and_then(|metadata| metadata.modified())
+        .ok()
+}
+
+#[derive(Debug, Clone)]
+struct ScenePatchInbox {
+    path: Option<PathBuf>,
+    stamp: Option<SystemTime>,
+}
+
+impl ScenePatchInbox {
+    fn disabled() -> Self {
+        Self {
+            path: None,
+            stamp: None,
+        }
+    }
+
+    fn from_env() -> Self {
+        let Some(path) = std::env::var_os("GAMETERM_SCENE_PATCH_FILE").map(PathBuf::from) else {
+            return Self::disabled();
+        };
+        Self::watching(path)
+    }
+
+    fn watching(path: PathBuf) -> Self {
+        let stamp = modified_time(&path);
+        Self {
+            path: Some(path),
+            stamp,
+        }
+    }
+
+    fn refresh(&mut self) {
+        if let Some(path) = &self.path {
+            self.stamp = modified_time(path);
+        }
+    }
+
+    fn changed_path(&self) -> Option<PathBuf> {
+        let path = self.path.as_ref()?;
+        let stamp = modified_time(path);
+        if stamp.is_some() && stamp != self.stamp {
+            Some(path.clone())
+        } else {
+            None
+        }
+    }
+}
+
+fn apply_scene_patch_file(
+    term: &mut TermWizTerminal,
+    runtime: &mut SceneRuntime,
+    sprite_manifest: &VisualSpriteManifestStatus,
+    path: &Path,
+) -> anyhow::Result<()> {
+    match VisualScenePatch::load_from_path(path).and_then(|patch| runtime.apply_scene_patch(patch))
+    {
+        Ok(()) => {}
+        Err(err) => {
+            runtime.mark_action_status(format!("Scene patch failed: {}: {err}", path.display()));
+        }
+    }
+    render_runtime(term, runtime, sprite_manifest)
 }
 
 enum RunCommandResult {
@@ -846,15 +918,22 @@ mod tests {
         assert!(!watcher.changed(&scene, &sprites));
 
         std::thread::sleep(Duration::from_millis(5));
-        std::fs::write(&sprites, "{\"sprites\":[{\"id\":\"a\",\"path\":\"a.png\"}]}").unwrap();
+        std::fs::write(
+            &sprites,
+            "{\"sprites\":[{\"id\":\"a\",\"path\":\"a.png\"}]}",
+        )
+        .unwrap();
         assert!(watcher.changed(&scene, &sprites));
 
         watcher.refresh(&scene, &sprites);
         assert!(!watcher.changed(&scene, &sprites));
 
         std::thread::sleep(Duration::from_millis(5));
-        std::fs::write(&scene, BUNDLED_SCENE_JSON.replace("GameTerm", "GameTerm Reloaded"))
-            .unwrap();
+        std::fs::write(
+            &scene,
+            BUNDLED_SCENE_JSON.replace("GameTerm", "GameTerm Reloaded"),
+        )
+        .unwrap();
         assert!(watcher.changed(&scene, &sprites));
     }
 
@@ -867,6 +946,35 @@ mod tests {
         let watcher = SceneFileWatcher::disabled();
 
         assert!(!watcher.changed(&scene, &sprites));
+    }
+
+    #[test]
+    fn scene_patch_inbox_detects_file_change_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let patch = dir.path().join("patch.json");
+        let mut inbox = ScenePatchInbox::watching(patch.clone());
+
+        assert_eq!(inbox.changed_path(), None);
+
+        std::fs::write(&patch, "{\"scene_patch_version\":1,\"status\":\"ready\"}").unwrap();
+        assert_eq!(inbox.changed_path(), Some(patch.clone()));
+
+        inbox.refresh();
+        assert_eq!(inbox.changed_path(), None);
+
+        std::thread::sleep(Duration::from_millis(5));
+        std::fs::write(&patch, "{\"scene_patch_version\":1,\"status\":\"updated\"}").unwrap();
+        assert_eq!(inbox.changed_path(), Some(patch));
+    }
+
+    #[test]
+    fn disabled_scene_patch_inbox_never_reports_changes() {
+        let dir = tempfile::tempdir().unwrap();
+        let patch = dir.path().join("patch.json");
+        std::fs::write(&patch, "{\"scene_patch_version\":1,\"status\":\"ready\"}").unwrap();
+        let inbox = ScenePatchInbox::disabled();
+
+        assert_eq!(inbox.changed_path(), None);
     }
 }
 

@@ -192,9 +192,11 @@ Implemented `Navigate` behavior:
 ## State Update Channel
 
 The first state update channel is implemented in `gameterm-visual` as an
-in-memory runtime patch. It is intentionally not coupled to `RunCommand` stdout
-today: command output remains pane output until the GUI has an explicit message
-transport for patches.
+in-memory runtime patch. The first GUI transport is an explicit local patch
+inbox file enabled by `GAMETERM_SCENE_PATCH_FILE`. It is intentionally not
+coupled to `RunCommand` stdout: command output remains pane output, and scripts
+or agents must write a structured patch file when they want to update Scene
+Mode.
 
 Implemented patch contract:
 
@@ -232,11 +234,19 @@ cargo run -q -p gameterm-visual --example scene_patch_apply -- \
   ci/fixtures/gameterm-scene/patch-status.json
 ```
 
+Implemented transport behavior:
+
+- The overlay records the patch file's current modification time at startup.
+- A patch is applied only after the watched file appears or changes.
+- Accepted patches update the active runtime and bump visual generation.
+- Rejected patches update Scene Mode status without mutating scene state.
+- The patch file is not copied into the scene JSON and is not treated as
+  persistent storage.
+
 Next transport step:
 
-1. Define how a pane or agent submits a `VisualScenePatch` to the active Scene
-   Mode overlay.
-2. Apply patches through `SceneRuntime::apply_scene_patch`.
-3. Render success/failure in the Scene Mode status and Tile Debugger.
-4. Keep the first transport local and explicit; do not parse arbitrary command
-   stdout as scene patches.
+1. Add a first-class mux/IPC message for submitting a `VisualScenePatch` to the
+   active Scene Mode overlay without relying on a shared file path.
+2. Preserve the same runtime application semantics as
+   `SceneRuntime::apply_scene_patch`.
+3. Keep persistence as a separate authoring action.
