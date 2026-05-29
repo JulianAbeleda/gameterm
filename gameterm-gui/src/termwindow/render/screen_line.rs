@@ -36,6 +36,10 @@ fn visual_placeholder_color(sprite: &str, alpha: f32, floor: f32) -> LinearRgba 
     LinearRgba::with_components(channel(0), channel(8), channel(16), alpha)
 }
 
+fn visual_selection_color(alpha: f32) -> LinearRgba {
+    LinearRgba::with_components(1.0, 0.92, 0.34, alpha)
+}
+
 impl crate::TermWindow {
     /// "Render" a line of the terminal screen into the vertex buffer.
     /// This is nominally a matter of setting the fg/bg color and the
@@ -803,22 +807,62 @@ impl crate::TermWindow {
                     cell_width,
                     cell_height,
                 ),
-                visual_placeholder_color(&entity.sprite, 0.42, 0.7),
+                visual_selection_color(0.42),
             )?;
             quad.set_hsv(hsv);
+            let outline = [
+                euclid::rect(
+                    params.left_pixel_x + entity.position.x as f32 * cell_width,
+                    params.top_pixel_y,
+                    cell_width,
+                    1.5,
+                ),
+                euclid::rect(
+                    params.left_pixel_x + entity.position.x as f32 * cell_width,
+                    params.top_pixel_y + cell_height - 1.5,
+                    cell_width,
+                    1.5,
+                ),
+                euclid::rect(
+                    params.left_pixel_x + entity.position.x as f32 * cell_width,
+                    params.top_pixel_y,
+                    1.5,
+                    cell_height,
+                ),
+                euclid::rect(
+                    params.left_pixel_x + (entity.position.x + 1) as f32 * cell_width - 1.5,
+                    params.top_pixel_y,
+                    1.5,
+                    cell_height,
+                ),
+            ];
+            for rect in outline {
+                let mut quad =
+                    self.filled_rectangle(layers, 2, rect, visual_selection_color(0.9))?;
+                quad.set_hsv(hsv);
+            }
         }
         if self.populate_visual_sprite_quad(&entity.sprite, layers, 2, rect, &params, hsv)? {
             return Ok(());
         }
+        let placeholder_color = visual_placeholder_color(
+            &entity.sprite,
+            if entity.selected { 0.92 } else { 0.72 },
+            if entity.selected { 0.86 } else { 0.66 },
+        );
+        let mut quad = self.filled_rectangle(layers, 2, rect, placeholder_color)?;
+        quad.set_hsv(hsv);
+        let marker_rect: RectF = euclid::rect(
+            rect.origin.x + rect.size.width * 0.28,
+            rect.origin.y + rect.size.height * 0.28,
+            (rect.size.width * 0.44).max(1.0),
+            (rect.size.height * 0.44).max(1.0),
+        );
         let mut quad = self.filled_rectangle(
             layers,
             2,
-            rect,
-            visual_placeholder_color(
-                &entity.sprite,
-                if entity.selected { 0.92 } else { 0.72 },
-                if entity.selected { 0.86 } else { 0.66 },
-            ),
+            marker_rect,
+            visual_placeholder_color(&entity.sprite, 0.95, 0.25),
         )?;
         quad.set_hsv(hsv);
         Ok(())
