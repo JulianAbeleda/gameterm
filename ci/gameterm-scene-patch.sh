@@ -12,6 +12,7 @@ Commands:
   export-scene                  Apply a patch and write a new scene JSON file.
   validate                      Validate a patch by applying it to a scene.
   write-inbox                   Atomically write a patch to a Scene Mode inbox.
+  submit-mux                    Submit a patch through gameterm cli scene-patch.
   set-entity-status             Create a patch for one entity's flags/metadata.
 
 Options for apply and validate:
@@ -27,6 +28,11 @@ Options for export-scene:
 Options for write-inbox:
   --inbox PATH                  GAMETERM_SCENE_PATCH_FILE path. Required.
   --patch PATH                  Patch file to copy. Required.
+
+Options for submit-mux:
+  --patch PATH                  Patch file to submit. Required.
+  --target-pane-id ID           Target Scene Mode overlay pane. Optional.
+  --source-pane-id ID           Source pane id. Optional.
 
 Options for set-entity-status:
   --output PATH                 Patch output path. Required.
@@ -49,6 +55,9 @@ Examples:
     --scene ci/fixtures/gameterm-scene/default.json \
     --patch ci/fixtures/gameterm-scene/patch-status.json \
     --output /tmp/patched-scene.json --force
+
+  ci/gameterm-scene-patch.sh submit-mux \
+    --patch ci/fixtures/gameterm-scene/patch-status.json
 EOF
 }
 
@@ -67,6 +76,8 @@ inbox_path=""
 output_path=""
 entity_id=""
 status_text=""
+target_pane_id=""
+source_pane_id=""
 force=0
 flags=()
 metadata=()
@@ -91,6 +102,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --entity-id)
       entity_id="$2"
+      shift 2
+      ;;
+    --target-pane-id)
+      target_pane_id="$2"
+      shift 2
+      ;;
+    --source-pane-id)
+      source_pane_id="$2"
       shift 2
       ;;
     --status)
@@ -159,6 +178,22 @@ write_inbox() {
   cp "${patch_path}" "${tmp}"
   mv "${tmp}" "${inbox_path}"
   echo "Wrote Scene Mode patch inbox: ${inbox_path}"
+}
+
+submit_mux() {
+  require_value "--patch" "${patch_path}"
+  jq empty "${patch_path}"
+
+  local args
+  args=(cli scene-patch --patch "${patch_path}")
+  if [[ -n "${target_pane_id}" ]]; then
+    args+=(--target-pane-id "${target_pane_id}")
+  fi
+  if [[ -n "${source_pane_id}" ]]; then
+    args+=(--source-pane-id "${source_pane_id}")
+  fi
+
+  cargo run -q -p gameterm -- "${args[@]}"
 }
 
 export_scene() {
@@ -234,6 +269,9 @@ case "${command}" in
     ;;
   write-inbox)
     write_inbox
+    ;;
+  submit-mux)
+    submit_mux
     ;;
   set-entity-status)
     create_entity_status_patch

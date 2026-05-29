@@ -1,7 +1,7 @@
 use anyhow::anyhow;
 use clap::Parser;
-use std::ffi::OsString;
 use gameterm_client::client::Client;
+use std::ffi::OsString;
 
 mod activate_pane;
 mod activate_pane_direction;
@@ -15,6 +15,7 @@ mod list_clients;
 mod move_pane_to_new_tab;
 mod proxy;
 mod rename_workspace;
+mod scene_patch;
 mod send_text;
 mod set_tab_title;
 mod set_window_title;
@@ -163,6 +164,10 @@ Outputs the pane-id for the newly created pane on success"
     /// Zoom, unzoom, or toggle zoom state
     #[command(name = "zoom-pane", rename_all = "kebab")]
     ZoomPane(zoom_pane::ZoomPane),
+
+    /// Submit a structured patch to the active Scene Mode overlay.
+    #[command(name = "scene-patch", rename_all = "kebab")]
+    ScenePatch(scene_patch::ScenePatch),
 }
 
 async fn run_cli_async(opts: &crate::Opt, cli: CliCommand) -> anyhow::Result<()> {
@@ -199,6 +204,7 @@ async fn run_cli_async(opts: &crate::Opt, cli: CliCommand) -> anyhow::Result<()>
         CliSubCommand::SetWindowTitle(cmd) => cmd.run(client).await,
         CliSubCommand::RenameWorkspace(cmd) => cmd.run(client).await,
         CliSubCommand::ZoomPane(cmd) => cmd.run(client).await,
+        CliSubCommand::ScenePatch(cmd) => cmd.run(client).await,
     }
 }
 
