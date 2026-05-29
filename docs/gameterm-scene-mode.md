@@ -78,8 +78,10 @@ Debugger. Selection is preserved across successful reloads when the selected
 entity id still exists.
 
 `OpenFile` choices resolve their configured path against GameTerm's current
-working directory and report whether the target file exists. They do not execute
-shell commands or open files yet.
+working directory. If the target is a file, Scene Mode asks the platform to open
+it with the default application. Missing paths and directory targets are
+reported in Scene Mode without closing the scene. `OpenFile` does not execute
+shell commands.
 
 ## Sprite manifest
 

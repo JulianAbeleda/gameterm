@@ -257,6 +257,11 @@ pub enum VisualModeOutcome {
     Exit,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VisualActionRequest {
+    OpenFile { path: PathBuf },
+}
+
 pub trait VisualMode {
     fn generation(&self) -> u64;
     fn render_snapshot(&self) -> VisualRenderSnapshot;
@@ -478,6 +483,7 @@ pub struct SceneRuntime {
     view: VisualView,
     status: String,
     generation: u64,
+    pending_action: Option<VisualActionRequest>,
 }
 
 impl SceneRuntime {
@@ -511,6 +517,7 @@ impl SceneRuntime {
             view: VisualView::Scene,
             status: "Ready".to_string(),
             generation: 0,
+            pending_action: None,
         })
     }
 
@@ -528,6 +535,10 @@ impl SceneRuntime {
 
     pub fn action_base_dir(&self) -> &Path {
         &self.action_base_dir
+    }
+
+    pub fn take_pending_action(&mut self) -> Option<VisualActionRequest> {
+        self.pending_action.take()
     }
 
     pub fn mark_reload_failed(&mut self, reload_count: u64, error: String) {
@@ -612,13 +623,19 @@ impl SceneRuntime {
     }
 
     pub fn activate_choice(&mut self) {
+        self.pending_action = None;
         if let Some(choice) = self.scene.choices.get(self.selected_choice) {
+            let mut pending_action = None;
             self.status = match &choice.kind {
                 SceneActionKind::Inspect => self
                     .selected_entity()
                     .map(|entity| format!("Inspecting {} ({})", entity.label, entity.id))
                     .unwrap_or_else(|| "No entity selected".to_string()),
-                SceneActionKind::OpenFile { path } => self.open_file_action_status(path),
+                SceneActionKind::OpenFile { path } => {
+                    let (status, action) = self.open_file_action_status(path);
+                    pending_action = action;
+                    status
+                }
                 SceneActionKind::RunCommand { command } => {
                     format!("Action placeholder: run `{command}`")
                 }
@@ -626,15 +643,21 @@ impl SceneRuntime {
                     format!("Action placeholder: navigate to `{target}`")
                 }
             };
+            self.pending_action = pending_action;
             self.bump_generation();
         }
+    }
+
+    pub fn mark_open_file_dispatched(&mut self, path: &Path) {
+        self.status = format!("OpenFile opening: {}", path.display());
+        self.bump_generation();
     }
 
     pub fn selected_entity(&self) -> Option<&VisualEntity> {
         self.scene.entities.get(self.selected_entity)
     }
 
-    fn open_file_action_status(&self, path: &str) -> String {
+    fn open_file_action_status(&self, path: &str) -> (String, Option<VisualActionRequest>) {
         let raw_path = PathBuf::from(path);
         let resolved = if raw_path.is_absolute() {
             raw_path
@@ -643,11 +666,15 @@ impl SceneRuntime {
         };
         let display_path = resolved.display();
         match std::fs::metadata(&resolved) {
-            Ok(metadata) if metadata.is_file() => {
-                format!("OpenFile ready: {display_path}")
-            }
-            Ok(_) => format!("OpenFile target is not a file: {display_path}"),
-            Err(err) => format!("OpenFile missing: {display_path}: {err}"),
+            Ok(metadata) if metadata.is_file() => (
+                format!("OpenFile ready: {display_path}"),
+                Some(VisualActionRequest::OpenFile { path: resolved }),
+            ),
+            Ok(_) => (
+                format!("OpenFile target is not a file: {display_path}"),
+                None,
+            ),
+            Err(err) => (format!("OpenFile missing: {display_path}: {err}"), None),
         }
     }
 
@@ -1072,6 +1099,13 @@ mod tests {
 
         assert!(snapshot.status.starts_with("OpenFile ready: "));
         assert!(snapshot.status.contains("docs/scene.md"));
+        assert_eq!(
+            runtime.take_pending_action(),
+            Some(VisualActionRequest::OpenFile {
+                path: docs_dir.join("scene.md")
+            })
+        );
+        assert_eq!(runtime.take_pending_action(), None);
     }
 
     #[test]
@@ -1096,6 +1130,7 @@ mod tests {
 
         assert!(snapshot.status.starts_with("OpenFile missing: "));
         assert!(snapshot.status.contains("missing.md"));
+        assert_eq!(runtime.take_pending_action(), None);
     }
 
     #[test]
@@ -1121,6 +1156,22 @@ mod tests {
         assert!(snapshot
             .status
             .starts_with("OpenFile target is not a file: "));
+        assert_eq!(runtime.take_pending_action(), None);
+    }
+
+    #[test]
+    fn open_file_dispatched_status_updates_generation() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("scene.md");
+        std::fs::write(&path, "scene docs").unwrap();
+        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        let generation_before = runtime.generation();
+
+        runtime.mark_open_file_dispatched(&path);
+        let snapshot = runtime.render_snapshot();
+
+        assert!(snapshot.status.starts_with("OpenFile opening: "));
+        assert!(runtime.generation() > generation_before);
     }
 
     #[test]

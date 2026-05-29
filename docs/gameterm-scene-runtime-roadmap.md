@@ -101,11 +101,8 @@ Implemented `OpenFile` behavior:
 2. Normalize and display the resolved path in the Tile Debugger action status.
 3. Report missing files as an action error in Scene Mode without closing the
    scene.
-
-Remaining `OpenFile` behavior:
-
-1. Open the file through the existing terminal/application file-opening path
-   once that runtime hook exists.
+4. Open valid file targets through the existing platform opener used by
+   GameTerm URL handling.
 
 `OpenFile` should not execute shell commands. It is a document/navigation
 action, even when the target file extension is executable.

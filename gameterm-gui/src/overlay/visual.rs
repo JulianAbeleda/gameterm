@@ -2,8 +2,8 @@ use anyhow::Context;
 use gameterm_dynamic::Value;
 use gameterm_term::color::ColorAttribute;
 use gameterm_visual::{
-    truncate_to_screen, SceneRuntime, VisualInput, VisualMode, VisualModeOutcome,
-    VisualResolvedSprite, VisualScene, VisualSceneLoadStatus, VisualSceneSource,
+    truncate_to_screen, SceneRuntime, VisualActionRequest, VisualInput, VisualMode,
+    VisualModeOutcome, VisualResolvedSprite, VisualScene, VisualSceneLoadStatus, VisualSceneSource,
     VisualSpriteManifest, VisualSpriteManifestStatus,
 };
 use mux::termwiztermtab::TermWizTerminal;
@@ -71,6 +71,7 @@ pub fn show_visual_scene_overlay(mut term: TermWizTerminal) -> anyhow::Result<()
                     if runtime.handle_input(visual_input) == VisualModeOutcome::Exit {
                         break;
                     }
+                    dispatch_pending_action(runtime);
                     render_runtime(&mut term, runtime, &sprite_manifest)?;
                 }
             }
@@ -94,6 +95,19 @@ pub fn show_visual_scene_overlay(mut term: TermWizTerminal) -> anyhow::Result<()
     }
 
     Ok(())
+}
+
+fn dispatch_pending_action(runtime: &mut SceneRuntime) {
+    let Some(action) = runtime.take_pending_action() else {
+        return;
+    };
+
+    match action {
+        VisualActionRequest::OpenFile { path } => {
+            gameterm_open_url::open_url(&path.to_string_lossy());
+            runtime.mark_open_file_dispatched(&path);
+        }
+    }
 }
 
 fn initial_scene_state(
