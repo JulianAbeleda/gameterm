@@ -2,10 +2,11 @@ use anyhow::Context;
 use gameterm_dynamic::Value;
 use gameterm_term::color::ColorAttribute;
 use gameterm_visual::{
-    truncate_to_screen, SceneRuntime, VisualInput, VisualMode, VisualModeOutcome, VisualScene,
-    VisualResolvedSprite, VisualSpriteManifest, VisualSpriteManifestStatus,
+    truncate_to_screen, SceneRuntime, VisualInput, VisualMode, VisualModeOutcome,
+    VisualResolvedSprite, VisualScene, VisualSpriteManifest, VisualSpriteManifestStatus,
 };
 use mux::termwiztermtab::TermWizTerminal;
+use std::collections::HashSet;
 use std::path::PathBuf;
 use termwiz::input::{InputEvent, KeyCode, KeyEvent};
 use termwiz::surface::Change;
@@ -21,7 +22,8 @@ pub fn show_visual_scene_overlay(mut term: TermWizTerminal) -> anyhow::Result<()
     let mut sprite_manifest;
     let mut load_error;
     let mut runtime;
-    (runtime, sprite_manifest, load_error) = reload_scene_state(&mut term, &scene_path, &sprite_manifest_path)?;
+    (runtime, sprite_manifest, load_error) =
+        reload_scene_state(&mut term, &scene_path, &sprite_manifest_path)?;
 
     while let Some(input) = term.poll_input(None)? {
         match input {
@@ -82,15 +84,7 @@ fn reload_scene_state(
     }
 }
 
-const BUNDLED_SCENE_JSON: &str =
-    include_str!("../../../docs/examples/gameterm-scene-default.json");
-const BUNDLED_SPRITE_IDS: &[&str] = &[
-    "debug_floor",
-    "project_core",
-    "agent_idle",
-    "task_tile",
-    "memory_note",
-];
+const BUNDLED_SCENE_JSON: &str = include_str!("../../../docs/examples/gameterm-scene-default.json");
 
 fn load_scene_runtime(scene_path: &PathBuf) -> anyhow::Result<SceneRuntime> {
     let scene = if scene_path.exists() {
@@ -146,6 +140,15 @@ fn load_sprite_manifest_status(path: &PathBuf) -> VisualSpriteManifestStatus {
 fn bundled_sprite_manifest_status(user_path: &PathBuf) -> VisualSpriteManifestStatus {
     let sprite_path = bundled_sprite_asset_path();
     let mut warnings = Vec::new();
+    let sprite_ids = match bundled_scene_sprite_ids() {
+        Ok(ids) => ids,
+        Err(err) => {
+            warnings.push(format!(
+                "bundled sprite ids could not be derived from bundled scene: {err}"
+            ));
+            Vec::new()
+        }
+    };
     if let Err(err) = std::fs::metadata(&sprite_path) {
         warnings.push(format!(
             "bundled sprite asset could not read {}: {}",
@@ -159,10 +162,10 @@ fn bundled_sprite_manifest_status(user_path: &PathBuf) -> VisualSpriteManifestSt
             "bundled defaults because {} was not found",
             user_path.display()
         )),
-        sprites: BUNDLED_SPRITE_IDS
-            .iter()
+        sprites: sprite_ids
+            .into_iter()
             .map(|id| VisualResolvedSprite {
-                id: (*id).to_string(),
+                id,
                 path: sprite_path.display().to_string(),
             })
             .collect(),
@@ -175,6 +178,18 @@ fn bundled_sprite_asset_path() -> PathBuf {
         .parent()
         .map(|root| root.join("assets").join("icon").join("terminal.png"))
         .unwrap_or_else(|| PathBuf::from("assets/icon/terminal.png"))
+}
+
+fn bundled_scene_sprite_ids() -> anyhow::Result<Vec<String>> {
+    let scene = VisualScene::from_json(BUNDLED_SCENE_JSON).context("parse bundled scene")?;
+    let mut seen = HashSet::new();
+    let mut ids = Vec::new();
+    for entity in scene.entities {
+        if seen.insert(entity.sprite.clone()) {
+            ids.push(entity.sprite);
+        }
+    }
+    Ok(ids)
 }
 
 fn visual_input_from_key(key: KeyCode) -> VisualInput {
@@ -220,6 +235,31 @@ fn render_runtime(
     ])?;
     term.flush()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bundled_sprite_ids_are_derived_from_bundled_scene() {
+        let scene = VisualScene::from_json(BUNDLED_SCENE_JSON).unwrap();
+        let mut seen = HashSet::new();
+        let expected: Vec<_> = scene
+            .entities
+            .into_iter()
+            .filter_map(|entity| {
+                if seen.insert(entity.sprite.clone()) {
+                    Some(entity.sprite)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let actual = bundled_scene_sprite_ids().unwrap();
+
+        assert_eq!(actual, expected);
+    }
 }
 
 fn render_error(
