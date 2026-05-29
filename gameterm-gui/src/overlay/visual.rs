@@ -2,8 +2,9 @@ use gameterm_dynamic::Value;
 use gameterm_term::color::ColorAttribute;
 use gameterm_visual::{
     truncate_to_screen, SceneRuntime, VisualInput, VisualMode, VisualModeOutcome, VisualScene,
-    VisualSpriteManifest, VisualSpriteManifestStatus,
+    VisualResolvedSprite, VisualSpriteManifest, VisualSpriteManifestStatus,
 };
+use anyhow::Context;
 use mux::termwiztermtab::TermWizTerminal;
 use std::path::PathBuf;
 use termwiz::input::{InputEvent, KeyCode, KeyEvent};
@@ -59,11 +60,21 @@ pub fn show_visual_scene_overlay(mut term: TermWizTerminal) -> anyhow::Result<()
     Ok(())
 }
 
+const BUNDLED_SCENE_JSON: &str =
+    include_str!("../../../docs/examples/gameterm-scene-default.json");
+const BUNDLED_SPRITE_IDS: &[&str] = &[
+    "debug_floor",
+    "project_core",
+    "agent_idle",
+    "task_tile",
+    "memory_note",
+];
+
 fn load_scene_runtime(scene_path: &PathBuf) -> anyhow::Result<SceneRuntime> {
     let scene = if scene_path.exists() {
         VisualScene::load_from_path(scene_path)?
     } else {
-        VisualScene::demo()
+        VisualScene::from_json(BUNDLED_SCENE_JSON).context("load bundled Scene Mode default")?
     };
     Ok(SceneRuntime::new(scene)?)
 }
@@ -86,7 +97,7 @@ fn default_scene_dir() -> PathBuf {
 
 fn load_sprite_manifest_status(path: &PathBuf) -> VisualSpriteManifestStatus {
     if !path.exists() {
-        return VisualSpriteManifestStatus::missing(path);
+        return bundled_sprite_manifest_status(path);
     }
 
     match VisualSpriteManifest::load_from_path(path) {
@@ -108,6 +119,40 @@ fn load_sprite_manifest_status(path: &PathBuf) -> VisualSpriteManifestStatus {
             warnings: vec![err.to_string()],
         },
     }
+}
+
+fn bundled_sprite_manifest_status(user_path: &PathBuf) -> VisualSpriteManifestStatus {
+    let sprite_path = bundled_sprite_asset_path();
+    let mut warnings = Vec::new();
+    if let Err(err) = std::fs::metadata(&sprite_path) {
+        warnings.push(format!(
+            "bundled sprite asset could not read {}: {}",
+            sprite_path.display(),
+            err
+        ));
+    }
+
+    VisualSpriteManifestStatus {
+        manifest_path: Some(format!(
+            "bundled defaults because {} was not found",
+            user_path.display()
+        )),
+        sprites: BUNDLED_SPRITE_IDS
+            .iter()
+            .map(|id| VisualResolvedSprite {
+                id: (*id).to_string(),
+                path: sprite_path.display().to_string(),
+            })
+            .collect(),
+        warnings,
+    }
+}
+
+fn bundled_sprite_asset_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .map(|root| root.join("assets").join("icon").join("terminal.png"))
+        .unwrap_or_else(|| PathBuf::from("assets/icon/terminal.png"))
 }
 
 fn visual_input_from_key(key: KeyCode) -> VisualInput {
