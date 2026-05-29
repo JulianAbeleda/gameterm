@@ -182,6 +182,7 @@ fn clipped_columns(columns: Range<usize>, width: usize) -> Range<usize> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VisualInput {
     Close,
+    Reload,
     ToggleDebug,
     Activate,
     Next,
@@ -577,7 +578,7 @@ impl SceneRuntime {
     fn render_scene(&self, cols: usize, rows: usize) -> String {
         let mut out = String::new();
         out.push_str(&format!("{}\r\n", self.scene.title));
-        out.push_str("Scene Mode  [arrows/hjkl: select] [enter: action] [tab: debugger] [esc/q: close]\r\n\r\n");
+        out.push_str("Scene Mode  [arrows/hjkl: select] [enter: action] [tab: debugger] [r: reload] [esc/q: close]\r\n\r\n");
 
         let mut grid = vec![vec!['.'; self.scene.width]; self.scene.height];
         for (idx, entity) in self.scene.entities.iter().enumerate() {
@@ -686,6 +687,7 @@ impl VisualMode for SceneRuntime {
     fn handle_input(&mut self, input: VisualInput) -> VisualModeOutcome {
         match input {
             VisualInput::Close => VisualModeOutcome::Exit,
+            VisualInput::Reload => VisualModeOutcome::Continue,
             VisualInput::ToggleDebug => {
                 self.toggle_debugger();
                 VisualModeOutcome::Continue
@@ -883,6 +885,17 @@ mod tests {
 
         assert_eq!(outcome, VisualModeOutcome::Exit);
         assert_eq!(runtime.generation(), initial_generation);
+    }
+
+    #[test]
+    fn mode_reload_input_is_ignored_by_runtime() {
+        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        let initial = runtime.render_snapshot();
+
+        let outcome = runtime.handle_input(VisualInput::Reload);
+
+        assert_eq!(outcome, VisualModeOutcome::Continue);
+        assert_eq!(runtime.render_snapshot(), initial);
     }
 
     #[test]

@@ -1,10 +1,10 @@
+use anyhow::Context;
 use gameterm_dynamic::Value;
 use gameterm_term::color::ColorAttribute;
 use gameterm_visual::{
     truncate_to_screen, SceneRuntime, VisualInput, VisualMode, VisualModeOutcome, VisualScene,
     VisualResolvedSprite, VisualSpriteManifest, VisualSpriteManifestStatus,
 };
-use anyhow::Context;
 use mux::termwiztermtab::TermWizTerminal;
 use std::path::PathBuf;
 use termwiz::input::{InputEvent, KeyCode, KeyEvent};
@@ -18,26 +18,25 @@ pub fn show_visual_scene_overlay(mut term: TermWizTerminal) -> anyhow::Result<()
 
     let scene_path = default_scene_path();
     let sprite_manifest_path = default_sprite_manifest_path();
-    let sprite_manifest = load_sprite_manifest_status(&sprite_manifest_path);
-    let mut load_error = None;
-    let mut runtime = match load_scene_runtime(&scene_path) {
-        Ok(runtime) => {
-            render_runtime(&mut term, &runtime, &sprite_manifest)?;
-            Some(runtime)
-        }
-        Err(err) => {
-            let error = err.to_string();
-            render_error(&mut term, &scene_path, &error)?;
-            load_error.replace(error);
-            None
-        }
-    };
+    let mut sprite_manifest;
+    let mut load_error;
+    let mut runtime;
+    (runtime, sprite_manifest, load_error) = reload_scene_state(&mut term, &scene_path, &sprite_manifest_path)?;
 
     while let Some(input) = term.poll_input(None)? {
         match input {
             InputEvent::Key(KeyEvent { key, .. }) => {
+                let visual_input = visual_input_from_key(key);
+                if visual_input == VisualInput::Close {
+                    break;
+                }
+                if visual_input == VisualInput::Reload {
+                    (runtime, sprite_manifest, load_error) =
+                        reload_scene_state(&mut term, &scene_path, &sprite_manifest_path)?;
+                    continue;
+                }
                 if let Some(runtime) = runtime.as_mut() {
-                    if runtime.handle_input(visual_input_from_key(key)) == VisualModeOutcome::Exit {
+                    if runtime.handle_input(visual_input) == VisualModeOutcome::Exit {
                         break;
                     }
                     render_runtime(&mut term, runtime, &sprite_manifest)?;
@@ -58,6 +57,29 @@ pub fn show_visual_scene_overlay(mut term: TermWizTerminal) -> anyhow::Result<()
     }
 
     Ok(())
+}
+
+fn reload_scene_state(
+    term: &mut TermWizTerminal,
+    scene_path: &PathBuf,
+    sprite_manifest_path: &PathBuf,
+) -> anyhow::Result<(
+    Option<SceneRuntime>,
+    VisualSpriteManifestStatus,
+    Option<String>,
+)> {
+    let sprite_manifest = load_sprite_manifest_status(sprite_manifest_path);
+    match load_scene_runtime(scene_path) {
+        Ok(runtime) => {
+            render_runtime(term, &runtime, &sprite_manifest)?;
+            Ok((Some(runtime), sprite_manifest, None))
+        }
+        Err(err) => {
+            let error = err.to_string();
+            render_error(term, scene_path, &error)?;
+            Ok((None, sprite_manifest, Some(error)))
+        }
+    }
 }
 
 const BUNDLED_SCENE_JSON: &str =
@@ -158,6 +180,7 @@ fn bundled_sprite_asset_path() -> PathBuf {
 fn visual_input_from_key(key: KeyCode) -> VisualInput {
     match key {
         KeyCode::Escape | KeyCode::Char('q') | KeyCode::Char('Q') => VisualInput::Close,
+        KeyCode::Char('r') | KeyCode::Char('R') => VisualInput::Reload,
         KeyCode::Tab => VisualInput::ToggleDebug,
         KeyCode::Enter => VisualInput::Activate,
         KeyCode::RightArrow | KeyCode::DownArrow | KeyCode::Char('l') | KeyCode::Char('j') => {
@@ -210,8 +233,8 @@ fn render_error(
          Scene file failed to load.\r\n\r\n\
          Path: {}\r\n\
          Error: {}\r\n\r\n\
-         Fix the scene JSON, or remove the file to use the built-in demo.\r\n\
-         [esc/q: close]\r\n",
+         Fix the scene JSON, or remove the file to use the bundled default.\r\n\
+         [r: reload] [esc/q: close]\r\n",
         scene_path.display(),
         error
     );
