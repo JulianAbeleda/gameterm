@@ -393,6 +393,16 @@ fn render_runtime(
 mod tests {
     use super::*;
 
+    fn scene_fixture_path(name: &str) -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join("ci")
+            .join("fixtures")
+            .join("gameterm-scene")
+            .join(name)
+    }
+
     #[test]
     fn bundled_sprite_ids_are_derived_from_bundled_scene() {
         let scene = VisualScene::from_json(BUNDLED_SCENE_JSON).unwrap();
@@ -445,6 +455,46 @@ mod tests {
         assert_eq!(source.load_status, VisualSceneLoadStatus::Loaded);
         assert_eq!(source.reload_count, 2);
         assert_eq!(source.last_error, None);
+    }
+
+    #[test]
+    fn scene_fixture_loaded_source_uses_fixture_path() {
+        let path = scene_fixture_path("default.json");
+        let (scene, source) = load_scene(&path, 7).unwrap();
+
+        assert_eq!(scene.title, "Scene Harness Default");
+        assert_eq!(source.scene_path, path.display().to_string());
+        assert_eq!(source.load_status, VisualSceneLoadStatus::Loaded);
+        assert_eq!(source.reload_count, 7);
+    }
+
+    #[test]
+    fn scene_fixture_invalid_load_reports_error() {
+        let path = scene_fixture_path("invalid.json");
+
+        assert!(load_scene(&path, 3).is_err());
+    }
+
+    #[test]
+    fn scene_fixture_sprite_manifest_loads_without_warnings() {
+        let path = scene_fixture_path("sprites.json");
+        let status = load_sprite_manifest_status(&path);
+
+        assert!(status.warnings.is_empty());
+        assert!(status
+            .sprites
+            .iter()
+            .any(|sprite| sprite.id == "project_core"));
+    }
+
+    #[test]
+    fn scene_fixture_missing_sprite_manifest_reports_warning() {
+        let path = scene_fixture_path("sprites-missing.json");
+        let status = load_sprite_manifest_status(&path);
+
+        assert_eq!(status.sprites.len(), 2);
+        assert_eq!(status.warnings.len(), 1);
+        assert!(status.warnings[0].contains("project_core"));
     }
 
     #[test]

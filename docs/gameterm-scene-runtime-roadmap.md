@@ -14,6 +14,8 @@ choice actions.
   terminal runtime.
 - Preserve the bundled default scene as the fallback when no default scene file
   exists.
+- Keep a fixture-backed verification harness for every implemented Scene Mode
+  behavior before adding higher-risk action execution.
 
 ## Default Scene Reload
 
@@ -60,6 +62,16 @@ Reload status should distinguish these cases:
 Automatic file watching can come later. The first implementation should favor a
 predictable manual reload because it avoids platform watcher differences and
 keeps parse errors tied to an explicit user action.
+
+## Verification Harness
+
+Implemented verification behavior:
+
+1. Use `ci/fixtures/gameterm-scene` for deterministic Scene Mode fixtures.
+2. Use `ci/gameterm-scene-verify.sh --all` for noninteractive checks covering
+   fixture setup, init helper behavior, JSON validity, and focused Rust tests.
+3. Use `ci/gameterm-scene-smoke.sh --launch --fixture <name>` for macOS visual
+   smoke runs against the same fixture set.
 
 ## Tile Debugger Path And Status
 

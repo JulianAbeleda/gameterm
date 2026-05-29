@@ -1,0 +1,24 @@
+{
+  "sprites": [
+    {
+      "id": "workspace-map",
+      "path": "../../../assets/gameterm-scene/workspace-map.png"
+    },
+    {
+      "id": "project_core",
+      "path": "../../../assets/gameterm-scene/project-core.png"
+    },
+    {
+      "id": "task_tile",
+      "path": "../../../assets/gameterm-scene/task-tile.png"
+    },
+    {
+      "id": "agent_idle",
+      "path": "../../../assets/gameterm-scene/agent-idle.png"
+    },
+    {
+      "id": "memory_note",
+      "path": "../../../assets/icon/terminal.png"
+    }
+  ]
+}

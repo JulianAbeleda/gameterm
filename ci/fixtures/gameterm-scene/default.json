@@ -1,0 +1,52 @@
+{
+  "title": "Scene Harness Default",
+  "background": "workspace-map",
+  "width": 12,
+  "height": 7,
+  "entities": [
+    {
+      "id": "project-harness",
+      "kind": "Project",
+      "label": "Harness",
+      "position": { "x": 2, "y": 2 },
+      "sprite": "project_core",
+      "state_flags": ["loaded"],
+      "metadata": [["fixture", "default"]]
+    },
+    {
+      "id": "task-open-file",
+      "kind": "Task",
+      "label": "Open File",
+      "position": { "x": 6, "y": 3 },
+      "sprite": "task_tile",
+      "state_flags": ["ready"],
+      "metadata": [["action", "OpenFile"]]
+    },
+    {
+      "id": "agent-navigate",
+      "kind": "Agent",
+      "label": "Navigator",
+      "position": { "x": 9, "y": 2 },
+      "sprite": "agent_idle",
+      "state_flags": ["watching"],
+      "metadata": [["action", "Navigate"]]
+    }
+  ],
+  "dialogue_speaker": "Harness",
+  "dialogue": "This fixture exercises Scene Mode loading, actions, and debugger state.",
+  "choices": [
+    { "label": "Inspect selected entity", "kind": "Inspect" },
+    {
+      "label": "Open scene docs",
+      "kind": { "OpenFile": { "path": "docs/gameterm-scene-mode.md" } }
+    },
+    {
+      "label": "Navigate to memory",
+      "kind": { "Navigate": { "target": "memory.json" } }
+    },
+    {
+      "label": "Run placeholder",
+      "kind": { "RunCommand": { "command": "cargo check -p gameterm-visual" } }
+    }
+  ]
+}

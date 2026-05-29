@@ -924,6 +924,16 @@ pub fn truncate_to_screen(text: String, cols: usize, rows: usize) -> String {
 mod tests {
     use super::*;
 
+    fn scene_fixture_path(name: &str) -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join("ci")
+            .join("fixtures")
+            .join("gameterm-scene")
+            .join(name)
+    }
+
     fn snapshot_for_filtering() -> VisualRenderSnapshot {
         VisualRenderSnapshot {
             generation: 7,
@@ -999,6 +1009,76 @@ mod tests {
     #[test]
     fn demo_scene_validates() {
         k9::assert_ok!(VisualScene::demo().validate());
+    }
+
+    #[test]
+    fn scene_fixture_default_loads_runtime_actions() {
+        let scene = VisualScene::load_from_path(scene_fixture_path("default.json")).unwrap();
+        let runtime = SceneRuntime::new(scene).unwrap();
+        let snapshot = runtime.render_snapshot();
+
+        assert_eq!(snapshot.title, "Scene Harness Default");
+        assert!(snapshot
+            .choices
+            .iter()
+            .any(|choice| choice == "Open scene docs"));
+        assert!(snapshot
+            .choices
+            .iter()
+            .any(|choice| choice == "Navigate to memory"));
+    }
+
+    #[test]
+    fn scene_fixture_memory_loads_navigation_target() {
+        let scene = VisualScene::load_from_path(scene_fixture_path("memory.json")).unwrap();
+        let runtime = SceneRuntime::new(scene).unwrap();
+        let snapshot = runtime.render_snapshot();
+
+        assert_eq!(snapshot.title, "Scene Harness Memory");
+        assert_eq!(
+            snapshot.selected_entity_id.as_deref(),
+            Some("memory-navigation")
+        );
+    }
+
+    #[test]
+    fn scene_fixture_invalid_is_rejected() {
+        assert!(matches!(
+            VisualScene::load_from_path(scene_fixture_path("invalid.json")),
+            Err(VisualSceneError::EmptyScene)
+        ));
+    }
+
+    #[test]
+    fn scene_fixture_sprite_manifest_resolves_relative_paths() {
+        let manifest_path = scene_fixture_path("sprites.json");
+        let manifest = VisualSpriteManifest::load_from_path(&manifest_path).unwrap();
+        let status = manifest.resolve_against(&manifest_path);
+
+        assert!(status.sprites.iter().any(|sprite| {
+            sprite.id == "project_core"
+                && sprite
+                    .path
+                    .ends_with("assets/gameterm-scene/project-core.png")
+        }));
+        assert!(status.warnings.is_empty());
+    }
+
+    #[test]
+    fn scene_fixture_missing_sprite_manifest_keeps_valid_entries() {
+        let manifest_path = scene_fixture_path("sprites-missing.json");
+        let manifest = VisualSpriteManifest::load_from_path(&manifest_path).unwrap();
+        let status = manifest.resolve_against(&manifest_path);
+
+        assert_eq!(status.sprites.len(), 2);
+        assert!(status
+            .sprites
+            .iter()
+            .any(|sprite| sprite.id == "workspace-map"));
+        assert!(status
+            .sprites
+            .iter()
+            .any(|sprite| sprite.path.ends_with("sprites/missing-project-core.png")));
     }
 
     #[test]

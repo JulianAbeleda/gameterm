@@ -1,0 +1,12 @@
+{
+  "sprites": [
+    {
+      "id": "workspace-map",
+      "path": "../../../assets/gameterm-scene/workspace-map.png"
+    },
+    {
+      "id": "project_core",
+      "path": "sprites/missing-project-core.png"
+    }
+  ]
+}

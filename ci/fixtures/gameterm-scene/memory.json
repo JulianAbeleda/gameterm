@@ -1,0 +1,26 @@
+{
+  "title": "Scene Harness Memory",
+  "background": "workspace-map",
+  "width": 10,
+  "height": 6,
+  "entities": [
+    {
+      "id": "memory-navigation",
+      "kind": "Memory",
+      "label": "Navigation Memory",
+      "position": { "x": 4, "y": 2 },
+      "sprite": "memory_note",
+      "state_flags": ["reached"],
+      "metadata": [["fixture", "memory"]]
+    }
+  ],
+  "dialogue_speaker": "Harness",
+  "dialogue": "Navigation loaded this second scene.",
+  "choices": [
+    { "label": "Inspect selected entity", "kind": "Inspect" },
+    {
+      "label": "Return to default",
+      "kind": { "Navigate": { "target": "default.json" } }
+    }
+  ]
+}

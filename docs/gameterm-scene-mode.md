@@ -121,10 +121,29 @@ See [the example sprite manifest](examples/gameterm-scene-sprites.json).
 
 ## Smoke test
 
+The noninteractive verification harness checks scene fixtures, authoring init
+behavior, JSON validity, and focused Rust tests:
+
+```sh
+ci/gameterm-scene-verify.sh --all
+```
+
+To check one fixture setup path:
+
+```sh
+ci/gameterm-scene-verify.sh --fixture navigate
+```
+
 The macOS visual smoke test uses `ffmpeg` screen capture through AVFoundation:
 
 ```sh
 ci/gameterm-scene-smoke.sh --launch
+```
+
+The smoke test can launch with a specific fixture:
+
+```sh
+ci/gameterm-scene-smoke.sh --launch --fixture sprites
 ```
 
 After GameTerm opens, press `Ctrl+Shift+G` before the capture timer expires.

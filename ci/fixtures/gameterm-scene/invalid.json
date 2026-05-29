@@ -1,0 +1,10 @@
+{
+  "title": "Scene Harness Invalid",
+  "background": "workspace-map",
+  "width": 0,
+  "height": 6,
+  "entities": [],
+  "dialogue_speaker": "Harness",
+  "dialogue": "This file is valid JSON but invalid Scene Mode schema.",
+  "choices": []
+}

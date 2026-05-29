@@ -12,6 +12,9 @@ capture from "0:none".
 Options:
   --launch                 Launch target/debug/gameterm-gui with the renderer
                            row fixture in a temporary XDG_CONFIG_HOME.
+  --fixture NAME           Fixture to install when --launch is used: basic,
+                           navigate, invalid, sprites, missing-sprite, or
+                           renderer-rows. Default: renderer-rows.
   --wait-before-capture N  Seconds to wait after launch before capture.
                            Use this time to press Ctrl+Shift+G. Default: 10.
   --device DEVICE          AVFoundation device string. Default: 0:none.
@@ -26,10 +29,12 @@ EOF
 }
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+fixture_root="${repo_root}/ci/fixtures/gameterm-scene"
 device="0:none"
 output="/tmp/gameterm-scene-smoke.png"
 capture_timeout=12
 launch=0
+fixture="renderer-rows"
 wait_before_capture=10
 ffmpeg_bin="${FFMPEG:-}"
 gui_pid=""
@@ -41,6 +46,10 @@ while [[ $# -gt 0 ]]; do
     --launch)
       launch=1
       shift
+      ;;
+    --fixture)
+      fixture="$2"
+      shift 2
       ;;
     --wait-before-capture)
       wait_before_capture="$2"
@@ -107,6 +116,41 @@ resolve_ffmpeg() {
   return 1
 }
 
+install_scene_fixture() {
+  local scene_dir="$1"
+  mkdir -p "${scene_dir}"
+
+  case "${fixture}" in
+    renderer-rows)
+      cp "${repo_root}/docs/examples/gameterm-scene-renderer-rows.json" \
+        "${scene_dir}/default.json"
+      ;;
+    basic)
+      cp "${fixture_root}/default.json" "${scene_dir}/default.json"
+      ;;
+    navigate)
+      cp "${fixture_root}/default.json" "${scene_dir}/default.json"
+      cp "${fixture_root}/memory.json" "${scene_dir}/memory.json"
+      ;;
+    invalid)
+      cp "${fixture_root}/invalid.json" "${scene_dir}/default.json"
+      ;;
+    sprites)
+      cp "${fixture_root}/default.json" "${scene_dir}/default.json"
+      cp "${fixture_root}/sprites.json" "${scene_dir}/sprites.json"
+      ;;
+    missing-sprite)
+      cp "${fixture_root}/default.json" "${scene_dir}/default.json"
+      cp "${fixture_root}/sprites-missing.json" "${scene_dir}/sprites.json"
+      ;;
+    *)
+      echo "unknown fixture: ${fixture}" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+}
+
 if ! ffmpeg_bin="$(resolve_ffmpeg)"; then
   cat >&2 <<'EOF'
 ffmpeg was not found.
@@ -146,11 +190,10 @@ EOF
   fi
 
   tmp_home="$(mktemp -d /tmp/gameterm-scene-smoke.XXXXXX)"
-  mkdir -p "${tmp_home}/gameterm/scenes"
-  cp "${repo_root}/docs/examples/gameterm-scene-renderer-rows.json" \
-    "${tmp_home}/gameterm/scenes/default.json"
+  install_scene_fixture "${tmp_home}/gameterm/scenes"
 
-  echo "Launching GameTerm with temporary XDG_CONFIG_HOME=${tmp_home}"
+  echo "Launching GameTerm with fixture ${fixture}"
+  echo "Temporary XDG_CONFIG_HOME=${tmp_home}"
   XDG_CONFIG_HOME="${tmp_home}" "${gui_bin}" start --always-new-process \
     --cwd "${repo_root}" &
   gui_pid=$!
