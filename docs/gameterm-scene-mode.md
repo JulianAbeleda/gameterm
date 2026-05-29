@@ -187,6 +187,21 @@ cargo run -q -p gameterm-visual --example scene_patch_apply -- \
   ci/fixtures/gameterm-scene/patch-status.json
 ```
 
+The helper script wraps common patch workflows:
+
+```sh
+ci/gameterm-scene-patch.sh set-entity-status \
+  --output /tmp/gameterm-scene-patch.json \
+  --entity-id project-harness \
+  --status "Verification passed" \
+  --flag loaded --flag verified \
+  --metadata status=patched
+
+ci/gameterm-scene-patch.sh validate \
+  --scene ci/fixtures/gameterm-scene/default.json \
+  --patch /tmp/gameterm-scene-patch.json
+```
+
 The GUI transport from panes or agents into the active Scene Mode overlay is the
 first implemented as an explicit local patch file. Start GameTerm with:
 
@@ -199,6 +214,14 @@ to that path. The overlay polls for modification-time changes between input
 events, applies valid patches to the active runtime, and reports malformed
 patches or unknown entity ids in the Scene Mode status and Tile Debugger. The
 patch file is a transport inbox, not persistent scene storage.
+
+Use the helper to write the inbox atomically:
+
+```sh
+ci/gameterm-scene-patch.sh write-inbox \
+  --inbox /tmp/gameterm-scene-patch.json \
+  --patch ci/fixtures/gameterm-scene/patch-status.json
+```
 
 ## Sprite manifest
 
@@ -267,6 +290,15 @@ ci/gameterm-scene-smoke.sh --launch --fixture run-command-targets
 
 After opening Scene Mode, trigger the three choices in order to verify `tab`,
 `split_right`, and `split_down` behavior in the real mux/window path.
+
+To live-audit the patch inbox, launch with an inbox path:
+
+```sh
+ci/gameterm-scene-smoke.sh --launch --fixture basic --patch-inbox auto
+```
+
+After Scene Mode opens, write a patch with `ci/gameterm-scene-patch.sh
+write-inbox` using the inbox path printed by the smoke script.
 
 Use `--min-bytes N` to make capture output checks stricter for local visual
 regression runs.

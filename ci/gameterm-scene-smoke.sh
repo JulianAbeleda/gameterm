@@ -18,6 +18,8 @@ Options:
                            navigate, invalid, sprites, missing-sprite,
                            run-command-targets, or renderer-rows. Default:
                            renderer-rows.
+  --patch-inbox PATH       Set GAMETERM_SCENE_PATCH_FILE to PATH when
+                           launching. Use "auto" to create a temporary inbox.
   --wait-before-capture N  Seconds to wait after launch before capture.
                            Use this time to press Ctrl+Shift+G. Default: 10.
   --device DEVICE          AVFoundation device string. Default: 0:none.
@@ -45,6 +47,7 @@ wait_before_capture=10
 ffmpeg_bin="${FFMPEG:-}"
 gui_pid=""
 tmp_home=""
+patch_inbox=""
 log_file="/tmp/gameterm-scene-smoke-ffmpeg.log"
 
 while [[ $# -gt 0 ]]; do
@@ -59,6 +62,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --fixture)
       fixture="$2"
+      shift 2
+      ;;
+    --patch-inbox)
+      patch_inbox="$2"
       shift 2
       ;;
     --wait-before-capture)
@@ -246,16 +253,30 @@ EOF
 
   tmp_home="$(mktemp -d /tmp/gameterm-scene-smoke.XXXXXX)"
   install_scene_fixture "${tmp_home}/gameterm/scenes"
+  if [[ "${patch_inbox}" == "auto" ]]; then
+    patch_inbox="${tmp_home}/gameterm/scenes/patch-inbox.json"
+  fi
 
   echo "Launching GameTerm with fixture ${fixture}"
   echo "Temporary XDG_CONFIG_HOME=${tmp_home}"
-  XDG_CONFIG_HOME="${tmp_home}" "${gui_bin}" start --always-new-process \
-    --cwd "${repo_root}" &
+  if [[ -n "${patch_inbox}" ]]; then
+    echo "Patch inbox: ${patch_inbox}"
+    XDG_CONFIG_HOME="${tmp_home}" \
+      GAMETERM_SCENE_PATCH_FILE="${patch_inbox}" \
+      "${gui_bin}" start --always-new-process --cwd "${repo_root}" &
+  else
+    XDG_CONFIG_HOME="${tmp_home}" "${gui_bin}" start --always-new-process \
+      --cwd "${repo_root}" &
+  fi
   gui_pid=$!
   echo "GameTerm pid: ${gui_pid}"
   echo "Press Ctrl+Shift+G in the GameTerm window to open Scene Mode."
   if [[ "${fixture}" == "run-command-targets" ]]; then
     echo "RunCommand audit: press Enter for tab, Next then Enter for split_right, Next then Enter for split_down."
+  fi
+  if [[ -n "${patch_inbox}" ]]; then
+    echo "Patch audit: after opening Scene Mode, run:"
+    echo "  ci/gameterm-scene-patch.sh write-inbox --inbox '${patch_inbox}' --patch ci/fixtures/gameterm-scene/patch-status.json"
   fi
   echo "Waiting ${wait_before_capture}s before capture..."
   sleep "${wait_before_capture}"

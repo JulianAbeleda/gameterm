@@ -116,6 +116,7 @@ run_static_checks() {
     "${repo_root}/ci/gameterm-scene-author.sh" \
     "${repo_root}/ci/gameterm-scene-doctor.sh" \
     "${repo_root}/ci/gameterm-scene-init.sh" \
+    "${repo_root}/ci/gameterm-scene-patch.sh" \
     "${repo_root}/ci/gameterm-scene-smoke.sh" \
     "${repo_root}/ci/gameterm-scene-verify.sh"
   do
@@ -284,6 +285,12 @@ run_doctor_check() {
 }
 
 run_patch_check() {
+  local tmp_home authored_patch inbox
+  tmp_home="$(mktemp -d /tmp/gameterm-scene-patch-verify.XXXXXX)"
+  tmp_paths+=("${tmp_home}")
+  authored_patch="${tmp_home}/patches/project.json"
+  inbox="${tmp_home}/inbox/scene-patch.json"
+
   cargo run -q -p gameterm-visual --example scene_patch_apply -- \
     "${fixture_root}/default.json" \
     "${fixture_root}/patch-status.json" \
@@ -307,6 +314,25 @@ run_patch_check() {
   fi
   grep -q 'unknown entity id `missing-entity`' \
     /tmp/gameterm-scene-patch-verify-bad.err
+
+  "${repo_root}/ci/gameterm-scene-patch.sh" \
+    set-entity-status \
+    --output "${authored_patch}" \
+    --entity-id project-harness \
+    --status "Authored patch applied" \
+    --flag loaded \
+    --flag authored \
+    --metadata fixture=default \
+    --metadata source=verify >/dev/null
+  "${repo_root}/ci/gameterm-scene-patch.sh" \
+    validate \
+    --scene "${fixture_root}/default.json" \
+    --patch "${authored_patch}" >/dev/null
+  "${repo_root}/ci/gameterm-scene-patch.sh" \
+    write-inbox \
+    --inbox "${inbox}" \
+    --patch "${authored_patch}" >/dev/null
+  cmp "${authored_patch}" "${inbox}"
 
   echo "scene patch: ok"
 }

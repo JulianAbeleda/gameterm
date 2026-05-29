@@ -234,6 +234,21 @@ cargo run -q -p gameterm-visual --example scene_patch_apply -- \
   ci/fixtures/gameterm-scene/patch-status.json
 ```
 
+Authoring and inbox helpers:
+
+```sh
+ci/gameterm-scene-patch.sh set-entity-status \
+  --output /tmp/gameterm-scene-patch.json \
+  --entity-id project-harness \
+  --status "Verification passed" \
+  --flag loaded --flag verified \
+  --metadata status=patched
+
+ci/gameterm-scene-patch.sh write-inbox \
+  --inbox /tmp/gameterm-scene-patch.json \
+  --patch ci/fixtures/gameterm-scene/patch-status.json
+```
+
 Implemented transport behavior:
 
 - The overlay records the patch file's current modification time at startup.
@@ -250,3 +265,19 @@ Next transport step:
 2. Preserve the same runtime application semantics as
    `SceneRuntime::apply_scene_patch`.
 3. Keep persistence as a separate authoring action.
+
+Candidate first-class mux design:
+
+1. Add a `MuxNotification::GameTermScenePatch { patch, source_pane_id }` or a
+   narrower GameTerm-specific notification type. Keep it local-only until the
+   serialization boundary is explicit.
+2. Track the active Scene Mode overlay pane id and route patch notifications to
+   that overlay's event loop, not directly to renderer metadata.
+3. Convert notification delivery into the same internal patch queue used by the
+   file inbox. The overlay should remain the only owner that mutates
+   `SceneRuntime`.
+4. Return delivery errors separately from patch validation errors. "No active
+   Scene Mode overlay" is a transport failure; "unknown entity id" is a runtime
+   patch failure.
+5. Add a script or CLI command that submits the patch through mux/IPC, then keep
+   `GAMETERM_SCENE_PATCH_FILE` as the portable fallback and smoke-test path.
