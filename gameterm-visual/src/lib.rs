@@ -489,7 +489,7 @@ impl SceneRuntime {
     }
 }
 
-fn truncate_to_screen(text: String, cols: usize, rows: usize) -> String {
+pub fn truncate_to_screen(text: String, cols: usize, rows: usize) -> String {
     let max_cols = cols.max(1);
     text.lines()
         .take(rows.max(1))
@@ -533,6 +533,12 @@ mod tests {
         let runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
         let frame = runtime.render_text_frame(80, 24);
         assert!(frame.contains("Selected: GameTerm"));
+    }
+
+    #[test]
+    fn truncate_to_screen_clips_rows_and_columns() {
+        let frame = truncate_to_screen("abcdef\n123456\nxyz".to_string(), 3, 2);
+        assert_eq!(frame, "abc\r\n123\r\n");
     }
 
     #[test]

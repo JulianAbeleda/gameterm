@@ -1,5 +1,5 @@
 use gameterm_term::color::ColorAttribute;
-use gameterm_visual::{SceneRuntime, VisualScene};
+use gameterm_visual::{truncate_to_screen, SceneRuntime, VisualScene};
 use mux::termwiztermtab::TermWizTerminal;
 use std::path::PathBuf;
 use termwiz::input::{InputEvent, KeyCode, KeyEvent};
@@ -134,16 +134,4 @@ fn render_error(
     ])?;
     term.flush()?;
     Ok(())
-}
-
-fn truncate_to_screen(text: String, cols: usize, rows: usize) -> String {
-    let max_cols = cols.max(1);
-    text.lines()
-        .take(rows.max(1))
-        .map(|line| {
-            let mut clipped = line.chars().take(max_cols).collect::<String>();
-            clipped.push_str("\r\n");
-            clipped
-        })
-        .collect()
 }
