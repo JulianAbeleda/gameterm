@@ -142,6 +142,23 @@ pub struct VisualRenderSnapshot {
     pub choices: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VisualSceneDebugReport {
+    pub scene_path: String,
+    pub load_status: String,
+    pub reload_count: u64,
+    pub last_error: Option<String>,
+    pub title: String,
+    pub background: String,
+    pub width: usize,
+    pub height: usize,
+    pub entity_count: usize,
+    pub choice_count: usize,
+    pub selected_entity_id: Option<String>,
+    pub selected_choice: usize,
+    pub status: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum VisualSceneLoadStatus {
     Bundled,
@@ -720,6 +737,24 @@ impl SceneRuntime {
         }
     }
 
+    pub fn debug_report(&self) -> VisualSceneDebugReport {
+        VisualSceneDebugReport {
+            scene_path: self.scene_source.scene_path.clone(),
+            load_status: self.scene_source.load_status.as_str().to_string(),
+            reload_count: self.scene_source.reload_count,
+            last_error: self.scene_source.last_error.clone(),
+            title: self.scene.title.clone(),
+            background: self.scene.background.clone(),
+            width: self.scene.width,
+            height: self.scene.height,
+            entity_count: self.scene.entities.len(),
+            choice_count: self.scene.choices.len(),
+            selected_entity_id: self.selected_entity().map(|entity| entity.id.clone()),
+            selected_choice: self.selected_choice,
+            status: self.status.clone(),
+        }
+    }
+
     fn render_tiles(&self) -> Vec<VisualRenderTile> {
         let mut tiles = Vec::with_capacity(self.scene.width * self.scene.height);
         for y in 0..self.scene.height {
@@ -821,23 +856,27 @@ impl SceneRuntime {
     }
 
     fn render_debugger(&self, cols: usize, rows: usize) -> String {
+        let report = self.debug_report();
         let mut out = String::new();
         out.push_str("GameTerm Tile Debugger\r\n");
         out.push_str("[tab: scene] [arrows/hjkl: select entity] [esc/q: close]\r\n\r\n");
         out.push_str(&format!(
             "Scene path: {}\r\nLoad status: {}\r\nReload counter: {}\r\n",
-            self.scene_source.scene_path,
-            self.scene_source.load_status.as_str(),
-            self.scene_source.reload_count
+            report.scene_path, report.load_status, report.reload_count
         ));
-        if let Some(error) = &self.scene_source.last_error {
+        if let Some(error) = &report.last_error {
             out.push_str(&format!("Error: {error}\r\n"));
         }
-        out.push_str(&format!("Action status: {}\r\n", self.status));
+        out.push_str(&format!("Action status: {}\r\n", report.status));
         out.push_str("\r\n");
         out.push_str(&format!(
-            "scene={} background={} size={}x{}\r\n\r\n",
-            self.scene.title, self.scene.background, self.scene.width, self.scene.height
+            "scene={} background={} size={}x{} entities={} choices={}\r\n\r\n",
+            report.title,
+            report.background,
+            report.width,
+            report.height,
+            report.entity_count,
+            report.choice_count
         ));
         out.push_str("Layer order:\r\n");
         out.push_str("  0 background\r\n  1 tile grid\r\n  2 entity sprites\r\n  3 selection/relations\r\n  4 dialogue\r\n  5 debug overlay\r\n\r\n");
@@ -1410,6 +1449,30 @@ mod tests {
         assert!(frame.contains("Load status: loaded"));
         assert!(frame.contains("Reload counter: 3"));
         assert!(frame.contains("Action status: Inspecting GameTerm"));
+    }
+
+    #[test]
+    fn debug_report_contains_authoring_state() {
+        let source = VisualSceneSource::new("/tmp/default.json", VisualSceneLoadStatus::Loaded, 3);
+        let mut runtime = SceneRuntime::new_with_source(VisualScene::demo(), source).unwrap();
+        runtime.select_next_entity();
+        runtime.select_next_choice();
+        runtime.activate_choice();
+
+        let report = runtime.debug_report();
+
+        assert_eq!(report.scene_path, "/tmp/default.json");
+        assert_eq!(report.load_status, "loaded");
+        assert_eq!(report.reload_count, 3);
+        assert_eq!(report.title, "GameTerm Scene Mode");
+        assert_eq!(report.background, "workspace-map");
+        assert_eq!(report.width, 18);
+        assert_eq!(report.height, 9);
+        assert_eq!(report.entity_count, 3);
+        assert_eq!(report.choice_count, 3);
+        assert_eq!(report.selected_entity_id.as_deref(), Some("task-render"));
+        assert_eq!(report.selected_choice, 1);
+        assert!(report.status.starts_with("OpenFile "));
     }
 
     #[test]
