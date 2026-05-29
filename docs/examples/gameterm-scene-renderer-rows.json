@@ -1,0 +1,62 @@
+{
+  "title": "Renderer Row Fixture",
+  "background": "debug_floor",
+  "width": 14,
+  "height": 6,
+  "entities": [
+    {
+      "id": "project-core",
+      "kind": "Project",
+      "label": "Core",
+      "position": { "x": 1, "y": 1 },
+      "sprite": "project_core",
+      "state_flags": ["active", "selectable"],
+      "metadata": [["role", "selection anchor"]]
+    },
+    {
+      "id": "agent-north",
+      "kind": "Agent",
+      "label": "North Agent",
+      "position": { "x": 6, "y": 1 },
+      "sprite": "agent_idle",
+      "state_flags": ["watching", "selectable"],
+      "metadata": [["row", "1"]]
+    },
+    {
+      "id": "task-cache-key",
+      "kind": "Task",
+      "label": "Cache Key",
+      "position": { "x": 3, "y": 3 },
+      "sprite": "task_tile",
+      "state_flags": ["ready", "selectable"],
+      "metadata": [["checks", "visual_generation"]]
+    },
+    {
+      "id": "agent-south",
+      "kind": "Agent",
+      "label": "South Agent",
+      "position": { "x": 9, "y": 4 },
+      "sprite": "agent_idle",
+      "state_flags": ["selected-target", "selectable"],
+      "metadata": [["row", "4"]]
+    },
+    {
+      "id": "memory-atlas",
+      "kind": "Memory",
+      "label": "Atlas Note",
+      "position": { "x": 12, "y": 2 },
+      "sprite": "memory_note",
+      "state_flags": ["inspectable"],
+      "metadata": [["purpose", "distinct sprite id"]]
+    }
+  ],
+  "dialogue_speaker": "Renderer",
+  "dialogue": "Multiple rows and repeated sprite ids make row filtering and selection cache invalidation visible.",
+  "choices": [
+    { "label": "Inspect selected entity", "kind": "Inspect" },
+    {
+      "label": "Open renderer path",
+      "kind": { "OpenFile": { "path": "docs/gameterm-renderer-path.md" } }
+    }
+  ]
+}

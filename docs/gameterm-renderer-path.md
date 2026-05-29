@@ -1,91 +1,136 @@
 # GameTerm Renderer Path
 
-This note records the follow-up design after Scene Mode file loading. It is
-documentation only; no renderer code is changed here.
+This note records the immediate renderer implementation plan after Scene Mode
+file loading. It is documentation only; no renderer code is changed here.
 
-The first bitmap sprite/tile implementation should use the existing pane render path, not a new compositor. The best first hook is `render_screen_line` in `gameterm-gui/src/termwindow/render/screen_line.rs`, modeled after the existing image quad path.
+The first bitmap sprite/tile step should stay inside the existing pane render
+path, not introduce a new compositor. The implementation should extend
+`render_screen_line` in
+`gameterm-gui/src/termwindow/render/screen_line.rs`, modeled after the current
+image quad path.
 
 Useful existing pieces:
 
-- `paint_pass` in `gameterm-gui/src/termwindow/render/paint.rs` defines the frame order: backgrounds, panes, splits, tab bar, borders, modal.
-- `paint_pane` in `gameterm-gui/src/termwindow/render/pane.rs` drives per-line rendering and owns `LineQuadCacheKey`.
-- `render_screen_line` in `gameterm-gui/src/termwindow/render/screen_line.rs` already emits background, glyph, cursor, and image quads.
-- `populate_image_quad` in `gameterm-gui/src/termwindow/render/mod.rs` is the nearest template for atlas-backed bitmap quads.
-- `RenderLayer` in `gameterm-gui/src/renderstate.rs` has three sublayers per z-index; tile/background sprites can start on sublayer 0 and entity sprites on sublayer 2.
+- `paint_pass` in `gameterm-gui/src/termwindow/render/paint.rs` defines the
+  frame order: backgrounds, panes, splits, tab bar, borders, modal.
+- `paint_pane` in `gameterm-gui/src/termwindow/render/pane.rs` drives per-line
+  rendering and owns `LineQuadCacheKey`.
+- `render_screen_line` in
+  `gameterm-gui/src/termwindow/render/screen_line.rs` already emits
+  background, glyph, cursor, and image quads.
+- `populate_image_quad` in `gameterm-gui/src/termwindow/render/mod.rs` is the
+  nearest template for atlas-backed bitmap quads.
+- `SceneRuntime::render_snapshot()` in `gameterm-visual` returns the data-only
+  scene records, selected flags, labels, and generation counter that the GUI
+  renderer should consume.
 
-The render-facing API from `gameterm-visual` is `SceneRuntime::render_snapshot()`. It returns data-only scene size, tile records, entity records, sprite ids, selection flags, dialogue/choice labels, and a generation number for cache invalidation.
+## Immediate Implementation Plan
 
-## `populate_visual_sprite_quad` follow-up design
+### 1. Thread real snapshots
 
-Add `populate_visual_sprite_quad` beside `populate_image_quad` in
-`gameterm-gui/src/termwindow/render/mod.rs`. Keep it small and bitmap-specific:
-it should receive one already-filtered visual sprite record, resolve that
-record's atlas sprite, compute the pane-local quad rectangle from the cell
-metrics already used by `render_screen_line`, and push a single
-atlas-backed quad into the existing render state.
+Thread an optional `VisualRenderSnapshot` from the Scene Mode runtime into the
+pane render path and then into `RenderScreenLineParams`.
 
-The helper should not decide which scene records are visible. That filtering
-belongs in the line renderer before the helper is called, so the helper can stay
-equivalent to `populate_image_quad`: convert one sprite placement into one quad.
-Expected call-site inputs are:
+The snapshot should be captured once for the frame or pane pass and shared by
+reference while rendering each line. Do not call `render_snapshot()` from inside
+the line loop; that would make generation handling unclear and could rebuild
+tile/entity vectors per row.
+
+When no visual scene is active, keep the snapshot field as `None` and preserve
+the existing terminal-only render behavior.
+
+### 2. Add `visual_generation` to cache identity
+
+Add the snapshot generation to `LineQuadCacheKey` as `visual_generation:
+Option<u64>`.
+
+The value should be:
+
+- `Some(snapshot.generation)` when a visual snapshot is present for the pane.
+- `None` when the pane has no active visual snapshot.
+
+This prevents stale cached line quads after selection changes, movement, tile
+swaps, dialogue state, or future animation changes. If animation advances
+without changing the snapshot generation, the cache key will also need a frame
+bucket or the caller must invalidate the affected visual lines.
+
+Any visual flag that changes emitted quad geometry, tint, outline, flip state,
+or atlas frame must be represented either in the snapshot generation or in a
+future cache-key component.
+
+### 3. Keep row filtering local and explicit
+
+Add small row-local helpers near `render_screen_line` before adding atlas
+resolution. The helpers should filter records before any sprite lookup:
+
+- `visual_tiles_for_row(snapshot, row, visible_cols)`:
+  return only tile records whose `position.y == row` and whose `position.x`
+  intersects the visible pane columns.
+- `visual_entities_for_row(snapshot, row, visible_cols)`:
+  return entities whose occupied grid rectangle intersects `row` and whose
+  horizontal range intersects the visible pane columns.
+
+Keep tile and entity helpers separate. Tile records are row-aligned background
+data; entities may later span rows, carry selection state, or need different
+z-order and clipping.
+
+The first entity implementation can treat entities as one-cell records because
+`VisualRenderEntity` currently exposes a single position. The helper shape
+should still be row-intersection friendly so multi-cell entities can be added
+without rewriting the call site.
+
+### 4. Emit deterministic placeholder quads first
+
+Before real sprite atlas assets exist, emit deterministic placeholder quads for
+visual records instead of blocking on asset loading.
+
+Placeholder rules:
+
+- Derive the placeholder color from stable inputs such as sprite id, layer, and
+  selected state.
+- Use the same sprite id to produce the same placeholder across frames.
+- Use a visibly different treatment for selected entities, such as a stable
+  tint or outline encoded in the emitted quad state.
+- Do not allocate atlas entries for skipped off-screen records.
+- Do not cache a missing sprite id as an unrecoverable failure.
+
+After real sprite atlas assets land, keep the same filtering and cache-key
+shape. Replace only the placeholder quad body with sprite-id atlas resolution.
+
+### 5. Convert one visual record into one quad
+
+Add a small `populate_visual_sprite_quad` helper beside `populate_image_quad` in
+`gameterm-gui/src/termwindow/render/mod.rs`.
+
+The helper should receive one already-filtered tile or entity record and push
+one pane-local quad. It should not decide which scene records are visible.
+Expected inputs are:
 
 - pane-local origin for the current line;
-- current row index in scene/tile coordinates;
+- current scene row;
 - cell width and line height;
-- sprite id or atlas handle from the visual record;
-- tile/entity grid position and dimensions;
+- sprite id from the visual record;
+- grid position and dimensions;
 - target `RenderLayer` sublayer;
-- selection/active flags only if they affect tint, outline, or cache identity.
+- selected/active flags only when they affect emitted quad state.
 
-Row-local filtering should happen in `render_screen_line`:
-
-- tiles: iterate only tile records whose `tile.y == current_scene_row`, then
-  skip records with `tile.x` outside the visible pane columns;
-- entities: include records whose occupied grid rectangle intersects the
-  current scene row, then clip or offset the quad vertically when the entity is
-  taller than one row;
-- both paths: skip records outside the pane viewport before atlas lookup, so
-  off-screen sprites do not create cache pressure;
-- keep tile/entity filtering separate at first, because entities can span rows
-  or need different visual state while tiles are row-aligned background data.
-
-Sublayer choices should remain within the current pane z-index:
+Use the current pane z-index and existing sublayers:
 
 - sublayer 0: scene tiles, floor, terrain, and other background sprites;
-- sublayer 1: reserved for future overlays that must sit above tiles but below
-  actors, such as path previews, targeting highlights, or selection fills;
+- sublayer 1: reserved for overlays such as path previews, targeting
+  highlights, or selection fills;
 - sublayer 2: entities, items, cursors, and other foreground sprites.
 
-This keeps Scene Mode inside the normal pane ordering. It avoids a new
-compositor and lets borders, modal UI, and later frame passes continue to draw
-over pane content.
+This keeps Scene Mode inside the normal pane ordering so borders, modal UI, and
+later frame passes continue to draw over pane content.
 
-## Cache and atlas risks
+## Next Checklist
 
-- `LineQuadCacheKey` needs the visual snapshot generation. Without it, movement,
-  selection changes, tile swaps, or animation frame changes can reuse stale
-  line quads.
-- If animation is time-based rather than generation-based, the cache key also
-  needs an animation frame bucket or the caller must invalidate visual lines
-  when frames advance.
-- Sprite images will share the existing glyph/image atlas path. Repeated
-  off-screen lookups or per-frame sprite allocation can evict useful atlas
-  entries and create `OutOfTextureSpace` failures.
-- Atlas resolution should be keyed by stable sprite id plus image generation,
-  not by transient entity id, so multiple entities using the same sprite share
-  atlas entries.
-- Missing sprite ids should degrade to a deterministic placeholder or no-op
-  quad, and should not poison the line cache with an unrecoverable failure.
-- Cache invalidation must include any flags that affect the emitted quad, such
-  as selected/active tint, flip state, or animation frame.
-
-## Next-step checklist
-
-1. Thread an optional `VisualRenderSnapshot` into `RenderScreenLineParams`.
-2. Add snapshot generation to `LineQuadCacheKey`.
-3. Add row-local tile filtering in `render_screen_line`.
-4. Add row-intersection entity filtering in `render_screen_line`.
-5. Add `populate_visual_sprite_quad` beside `populate_image_quad`.
-6. Emit tile/background sprites on sublayer 0.
-7. Emit entity/foreground sprites on sublayer 2.
-8. Verify atlas reuse by sprite id and no atlas lookup for skipped off-screen records.
+1. Capture one optional `VisualRenderSnapshot` for the active visual pane.
+2. Thread the snapshot reference into `RenderScreenLineParams`.
+3. Populate `LineQuadCacheKey.visual_generation` from the snapshot.
+4. Add row-local tile and entity filtering helpers near `render_screen_line`.
+5. Emit deterministic placeholder quads for filtered tiles on sublayer 0.
+6. Emit deterministic placeholder quads for filtered entities on sublayer 2.
+7. Verify skipped off-screen records do not perform atlas or placeholder work.
+8. Swap placeholder quads for atlas-backed sprite quads once sprite assets land.
