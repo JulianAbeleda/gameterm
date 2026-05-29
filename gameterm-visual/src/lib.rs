@@ -142,6 +142,29 @@ fn clipped_columns(columns: Range<usize>, width: usize) -> Range<usize> {
     columns.start.min(width)..columns.end.min(width)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VisualInput {
+    Close,
+    ToggleDebug,
+    Activate,
+    Next,
+    Previous,
+    Other,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VisualModeOutcome {
+    Continue,
+    Exit,
+}
+
+pub trait VisualMode {
+    fn generation(&self) -> u64;
+    fn render_snapshot(&self) -> VisualRenderSnapshot;
+    fn render_text_frame(&self, cols: usize, rows: usize) -> String;
+    fn handle_input(&mut self, input: VisualInput) -> VisualModeOutcome;
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum VisualSceneError {
     #[error("scene dimensions must be non-zero")]
@@ -530,6 +553,45 @@ impl SceneRuntime {
     }
 }
 
+impl VisualMode for SceneRuntime {
+    fn generation(&self) -> u64 {
+        SceneRuntime::generation(self)
+    }
+
+    fn render_snapshot(&self) -> VisualRenderSnapshot {
+        SceneRuntime::render_snapshot(self)
+    }
+
+    fn render_text_frame(&self, cols: usize, rows: usize) -> String {
+        SceneRuntime::render_text_frame(self, cols, rows)
+    }
+
+    fn handle_input(&mut self, input: VisualInput) -> VisualModeOutcome {
+        match input {
+            VisualInput::Close => VisualModeOutcome::Exit,
+            VisualInput::ToggleDebug => {
+                self.toggle_debugger();
+                VisualModeOutcome::Continue
+            }
+            VisualInput::Activate => {
+                self.activate_choice();
+                VisualModeOutcome::Continue
+            }
+            VisualInput::Next => {
+                self.select_next_entity();
+                self.select_next_choice();
+                VisualModeOutcome::Continue
+            }
+            VisualInput::Previous => {
+                self.select_prev_entity();
+                self.select_prev_choice();
+                VisualModeOutcome::Continue
+            }
+            VisualInput::Other => VisualModeOutcome::Continue,
+        }
+    }
+}
+
 pub fn truncate_to_screen(text: String, cols: usize, rows: usize) -> String {
     let max_cols = cols.max(1);
     text.lines()
@@ -638,6 +700,83 @@ mod tests {
         assert_eq!(runtime.view(), VisualView::Scene);
         runtime.toggle_debugger();
         assert_eq!(runtime.view(), VisualView::TileDebugger);
+    }
+
+    #[test]
+    fn mode_toggle_debug_input_changes_view_and_generation() {
+        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        let initial_generation = runtime.generation();
+
+        let outcome = runtime.handle_input(VisualInput::ToggleDebug);
+
+        assert_eq!(outcome, VisualModeOutcome::Continue);
+        assert_eq!(runtime.view(), VisualView::TileDebugger);
+        assert!(runtime.generation() > initial_generation);
+    }
+
+    #[test]
+    fn mode_next_input_advances_selection() {
+        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        let initial_generation = runtime.generation();
+
+        let outcome = runtime.handle_input(VisualInput::Next);
+
+        assert_eq!(outcome, VisualModeOutcome::Continue);
+        assert!(runtime.generation() > initial_generation);
+        assert_eq!(
+            runtime.render_snapshot().selected_entity_id.as_deref(),
+            Some("task-render")
+        );
+        assert_eq!(runtime.render_snapshot().selected_choice, 1);
+    }
+
+    #[test]
+    fn mode_previous_input_wraps_selection() {
+        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+
+        let outcome = runtime.handle_input(VisualInput::Previous);
+
+        assert_eq!(outcome, VisualModeOutcome::Continue);
+        assert_eq!(
+            runtime.render_snapshot().selected_entity_id.as_deref(),
+            Some("agent-audit")
+        );
+        assert_eq!(runtime.render_snapshot().selected_choice, 2);
+    }
+
+    #[test]
+    fn mode_activate_input_updates_status() {
+        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+
+        let outcome = runtime.handle_input(VisualInput::Activate);
+
+        assert_eq!(outcome, VisualModeOutcome::Continue);
+        assert_eq!(
+            runtime.render_snapshot().status,
+            "Inspecting GameTerm (project-gameterm)"
+        );
+    }
+
+    #[test]
+    fn mode_close_input_exits() {
+        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        let initial_generation = runtime.generation();
+
+        let outcome = runtime.handle_input(VisualInput::Close);
+
+        assert_eq!(outcome, VisualModeOutcome::Exit);
+        assert_eq!(runtime.generation(), initial_generation);
+    }
+
+    #[test]
+    fn mode_other_input_is_ignored() {
+        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        let initial = runtime.render_snapshot();
+
+        let outcome = runtime.handle_input(VisualInput::Other);
+
+        assert_eq!(outcome, VisualModeOutcome::Continue);
+        assert_eq!(runtime.render_snapshot(), initial);
     }
 
     #[test]

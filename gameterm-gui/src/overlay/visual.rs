@@ -1,6 +1,8 @@
 use gameterm_dynamic::Value;
 use gameterm_term::color::ColorAttribute;
-use gameterm_visual::{truncate_to_screen, SceneRuntime, VisualScene};
+use gameterm_visual::{
+    truncate_to_screen, SceneRuntime, VisualInput, VisualMode, VisualModeOutcome, VisualScene,
+};
 use mux::termwiztermtab::TermWizTerminal;
 use std::path::PathBuf;
 use termwiz::input::{InputEvent, KeyCode, KeyEvent};
@@ -30,14 +32,8 @@ pub fn show_visual_scene_overlay(mut term: TermWizTerminal) -> anyhow::Result<()
     while let Some(input) = term.poll_input(None)? {
         match input {
             InputEvent::Key(KeyEvent { key, .. }) => {
-                if matches!(
-                    key,
-                    KeyCode::Escape | KeyCode::Char('q') | KeyCode::Char('Q')
-                ) {
-                    break;
-                }
                 if let Some(runtime) = runtime.as_mut() {
-                    if handle_key(runtime, key) {
+                    if runtime.handle_input(visual_input_from_key(key)) == VisualModeOutcome::Exit {
                         break;
                     }
                     render_runtime(&mut term, runtime)?;
@@ -77,28 +73,18 @@ fn default_scene_path() -> PathBuf {
     config_home.join("scenes").join("default.json")
 }
 
-fn handle_key(runtime: &mut SceneRuntime, key: KeyCode) -> bool {
+fn visual_input_from_key(key: KeyCode) -> VisualInput {
     match key {
-        KeyCode::Escape | KeyCode::Char('q') | KeyCode::Char('Q') => true,
-        KeyCode::Tab => {
-            runtime.toggle_debugger();
-            false
-        }
-        KeyCode::Enter => {
-            runtime.activate_choice();
-            false
-        }
+        KeyCode::Escape | KeyCode::Char('q') | KeyCode::Char('Q') => VisualInput::Close,
+        KeyCode::Tab => VisualInput::ToggleDebug,
+        KeyCode::Enter => VisualInput::Activate,
         KeyCode::RightArrow | KeyCode::DownArrow | KeyCode::Char('l') | KeyCode::Char('j') => {
-            runtime.select_next_entity();
-            runtime.select_next_choice();
-            false
+            VisualInput::Next
         }
         KeyCode::LeftArrow | KeyCode::UpArrow | KeyCode::Char('h') | KeyCode::Char('k') => {
-            runtime.select_prev_entity();
-            runtime.select_prev_choice();
-            false
+            VisualInput::Previous
         }
-        _ => false,
+        _ => VisualInput::Other,
     }
 }
 
