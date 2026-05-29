@@ -96,9 +96,15 @@ pub fn show_visual_scene_overlay(mut term: TermWizTerminal) -> anyhow::Result<()
                 }
                 patch_inbox.refresh();
             }
-            while let Ok(patch_json) = scene_patch_rx.try_recv() {
+            while let Ok(scene_patch) = scene_patch_rx.try_recv() {
                 if let Some(runtime) = runtime.as_mut() {
-                    apply_scene_patch_json(&mut term, runtime, &sprite_manifest, &patch_json)?;
+                    apply_scene_patch_json(
+                        &mut term,
+                        runtime,
+                        &sprite_manifest,
+                        &scene_patch.patch_json,
+                        scene_patch.source_pane_id,
+                    )?;
                 }
             }
             continue;
@@ -177,8 +183,16 @@ struct ScenePatchNotificationSubscription {
     dead: Arc<AtomicBool>,
 }
 
+struct ScenePatchNotification {
+    patch_json: String,
+    source_pane_id: Option<mux::pane::PaneId>,
+}
+
 impl ScenePatchNotificationSubscription {
-    fn new(pane_id: mux::pane::PaneId, scene_patch_tx: mpsc::Sender<String>) -> Self {
+    fn new(
+        pane_id: mux::pane::PaneId,
+        scene_patch_tx: mpsc::Sender<ScenePatchNotification>,
+    ) -> Self {
         let dead = Arc::new(AtomicBool::new(false));
         let subscription_dead = Arc::clone(&dead);
         Mux::get().subscribe(move |notification| {
@@ -188,7 +202,7 @@ impl ScenePatchNotificationSubscription {
             if let MuxNotification::GameTermScenePatch {
                 patch_json,
                 target_pane_id,
-                ..
+                source_pane_id,
             } = notification
             {
                 if target_pane_id.or_else(|| Mux::get().active_gameterm_scene_pane())
@@ -196,7 +210,10 @@ impl ScenePatchNotificationSubscription {
                 {
                     return true;
                 }
-                let _ = scene_patch_tx.send(patch_json);
+                let _ = scene_patch_tx.send(ScenePatchNotification {
+                    patch_json,
+                    source_pane_id,
+                });
             }
             true
         });
@@ -377,11 +394,12 @@ fn apply_scene_patch_file(
     sprite_manifest: &VisualSpriteManifestStatus,
     path: &Path,
 ) -> anyhow::Result<()> {
-    match VisualScenePatch::load_from_path(path).and_then(|patch| runtime.apply_scene_patch(patch))
+    match VisualScenePatch::load_from_path(path)
+        .and_then(|patch| runtime.apply_scene_patch_with_source(patch, Some("file".to_string()), None))
     {
         Ok(()) => {}
         Err(err) => {
-            runtime.mark_action_status(format!("Scene patch failed: {}: {err}", path.display()));
+            runtime.mark_scene_patch_failed(format!("file {}", path.display()), None, err);
         }
     }
     render_runtime(term, runtime, sprite_manifest)
@@ -392,12 +410,15 @@ fn apply_scene_patch_json(
     runtime: &mut SceneRuntime,
     sprite_manifest: &VisualSpriteManifestStatus,
     patch_json: &str,
+    source_pane_id: Option<mux::pane::PaneId>,
 ) -> anyhow::Result<()> {
-    match VisualScenePatch::from_json(patch_json).and_then(|patch| runtime.apply_scene_patch(patch))
+    match VisualScenePatch::from_json(patch_json).and_then(|patch| {
+        runtime.apply_scene_patch_with_source(patch, Some("mux".to_string()), source_pane_id)
+    })
     {
         Ok(()) => {}
         Err(err) => {
-            runtime.mark_action_status(format!("Scene patch failed from mux: {err}"));
+            runtime.mark_scene_patch_failed("mux", source_pane_id, err);
         }
     }
     render_runtime(term, runtime, sprite_manifest)

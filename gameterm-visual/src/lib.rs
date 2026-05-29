@@ -198,6 +198,8 @@ pub struct VisualSceneDebugReport {
     pub selected_choice_detail: Option<String>,
     pub pending_action_kind: Option<String>,
     pub pending_action_detail: Option<String>,
+    pub last_patch_transport: Option<String>,
+    pub last_patch_source_pane_id: Option<usize>,
     pub status: String,
 }
 
@@ -621,6 +623,8 @@ pub struct SceneRuntime {
     status: String,
     generation: u64,
     pending_action: Option<VisualActionRequest>,
+    last_patch_transport: Option<String>,
+    last_patch_source_pane_id: Option<usize>,
 }
 
 impl SceneRuntime {
@@ -655,6 +659,8 @@ impl SceneRuntime {
             status: "Ready".to_string(),
             generation: 0,
             pending_action: None,
+            last_patch_transport: None,
+            last_patch_source_pane_id: None,
         })
     }
 
@@ -810,6 +816,15 @@ impl SceneRuntime {
         &mut self,
         patch: VisualScenePatch,
     ) -> Result<(), VisualScenePatchError> {
+        self.apply_scene_patch_with_source(patch, None, None)
+    }
+
+    pub fn apply_scene_patch_with_source(
+        &mut self,
+        patch: VisualScenePatch,
+        transport: Option<String>,
+        source_pane_id: Option<usize>,
+    ) -> Result<(), VisualScenePatchError> {
         patch.validate()?;
         for update in &patch.updates {
             if !self
@@ -844,8 +859,26 @@ impl SceneRuntime {
         self.status = patch
             .status
             .unwrap_or_else(|| format!("Applied scene patch: {} entity update(s)", update_count));
+        self.last_patch_transport = transport;
+        self.last_patch_source_pane_id = source_pane_id;
         self.bump_generation();
         Ok(())
+    }
+
+    pub fn mark_scene_patch_failed(
+        &mut self,
+        transport: impl Into<String>,
+        source_pane_id: Option<usize>,
+        error: impl std::fmt::Display,
+    ) {
+        let transport = transport.into();
+        self.last_patch_transport = Some(transport.clone());
+        self.last_patch_source_pane_id = source_pane_id;
+        self.status = match source_pane_id {
+            Some(pane_id) => format!("Scene patch failed from {transport} pane {pane_id}: {error}"),
+            None => format!("Scene patch failed from {transport}: {error}"),
+        };
+        self.bump_generation();
     }
 
     pub fn mark_open_file_dispatched(&mut self, path: &Path) {
@@ -976,6 +1009,8 @@ impl SceneRuntime {
             selected_choice_detail: selected_choice.map(|choice| action_kind_detail(&choice.kind)),
             pending_action_kind: pending_action.map(action_request_name),
             pending_action_detail: pending_action.map(action_request_detail),
+            last_patch_transport: self.last_patch_transport.clone(),
+            last_patch_source_pane_id: self.last_patch_source_pane_id,
             status: self.status.clone(),
         }
     }
@@ -1119,6 +1154,15 @@ impl SceneRuntime {
                 out.push_str(&format!("  Pending action: {kind}\r\n"));
             }
             _ => out.push_str("  Pending action: none\r\n"),
+        }
+        match (&report.last_patch_transport, report.last_patch_source_pane_id) {
+            (Some(transport), Some(pane_id)) => {
+                out.push_str(&format!("  Last patch: {transport} from pane {pane_id}\r\n"));
+            }
+            (Some(transport), None) => {
+                out.push_str(&format!("  Last patch: {transport}\r\n"));
+            }
+            (None, _) => out.push_str("  Last patch: none\r\n"),
         }
         out.push_str("\r\n");
         out.push_str(&format!(
@@ -1875,6 +1919,8 @@ mod tests {
         );
         assert_eq!(report.pending_action_kind.as_deref(), None);
         assert_eq!(report.pending_action_detail.as_deref(), None);
+        assert_eq!(report.last_patch_transport.as_deref(), None);
+        assert_eq!(report.last_patch_source_pane_id, None);
         assert!(report.status.starts_with("OpenFile "));
     }
 
@@ -2212,6 +2258,43 @@ mod tests {
             .selected_entity_metadata
             .iter()
             .all(|(key, _)| key != "status"));
+    }
+
+    #[test]
+    fn scene_patch_source_is_reported_in_debugger() {
+        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        let patch = VisualScenePatch {
+            scene_patch_version: VisualScenePatch::VERSION,
+            updates: vec![],
+            status: Some("Source tracked".to_string()),
+        };
+
+        runtime
+            .apply_scene_patch_with_source(patch, Some("mux".to_string()), Some(42))
+            .unwrap();
+
+        let report = runtime.debug_report();
+        assert_eq!(report.last_patch_transport.as_deref(), Some("mux"));
+        assert_eq!(report.last_patch_source_pane_id, Some(42));
+
+        runtime.toggle_debugger();
+        let frame = runtime.render_text_frame(100, 24);
+        assert!(frame.contains("Last patch: mux from pane 42"));
+    }
+
+    #[test]
+    fn scene_patch_failure_source_is_reported() {
+        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+
+        runtime.mark_scene_patch_failed("mux", Some(99), "bad patch");
+
+        let report = runtime.debug_report();
+        assert_eq!(report.last_patch_transport.as_deref(), Some("mux"));
+        assert_eq!(report.last_patch_source_pane_id, Some(99));
+        assert_eq!(
+            report.status,
+            "Scene patch failed from mux pane 99: bad patch"
+        );
     }
 
     #[test]
