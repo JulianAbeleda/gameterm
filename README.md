@@ -12,6 +12,12 @@ User facing docs and guide at: https://gameterm.org/
 
 https://gameterm.org/installation
 
+## Migrating from WezTerm
+
+GameTerm uses its own config and runtime paths, such as `~/.config/gameterm/` and `~/.gameterm.lua`. Existing WezTerm configs are not loaded automatically.
+
+See [MIGRATION.md](MIGRATION.md) for the path changes and a basic copy-forward example.
+
 ## Getting help
 
 This is a spare time project, so please bear with me.  There are a couple of channels for support:
