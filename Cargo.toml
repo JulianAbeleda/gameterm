@@ -5,22 +5,22 @@ members = [
   "strip-ansi-escapes",
   "sync-color-schemes",
   "deps/cairo",
-  "wezterm",
-  "wezterm-blob-leases",
-  "wezterm-cell",
-  "wezterm-escape-parser",
-  "wezterm-dynamic",
-  "wezterm-gui",
-  "wezterm-mux-server",
-  "wezterm-open-url",
-  "wezterm-ssh",
-  "wezterm-surface",
-  "wezterm-uds",
+  "gameterm",
+  "gameterm-blob-leases",
+  "gameterm-cell",
+  "gameterm-escape-parser",
+  "gameterm-dynamic",
+  "gameterm-gui",
+  "gameterm-mux-server",
+  "gameterm-open-url",
+  "gameterm-ssh",
+  "gameterm-surface",
+  "gameterm-uds",
 ]
 resolver = "2"
 exclude = [
   "termwiz/codegen",
-  "wezterm-char-props/codegen",
+  "gameterm-char-props/codegen",
 ]
 
 [profile.release]
@@ -239,27 +239,27 @@ wayland-client = "0.31"
 wayland-egl = "0.32"
 wayland-protocols = "0.32"
 wayland-protocols-plasma = { version="0.3.6", features=["client"] }
-wezterm-bidi = { version="0.2.3", path = "bidi", default-features=false}
-wezterm-blob-leases = { version="0.1.1", path = "wezterm-blob-leases"}
-wezterm-cell = { path = "wezterm-cell"}
-wezterm-char-props = { path = "wezterm-char-props", default-features=false }
-wezterm-client = { path = "wezterm-client" }
-wezterm-color-types = { version="0.3", path = "color-types", default-features=false }
-wezterm-config-derive = { version="0.1", path="config/derive" }
-wezterm-dynamic = { version = "0.2.1", path = "wezterm-dynamic", default-features=false }
-wezterm-dynamic-derive = { version="0.1.1", path="wezterm-dynamic/derive" }
-wezterm-escape-parser = { version="0.1.0", path="wezterm-escape-parser" }
-wezterm-font = { path = "wezterm-font" }
-wezterm-gui-subcommands = { path = "wezterm-gui-subcommands" }
-wezterm-input-types = { version="0.1", path = "wezterm-input-types", default-features=false }
-wezterm-mux-server-impl = { path = "wezterm-mux-server-impl" }
-wezterm-open-url = { path = "wezterm-open-url" }
-wezterm-ssh = { path = "wezterm-ssh" }
-wezterm-surface = { path = "wezterm-surface" }
-wezterm-term = { path = "term" }
-wezterm-toast-notification = { path = "wezterm-toast-notification" }
-wezterm-uds = { path = "wezterm-uds" }
-wezterm-version = { path = "wezterm-version" }
+gameterm-bidi = { version="0.2.3", path = "bidi", default-features=false}
+gameterm-blob-leases = { version="0.1.1", path = "gameterm-blob-leases"}
+gameterm-cell = { path = "gameterm-cell"}
+gameterm-char-props = { path = "gameterm-char-props", default-features=false }
+gameterm-client = { path = "gameterm-client" }
+gameterm-color-types = { version="0.3", path = "color-types", default-features=false }
+gameterm-config-derive = { version="0.1", path="config/derive" }
+gameterm-dynamic = { version = "0.2.1", path = "gameterm-dynamic", default-features=false }
+gameterm-dynamic-derive = { version="0.1.1", path="gameterm-dynamic/derive" }
+gameterm-escape-parser = { version="0.1.0", path="gameterm-escape-parser" }
+gameterm-font = { path = "gameterm-font" }
+gameterm-gui-subcommands = { path = "gameterm-gui-subcommands" }
+gameterm-input-types = { version="0.1", path = "gameterm-input-types", default-features=false }
+gameterm-mux-server-impl = { path = "gameterm-mux-server-impl" }
+gameterm-open-url = { path = "gameterm-open-url" }
+gameterm-ssh = { path = "gameterm-ssh" }
+gameterm-surface = { path = "gameterm-surface" }
+gameterm-term = { path = "term" }
+gameterm-toast-notification = { path = "gameterm-toast-notification" }
+gameterm-uds = { path = "gameterm-uds" }
+gameterm-version = { path = "gameterm-version" }
 wgpu = "25.0.2"
 whoami = "1.5"
 winapi = "0.3.9"

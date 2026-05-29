@@ -278,7 +278,7 @@ title: Color Schemes with first letter "{scheme_prefix}"
                     origin_url = scheme["metadata"].get("origin_url", None)
                     if origin_url:
                         idx.write(f"Source: <{origin_url}><br/>\n")
-                    version = scheme["metadata"].get("wezterm_version", None)
+                    version = scheme["metadata"].get("gameterm_version", None)
                     if version and version != "Always":
                         idx.write(f"{{{{since('{version}')}}}}<br/>\n")
 
@@ -324,7 +324,7 @@ document.addEventListener("DOMContentLoaded", function() {{
 
 TOC = [
     Page(
-        "WezTerm",
+        "GameTerm",
         "index.md",
         children=[
             Page("Features", "features.md"),
@@ -379,40 +379,40 @@ TOC = [
                 "config/lua/config",
             ),
             Gen(
-                "module: wezterm",
-                "config/lua/wezterm",
+                "module: gameterm",
+                "config/lua/gameterm",
             ),
             Gen(
-                "module: wezterm.color",
-                "config/lua/wezterm.color",
+                "module: gameterm.color",
+                "config/lua/gameterm.color",
             ),
             Gen(
-                "module: wezterm.gui",
-                "config/lua/wezterm.gui",
+                "module: gameterm.gui",
+                "config/lua/gameterm.gui",
             ),
             Gen(
-                "module: wezterm.mux",
-                "config/lua/wezterm.mux",
+                "module: gameterm.mux",
+                "config/lua/gameterm.mux",
             ),
             Gen(
-                "module: wezterm.plugin",
-                "config/lua/wezterm.plugin",
+                "module: gameterm.plugin",
+                "config/lua/gameterm.plugin",
             ),
             Gen(
-                "module: wezterm.procinfo",
-                "config/lua/wezterm.procinfo",
+                "module: gameterm.procinfo",
+                "config/lua/gameterm.procinfo",
             ),
             Gen(
-                "module: wezterm.serde",
-                "config/lua/wezterm.serde",
+                "module: gameterm.serde",
+                "config/lua/gameterm.serde",
             ),
             Gen(
-                "module: wezterm.time",
-                "config/lua/wezterm.time",
+                "module: gameterm.time",
+                "config/lua/gameterm.time",
             ),
             Gen(
-                "module: wezterm.url",
-                "config/lua/wezterm.url",
+                "module: gameterm.url",
+                "config/lua/gameterm.url",
             ),
             Gen(
                 "enum: KeyAssignment",
@@ -432,7 +432,7 @@ TOC = [
             Page("object: TabInformation", "config/lua/TabInformation.md"),
             Page("object: SshDomain", "config/lua/SshDomain.md"),
             Page("object: SpawnCommand", "config/lua/SpawnCommand.md"),
-            Gen("object: Time", "config/lua/wezterm.time/Time"),
+            Gen("object: Time", "config/lua/gameterm.time/Time"),
             Page("object: TlsDomainClient", "config/lua/TlsDomainClient.md"),
             Page("object: TlsDomainServer", "config/lua/TlsDomainServer.md"),
             Gen(
@@ -462,17 +462,17 @@ TOC = [
         "CLI Reference",
         "cli/general.md",
         children=[
-            Gen("wezterm cli", "cli/cli"),
-            Page("wezterm connect", "cli/connect.md"),
-            Page("wezterm imgcat", "cli/imgcat.md"),
-            Page("wezterm ls-fonts", "cli/ls-fonts.md"),
-            Page("wezterm record", "cli/record.md"),
-            Page("wezterm replay", "cli/replay.md"),
-            Page("wezterm serial", "cli/serial.md"),
-            Page("wezterm set-working-directory", "cli/set-working-directory.md"),
-            Page("wezterm show-keys", "cli/show-keys.md"),
-            Page("wezterm ssh", "cli/ssh.md"),
-            Page("wezterm start", "cli/start.md"),
+            Gen("gameterm cli", "cli/cli"),
+            Page("gameterm connect", "cli/connect.md"),
+            Page("gameterm imgcat", "cli/imgcat.md"),
+            Page("gameterm ls-fonts", "cli/ls-fonts.md"),
+            Page("gameterm record", "cli/record.md"),
+            Page("gameterm replay", "cli/replay.md"),
+            Page("gameterm serial", "cli/serial.md"),
+            Page("gameterm set-working-directory", "cli/set-working-directory.md"),
+            Page("gameterm show-keys", "cli/show-keys.md"),
+            Page("gameterm ssh", "cli/ssh.md"),
+            Page("gameterm start", "cli/start.md"),
         ],
     ),
     Page(

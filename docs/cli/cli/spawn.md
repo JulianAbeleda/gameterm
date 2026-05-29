@@ -1,6 +1,6 @@
-# `wezterm cli spawn`
+# `gameterm cli spawn`
 
-*Run `wezterm cli spawn --help` to see more help*
+*Run `gameterm cli spawn --help` to see more help*
 
 Spawn a command into a new tab or window.  Outputs the pane-id for the newly
 created pane on success.
@@ -11,25 +11,25 @@ program; this example spawns a new pane with id 1 running that default program
 
 
 ```
-$ wezterm cli spawn
+$ gameterm cli spawn
 1
 ```
 
 You may spawn an alternative program by passing the argument list; it is
 recommended that you use `--` to denote the end of the arguments being passed
-to `wezterm cli spawn` so that any parameters you may wish to pass to the
-program are not confused with parameters to `wezterm cli spawn`.  This example
+to `gameterm cli spawn` so that any parameters you may wish to pass to the
+program are not confused with parameters to `gameterm cli spawn`.  This example
 launches `top` in a new tab:
 
 ```
-$ wezterm cli spawn -- top
+$ gameterm cli spawn -- top
 2
 ```
 
 This example explicitly runs bash as a login shell:
 
 ```
-$ wezterm cli spawn -- bash -l
+$ gameterm cli spawn -- bash -l
 3
 ```
 
@@ -45,5 +45,5 @@ The following options affect the behavior:
 ## Synopsis
 
 ```console
-{% include "../../examples/cmd-synopsis-wezterm-cli-spawn--help.txt" %}
+{% include "../../examples/cmd-synopsis-gameterm-cli-spawn--help.txt" %}
 ```

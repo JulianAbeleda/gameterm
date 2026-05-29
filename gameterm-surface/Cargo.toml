@@ -1,0 +1,39 @@
+[package]
+authors = ["Wez Furlong"]
+name = "gameterm-surface"
+version = "0.1.0"
+edition = "2018"
+repository = "https://github.com/JulianAbeleda/gameterm"
+description = "Surface and Line types for terminals"
+license = "MIT"
+documentation = "https://docs.rs/gameterm-surface"
+keywords = ["terminal", "surface", "line"]
+
+[dependencies]
+bitflags = "2.0"
+fancy-regex.workspace = true
+finl_unicode.workspace = true
+fixedbitset.workspace = true
+ordered-float.workspace = true
+serde = {workspace=true, optional=true}
+siphasher.workspace = true
+unicode-segmentation.workspace = true
+gameterm-bidi.workspace = true
+gameterm-blob-leases = {workspace=true, optional=true}
+gameterm-cell = {workspace = true}
+gameterm-char-props.workspace = true
+gameterm-color-types = {workspace = true}
+gameterm-dynamic = {workspace = true}
+gameterm-escape-parser = {workspace = true}
+gameterm-input-types.workspace = true
+
+[features]
+default = []
+std = ["fancy-regex/std", "gameterm-cell/std", "gameterm-dynamic/std", "gameterm-escape-parser/std", "fixedbitset/std", "fancy-regex/perf", "fancy-regex/unicode"]
+appdata = ["std"]
+use_serde = ["serde"] #, "gameterm-color-types/use_serde", "gameterm-blob-leases/serde", "bitflags/serde", "gameterm-input-types/serde", "gameterm-escape-parser/use_serde", "gameterm-cell/use_serde"]
+use_image = ["gameterm-cell/use_image"] # "image", "dep:image", "gameterm-escape-parser/use_image", "gameterm-escape-parser/kitty-shm", "gameterm-cell/use_image"]
+
+[dev-dependencies]
+k9.workspace = true
+

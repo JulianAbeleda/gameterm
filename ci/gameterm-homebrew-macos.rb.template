@@ -1,0 +1,52 @@
+# Note: if you are viewing this from the tap repo, this file is automatically
+# updated from:
+# https://github.com/JulianAbeleda/gameterm/blob/main/ci/gameterm-homebrew-macos.rb.template
+# by automation in the gameterm repo.
+# vim:ft=ruby:
+cask "gameterm" do
+  version "@TAG@"
+  sha256 "@SHA256@"
+
+  url "https://github.com/JulianAbeleda/gameterm/releases/download/#{version}/GameTerm-macos-#{version}.zip"
+  name "GameTerm"
+  desc "A GPU-accelerated cross-platform terminal emulator and multiplexer written by @wez and implemented in Rust"
+  homepage "https://gameterm.org/"
+
+  conflicts_with cask: "gameterm/gameterm/gameterm-nightly"
+
+  # Unclear what the minimal OS version is
+  # depends_on macos: ">= :sierra"
+
+  app "GameTerm.app"
+  [
+    "gameterm",
+    "gameterm-gui",
+    "gameterm-mux-server",
+    "strip-ansi-escapes"
+  ].each do |tool|
+    binary "#{appdir}/GameTerm.app/Contents/MacOS/#{tool}"
+  end
+
+  preflight do
+    # Move "GameTerm-macos-#{version}/GameTerm.app" out of the subfolder
+    staged_subfolder = staged_path.glob(["GameTerm-*", "gameterm-*"]).first
+    if staged_subfolder
+      FileUtils.mv(staged_subfolder/"GameTerm.app", staged_path)
+      FileUtils.rm_rf(staged_subfolder)
+    end
+  end
+
+  zap trash: [
+    "~/Library/Saved Application State/com.github.wez.gameterm.savedState",
+  ]
+
+  def caveats; <<~EOS
+    Cask #{token} related executables like 'gameterm', 'gameterm-gui',
+    'gameterm-mux-server', are linked into
+      /usr/local/bin/    for x86 Mac,
+      /opt/homebrew/bin/ for M1 Mac.
+
+    Removal of them is ensured by 'brew uninstall --cask #{token}'.
+  EOS
+  end
+end

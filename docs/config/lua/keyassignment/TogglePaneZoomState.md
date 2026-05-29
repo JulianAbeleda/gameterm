@@ -11,7 +11,7 @@ config.keys = {
   {
     key = 'Z',
     mods = 'CTRL',
-    action = wezterm.action.TogglePaneZoomState,
+    action = gameterm.action.TogglePaneZoomState,
   },
 }
 ```

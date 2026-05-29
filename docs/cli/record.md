@@ -1,7 +1,7 @@
-# `wezterm record`
+# `gameterm record`
 
 ```console
-{% include "../examples/cmd-synopsis-wezterm-record--help.txt" %}
+{% include "../examples/cmd-synopsis-gameterm-record--help.txt" %}
 ```
 
 

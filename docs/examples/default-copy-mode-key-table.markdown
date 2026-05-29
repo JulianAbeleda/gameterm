@@ -1,6 +1,6 @@
 ```lua
-local wezterm = require 'wezterm'
-local act = wezterm.action
+local gameterm = require 'gameterm'
+local act = gameterm.action
 
 return {
   key_tables = {

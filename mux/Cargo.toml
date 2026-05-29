@@ -45,9 +45,9 @@ termwiz.workspace = true
 textwrap.workspace = true
 thiserror.workspace = true
 url.workspace = true
-wezterm-dynamic.workspace = true
-wezterm-ssh.workspace = true
-wezterm-term = { workspace=true, features=["use_serde"] }
+gameterm-dynamic.workspace = true
+gameterm-ssh.workspace = true
+gameterm-term = { workspace=true, features=["use_serde"] }
 
 [target."cfg(windows)".dependencies]
 ntapi.workspace = true

@@ -5,8 +5,8 @@
 Move the CopyMode/SearchMode selection to the previous matching text, if any.
 
 ```lua
-local wezterm = require 'wezterm'
-local act = wezterm.action
+local gameterm = require 'gameterm'
+local act = gameterm.action
 
 return {
   key_tables = {

@@ -1,0 +1,15 @@
+[package]
+name = "gameterm-dynamic-derive"
+version = "0.1.1"
+edition = "2021"
+repository = "https://github.com/JulianAbeleda/gameterm"
+description = "config serialization for gameterm via dynamic json-like data values"
+license = "MIT"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2.workspace = true
+quote.workspace = true
+syn = {workspace=true, features=["extra-traits"]}

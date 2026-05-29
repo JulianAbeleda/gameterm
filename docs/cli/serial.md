@@ -1,7 +1,7 @@
-# `wezterm serial`
+# `gameterm serial`
 
 ```console
-{% include "../examples/cmd-synopsis-wezterm-serial--help.txt" %}
+{% include "../examples/cmd-synopsis-gameterm-serial--help.txt" %}
 ```
 
 

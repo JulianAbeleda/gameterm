@@ -1,0 +1,12 @@
+[package]
+name = "gameterm-uds"
+version = "0.1.0"
+edition = "2021"
+repository = "https://github.com/JulianAbeleda/gameterm"
+description = "Portable unix domain sockets"
+license = "MIT"
+documentation = "https://docs.rs/gameterm-uds"
+
+[dependencies]
+async-io.workspace = true
+uds_windows.workspace = true

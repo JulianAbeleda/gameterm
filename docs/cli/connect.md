@@ -1,6 +1,6 @@
-# `wezterm connect`
+# `gameterm connect`
 
 ```console
-{% include "../examples/cmd-synopsis-wezterm-connect--help.txt" %}
+{% include "../examples/cmd-synopsis-gameterm-connect--help.txt" %}
 ```
 

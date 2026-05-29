@@ -1,0 +1,32 @@
+[package]
+authors = ["Wez Furlong"]
+name = "gameterm-cell"
+version = "0.1.0"
+edition = "2024"
+repository = "https://github.com/JulianAbeleda/gameterm"
+description = "Model a Cell in a Terminal display"
+license = "MIT"
+documentation = "https://docs.rs/gameterm-cell"
+keywords = ["terminal", "cell"]
+
+[dependencies]
+finl_unicode.workspace = true
+image = {workspace=true, optional=true}
+log = {workspace = true, optional=true}
+ordered-float = {workspace = true, optional=true}
+sha2 = {workspace=true, optional=true}
+serde = {workspace=true, optional=true}
+thiserror = {workspace=true, optional=true}
+gameterm-blob-leases = {workspace = true, optional=true}
+gameterm-char-props.workspace = true
+gameterm-color-types.workspace = true
+gameterm-escape-parser.workspace = true
+gameterm-dynamic.workspace = true
+
+[features]
+std = ["serde/std", "gameterm-char-props/std", "gameterm-color-types/std", "gameterm-escape-parser/std", "gameterm-dynamic/std", "finl_unicode/std"]
+use_serde = ["dep:serde", "gameterm-color-types/use_serde"]
+use_image = ["dep:image", "dep:gameterm-blob-leases", "dep:log", "dep:ordered-float", "dep:sha2", "dep:thiserror"]
+
+[dev-dependencies]
+

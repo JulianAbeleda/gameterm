@@ -1,14 +1,14 @@
 # `CloseCurrentTab`
 
 Closes the current tab, terminating all contained panes.  If that was the last
-tab, closes that window.  If that was the last window, wezterm terminates.
+tab, closes that window.  If that was the last window, gameterm terminates.
 
 ```lua
 config.keys = {
   {
     key = 'w',
     mods = 'CMD',
-    action = wezterm.action.CloseCurrentTab { confirm = true },
+    action = gameterm.action.CloseCurrentTab { confirm = true },
   },
 }
 ```

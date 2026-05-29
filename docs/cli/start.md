@@ -1,5 +1,5 @@
-# `wezterm start`
+# `gameterm start`
 
 ```console
-{% include "../examples/cmd-synopsis-wezterm-start--help.txt" %}
+{% include "../examples/cmd-synopsis-gameterm-start--help.txt" %}
 ```

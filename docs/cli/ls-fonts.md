@@ -1,6 +1,6 @@
-# `wezterm ls-fonts`
+# `gameterm ls-fonts`
 
 ```console
-{% include "../examples/cmd-synopsis-wezterm-ls-fonts--help.txt" %}
+{% include "../examples/cmd-synopsis-gameterm-ls-fonts--help.txt" %}
 ```
 

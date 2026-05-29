@@ -16,18 +16,18 @@ information on this key assignment.
 
 ### Log Files
 
-You can find log files in `$XDG_RUNTIME_DIR/wezterm` on unix systems,
-or `$HOME/.local/share/wezterm` on macOS and Windows systems.
+You can find log files in `$XDG_RUNTIME_DIR/gameterm` on unix systems,
+or `$HOME/.local/share/gameterm` on macOS and Windows systems.
 
 ### Increasing Log Verbosity
 
-The `WEZTERM_LOG` environment variable can be used to adjust the level
-of logging for different modules within wezterm.
+The `GAMETERM_LOG` environment variable can be used to adjust the level
+of logging for different modules within gameterm.
 
-To see maximum verbosity, you can start wezterm like this:
+To see maximum verbosity, you can start gameterm like this:
 
 ```
-WEZTERM_LOG=debug wezterm
+GAMETERM_LOG=debug gameterm
 ```
 
 to see debug level logs for everything on stdout.
@@ -37,47 +37,47 @@ On Windows systems you'll usually need to set the environment variable separatel
 Using `cmd.exe`:
 
 ```
-C:\> set WEZTERM_LOG=debug
-C:\> wezterm
+C:\> set GAMETERM_LOG=debug
+C:\> gameterm
 ```
 
 Using powershell:
 
 ```
-PS C:\> $env:WEZTERM_LOG="debug"
-PS C:\> wezterm
+PS C:\> $env:GAMETERM_LOG="debug"
+PS C:\> gameterm
 ```
 
 When using a flatpak you must first enter the flatpak container by running:
 
 ```
-flatpak run --command=sh --devel org.wezfurlong.wezterm
+flatpak run --command=sh --devel org.wezfurlong.gameterm
 ```
 
-Before then running `wezterm`.
+Before then running `gameterm`.
 
 Each log line will include the module name, which is a colon separated
 namespace; in the output below the modules are `config`,
-`wezterm_gui::frontend`, `wezterm_font::ftwrap` and `wezterm_gui::termwindow`:
+`gameterm_gui::frontend`, `gameterm_font::ftwrap` and `gameterm_gui::termwindow`:
 
 ```
 10:29:24.451  DEBUG  config                    > Reloaded configuration! generation=2
-10:29:24.452  DEBUG  wezterm_gui::frontend     > workspace is default, fixup windows
-10:29:24.459  DEBUG  wezterm_font::ftwrap      > set_char_size computing 12 dpi=124 (pixel height=20.666666666666668)
-10:29:24.461  DEBUG  wezterm_font::ftwrap      > set_char_size computing 12 dpi=124 (pixel height=20.666666666666668)
-10:29:24.494  DEBUG  wezterm_gui::termwindow   > FocusChanged(true)
-10:29:24.495  DEBUG  wezterm_gui::termwindow   > FocusChanged(false)
+10:29:24.452  DEBUG  gameterm_gui::frontend     > workspace is default, fixup windows
+10:29:24.459  DEBUG  gameterm_font::ftwrap      > set_char_size computing 12 dpi=124 (pixel height=20.666666666666668)
+10:29:24.461  DEBUG  gameterm_font::ftwrap      > set_char_size computing 12 dpi=124 (pixel height=20.666666666666668)
+10:29:24.494  DEBUG  gameterm_gui::termwindow   > FocusChanged(true)
+10:29:24.495  DEBUG  gameterm_gui::termwindow   > FocusChanged(false)
 ```
 
 Those modules generally match up to directories and file names within the
-wezterm source code, or to external modules that wezterm depends upon.
+gameterm source code, or to external modules that gameterm depends upon.
 
 You can set a more restrictive filter to focus in on just the things you want.
 For example, if you wanted to debug only configuration related things you might
 set:
 
 ```
-WEZTERM_LOG=config=debug,info
+GAMETERM_LOG=config=debug,info
 ```
 
 which says:
@@ -88,7 +88,7 @@ which says:
 You can add more comma-separated items:
 
 ```
-WEZTERM_LOG=config=debug,wezterm_font=debug,info
+GAMETERM_LOG=config=debug,gameterm_font=debug,info
 ```
 
 See Rust's [env_logger
@@ -100,7 +100,7 @@ for more details on the syntax/possibilities.
 Turn on [debug_key_events](config/lua/config/debug_key_events.md) to log
 information about key presses.
 
-Use [wezterm show-keys](cli/show-keys.md) or `wezterm show-keys --lua` to show
+Use [gameterm show-keys](cli/show-keys.md) or `gameterm show-keys --lua` to show
 the effective set of key and mouse assignments defined by your config.
 
 Consider changing [use_ime](config/lua/config/use_ime.md) to see that is
@@ -112,13 +112,13 @@ trying to use.
 
 ## Debugging Font Display
 
-Use `wezterm ls-fonts` to explain which fonts will be used for different styles
+Use `gameterm ls-fonts` to explain which fonts will be used for different styles
 of text.
 
-Use `wezterm ls-fonts --list-system` to get a list of fonts available on your
+Use `gameterm ls-fonts --list-system` to get a list of fonts available on your
 system, in a form that you can use in your config file.
 
-Use `wezterm ls-fonts --text foo` to explain how wezterm will render the text
-`foo`, and `wezterm ls-fonts --text foo --rasterize-ascii` to show an ascii art
+Use `gameterm ls-fonts --text foo` to explain how gameterm will render the text
+`foo`, and `gameterm ls-fonts --text foo --rasterize-ascii` to show an ascii art
 rendition of that text.
 

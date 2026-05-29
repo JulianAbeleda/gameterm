@@ -3,7 +3,7 @@ use crate::*;
 use luahelper::impl_lua_conversion_dynamic;
 use std::fmt::Display;
 use std::str::FromStr;
-use wezterm_dynamic::{FromDynamic, ToDynamic};
+use gameterm_dynamic::{FromDynamic, ToDynamic};
 
 #[derive(Debug, Clone, Copy, FromDynamic, ToDynamic)]
 pub enum SshBackend {
@@ -19,14 +19,14 @@ impl Default for SshBackend {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, FromDynamic, ToDynamic)]
 pub enum SshMultiplexing {
-    WezTerm,
+    GameTerm,
     None,
     // TODO: Tmux-cc in the future?
 }
 
 impl Default for SshMultiplexing {
     fn default() -> Self {
-        Self::WezTerm
+        Self::GameTerm
     }
 }
 
@@ -76,23 +76,23 @@ pub struct SshDomain {
 
     /// Show time since last response when waiting for a response.
     /// It is recommended to use
-    /// <https://wezterm.org/config/lua/pane/get_metadata.html#since_last_response_ms>
+    /// <https://gameterm.org/config/lua/pane/get_metadata.html#since_last_response_ms>
     /// instead.
     #[dynamic(default)]
     pub overlay_lag_indicator: bool,
 
-    /// The path to the wezterm binary on the remote host
-    pub remote_wezterm_path: Option<String>,
-    /// Override the entire `wezterm cli proxy` invocation that would otherwise
-    /// be computed from remote_wezterm_path and other information.
+    /// The path to the gameterm binary on the remote host
+    pub remote_gameterm_path: Option<String>,
+    /// Override the entire `gameterm cli proxy` invocation that would otherwise
+    /// be computed from remote_gameterm_path and other information.
     pub override_proxy_command: Option<String>,
 
     pub ssh_backend: Option<SshBackend>,
 
     /// If false, then don't use a multiplexer connection,
     /// just connect directly using ssh. This doesn't require
-    /// that the remote host have wezterm installed, and is equivalent
-    /// to using `wezterm ssh` to connect.
+    /// that the remote host have gameterm installed, and is equivalent
+    /// to using `gameterm ssh` to connect.
     #[dynamic(default)]
     pub multiplexing: SshMultiplexing,
 
@@ -109,7 +109,7 @@ impl_lua_conversion_dynamic!(SshDomain);
 
 impl SshDomain {
     pub fn default_domains() -> Vec<Self> {
-        let mut config = wezterm_ssh::Config::new();
+        let mut config = gameterm_ssh::Config::new();
         config.add_default_config_files();
 
         let mut plain_ssh = vec![];
@@ -126,7 +126,7 @@ impl SshDomain {
             mux_ssh.push(Self {
                 name: format!("SSHMUX:{host}"),
                 remote_address: host.to_string(),
-                multiplexing: SshMultiplexing::WezTerm,
+                multiplexing: SshMultiplexing::GameTerm,
                 local_echo_threshold_ms: default_local_echo_threshold_ms(),
                 ..SshDomain::default()
             });

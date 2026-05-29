@@ -1,4 +1,4 @@
-# `wezterm cli activate-pane`
+# `gameterm cli activate-pane`
 
 {{since('20230326-111934-3666303c')}}
 
@@ -8,5 +8,5 @@ parameter.
 ## Synopsis
 
 ```console
-{% include "../../examples/cmd-synopsis-wezterm-cli-activate-pane--help.txt" %}
+{% include "../../examples/cmd-synopsis-gameterm-cli-activate-pane--help.txt" %}
 ```

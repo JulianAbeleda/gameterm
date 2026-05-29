@@ -11,13 +11,13 @@ the default or the [quick_select_patterns](../config/quick_select_patterns.md)
 configuration:
 
 ```lua
-local wezterm = require 'wezterm'
+local gameterm = require 'gameterm'
 
 config.keys = {
   {
     key = 'P',
     mods = 'CTRL',
-    action = wezterm.action.QuickSelectArgs {
+    action = gameterm.action.QuickSelectArgs {
       patterns = {
         'https?://\\S+',
       },
@@ -40,26 +40,26 @@ quick-selected text, instead of copying it to the clipboard.  Here, we open
 the selected URL using the web browser:
 
 ```lua
-local wezterm = require 'wezterm'
+local gameterm = require 'gameterm'
 
 config.keys = {
   {
     key = 'P',
     mods = 'CTRL',
-    action = wezterm.action.QuickSelectArgs {
+    action = gameterm.action.QuickSelectArgs {
       label = 'open url',
       patterns = {
         'https?://\\S+',
       },
       skip_action_on_paste = true,
-      action = wezterm.action_callback(function(window, pane)
+      action = gameterm.action_callback(function(window, pane)
         local url = window:get_selection_text_for_pane(pane)
-        wezterm.log_info('opening: ' .. url)
-        wezterm.open_with(url)
+        gameterm.log_info('opening: ' .. url)
+        gameterm.open_with(url)
       end),
     },
   },
 }
 ```
 
-See also [wezterm.open_with](../wezterm/open_with.md).
+See also [gameterm.open_with](../gameterm/open_with.md).

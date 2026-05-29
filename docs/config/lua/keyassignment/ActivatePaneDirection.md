@@ -4,14 +4,14 @@
 
 `ActivatePaneDirection` activate an adjacent pane in the specified direction.
 In cases where there are multiple adjacent panes in the intended direction,
-wezterm will choose the pane that has the largest edge intersection.
+gameterm will choose the pane that has the largest edge intersection.
 
 If the active pane is [zoomed](TogglePaneZoomState.md), behavior is determined
 by the [`unzoom_on_switch_pane`](../config/unzoom_on_switch_pane.md) flag. 
 
 ```lua
-local wezterm = require 'wezterm'
-local act = wezterm.action
+local gameterm = require 'gameterm'
+local act = gameterm.action
 local config = {}
 
 config.keys = {

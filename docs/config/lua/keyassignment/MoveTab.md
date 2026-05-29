@@ -5,7 +5,7 @@ moves the tab to be  leftmost, while `1` moves the tab so that it is second tab
 from the left, and so on.
 
 ```lua
-local wezterm = require 'wezterm'
+local gameterm = require 'gameterm'
 local config = {}
 
 config.keys = {}
@@ -15,7 +15,7 @@ for i = 1, 8 do
   table.insert(config.keys, {
     key = tostring(i),
     mods = 'CTRL|ALT',
-    action = wezterm.action.MoveTab(i - 1),
+    action = gameterm.action.MoveTab(i - 1),
   })
 end
 

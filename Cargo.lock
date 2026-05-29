@@ -441,9 +441,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "config",
+ "gameterm-dynamic",
  "luahelper",
  "starship-battery",
- "wezterm-dynamic",
 ]
 
 [[package]]
@@ -823,6 +823,7 @@ dependencies = [
  "anyhow",
  "base91",
  "config",
+ "gameterm-term",
  "leb128",
  "log",
  "metrics",
@@ -834,7 +835,6 @@ dependencies = [
  "termwiz",
  "thiserror 1.0.69",
  "varbincode",
- "wezterm-term",
  "zstd",
 ]
 
@@ -857,6 +857,9 @@ dependencies = [
  "config",
  "csscolorparser",
  "deltae",
+ "gameterm-color-types",
+ "gameterm-dynamic",
+ "gameterm-term",
  "image",
  "lazy_static",
  "log",
@@ -866,9 +869,6 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
- "wezterm-color-types",
- "wezterm-dynamic",
- "wezterm-term",
 ]
 
 [[package]]
@@ -921,6 +921,12 @@ dependencies = [
  "dirs-next",
  "enum-display-derive",
  "env_logger 0.11.8",
+ "gameterm-bidi",
+ "gameterm-config-derive",
+ "gameterm-dynamic",
+ "gameterm-input-types",
+ "gameterm-ssh",
+ "gameterm-term",
  "hostname",
  "lazy_static",
  "libc",
@@ -939,12 +945,6 @@ dependencies = [
  "termwiz",
  "toml 0.8.23",
  "umask",
- "wezterm-bidi",
- "wezterm-config-derive",
- "wezterm-dynamic",
- "wezterm-input-types",
- "wezterm-ssh",
- "wezterm-term",
  "winapi",
 ]
 
@@ -1471,6 +1471,7 @@ dependencies = [
  "dirs-next",
  "env_logger 0.10.2",
  "filesystem",
+ "gameterm-version",
  "lazy_static",
  "libc",
  "log",
@@ -1488,7 +1489,6 @@ dependencies = [
  "termwiz-funcs",
  "time-funcs",
  "url-funcs",
- "wezterm-version",
  "winapi",
 ]
 
@@ -1998,6 +1998,537 @@ dependencies = [
  "pin-project-lite",
  "pin-utils",
  "slab",
+]
+
+[[package]]
+name = "gameterm"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "cc",
+ "chrono",
+ "clap",
+ "clap_complete",
+ "clap_complete_fig",
+ "codec",
+ "config",
+ "embed-resource",
+ "env-bootstrap",
+ "filedescriptor",
+ "gameterm-client",
+ "gameterm-gui-subcommands",
+ "gameterm-term",
+ "hostname",
+ "humantime",
+ "image",
+ "libc",
+ "log",
+ "mux",
+ "portable-pty",
+ "promise",
+ "serde",
+ "serde_json",
+ "shell-words",
+ "smol",
+ "tabout",
+ "tempfile",
+ "termios",
+ "termwiz",
+ "termwiz-funcs",
+ "textwrap",
+ "umask",
+ "url",
+ "winapi",
+]
+
+[[package]]
+name = "gameterm-bidi"
+version = "0.2.3"
+dependencies = [
+ "env_logger 0.11.8",
+ "gameterm-dynamic",
+ "k9",
+ "log",
+]
+
+[[package]]
+name = "gameterm-blob-leases"
+version = "0.1.1"
+dependencies = [
+ "getrandom 0.3.4",
+ "serde",
+ "sha2",
+ "tempfile",
+ "thiserror 1.0.69",
+ "uuid",
+]
+
+[[package]]
+name = "gameterm-cell"
+version = "0.1.0"
+dependencies = [
+ "finl_unicode",
+ "gameterm-blob-leases",
+ "gameterm-char-props",
+ "gameterm-color-types",
+ "gameterm-dynamic",
+ "gameterm-escape-parser",
+ "image",
+ "log",
+ "ordered-float 4.6.0",
+ "serde",
+ "sha2",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "gameterm-char-props"
+version = "0.1.3"
+dependencies = [
+ "k9",
+ "phf",
+ "serde",
+ "ucd-trie",
+]
+
+[[package]]
+name = "gameterm-client"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-io",
+ "async-trait",
+ "async_ossl",
+ "codec",
+ "config",
+ "filedescriptor",
+ "futures",
+ "gameterm-dynamic",
+ "gameterm-ssh",
+ "gameterm-term",
+ "gameterm-uds",
+ "lazy_static",
+ "libc",
+ "log",
+ "lru",
+ "metrics",
+ "mux",
+ "openssl",
+ "parking_lot",
+ "portable-pty",
+ "promise",
+ "rangeset",
+ "ratelim",
+ "smol",
+ "termwiz",
+ "textwrap",
+ "thiserror 1.0.69",
+ "umask",
+ "url",
+ "winapi",
+]
+
+[[package]]
+name = "gameterm-color-types"
+version = "0.3.0"
+dependencies = [
+ "csscolorparser",
+ "deltae",
+ "gameterm-dynamic",
+ "num-traits",
+ "serde",
+]
+
+[[package]]
+name = "gameterm-config-derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
+name = "gameterm-dynamic"
+version = "0.2.1"
+dependencies = [
+ "gameterm-dynamic-derive",
+ "log",
+ "maplit",
+ "ordered-float 4.6.0",
+ "strsim",
+ "thiserror 2.0.17",
+]
+
+[[package]]
+name = "gameterm-dynamic-derive"
+version = "0.1.1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
+name = "gameterm-escape-parser"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "bitflags 2.10.0",
+ "criterion",
+ "env_logger 0.11.8",
+ "gameterm-blob-leases",
+ "gameterm-color-types",
+ "gameterm-dynamic",
+ "gameterm-input-types",
+ "hex",
+ "image",
+ "k9",
+ "log",
+ "nix",
+ "num-derive",
+ "num-traits",
+ "ordered-float 4.6.0",
+ "pest",
+ "pest_derive",
+ "serde",
+ "sha2",
+ "thiserror 2.0.17",
+ "vtparse",
+ "winapi",
+]
+
+[[package]]
+name = "gameterm-font"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "cairo-rs",
+ "cocoa",
+ "config",
+ "core-foundation 0.10.0",
+ "core-text",
+ "dwrote",
+ "encoding_rs",
+ "enum-display-derive",
+ "env_logger 0.11.8",
+ "euclid",
+ "finl_unicode",
+ "fontconfig",
+ "freetype",
+ "gameterm-bidi",
+ "gameterm-color-types",
+ "gameterm-input-types",
+ "gameterm-term",
+ "gameterm-toast-notification",
+ "harfbuzz",
+ "image",
+ "k9",
+ "lazy_static",
+ "lfucache",
+ "log",
+ "memmap2 0.9.9",
+ "metrics",
+ "objc",
+ "ordered-float 4.6.0",
+ "rangeset",
+ "termwiz",
+ "thiserror 1.0.69",
+ "walkdir",
+ "winapi",
+]
+
+[[package]]
+name = "gameterm-gui"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "benchmarking",
+ "bitflags 1.3.2",
+ "bytemuck",
+ "cc",
+ "chrono",
+ "clap",
+ "codec",
+ "colorgrad",
+ "config",
+ "dhat",
+ "dirs-next",
+ "downcast-rs",
+ "embed-resource",
+ "emojis",
+ "env-bootstrap",
+ "env_logger 0.11.8",
+ "euclid",
+ "fastrand",
+ "filedescriptor",
+ "finl_unicode",
+ "frecency",
+ "futures",
+ "gameterm-bidi",
+ "gameterm-blob-leases",
+ "gameterm-client",
+ "gameterm-dynamic",
+ "gameterm-font",
+ "gameterm-gui-subcommands",
+ "gameterm-mux-server-impl",
+ "gameterm-open-url",
+ "gameterm-ssh",
+ "gameterm-term",
+ "gameterm-toast-notification",
+ "hdrhistogram",
+ "http_req",
+ "image",
+ "k9",
+ "lazy_static",
+ "lfucache",
+ "libc",
+ "log",
+ "luahelper",
+ "metrics",
+ "mlua",
+ "mux",
+ "mux-lua",
+ "nucleo-matcher",
+ "ordered-float 4.6.0",
+ "parking_lot",
+ "portable-pty",
+ "promise",
+ "rangeset",
+ "ratelim",
+ "rayon",
+ "regex",
+ "serde",
+ "serde_json",
+ "shared_library",
+ "shlex",
+ "smol",
+ "tabout",
+ "tempfile",
+ "terminfo",
+ "termwiz",
+ "termwiz-funcs",
+ "textwrap",
+ "thiserror 1.0.69",
+ "tiny-skia",
+ "umask",
+ "unicode-normalization",
+ "unicode-segmentation",
+ "url",
+ "url-funcs",
+ "walkdir",
+ "wgpu",
+ "winapi",
+ "window",
+ "window-funcs",
+ "windows 0.33.0",
+]
+
+[[package]]
+name = "gameterm-gui-subcommands"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "config",
+]
+
+[[package]]
+name = "gameterm-input-types"
+version = "0.1.0"
+dependencies = [
+ "bitflags 1.3.2",
+ "euclid",
+ "gameterm-dynamic",
+ "serde",
+]
+
+[[package]]
+name = "gameterm-mux-server"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async_ossl",
+ "cc",
+ "clap",
+ "config",
+ "embed-resource",
+ "env-bootstrap",
+ "gameterm-blob-leases",
+ "gameterm-gui-subcommands",
+ "gameterm-mux-server-impl",
+ "gameterm-term",
+ "libc",
+ "log",
+ "mlua",
+ "mux",
+ "openssl",
+ "portable-pty",
+ "promise",
+ "umask",
+ "winapi",
+]
+
+[[package]]
+name = "gameterm-mux-server-impl"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-io",
+ "async_ossl",
+ "codec",
+ "config",
+ "dns-lookup",
+ "futures",
+ "gameterm-client",
+ "gameterm-term",
+ "gameterm-uds",
+ "hostname",
+ "lazy_static",
+ "libc",
+ "log",
+ "mux",
+ "portable-pty",
+ "promise",
+ "rangeset",
+ "rcgen",
+ "smol",
+ "termwiz",
+ "url",
+ "winapi",
+]
+
+[[package]]
+name = "gameterm-open-url"
+version = "0.1.0"
+dependencies = [
+ "winapi",
+]
+
+[[package]]
+name = "gameterm-ssh"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "assert_fs",
+ "async_ossl",
+ "base64 0.22.1",
+ "bitflags 1.3.2",
+ "camino",
+ "clap",
+ "dirs-next",
+ "env_logger 0.11.8",
+ "filedescriptor",
+ "filenamegen",
+ "gameterm-uds",
+ "gethostname",
+ "hex",
+ "k9",
+ "libc",
+ "libssh-rs",
+ "log",
+ "passfd",
+ "portable-pty",
+ "predicates",
+ "regex",
+ "rstest",
+ "sha2",
+ "shell-words",
+ "smol",
+ "socket2 0.5.10",
+ "ssh2",
+ "termwiz",
+ "thiserror 1.0.69",
+ "whoami",
+]
+
+[[package]]
+name = "gameterm-surface"
+version = "0.1.0"
+dependencies = [
+ "bitflags 2.10.0",
+ "fancy-regex",
+ "finl_unicode",
+ "fixedbitset",
+ "gameterm-bidi",
+ "gameterm-blob-leases",
+ "gameterm-cell",
+ "gameterm-char-props",
+ "gameterm-color-types",
+ "gameterm-dynamic",
+ "gameterm-escape-parser",
+ "gameterm-input-types",
+ "k9",
+ "ordered-float 4.6.0",
+ "serde",
+ "siphasher",
+ "unicode-segmentation",
+]
+
+[[package]]
+name = "gameterm-term"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bitflags 1.3.2",
+ "csscolorparser",
+ "downcast-rs",
+ "env_logger 0.11.8",
+ "finl_unicode",
+ "gameterm-bidi",
+ "gameterm-cell",
+ "gameterm-dynamic",
+ "gameterm-escape-parser",
+ "gameterm-surface",
+ "hex",
+ "humansize",
+ "image",
+ "k9",
+ "lazy_static",
+ "log",
+ "lru",
+ "miniz_oxide 0.7.4",
+ "num-traits",
+ "ordered-float 4.6.0",
+ "serde",
+ "terminfo",
+ "termwiz",
+ "unicode-normalization",
+ "url",
+]
+
+[[package]]
+name = "gameterm-toast-notification"
+version = "0.1.0"
+dependencies = [
+ "async-io",
+ "block2",
+ "futures-util",
+ "gameterm-open-url",
+ "log",
+ "objc2",
+ "objc2-foundation",
+ "objc2-user-notifications",
+ "serde",
+ "uuid",
+ "windows 0.33.0",
+ "xml-rs",
+ "zbus",
+ "zvariant",
+]
+
+[[package]]
+name = "gameterm-uds"
+version = "0.1.0"
+dependencies = [
+ "async-io",
+ "uds_windows",
+]
+
+[[package]]
+name = "gameterm-version"
+version = "0.1.0"
+dependencies = [
+ "git2",
 ]
 
 [[package]]
@@ -3237,9 +3768,9 @@ name = "luahelper"
 version = "0.1.0"
 dependencies = [
  "bstr",
+ "gameterm-dynamic",
  "log",
  "mlua",
- "wezterm-dynamic",
 ]
 
 [[package]]
@@ -3466,6 +3997,9 @@ dependencies = [
  "fancy-regex",
  "filedescriptor",
  "finl_unicode",
+ "gameterm-dynamic",
+ "gameterm-ssh",
+ "gameterm-term",
  "hostname",
  "k9",
  "lazy_static",
@@ -3493,9 +4027,6 @@ dependencies = [
  "textwrap",
  "thiserror 1.0.69",
  "url",
- "wezterm-dynamic",
- "wezterm-ssh",
- "wezterm-term",
  "winapi",
 ]
 
@@ -3505,6 +4036,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "config",
+ "gameterm-dynamic",
+ "gameterm-term",
  "libc",
  "log",
  "luahelper",
@@ -3515,8 +4048,6 @@ dependencies = [
  "termwiz",
  "termwiz-funcs",
  "url-funcs",
- "wezterm-dynamic",
- "wezterm-term",
 ]
 
 [[package]]
@@ -4229,11 +4760,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "config",
+ "gameterm-dynamic",
  "git2",
  "log",
  "luahelper",
  "tempfile",
- "wezterm-dynamic",
 ]
 
 [[package]]
@@ -4395,11 +4926,11 @@ dependencies = [
 name = "procinfo"
 version = "0.1.0"
 dependencies = [
+ "gameterm-dynamic",
  "libc",
  "log",
  "luahelper",
  "ntapi",
- "wezterm-dynamic",
  "winapi",
 ]
 
@@ -4409,10 +4940,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "config",
+ "gameterm-dynamic",
  "libc",
  "luahelper",
  "procinfo",
- "wezterm-dynamic",
 ]
 
 [[package]]
@@ -5060,11 +5591,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "config",
+ "gameterm-dynamic",
  "luahelper",
  "serde_json",
  "serde_yaml",
  "toml 0.8.23",
- "wezterm-dynamic",
 ]
 
 [[package]]
@@ -5222,10 +5753,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "config",
+ "gameterm-dynamic",
  "lazy_static",
  "luahelper",
  "ordered-float 4.6.0",
- "wezterm-dynamic",
 ]
 
 [[package]]
@@ -5393,11 +5924,11 @@ dependencies = [
  "anyhow",
  "bstr",
  "config",
+ "gameterm-dynamic",
+ "gameterm-open-url",
  "log",
  "luahelper",
  "smol",
- "wezterm-dynamic",
- "wezterm-open-url",
  "winapi",
 ]
 
@@ -5437,8 +5968,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "config",
+ "gameterm-ssh",
  "luahelper",
- "wezterm-ssh",
 ]
 
 [[package]]
@@ -5568,6 +6099,7 @@ dependencies = [
  "config",
  "env_logger 0.11.8",
  "futures",
+ "gameterm-dynamic",
  "lazy_static",
  "libflate",
  "log",
@@ -5581,7 +6113,6 @@ dependencies = [
  "tempfile",
  "tokio",
  "toml 0.8.23",
- "wezterm-dynamic",
 ]
 
 [[package]]
@@ -5735,6 +6266,15 @@ dependencies = [
  "finl_unicode",
  "fixedbitset",
  "fnv",
+ "gameterm-bidi",
+ "gameterm-blob-leases",
+ "gameterm-cell",
+ "gameterm-char-props",
+ "gameterm-color-types",
+ "gameterm-dynamic",
+ "gameterm-escape-parser",
+ "gameterm-input-types",
+ "gameterm-surface",
  "image",
  "k9",
  "libc",
@@ -5757,15 +6297,6 @@ dependencies = [
  "ucd-trie",
  "unicode-segmentation",
  "vtparse",
- "wezterm-bidi",
- "wezterm-blob-leases",
- "wezterm-cell",
- "wezterm-char-props",
- "wezterm-color-types",
- "wezterm-dynamic",
- "wezterm-escape-parser",
- "wezterm-input-types",
- "wezterm-surface",
  "winapi",
 ]
 
@@ -5776,12 +6307,12 @@ dependencies = [
  "anyhow",
  "config",
  "finl_unicode",
+ "gameterm-dynamic",
+ "gameterm-input-types",
  "lazy_static",
  "luahelper",
  "terminfo",
  "termwiz",
- "wezterm-dynamic",
- "wezterm-input-types",
 ]
 
 [[package]]
@@ -5883,12 +6414,12 @@ dependencies = [
  "anyhow",
  "chrono",
  "config",
+ "gameterm-dynamic",
  "lazy_static",
  "luahelper",
  "promise",
  "smol",
  "spa",
- "wezterm-dynamic",
 ]
 
 [[package]]
@@ -6299,10 +6830,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "config",
+ "gameterm-dynamic",
  "luahelper",
  "percent-encoding",
  "url",
- "wezterm-dynamic",
 ]
 
 [[package]]
@@ -6633,537 +7164,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "009936b22a61d342859b5f0ea64681cbb35a358ab548e2a44a8cf0dac2d980b8"
 
 [[package]]
-name = "wezterm"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "cc",
- "chrono",
- "clap",
- "clap_complete",
- "clap_complete_fig",
- "codec",
- "config",
- "embed-resource",
- "env-bootstrap",
- "filedescriptor",
- "hostname",
- "humantime",
- "image",
- "libc",
- "log",
- "mux",
- "portable-pty",
- "promise",
- "serde",
- "serde_json",
- "shell-words",
- "smol",
- "tabout",
- "tempfile",
- "termios",
- "termwiz",
- "termwiz-funcs",
- "textwrap",
- "umask",
- "url",
- "wezterm-client",
- "wezterm-gui-subcommands",
- "wezterm-term",
- "winapi",
-]
-
-[[package]]
-name = "wezterm-bidi"
-version = "0.2.3"
-dependencies = [
- "env_logger 0.11.8",
- "k9",
- "log",
- "wezterm-dynamic",
-]
-
-[[package]]
-name = "wezterm-blob-leases"
-version = "0.1.1"
-dependencies = [
- "getrandom 0.3.4",
- "serde",
- "sha2",
- "tempfile",
- "thiserror 1.0.69",
- "uuid",
-]
-
-[[package]]
-name = "wezterm-cell"
-version = "0.1.0"
-dependencies = [
- "finl_unicode",
- "image",
- "log",
- "ordered-float 4.6.0",
- "serde",
- "sha2",
- "thiserror 1.0.69",
- "wezterm-blob-leases",
- "wezterm-char-props",
- "wezterm-color-types",
- "wezterm-dynamic",
- "wezterm-escape-parser",
-]
-
-[[package]]
-name = "wezterm-char-props"
-version = "0.1.3"
-dependencies = [
- "k9",
- "phf",
- "serde",
- "ucd-trie",
-]
-
-[[package]]
-name = "wezterm-client"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-io",
- "async-trait",
- "async_ossl",
- "codec",
- "config",
- "filedescriptor",
- "futures",
- "lazy_static",
- "libc",
- "log",
- "lru",
- "metrics",
- "mux",
- "openssl",
- "parking_lot",
- "portable-pty",
- "promise",
- "rangeset",
- "ratelim",
- "smol",
- "termwiz",
- "textwrap",
- "thiserror 1.0.69",
- "umask",
- "url",
- "wezterm-dynamic",
- "wezterm-ssh",
- "wezterm-term",
- "wezterm-uds",
- "winapi",
-]
-
-[[package]]
-name = "wezterm-color-types"
-version = "0.3.0"
-dependencies = [
- "csscolorparser",
- "deltae",
- "num-traits",
- "serde",
- "wezterm-dynamic",
-]
-
-[[package]]
-name = "wezterm-config-derive"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 1.0.109",
-]
-
-[[package]]
-name = "wezterm-dynamic"
-version = "0.2.1"
-dependencies = [
- "log",
- "maplit",
- "ordered-float 4.6.0",
- "strsim",
- "thiserror 2.0.17",
- "wezterm-dynamic-derive",
-]
-
-[[package]]
-name = "wezterm-dynamic-derive"
-version = "0.1.1"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 1.0.109",
-]
-
-[[package]]
-name = "wezterm-escape-parser"
-version = "0.1.0"
-dependencies = [
- "base64 0.22.1",
- "bitflags 2.10.0",
- "criterion",
- "env_logger 0.11.8",
- "hex",
- "image",
- "k9",
- "log",
- "nix",
- "num-derive",
- "num-traits",
- "ordered-float 4.6.0",
- "pest",
- "pest_derive",
- "serde",
- "sha2",
- "thiserror 2.0.17",
- "vtparse",
- "wezterm-blob-leases",
- "wezterm-color-types",
- "wezterm-dynamic",
- "wezterm-input-types",
- "winapi",
-]
-
-[[package]]
-name = "wezterm-font"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "cairo-rs",
- "cocoa",
- "config",
- "core-foundation 0.10.0",
- "core-text",
- "dwrote",
- "encoding_rs",
- "enum-display-derive",
- "env_logger 0.11.8",
- "euclid",
- "finl_unicode",
- "fontconfig",
- "freetype",
- "harfbuzz",
- "image",
- "k9",
- "lazy_static",
- "lfucache",
- "log",
- "memmap2 0.9.9",
- "metrics",
- "objc",
- "ordered-float 4.6.0",
- "rangeset",
- "termwiz",
- "thiserror 1.0.69",
- "walkdir",
- "wezterm-bidi",
- "wezterm-color-types",
- "wezterm-input-types",
- "wezterm-term",
- "wezterm-toast-notification",
- "winapi",
-]
-
-[[package]]
-name = "wezterm-gui"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "benchmarking",
- "bitflags 1.3.2",
- "bytemuck",
- "cc",
- "chrono",
- "clap",
- "codec",
- "colorgrad",
- "config",
- "dhat",
- "dirs-next",
- "downcast-rs",
- "embed-resource",
- "emojis",
- "env-bootstrap",
- "env_logger 0.11.8",
- "euclid",
- "fastrand",
- "filedescriptor",
- "finl_unicode",
- "frecency",
- "futures",
- "hdrhistogram",
- "http_req",
- "image",
- "k9",
- "lazy_static",
- "lfucache",
- "libc",
- "log",
- "luahelper",
- "metrics",
- "mlua",
- "mux",
- "mux-lua",
- "nucleo-matcher",
- "ordered-float 4.6.0",
- "parking_lot",
- "portable-pty",
- "promise",
- "rangeset",
- "ratelim",
- "rayon",
- "regex",
- "serde",
- "serde_json",
- "shared_library",
- "shlex",
- "smol",
- "tabout",
- "tempfile",
- "terminfo",
- "termwiz",
- "termwiz-funcs",
- "textwrap",
- "thiserror 1.0.69",
- "tiny-skia",
- "umask",
- "unicode-normalization",
- "unicode-segmentation",
- "url",
- "url-funcs",
- "walkdir",
- "wezterm-bidi",
- "wezterm-blob-leases",
- "wezterm-client",
- "wezterm-dynamic",
- "wezterm-font",
- "wezterm-gui-subcommands",
- "wezterm-mux-server-impl",
- "wezterm-open-url",
- "wezterm-ssh",
- "wezterm-term",
- "wezterm-toast-notification",
- "wgpu",
- "winapi",
- "window",
- "window-funcs",
- "windows 0.33.0",
-]
-
-[[package]]
-name = "wezterm-gui-subcommands"
-version = "0.1.0"
-dependencies = [
- "clap",
- "config",
-]
-
-[[package]]
-name = "wezterm-input-types"
-version = "0.1.0"
-dependencies = [
- "bitflags 1.3.2",
- "euclid",
- "serde",
- "wezterm-dynamic",
-]
-
-[[package]]
-name = "wezterm-mux-server"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async_ossl",
- "cc",
- "clap",
- "config",
- "embed-resource",
- "env-bootstrap",
- "libc",
- "log",
- "mlua",
- "mux",
- "openssl",
- "portable-pty",
- "promise",
- "umask",
- "wezterm-blob-leases",
- "wezterm-gui-subcommands",
- "wezterm-mux-server-impl",
- "wezterm-term",
- "winapi",
-]
-
-[[package]]
-name = "wezterm-mux-server-impl"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-io",
- "async_ossl",
- "codec",
- "config",
- "dns-lookup",
- "futures",
- "hostname",
- "lazy_static",
- "libc",
- "log",
- "mux",
- "portable-pty",
- "promise",
- "rangeset",
- "rcgen",
- "smol",
- "termwiz",
- "url",
- "wezterm-client",
- "wezterm-term",
- "wezterm-uds",
- "winapi",
-]
-
-[[package]]
-name = "wezterm-open-url"
-version = "0.1.0"
-dependencies = [
- "winapi",
-]
-
-[[package]]
-name = "wezterm-ssh"
-version = "0.4.0"
-dependencies = [
- "anyhow",
- "assert_fs",
- "async_ossl",
- "base64 0.22.1",
- "bitflags 1.3.2",
- "camino",
- "clap",
- "dirs-next",
- "env_logger 0.11.8",
- "filedescriptor",
- "filenamegen",
- "gethostname",
- "hex",
- "k9",
- "libc",
- "libssh-rs",
- "log",
- "passfd",
- "portable-pty",
- "predicates",
- "regex",
- "rstest",
- "sha2",
- "shell-words",
- "smol",
- "socket2 0.5.10",
- "ssh2",
- "termwiz",
- "thiserror 1.0.69",
- "wezterm-uds",
- "whoami",
-]
-
-[[package]]
-name = "wezterm-surface"
-version = "0.1.0"
-dependencies = [
- "bitflags 2.10.0",
- "fancy-regex",
- "finl_unicode",
- "fixedbitset",
- "k9",
- "ordered-float 4.6.0",
- "serde",
- "siphasher",
- "unicode-segmentation",
- "wezterm-bidi",
- "wezterm-blob-leases",
- "wezterm-cell",
- "wezterm-char-props",
- "wezterm-color-types",
- "wezterm-dynamic",
- "wezterm-escape-parser",
- "wezterm-input-types",
-]
-
-[[package]]
-name = "wezterm-term"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bitflags 1.3.2",
- "csscolorparser",
- "downcast-rs",
- "env_logger 0.11.8",
- "finl_unicode",
- "hex",
- "humansize",
- "image",
- "k9",
- "lazy_static",
- "log",
- "lru",
- "miniz_oxide 0.7.4",
- "num-traits",
- "ordered-float 4.6.0",
- "serde",
- "terminfo",
- "termwiz",
- "unicode-normalization",
- "url",
- "wezterm-bidi",
- "wezterm-cell",
- "wezterm-dynamic",
- "wezterm-escape-parser",
- "wezterm-surface",
-]
-
-[[package]]
-name = "wezterm-toast-notification"
-version = "0.1.0"
-dependencies = [
- "async-io",
- "block2",
- "futures-util",
- "log",
- "objc2",
- "objc2-foundation",
- "objc2-user-notifications",
- "serde",
- "uuid",
- "wezterm-open-url",
- "windows 0.33.0",
- "xml-rs",
- "zbus",
- "zvariant",
-]
-
-[[package]]
-name = "wezterm-uds"
-version = "0.1.0"
-dependencies = [
- "async-io",
- "uds_windows",
-]
-
-[[package]]
-name = "wezterm-version"
-version = "0.1.0"
-dependencies = [
- "git2",
-]
-
-[[package]]
 name = "wgpu"
 version = "25.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7387,6 +7387,10 @@ dependencies = [
  "filedescriptor",
  "futures-lite",
  "futures-util",
+ "gameterm-bidi",
+ "gameterm-color-types",
+ "gameterm-font",
+ "gameterm-input-types",
  "gl_generator",
  "glium",
  "guillotiere",
@@ -7416,10 +7420,6 @@ dependencies = [
  "wayland-egl",
  "wayland-protocols",
  "wayland-protocols-plasma",
- "wezterm-bidi",
- "wezterm-color-types",
- "wezterm-font",
- "wezterm-input-types",
  "winapi",
  "windows 0.33.0",
  "winreg",
@@ -7437,8 +7437,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "config",
+ "gameterm-dynamic",
  "luahelper",
- "wezterm-dynamic",
  "window",
 ]
 

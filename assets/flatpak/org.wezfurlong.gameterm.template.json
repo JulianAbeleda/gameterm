@@ -1,0 +1,60 @@
+{
+    "app-id": "org.wezfurlong.gameterm",
+    "runtime": "org.freedesktop.Platform",
+    "runtime-version": "23.08",
+    "sdk": "org.freedesktop.Sdk",
+    "sdk-extensions" : [
+        "org.freedesktop.Sdk.Extension.rust-stable"
+    ],
+    "command": "gameterm",
+    "finish-args": [
+        "--share=ipc",
+        "--filesystem=home:ro",
+        "--filesystem=xdg-config/gameterm",
+        "--socket=fallback-x11",
+        "--socket=wayland",
+        "--device=dri",
+        "--talk-name=org.freedesktop.Flatpak",
+        "--talk-name=org.freedesktop.Notifications",
+        "--share=network"
+    ],
+    "modules": [
+        {
+            "name": "gameterm",
+            "buildsystem": "simple",
+            "build-options": {
+                "append-path" : "/usr/lib/sdk/rust-stable/bin",
+                "env": {
+                    "CARGO_HOME": "/run/build/gameterm/cargo"
+                }
+            },
+            "build-commands": [
+                "cargo --offline fetch --manifest-path Cargo.toml --verbose",
+                "cargo --offline build --release --verbose",
+                "install -Dm644 ./assets/icon/terminal.png /app/share/icons/hicolor/128x128/apps/org.wezfurlong.gameterm.png",
+                "install -Dm644 org.wezfurlong.gameterm.appdata.xml /app/share/metainfo/org.wezfurlong.gameterm.appdata.xml",
+                "install -Dm644 ./assets/gameterm.desktop /app/share/applications/org.wezfurlong.gameterm.desktop",
+                "install -Dm755 ./target/release/gameterm -t /app/bin/",
+                "install -Dm755 ./target/release/gameterm-gui -t /app/bin/",
+                "install -Dm755 ./target/release/gameterm-mux-server -t /app/bin/",
+                "install -Dm755 ./target/release/strip-ansi-escapes -t /app/bin/",
+                "install -Dm644 assets/shell-integration/* -t /app/extra/export/share/etc/profile.d",
+                "install -Dm644 assets/shell-completion/zsh /app/extra/export/share/zsh/site-functions/_gameterm",
+                "install -Dm644 assets/shell-completion/bash /app/extra/export/share/etc/bash_completion.d/gameterm"
+              ],
+            "sources": [
+                {
+                    "type": "archive",
+                    "archive-type": "tar-gzip",
+                    "url": "@URL@",
+                    "sha256": "@SHA256@"
+                },
+                {
+                  "type": "file",
+                  "path": "org.wezfurlong.gameterm.appdata.xml"
+                },
+                "generated-sources.json"
+            ]
+        }
+    ]
+}

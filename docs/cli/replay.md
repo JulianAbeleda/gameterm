@@ -1,7 +1,7 @@
-# `wezterm replay`
+# `gameterm replay`
 
 ```console
-{% include "../examples/cmd-synopsis-wezterm-replay--help.txt" %}
+{% include "../examples/cmd-synopsis-gameterm-replay--help.txt" %}
 ```
 
 

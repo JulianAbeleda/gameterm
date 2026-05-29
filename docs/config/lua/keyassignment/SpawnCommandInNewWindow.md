@@ -10,7 +10,7 @@ config.keys = {
   {
     key = 'y',
     mods = 'CMD',
-    action = wezterm.action.SpawnCommandInNewWindow {
+    action = gameterm.action.SpawnCommandInNewWindow {
       args = { 'top' },
     },
   },

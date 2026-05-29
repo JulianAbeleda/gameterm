@@ -1,6 +1,6 @@
-# `wezterm imgcat`
+# `gameterm imgcat`
 
 ```console
-{% include "../examples/cmd-synopsis-wezterm-imgcat--help.txt" %}
+{% include "../examples/cmd-synopsis-gameterm-imgcat--help.txt" %}
 ```
 

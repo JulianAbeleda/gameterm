@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=GameTerm
+Comment=Wez's Terminal Emulator
+Keywords=shell;prompt;command;commandline;cmd;
+Icon=org.wezfurlong.gameterm
+StartupWMClass=org.wezfurlong.gameterm
+TryExec=gameterm
+Exec=gameterm start --cwd .
+Type=Application
+Categories=System;TerminalEmulator;Utility;
+Terminal=false
