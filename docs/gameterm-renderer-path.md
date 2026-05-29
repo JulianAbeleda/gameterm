@@ -48,8 +48,8 @@ compositor, and pane borders/modal UI still draw above Scene Mode content.
 The remaining renderer work is no longer "make sprites appear"; it is about
 making the visual path cheaper, easier to audit, and ready for richer state.
 
-1. Move visual quad population into a small dedicated module under
-   `gameterm-gui/src/termwindow/render/`.
+1. Keep visual quad population isolated in
+   `gameterm-gui/src/termwindow/render/visual_quad.rs`.
 2. Keep the cache identity contract explicit: every visual property that
    changes emitted geometry, tint, sprite frame, or selection treatment must be
    represented in `VisualRenderSnapshot.generation` or a future cache key field.

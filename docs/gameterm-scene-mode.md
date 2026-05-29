@@ -216,11 +216,24 @@ patches or unknown entity ids in the Scene Mode status and Tile Debugger. The
 patch file is a transport inbox, not persistent scene storage.
 
 In-process GameTerm callers can also publish a local mux notification:
-`MuxNotification::GameTermScenePatch { patch_json, source_pane_id }`. Active
-Scene Mode overlays subscribe to that notification and apply the same patch
-schema used by the file inbox. This notification is intentionally local-only;
-the mux server/client protocol ignores it until the remote IPC boundary is
-designed explicitly.
+`MuxNotification::GameTermScenePatch { patch_json, target_pane_id,
+source_pane_id }`. Active Scene Mode overlays register their pane id with the
+mux, and patch notifications are routed to the requested target pane or the
+currently active Scene Mode overlay.
+
+The command-line submit path uses the mux protocol and returns the target Scene
+Mode pane id on success:
+
+```sh
+gameterm cli scene-patch --patch ci/fixtures/gameterm-scene/patch-status.json
+
+ci/gameterm-scene-patch.sh submit-mux \
+  --patch ci/fixtures/gameterm-scene/patch-status.json
+```
+
+If no Scene Mode overlay is active, submission fails as a transport error.
+Malformed JSON or unknown entity ids are runtime patch errors and are shown in
+Scene Mode status without mutating the active scene.
 
 Use the helper to write the inbox atomically:
 

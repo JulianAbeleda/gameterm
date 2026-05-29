@@ -259,24 +259,27 @@ Implemented transport behavior:
 - The overlay records the patch file's current modification time at startup.
 - A patch is applied only after the watched file appears or changes.
 - Active Scene Mode overlays subscribe to local
-  `MuxNotification::GameTermScenePatch { patch_json, source_pane_id }`
-  notifications and apply those patches through the same runtime path as the
-  file inbox.
+  `MuxNotification::GameTermScenePatch { patch_json, target_pane_id,
+  source_pane_id }` notifications and apply those patches through the same
+  runtime path as the file inbox.
+- The mux tracks the active Scene Mode overlay pane. Submitters can target a
+  specific overlay pane or default to the active overlay.
+- `gameterm cli scene-patch --patch PATCH` submits a patch through the mux
+  protocol and prints the target Scene Mode pane id on success.
 - Accepted patches update the active runtime and bump visual generation.
 - Rejected patches update Scene Mode status without mutating scene state.
+- Missing active overlays fail as transport errors before runtime patch
+  validation.
 - The patch file is not copied into the scene JSON and is not treated as
   persistent storage.
 - Persistence is available only through the explicit `export-scene` helper,
   which writes a new scene JSON file after applying a patch.
-- The mux notification is local-only. GUI/frontend/server/client notification
-  handlers ignore it unless they are the active Scene Mode overlay subscriber.
 
 Next transport step:
 
-1. Track and target a single active Scene Mode overlay when multiple overlays
-   exist.
-2. Add a script or CLI command that submits the patch through mux/IPC, then keep
-   `GAMETERM_SCENE_PATCH_FILE` as the portable fallback and smoke-test path.
-3. Return delivery errors separately from patch validation errors. "No active
-   Scene Mode overlay" is a transport failure; "unknown entity id" is a runtime
-   patch failure.
+1. Add a live smoke flow that opens Scene Mode and submits a mux patch through
+   `gameterm cli scene-patch`.
+2. Decide whether multiple simultaneous Scene Mode overlays should be allowed
+   long-term, or whether opening one should replace the previous active overlay.
+3. Keep `GAMETERM_SCENE_PATCH_FILE` as the portable fallback and smoke-test
+   path.
