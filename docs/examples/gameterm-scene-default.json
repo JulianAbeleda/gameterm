@@ -33,7 +33,7 @@
     }
   ],
   "dialogue_speaker": "GameTerm",
-  "dialogue": "This scene was loaded from ~/.config/gameterm/scenes/default.json.",
+  "dialogue": "This is the bundled Scene Mode default. Copy it to ~/.config/gameterm/scenes/default.json to customize it.",
   "choices": [
     { "label": "Inspect selected entity", "kind": "Inspect" },
     {
