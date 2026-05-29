@@ -26,12 +26,14 @@ use gameterm_visual::VisualRenderSnapshot;
 use mux::pane::{Pane, PaneId};
 use mux::renderable::{RenderableDimensions, StableCursorPosition};
 use ordered_float::NotNan;
+use std::collections::HashMap;
 use std::ops::Range;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Instant;
 use termwiz::cellcluster::CellCluster;
 use termwiz::hyperlink::Hyperlink;
+use termwiz::image::ImageData;
 use termwiz::surface::{CursorShape, CursorVisibility, SequenceNo};
 use window::color::LinearRgba;
 
@@ -60,6 +62,7 @@ pub struct LineQuadCacheKey {
     pub shape_generation: usize,
     pub quad_generation: usize,
     pub visual_generation: Option<u64>,
+    pub visual_sprite_generation: Option<u64>,
     /// Only set if cursor.y == stable_row
     pub composing: Option<String>,
     pub selection: Range<usize>,
@@ -125,6 +128,10 @@ pub struct RenderScreenLineResult {
     pub invalidate_on_hover_change: bool,
 }
 
+pub struct VisualSpriteImages {
+    pub sprites: HashMap<String, Arc<ImageData>>,
+}
+
 pub struct RenderScreenLineParams<'a> {
     /// zero-based offset from top of the window viewport to the line that
     /// needs to be rendered, measured in pixels
@@ -143,6 +150,7 @@ pub struct RenderScreenLineParams<'a> {
     pub config: &'a ConfigHandle,
     pub pane: Option<&'a Arc<dyn Pane>>,
     pub visual_snapshot: Option<&'a VisualRenderSnapshot>,
+    pub visual_sprites: Option<&'a VisualSpriteImages>,
 
     pub white_space: TextureRect,
     pub filled_box: TextureRect,

@@ -3,7 +3,7 @@ use crate::selection::SelectionRange;
 use crate::termwindow::box_model::*;
 use crate::termwindow::render::{
     same_hyperlink, CursorProperties, LineQuadCacheKey, LineQuadCacheValue, LineToEleShapeCacheKey,
-    RenderScreenLineParams,
+    RenderScreenLineParams, VisualSpriteImages,
 };
 use crate::termwindow::{ScrollHit, UIItem, UIItemType};
 use ::window::bitmaps::TextureRect;
@@ -13,12 +13,17 @@ use config::VisualBellTarget;
 use gameterm_dynamic::Value;
 use gameterm_term::color::{ColorAttribute, ColorPalette};
 use gameterm_term::{Line, StableRowIndex};
-use gameterm_visual::VisualRenderSnapshot;
+use gameterm_visual::{VisualRenderSnapshot, VisualSpriteManifestStatus};
 use mux::pane::{PaneId, WithPaneLines};
 use mux::renderable::{RenderableDimensions, StableCursorPosition};
 use mux::tab::PositionedPane;
 use ordered_float::NotNan;
+use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 use std::time::Instant;
+use termwiz::image::ImageData;
 use window::color::LinearRgba;
 
 impl crate::TermWindow {
@@ -303,6 +308,15 @@ impl crate::TermWindow {
         let cursor_is_default_color =
             palette.cursor_fg == global_cursor_fg && palette.cursor_bg == global_cursor_bg;
         let visual_snapshot = visual_snapshot_for_pane(pos);
+        let visual_sprite_metadata = visual_sprite_metadata_for_pane(pos);
+        let visual_sprite_generation = visual_sprite_metadata.as_ref().map(|metadata| {
+            let mut hasher = DefaultHasher::new();
+            metadata.hash(&mut hasher);
+            hasher.finish()
+        });
+        let visual_sprites = visual_sprite_metadata
+            .as_deref()
+            .and_then(visual_sprite_images_from_metadata);
 
         {
             let stable_range = match current_viewport {
@@ -336,6 +350,8 @@ impl crate::TermWindow {
                 filled_box: TextureRect,
                 window_is_transparent: bool,
                 visual_snapshot: Option<VisualRenderSnapshot>,
+                visual_sprites: Option<VisualSpriteImages>,
+                visual_sprite_generation: Option<u64>,
                 layers: &'a mut TripleLayerQuadAllocator<'b>,
                 error: Option<anyhow::Error>,
             }
@@ -367,6 +383,8 @@ impl crate::TermWindow {
                 filled_box,
                 window_is_transparent,
                 visual_snapshot,
+                visual_sprites,
+                visual_sprite_generation,
                 layers,
                 error: None,
             };
@@ -380,6 +398,7 @@ impl crate::TermWindow {
                 ) -> anyhow::Result<()> {
                     let stable_row = stable_top + line_idx as StableRowIndex;
                     let visual_snapshot = self.visual_snapshot.as_ref();
+                    let visual_sprites = self.visual_sprites.as_ref();
                     let selrange = self
                         .selrange
                         .map_or(0..0, |sel| sel.cols_for_row(stable_row, self.rectangular));
@@ -436,6 +455,7 @@ impl crate::TermWindow {
                         shape_generation: self.term_window.shape_generation,
                         quad_generation: self.term_window.quad_generation,
                         visual_generation: visual_snapshot.map(|snapshot| snapshot.generation),
+                        visual_sprite_generation: self.visual_sprite_generation,
                         composing: composing.clone(),
                         selection: selrange.clone(),
                         cursor,
@@ -509,6 +529,7 @@ impl crate::TermWindow {
                                 dims: &self.dims,
                                 config: &self.term_window.config,
                                 visual_snapshot,
+                                visual_sprites,
                                 cursor_border_color: self.cursor_border_color,
                                 foreground: self.foreground,
                                 is_active: self.pos.is_active,
@@ -704,4 +725,36 @@ fn visual_snapshot_for_pane(pos: &PositionedPane) -> Option<VisualRenderSnapshot
         },
         _ => None,
     }
+}
+
+fn visual_sprite_metadata_for_pane(pos: &PositionedPane) -> Option<String> {
+    match pos.pane.get_metadata() {
+        Value::Object(metadata) => match metadata.get_by_str("gameterm_visual_sprites") {
+            Some(Value::String(sprites)) => Some(sprites.to_string()),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn visual_sprite_images_from_metadata(metadata: &str) -> Option<VisualSpriteImages> {
+    let status: VisualSpriteManifestStatus = serde_json::from_str(metadata).ok()?;
+    let mut sprites = HashMap::new();
+
+    for sprite in status.sprites {
+        match std::fs::read(&sprite.path) {
+            Ok(data) => {
+                sprites.insert(sprite.id, Arc::new(ImageData::with_raw_data(data)));
+            }
+            Err(err) => {
+                log::warn!(
+                    "failed to read GameTerm visual sprite `{}` from {}: {err}",
+                    sprite.id,
+                    sprite.path
+                );
+            }
+        }
+    }
+
+    Some(VisualSpriteImages { sprites })
 }

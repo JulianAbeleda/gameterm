@@ -1,11 +1,12 @@
 use crate::quad::{QuadTrait, TripleLayerQuadAllocator, TripleLayerQuadAllocatorTrait};
+use crate::termwindow::render::paint::AllowImage;
 use crate::termwindow::render::{
     resolve_fg_color_attr, same_hyperlink, update_next_frame_time, ClusterStyleCache,
     ComputeCellFgBgParams, ComputeCellFgBgResult, LineToElementParams, LineToElementShape,
     RenderScreenLineParams, RenderScreenLineResult,
 };
 use crate::termwindow::LineToElementShapeItem;
-use ::window::DeadKeyStatus;
+use ::window::{DeadKeyStatus, RectF};
 use anyhow::Context;
 use config::{HsbTransform, TextStyle};
 use gameterm_bidi::Direction;
@@ -205,15 +206,8 @@ impl crate::TermWindow {
 
         if let (Some(snapshot), Some(row)) = (params.visual_snapshot, params.visual_row) {
             for tile in visible_tiles_for_row(snapshot, row, 0..num_cols) {
-                self.populate_visual_tile_placeholder(
-                    tile,
-                    layers,
-                    &params,
-                    cell_width,
-                    cell_height,
-                    hsv,
-                )
-                .context("populate_visual_tile_placeholder")?;
+                self.populate_visual_tile(tile, layers, &params, cell_width, cell_height, hsv)
+                    .context("populate_visual_tile")?;
             }
         }
 
@@ -743,15 +737,8 @@ impl crate::TermWindow {
 
         if let (Some(snapshot), Some(row)) = (params.visual_snapshot, params.visual_row) {
             for entity in intersecting_entities_for_row(snapshot, row, 0..num_cols) {
-                self.populate_visual_entity_placeholder(
-                    entity,
-                    layers,
-                    &params,
-                    cell_width,
-                    cell_height,
-                    hsv,
-                )
-                .context("populate_visual_entity_placeholder")?;
+                self.populate_visual_entity(entity, layers, &params, cell_width, cell_height, hsv)
+                    .context("populate_visual_entity")?;
             }
         }
 
@@ -762,7 +749,7 @@ impl crate::TermWindow {
         })
     }
 
-    fn populate_visual_tile_placeholder(
+    fn populate_visual_tile(
         &self,
         tile: &VisualRenderTile,
         layers: &mut TripleLayerQuadAllocator,
@@ -771,12 +758,15 @@ impl crate::TermWindow {
         cell_height: f32,
         hsv: Option<HsbTransform>,
     ) -> anyhow::Result<()> {
-        let rect = euclid::rect(
+        let rect: RectF = euclid::rect(
             params.left_pixel_x + tile.position.x as f32 * cell_width,
             params.top_pixel_y,
             cell_width,
             cell_height,
         );
+        if self.populate_visual_sprite_quad(&tile.sprite, layers, 0, rect, &params, hsv)? {
+            return Ok(());
+        }
         let mut quad = self.filled_rectangle(
             layers,
             0,
@@ -787,7 +777,7 @@ impl crate::TermWindow {
         Ok(())
     }
 
-    fn populate_visual_entity_placeholder(
+    fn populate_visual_entity(
         &self,
         entity: &VisualRenderEntity,
         layers: &mut TripleLayerQuadAllocator,
@@ -797,12 +787,29 @@ impl crate::TermWindow {
         hsv: Option<HsbTransform>,
     ) -> anyhow::Result<()> {
         let inset = if entity.selected { 1.0 } else { 2.0 };
-        let rect = euclid::rect(
+        let rect: RectF = euclid::rect(
             params.left_pixel_x + entity.position.x as f32 * cell_width + inset,
             params.top_pixel_y + inset,
             (cell_width - inset * 2.0).max(1.0),
             (cell_height - inset * 2.0).max(1.0),
         );
+        if entity.selected {
+            let mut quad = self.filled_rectangle(
+                layers,
+                1,
+                euclid::rect(
+                    params.left_pixel_x + entity.position.x as f32 * cell_width,
+                    params.top_pixel_y,
+                    cell_width,
+                    cell_height,
+                ),
+                visual_placeholder_color(&entity.sprite, 0.42, 0.7),
+            )?;
+            quad.set_hsv(hsv);
+        }
+        if self.populate_visual_sprite_quad(&entity.sprite, layers, 2, rect, &params, hsv)? {
+            return Ok(());
+        }
         let mut quad = self.filled_rectangle(
             layers,
             2,
@@ -815,6 +822,60 @@ impl crate::TermWindow {
         )?;
         quad.set_hsv(hsv);
         Ok(())
+    }
+
+    fn populate_visual_sprite_quad(
+        &self,
+        sprite_id: &str,
+        layers: &mut TripleLayerQuadAllocator,
+        layer_num: usize,
+        rect: RectF,
+        params: &RenderScreenLineParams,
+        hsv: Option<HsbTransform>,
+    ) -> anyhow::Result<bool> {
+        if self.allow_images == AllowImage::No {
+            return Ok(false);
+        }
+
+        let Some(image_data) = params
+            .visual_sprites
+            .and_then(|sprites| sprites.sprites.get(sprite_id))
+        else {
+            return Ok(false);
+        };
+
+        let gl_state = self.render_state.as_ref().unwrap();
+        let padding = params
+            .render_metrics
+            .cell_size
+            .height
+            .max(params.render_metrics.cell_size.width) as usize;
+        let padding = if padding.is_power_of_two() {
+            padding
+        } else {
+            padding.next_power_of_two()
+        };
+        let (sprite, next_due, _load_state) = gl_state
+            .glyph_cache
+            .borrow_mut()
+            .cached_image(image_data, Some(padding), self.allow_images)
+            .context("cached_image")?;
+        self.update_next_frame_time(next_due);
+
+        let left_offset = self.dimensions.pixel_width as f32 / 2.;
+        let top_offset = self.dimensions.pixel_height as f32 / 2.;
+        let mut quad = layers.allocate(layer_num)?;
+        quad.set_position(
+            rect.min_x() - left_offset,
+            rect.min_y() - top_offset,
+            rect.max_x() - left_offset,
+            rect.max_y() - top_offset,
+        );
+        quad.set_texture(sprite.texture_coords());
+        quad.set_fg_color(LinearRgba::with_components(1.0, 1.0, 1.0, 1.0));
+        quad.set_hsv(hsv);
+        quad.set_has_color(true);
+        Ok(true)
     }
 
     fn build_line_element_shape(

@@ -2,6 +2,7 @@ use gameterm_dynamic::Value;
 use gameterm_term::color::ColorAttribute;
 use gameterm_visual::{
     truncate_to_screen, SceneRuntime, VisualInput, VisualMode, VisualModeOutcome, VisualScene,
+    VisualSpriteManifest, VisualSpriteManifestStatus,
 };
 use mux::termwiztermtab::TermWizTerminal;
 use std::path::PathBuf;
@@ -15,10 +16,12 @@ pub fn show_visual_scene_overlay(mut term: TermWizTerminal) -> anyhow::Result<()
     term.render(&[Change::Title("GameTerm Scene".to_string())])?;
 
     let scene_path = default_scene_path();
+    let sprite_manifest_path = default_sprite_manifest_path();
+    let sprite_manifest = load_sprite_manifest_status(&sprite_manifest_path);
     let mut load_error = None;
     let mut runtime = match load_scene_runtime(&scene_path) {
         Ok(runtime) => {
-            render_runtime(&mut term, &runtime)?;
+            render_runtime(&mut term, &runtime, &sprite_manifest)?;
             Some(runtime)
         }
         Err(err) => {
@@ -36,12 +39,12 @@ pub fn show_visual_scene_overlay(mut term: TermWizTerminal) -> anyhow::Result<()
                     if runtime.handle_input(visual_input_from_key(key)) == VisualModeOutcome::Exit {
                         break;
                     }
-                    render_runtime(&mut term, runtime)?;
+                    render_runtime(&mut term, runtime, &sprite_manifest)?;
                 }
             }
             InputEvent::Resized { .. } => {
                 if let Some(runtime) = runtime.as_ref() {
-                    render_runtime(&mut term, runtime)?;
+                    render_runtime(&mut term, runtime, &sprite_manifest)?;
                 } else {
                     let error = load_error
                         .as_deref()
@@ -66,11 +69,45 @@ fn load_scene_runtime(scene_path: &PathBuf) -> anyhow::Result<SceneRuntime> {
 }
 
 fn default_scene_path() -> PathBuf {
+    default_scene_dir().join("default.json")
+}
+
+fn default_sprite_manifest_path() -> PathBuf {
+    default_scene_dir().join("sprites.json")
+}
+
+fn default_scene_dir() -> PathBuf {
     let config_home = config::CONFIG_DIRS
         .first()
         .cloned()
         .unwrap_or_else(|| config::HOME_DIR.join(".config").join("gameterm"));
-    config_home.join("scenes").join("default.json")
+    config_home.join("scenes")
+}
+
+fn load_sprite_manifest_status(path: &PathBuf) -> VisualSpriteManifestStatus {
+    if !path.exists() {
+        return VisualSpriteManifestStatus::missing(path);
+    }
+
+    match VisualSpriteManifest::load_from_path(path) {
+        Ok(manifest) => {
+            let mut status = manifest.resolve_against(path);
+            for sprite in &status.sprites {
+                if let Err(err) = std::fs::metadata(&sprite.path) {
+                    status.warnings.push(format!(
+                        "sprite `{}` could not read {}: {}",
+                        sprite.id, sprite.path, err
+                    ));
+                }
+            }
+            status
+        }
+        Err(err) => VisualSpriteManifestStatus {
+            manifest_path: Some(path.display().to_string()),
+            sprites: Vec::new(),
+            warnings: vec![err.to_string()],
+        },
+    }
 }
 
 fn visual_input_from_key(key: KeyCode) -> VisualInput {
@@ -88,16 +125,30 @@ fn visual_input_from_key(key: KeyCode) -> VisualInput {
     }
 }
 
-fn render_runtime(term: &mut TermWizTerminal, runtime: &SceneRuntime) -> anyhow::Result<()> {
+fn render_runtime(
+    term: &mut TermWizTerminal,
+    runtime: &SceneRuntime,
+    sprite_manifest: &VisualSpriteManifestStatus,
+) -> anyhow::Result<()> {
     let size = term.get_screen_size()?;
     term.set_metadata(
         "gameterm_visual_snapshot",
         Value::String(serde_json::to_string(&runtime.render_snapshot())?),
     );
-    let frame = runtime.render_text_frame(size.cols, size.rows);
+    term.set_metadata(
+        "gameterm_visual_sprites",
+        Value::String(serde_json::to_string(sprite_manifest)?),
+    );
+    let mut frame = String::new();
+    if !sprite_manifest.warnings.is_empty() {
+        frame.push_str("Sprites: ");
+        frame.push_str(&sprite_manifest.warnings.join("; "));
+        frame.push_str("\r\n\r\n");
+    }
+    frame.push_str(&runtime.render_text_frame(size.cols, size.rows));
     term.render(&[
         Change::ClearScreen(ColorAttribute::Default),
-        Change::Text(frame),
+        Change::Text(truncate_to_screen(frame, size.cols, size.rows)),
     ])?;
     term.flush()?;
     Ok(())

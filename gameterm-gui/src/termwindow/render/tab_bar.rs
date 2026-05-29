@@ -76,6 +76,7 @@ impl crate::TermWindow {
                 },
                 config: &self.config,
                 visual_snapshot: None,
+                visual_sprites: None,
                 cursor_border_color: LinearRgba::default(),
                 foreground: palette.foreground.to_linear(),
                 pane: None,
