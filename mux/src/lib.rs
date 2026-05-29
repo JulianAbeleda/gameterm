@@ -106,6 +106,8 @@ pub enum MuxNotification {
 pub enum GameTermScenePatchSubmitError {
     #[error("no active GameTerm Scene Mode overlay")]
     NoActiveOverlay,
+    #[error("target pane `{0}` does not exist")]
+    TargetPaneMissing(PaneId),
 }
 
 static SUB_ID: AtomicUsize = AtomicUsize::new(0);
@@ -741,6 +743,14 @@ impl Mux {
         let target_pane_id = target_pane_id
             .or_else(|| self.active_gameterm_scene_pane())
             .ok_or(GameTermScenePatchSubmitError::NoActiveOverlay)?;
+        if self.get_pane(target_pane_id).is_none() {
+            if Some(target_pane_id) == self.active_gameterm_scene_pane() {
+                self.clear_active_gameterm_scene_pane(target_pane_id);
+            }
+            return Err(GameTermScenePatchSubmitError::TargetPaneMissing(
+                target_pane_id,
+            ));
+        }
 
         self.notify(MuxNotification::GameTermScenePatch {
             patch_json,
