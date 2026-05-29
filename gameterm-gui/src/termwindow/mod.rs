@@ -1310,9 +1310,11 @@ impl TermWindow {
                 MuxNotification::TabTitleChanged { .. } => {
                     self.update_title_post_status();
                 }
+                MuxNotification::PaneRemoved(pane_id) => {
+                    self.visual_sprite_image_cache.borrow_mut().remove(&pane_id);
+                }
                 MuxNotification::PaneAdded(_)
                 | MuxNotification::WorkspaceRenamed { .. }
-                | MuxNotification::PaneRemoved(_)
                 | MuxNotification::WindowWorkspaceChanged(_)
                 | MuxNotification::ActiveWorkspaceChanged(_)
                 | MuxNotification::Empty
@@ -1392,6 +1394,7 @@ impl TermWindow {
         }
 
         self.pane_state.borrow_mut().clear();
+        self.visual_sprite_image_cache.borrow_mut().clear();
         self.tab_state.borrow_mut().clear();
     }
 
@@ -3564,7 +3567,11 @@ impl TermWindow {
             }
         }
         if let Some(overlay) = self.tab_state(tab_id).overlay.take() {
-            Mux::get().remove_pane(overlay.pane.pane_id());
+            let overlay_pane_id = overlay.pane.pane_id();
+            Mux::get().remove_pane(overlay_pane_id);
+            self.visual_sprite_image_cache
+                .borrow_mut()
+                .remove(&overlay_pane_id);
         }
         if let Some(window) = self.window.as_ref() {
             window.invalidate();
@@ -3582,7 +3589,11 @@ impl TermWindow {
             // pane id.  Take care to avoid killing ourselves off
             // when closing the CopyOverlay
             if pane_id != overlay.pane.pane_id() {
-                Mux::get().remove_pane(overlay.pane.pane_id());
+                let overlay_pane_id = overlay.pane.pane_id();
+                Mux::get().remove_pane(overlay_pane_id);
+                self.visual_sprite_image_cache
+                    .borrow_mut()
+                    .remove(&overlay_pane_id);
             }
         }
         if let Some(window) = self.window.as_ref() {
