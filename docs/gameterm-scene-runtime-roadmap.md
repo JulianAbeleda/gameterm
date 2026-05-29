@@ -12,7 +12,7 @@ choice actions.
   Debugger.
 - Define action behavior before wiring `OpenFile` and `RunCommand` into the
   terminal runtime.
-- Preserve the built-in demo scene as the fallback when no default scene file
+- Preserve the bundled default scene as the fallback when no default scene file
   exists.
 
 ## Default Scene Reload
@@ -29,24 +29,29 @@ When `XDG_CONFIG_HOME` is set, the path is:
 $XDG_CONFIG_HOME/gameterm/scenes/default.json
 ```
 
-Planned reload behavior:
+Implemented reload behavior:
 
 1. Load the default scene when Scene Mode opens.
-2. Add a manual reload action from inside Scene Mode so authors can update
+2. Use the bundled default scene when no default scene file exists.
+3. Add a manual reload action from inside Scene Mode so authors can update
    `default.json`, return to GameTerm, and refresh without closing the window.
-3. Keep the previous valid scene visible if a reload fails. The error should be
+
+Remaining reload behavior:
+
+1. Keep the previous valid scene visible if a reload fails. The error should be
    surfaced in Scene Mode and the Tile Debugger status instead of replacing the
    scene with a blank or partial state.
-4. Use the built-in demo scene only when no default scene file exists at load
+2. Use the bundled default scene only when no default scene file exists at load
    time. If a previously valid default scene later fails to parse, keep the
    previous scene and report the failed reload.
-5. Reset selection only when the reloaded scene no longer contains the selected
+3. Reset selection only when the reloaded scene no longer contains the selected
    entity id. If the id still exists, preserve selection and update the
    inspection panel from the new entity data.
 
 Reload status should distinguish these cases:
 
-- `builtin`: no default scene file exists, so the built-in demo scene is active.
+- `bundled`: no default scene file exists, so the bundled default scene is
+  active.
 - `loaded`: the default scene file loaded successfully.
 - `reload failed`: the default scene file exists but the latest reload failed;
   the previous valid scene remains active.
@@ -64,11 +69,11 @@ entity, sprite, position, flag, and metadata inspection.
 
 Minimum fields:
 
-- `Scene path`: absolute resolved path for `default.json`, or `built-in demo`
+- `Scene path`: absolute resolved path for `default.json`, or `bundled default`
   when the fallback scene is active.
 - `Load status`: one of the statuses above.
-- `Loaded at`: local timestamp for the last successful scene state.
-- `Last reload`: local timestamp for the most recent reload attempt.
+- `Reload counter`: monotonic count of reload attempts, including the initial
+  load.
 - `Error`: concise parse, schema, or I/O failure text when the current status is
   `reload failed` or `invalid`.
 
@@ -124,9 +129,6 @@ execution still needs a clear user action boundary.
 
 ## Open Questions
 
-- What key binding or command palette entry should trigger manual scene reload?
-- Should `Loaded at` and `Last reload` use wall-clock local time only, or also
-  include a monotonic reload counter for tests?
 - Should future scene files be able to specify a base directory for relative
   `OpenFile` paths?
 - Should `RunCommand` support a dry-run preview state before the first
