@@ -56,6 +56,52 @@ pub struct VisualScene {
     pub choices: Vec<SceneAction>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum VisualRenderLayer {
+    Background,
+    Tile,
+    Entity,
+    Selection,
+    Dialogue,
+    Debug,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VisualRenderTile {
+    pub position: VisualPosition,
+    pub sprite: String,
+    pub layer: VisualRenderLayer,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VisualRenderEntity {
+    pub id: String,
+    pub kind: VisualEntityKind,
+    pub label: String,
+    pub position: VisualPosition,
+    pub sprite: String,
+    pub layer: VisualRenderLayer,
+    pub selected: bool,
+    pub state_flags: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VisualRenderSnapshot {
+    pub generation: u64,
+    pub view: VisualView,
+    pub title: String,
+    pub background: String,
+    pub width: usize,
+    pub height: usize,
+    pub selected_entity_id: Option<String>,
+    pub selected_choice: usize,
+    pub tiles: Vec<VisualRenderTile>,
+    pub entities: Vec<VisualRenderEntity>,
+    pub dialogue_speaker: String,
+    pub dialogue: String,
+    pub choices: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum VisualSceneError {
     #[error("scene dimensions must be non-zero")]
@@ -174,7 +220,7 @@ impl VisualScene {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum VisualView {
     Scene,
     TileDebugger,
@@ -187,6 +233,7 @@ pub struct SceneRuntime {
     selected_choice: usize,
     view: VisualView,
     status: String,
+    generation: u64,
 }
 
 impl SceneRuntime {
@@ -198,7 +245,12 @@ impl SceneRuntime {
             selected_choice: 0,
             view: VisualView::Scene,
             status: "Ready".to_string(),
+            generation: 0,
         })
+    }
+
+    pub fn generation(&self) -> u64 {
+        self.generation
     }
 
     pub fn view(&self) -> VisualView {
@@ -210,37 +262,42 @@ impl SceneRuntime {
             VisualView::Scene => VisualView::TileDebugger,
             VisualView::TileDebugger => VisualView::Scene,
         };
+        self.bump_generation();
     }
 
     pub fn select_next_entity(&mut self) {
-        if !self.scene.entities.is_empty() {
+        if self.scene.entities.len() > 1 {
             self.selected_entity = (self.selected_entity + 1) % self.scene.entities.len();
+            self.bump_generation();
         }
     }
 
     pub fn select_prev_entity(&mut self) {
-        if !self.scene.entities.is_empty() {
+        if self.scene.entities.len() > 1 {
             self.selected_entity = if self.selected_entity == 0 {
                 self.scene.entities.len() - 1
             } else {
                 self.selected_entity - 1
             };
+            self.bump_generation();
         }
     }
 
     pub fn select_next_choice(&mut self) {
-        if !self.scene.choices.is_empty() {
+        if self.scene.choices.len() > 1 {
             self.selected_choice = (self.selected_choice + 1) % self.scene.choices.len();
+            self.bump_generation();
         }
     }
 
     pub fn select_prev_choice(&mut self) {
-        if !self.scene.choices.is_empty() {
+        if self.scene.choices.len() > 1 {
             self.selected_choice = if self.selected_choice == 0 {
                 self.scene.choices.len() - 1
             } else {
                 self.selected_choice - 1
             };
+            self.bump_generation();
         }
     }
 
@@ -261,6 +318,7 @@ impl SceneRuntime {
                     format!("Action placeholder: navigate to `{target}`")
                 }
             };
+            self.bump_generation();
         }
     }
 
@@ -273,6 +331,66 @@ impl SceneRuntime {
             VisualView::Scene => self.render_scene(cols, rows),
             VisualView::TileDebugger => self.render_debugger(cols, rows),
         }
+    }
+
+    pub fn render_snapshot(&self) -> VisualRenderSnapshot {
+        let selected_entity_id = self.selected_entity().map(|entity| entity.id.clone());
+        VisualRenderSnapshot {
+            generation: self.generation,
+            view: self.view,
+            title: self.scene.title.clone(),
+            background: self.scene.background.clone(),
+            width: self.scene.width,
+            height: self.scene.height,
+            selected_entity_id,
+            selected_choice: self.selected_choice,
+            tiles: self.render_tiles(),
+            entities: self.render_entities(),
+            dialogue_speaker: self.scene.dialogue_speaker.clone(),
+            dialogue: self.scene.dialogue.clone(),
+            choices: self
+                .scene
+                .choices
+                .iter()
+                .map(|choice| choice.label.clone())
+                .collect(),
+        }
+    }
+
+    fn render_tiles(&self) -> Vec<VisualRenderTile> {
+        let mut tiles = Vec::with_capacity(self.scene.width * self.scene.height);
+        for y in 0..self.scene.height {
+            for x in 0..self.scene.width {
+                tiles.push(VisualRenderTile {
+                    position: VisualPosition { x, y },
+                    sprite: self.scene.background.clone(),
+                    layer: VisualRenderLayer::Tile,
+                });
+            }
+        }
+        tiles
+    }
+
+    fn render_entities(&self) -> Vec<VisualRenderEntity> {
+        self.scene
+            .entities
+            .iter()
+            .enumerate()
+            .map(|(idx, entity)| VisualRenderEntity {
+                id: entity.id.clone(),
+                kind: entity.kind.clone(),
+                label: entity.label.clone(),
+                position: entity.position,
+                sprite: entity.sprite.clone(),
+                layer: VisualRenderLayer::Entity,
+                selected: idx == self.selected_entity,
+                state_flags: entity.state_flags.clone(),
+            })
+            .collect()
+    }
+
+    fn bump_generation(&mut self) {
+        self.generation = self.generation.saturating_add(1);
     }
 
     fn render_scene(&self, cols: usize, rows: usize) -> String {
@@ -470,5 +588,70 @@ mod tests {
             scene.validate(),
             Err(VisualSceneError::EntityOutOfBounds { .. })
         ));
+    }
+
+    #[test]
+    fn snapshot_includes_all_demo_entities() {
+        let runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        let snapshot = runtime.render_snapshot();
+        assert_eq!(snapshot.entities.len(), 3);
+        assert_eq!(snapshot.entities[0].id, "project-gameterm");
+        assert_eq!(snapshot.tiles.len(), snapshot.width * snapshot.height);
+    }
+
+    #[test]
+    fn snapshot_marks_selected_entity() {
+        let runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        let snapshot = runtime.render_snapshot();
+        assert_eq!(
+            snapshot.selected_entity_id.as_deref(),
+            Some("project-gameterm")
+        );
+        assert_eq!(
+            snapshot
+                .entities
+                .iter()
+                .filter(|entity| entity.selected)
+                .count(),
+            1
+        );
+        assert!(snapshot.entities[0].selected);
+    }
+
+    #[test]
+    fn selection_changes_increment_generation() {
+        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        let initial_generation = runtime.generation();
+        runtime.select_next_entity();
+        assert!(runtime.generation() > initial_generation);
+        assert_eq!(
+            runtime.render_snapshot().selected_entity_id.as_deref(),
+            Some("task-render")
+        );
+    }
+
+    #[test]
+    fn snapshot_generation_is_stable_without_state_changes() {
+        let runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        let first = runtime.render_snapshot();
+        let second = runtime.render_snapshot();
+        assert_eq!(first.generation, second.generation);
+    }
+
+    #[test]
+    fn snapshot_layer_ordering_is_deterministic() {
+        let runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        let first = runtime.render_snapshot();
+        let second = runtime.render_snapshot();
+        assert_eq!(first.tiles, second.tiles);
+        assert_eq!(first.entities, second.entities);
+        assert!(first
+            .tiles
+            .iter()
+            .all(|tile| tile.layer == VisualRenderLayer::Tile));
+        assert!(first
+            .entities
+            .iter()
+            .all(|entity| entity.layer == VisualRenderLayer::Entity));
     }
 }
