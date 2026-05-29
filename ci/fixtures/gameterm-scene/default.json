@@ -45,8 +45,12 @@
       "kind": { "Navigate": { "target": "memory.json" } }
     },
     {
-      "label": "Run placeholder",
-      "kind": { "RunCommand": { "command": "cargo check -p gameterm-visual" } }
+      "label": "Run visual check",
+      "kind": {
+        "RunCommand": {
+          "argv": ["cargo", "check", "-p", "gameterm-visual"]
+        }
+      }
     }
   ]
 }

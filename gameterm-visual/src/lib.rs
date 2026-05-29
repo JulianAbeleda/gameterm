@@ -34,9 +34,17 @@ pub struct VisualEntity {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SceneActionKind {
     Inspect,
-    OpenFile { path: String },
-    RunCommand { command: String },
-    Navigate { target: String },
+    OpenFile {
+        path: String,
+    },
+    RunCommand {
+        argv: Vec<String>,
+        #[serde(default)]
+        cwd: Option<String>,
+    },
+    Navigate {
+        target: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -155,6 +163,11 @@ pub struct VisualSceneDebugReport {
     pub entity_count: usize,
     pub choice_count: usize,
     pub selected_entity_id: Option<String>,
+    pub selected_entity_label: Option<String>,
+    pub selected_entity_kind: Option<String>,
+    pub selected_entity_sprite: Option<String>,
+    pub selected_entity_flags: Vec<String>,
+    pub selected_entity_metadata: Vec<(String, String)>,
     pub selected_choice: usize,
     pub status: String,
 }
@@ -276,8 +289,16 @@ pub enum VisualModeOutcome {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VisualActionRequest {
-    OpenFile { path: PathBuf },
-    Navigate { target: String },
+    OpenFile {
+        path: PathBuf,
+    },
+    RunCommand {
+        argv: Vec<String>,
+        cwd: Option<PathBuf>,
+    },
+    Navigate {
+        target: String,
+    },
 }
 
 pub trait VisualMode {
@@ -295,6 +316,10 @@ pub enum VisualSceneError {
     DuplicateEntityId(String),
     #[error("entity `{id}` is outside scene bounds at {x},{y}")]
     EntityOutOfBounds { id: String, x: usize, y: usize },
+    #[error("RunCommand action `{label}` must provide a non-empty argv array")]
+    EmptyRunCommand { label: String },
+    #[error("RunCommand action `{label}` has an empty cwd")]
+    EmptyRunCommandCwd { label: String },
     #[error("scene json error: {0}")]
     Json(String),
     #[error("scene file error for `{path}`: {message}")]
@@ -417,6 +442,21 @@ impl VisualScene {
             }
         }
 
+        for choice in &self.choices {
+            if let SceneActionKind::RunCommand { argv, cwd } = &choice.kind {
+                if argv.is_empty() || argv.iter().any(|arg| arg.trim().is_empty()) {
+                    return Err(VisualSceneError::EmptyRunCommand {
+                        label: choice.label.clone(),
+                    });
+                }
+                if matches!(cwd.as_ref(), Some(cwd) if cwd.trim().is_empty()) {
+                    return Err(VisualSceneError::EmptyRunCommandCwd {
+                        label: choice.label.clone(),
+                    });
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -477,7 +517,13 @@ impl VisualScene {
                 SceneAction {
                     label: "Run cargo check -p gameterm-visual".to_string(),
                     kind: SceneActionKind::RunCommand {
-                        command: "cargo check -p gameterm-visual".to_string(),
+                        argv: vec![
+                            "cargo".to_string(),
+                            "check".to_string(),
+                            "-p".to_string(),
+                            "gameterm-visual".to_string(),
+                        ],
+                        cwd: None,
                     },
                 },
             ],
@@ -654,8 +700,12 @@ impl SceneRuntime {
                     pending_action = action;
                     status
                 }
-                SceneActionKind::RunCommand { command } => {
-                    format!("Action placeholder: run `{command}`")
+                SceneActionKind::RunCommand { argv, cwd } => {
+                    pending_action = Some(VisualActionRequest::RunCommand {
+                        argv: argv.clone(),
+                        cwd: cwd.as_ref().map(PathBuf::from),
+                    });
+                    format!("RunCommand ready: {}", argv.join(" "))
                 }
                 SceneActionKind::Navigate { target } => {
                     pending_action = Some(VisualActionRequest::Navigate {
@@ -676,6 +726,24 @@ impl SceneRuntime {
 
     pub fn mark_open_file_dispatched(&mut self, path: &Path) {
         self.status = format!("OpenFile opening: {}", path.display());
+        self.bump_generation();
+    }
+
+    pub fn mark_run_command_started(&mut self, argv: &[String], pid: u32) {
+        self.status = format!("RunCommand started pid={pid}: {}", argv.join(" "));
+        self.bump_generation();
+    }
+
+    pub fn mark_run_command_finished(&mut self, argv: &[String], status: std::process::ExitStatus) {
+        self.status = match status.code() {
+            Some(code) => format!("RunCommand exited code={code}: {}", argv.join(" ")),
+            None => format!("RunCommand exited by signal: {}", argv.join(" ")),
+        };
+        self.bump_generation();
+    }
+
+    pub fn mark_run_command_failed(&mut self, argv: &[String], error: impl std::fmt::Display) {
+        self.status = format!("RunCommand failed: {}: {error}", argv.join(" "));
         self.bump_generation();
     }
 
@@ -738,6 +806,7 @@ impl SceneRuntime {
     }
 
     pub fn debug_report(&self) -> VisualSceneDebugReport {
+        let selected_entity = self.selected_entity();
         VisualSceneDebugReport {
             scene_path: self.scene_source.scene_path.clone(),
             load_status: self.scene_source.load_status.as_str().to_string(),
@@ -749,7 +818,16 @@ impl SceneRuntime {
             height: self.scene.height,
             entity_count: self.scene.entities.len(),
             choice_count: self.scene.choices.len(),
-            selected_entity_id: self.selected_entity().map(|entity| entity.id.clone()),
+            selected_entity_id: selected_entity.map(|entity| entity.id.clone()),
+            selected_entity_label: selected_entity.map(|entity| entity.label.clone()),
+            selected_entity_kind: selected_entity.map(|entity| format!("{:?}", entity.kind)),
+            selected_entity_sprite: selected_entity.map(|entity| entity.sprite.clone()),
+            selected_entity_flags: selected_entity
+                .map(|entity| entity.state_flags.clone())
+                .unwrap_or_default(),
+            selected_entity_metadata: selected_entity
+                .map(|entity| entity.metadata.clone())
+                .unwrap_or_default(),
             selected_choice: self.selected_choice,
             status: self.status.clone(),
         }
@@ -899,6 +977,13 @@ impl SceneRuntime {
         }
         if let Some(entity) = self.selected_entity() {
             out.push_str("\r\nSelected metadata:\r\n");
+            out.push_str(&format!(
+                "  label: {}\r\n  kind: {:?}\r\n  sprite: {}\r\n  flags: {}\r\n",
+                entity.label,
+                entity.kind,
+                entity.sprite,
+                entity.state_flags.join(", ")
+            ));
             for (key, value) in &entity.metadata {
                 out.push_str(&format!("  {key}: {value}\r\n"));
             }
@@ -1326,6 +1411,66 @@ mod tests {
     }
 
     #[test]
+    fn run_command_action_emits_explicit_argv_request() {
+        let mut scene = VisualScene::demo();
+        scene.choices = vec![SceneAction {
+            label: "Run true".to_string(),
+            kind: SceneActionKind::RunCommand {
+                argv: vec!["true".to_string()],
+                cwd: Some("/tmp".to_string()),
+            },
+        }];
+        let mut runtime = SceneRuntime::new(scene).unwrap();
+
+        runtime.activate_choice();
+        let snapshot = runtime.render_snapshot();
+
+        assert_eq!(snapshot.status, "RunCommand ready: true");
+        assert_eq!(
+            runtime.take_pending_action(),
+            Some(VisualActionRequest::RunCommand {
+                argv: vec!["true".to_string()],
+                cwd: Some(PathBuf::from("/tmp"))
+            })
+        );
+    }
+
+    #[test]
+    fn run_command_action_requires_explicit_argv() {
+        let mut scene = VisualScene::demo();
+        scene.choices = vec![SceneAction {
+            label: "Run empty".to_string(),
+            kind: SceneActionKind::RunCommand {
+                argv: Vec::new(),
+                cwd: None,
+            },
+        }];
+
+        assert!(matches!(
+            scene.validate(),
+            Err(VisualSceneError::EmptyRunCommand { .. })
+        ));
+    }
+
+    #[test]
+    fn run_command_status_helpers_update_debug_report() {
+        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        let argv = vec!["true".to_string()];
+
+        runtime.mark_run_command_started(&argv, 123);
+        assert_eq!(
+            runtime.debug_report().status,
+            "RunCommand started pid=123: true"
+        );
+
+        runtime.mark_run_command_failed(&argv, "spawn failed");
+        assert_eq!(
+            runtime.debug_report().status,
+            "RunCommand failed: true: spawn failed"
+        );
+    }
+
+    #[test]
     fn reload_failure_updates_source_status_and_preserves_scene() {
         let mut runtime = SceneRuntime::new_with_source(
             VisualScene::demo(),
@@ -1471,6 +1616,17 @@ mod tests {
         assert_eq!(report.entity_count, 3);
         assert_eq!(report.choice_count, 3);
         assert_eq!(report.selected_entity_id.as_deref(), Some("task-render"));
+        assert_eq!(
+            report.selected_entity_label.as_deref(),
+            Some("Render Scene")
+        );
+        assert_eq!(report.selected_entity_kind.as_deref(), Some("Task"));
+        assert_eq!(report.selected_entity_sprite.as_deref(), Some("task_tile"));
+        assert_eq!(report.selected_entity_flags, vec!["running"]);
+        assert!(report
+            .selected_entity_metadata
+            .iter()
+            .any(|(key, value)| key == "reference" && value == "Ren'Py scene flow"));
         assert_eq!(report.selected_choice, 1);
         assert!(report.status.starts_with("OpenFile "));
     }

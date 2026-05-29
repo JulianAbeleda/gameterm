@@ -9,6 +9,9 @@ use gameterm_visual::{
 use mux::termwiztermtab::TermWizTerminal;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::sync::mpsc;
+use std::time::Duration;
 use termwiz::input::{InputEvent, KeyCode, KeyEvent};
 use termwiz::surface::Change;
 use termwiz::terminal::Terminal;
@@ -24,10 +27,34 @@ pub fn show_visual_scene_overlay(mut term: TermWizTerminal) -> anyhow::Result<()
     let mut load_error;
     let mut runtime;
     let mut reload_count = 1;
+    let (command_tx, command_rx) = mpsc::channel();
     (runtime, sprite_manifest, load_error) =
         initial_scene_state(&mut term, &scene_path, &sprite_manifest_path, reload_count)?;
 
-    while let Some(input) = term.poll_input(None)? {
+    loop {
+        let mut needs_render = false;
+        while let Ok(result) = command_rx.try_recv() {
+            if let Some(runtime) = runtime.as_mut() {
+                match result {
+                    RunCommandResult::Exited { argv, status } => {
+                        runtime.mark_run_command_finished(&argv, status);
+                    }
+                    RunCommandResult::Failed { argv, error } => {
+                        runtime.mark_run_command_failed(&argv, error);
+                    }
+                }
+                needs_render = true;
+            }
+        }
+        if needs_render {
+            if let Some(runtime) = runtime.as_ref() {
+                render_runtime(&mut term, runtime, &sprite_manifest)?;
+            }
+        }
+
+        let Some(input) = term.poll_input(Some(Duration::from_millis(100)))? else {
+            continue;
+        };
         match input {
             InputEvent::Key(KeyEvent { key, .. }) => {
                 let visual_input = visual_input_from_key(key);
@@ -71,7 +98,12 @@ pub fn show_visual_scene_overlay(mut term: TermWizTerminal) -> anyhow::Result<()
                     if runtime.handle_input(visual_input) == VisualModeOutcome::Exit {
                         break;
                     }
-                    dispatch_pending_action(runtime, &mut scene_path, &mut reload_count)?;
+                    dispatch_pending_action(
+                        runtime,
+                        &mut scene_path,
+                        &mut reload_count,
+                        command_tx.clone(),
+                    )?;
                     render_runtime(&mut term, runtime, &sprite_manifest)?;
                 }
             }
@@ -97,10 +129,22 @@ pub fn show_visual_scene_overlay(mut term: TermWizTerminal) -> anyhow::Result<()
     Ok(())
 }
 
+enum RunCommandResult {
+    Exited {
+        argv: Vec<String>,
+        status: std::process::ExitStatus,
+    },
+    Failed {
+        argv: Vec<String>,
+        error: String,
+    },
+}
+
 fn dispatch_pending_action(
     runtime: &mut SceneRuntime,
     scene_path: &mut PathBuf,
     reload_count: &mut u64,
+    command_tx: mpsc::Sender<RunCommandResult>,
 ) -> anyhow::Result<()> {
     let Some(action) = runtime.take_pending_action() else {
         return Ok(());
@@ -110,6 +154,9 @@ fn dispatch_pending_action(
         VisualActionRequest::OpenFile { path } => {
             gameterm_open_url::open_url(&path.to_string_lossy());
             runtime.mark_open_file_dispatched(&path);
+        }
+        VisualActionRequest::RunCommand { argv, cwd } => {
+            dispatch_run_command(runtime, argv, cwd, command_tx);
         }
         VisualActionRequest::Navigate { target } => {
             *reload_count = reload_count.saturating_add(1);
@@ -129,6 +176,39 @@ fn dispatch_pending_action(
         }
     }
     Ok(())
+}
+
+fn dispatch_run_command(
+    runtime: &mut SceneRuntime,
+    argv: Vec<String>,
+    cwd: Option<PathBuf>,
+    command_tx: mpsc::Sender<RunCommandResult>,
+) {
+    let mut command = Command::new(&argv[0]);
+    command.args(&argv[1..]);
+    if let Some(cwd) = cwd {
+        command.current_dir(cwd);
+    }
+
+    match command.spawn() {
+        Ok(mut child) => {
+            let pid = child.id();
+            runtime.mark_run_command_started(&argv, pid);
+            std::thread::spawn(move || {
+                let result = match child.wait() {
+                    Ok(status) => RunCommandResult::Exited { argv, status },
+                    Err(err) => RunCommandResult::Failed {
+                        argv,
+                        error: err.to_string(),
+                    },
+                };
+                let _ = command_tx.send(result);
+            });
+        }
+        Err(err) => {
+            runtime.mark_run_command_failed(&argv, err);
+        }
+    }
 }
 
 fn initial_scene_state(
@@ -549,9 +629,16 @@ mod tests {
         .unwrap();
         let mut active_path = default_path;
         let mut reload_count = 1;
+        let (command_tx, _command_rx) = mpsc::channel();
 
         runtime.activate_choice();
-        dispatch_pending_action(&mut runtime, &mut active_path, &mut reload_count).unwrap();
+        dispatch_pending_action(
+            &mut runtime,
+            &mut active_path,
+            &mut reload_count,
+            command_tx,
+        )
+        .unwrap();
         let snapshot = runtime.render_snapshot();
 
         assert_eq!(active_path, target_path);
