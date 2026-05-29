@@ -99,6 +99,7 @@ pub struct VisualRenderSnapshot {
     pub entities: Vec<VisualRenderEntity>,
     pub dialogue_speaker: String,
     pub dialogue: String,
+    pub status: String,
     pub choices: Vec<String>,
 }
 
@@ -348,6 +349,7 @@ impl SceneRuntime {
             entities: self.render_entities(),
             dialogue_speaker: self.scene.dialogue_speaker.clone(),
             dialogue: self.scene.dialogue.clone(),
+            status: self.status.clone(),
             choices: self
                 .scene
                 .choices
@@ -642,6 +644,51 @@ mod tests {
         let first = runtime.render_snapshot();
         let second = runtime.render_snapshot();
         assert_eq!(first.generation, second.generation);
+    }
+
+    #[test]
+    fn activating_choice_updates_snapshot_status() {
+        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        let initial = runtime.render_snapshot();
+
+        runtime.activate_choice();
+        let activated = runtime.render_snapshot();
+
+        assert!(activated.generation > initial.generation);
+        assert_ne!(activated.status, initial.status);
+        assert_eq!(
+            activated.status,
+            "Inspecting GameTerm (project-gameterm)"
+        );
+    }
+
+    #[test]
+    fn empty_entities_render_without_selection() {
+        let mut scene = VisualScene::demo();
+        scene.entities.clear();
+
+        let runtime = SceneRuntime::new(scene).unwrap();
+        let snapshot = runtime.render_snapshot();
+
+        assert_eq!(snapshot.selected_entity_id, None);
+        assert!(snapshot.entities.is_empty());
+        assert_eq!(snapshot.tiles.len(), snapshot.width * snapshot.height);
+    }
+
+    #[test]
+    fn empty_choices_do_not_change_generation_on_activate() {
+        let mut scene = VisualScene::demo();
+        scene.choices.clear();
+
+        let mut runtime = SceneRuntime::new(scene).unwrap();
+        let initial = runtime.render_snapshot();
+
+        runtime.activate_choice();
+        let activated = runtime.render_snapshot();
+
+        assert_eq!(activated.generation, initial.generation);
+        assert_eq!(activated.status, initial.status);
+        assert!(activated.choices.is_empty());
     }
 
     #[test]
