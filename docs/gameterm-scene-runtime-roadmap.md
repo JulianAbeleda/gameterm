@@ -17,6 +17,47 @@ choice actions.
 - Keep a fixture-backed verification harness for every implemented Scene Mode
   behavior before adding higher-risk action execution.
 
+## Scope Checklist
+
+Current status:
+
+- [x] Bundled default scene loads when user config is missing.
+- [x] Editable `default.json` config path is documented and initialized by
+  `ci/gameterm-scene-init.sh`.
+- [x] Manual reload preserves the previous valid scene on reload failure.
+- [x] Optional auto-reload supports authoring sessions.
+- [x] Scene source status is visible in Scene Mode and the Tile Debugger.
+- [x] Tile Debugger exposes action, selected entity, sprite, flag, metadata,
+  pending action, and patch source state.
+- [x] `Inspect`, `OpenFile`, `Navigate`, and `RunCommand` choices have explicit
+  runtime behavior.
+- [x] `RunCommand` supports `tab`, `split_right`, and `split_down` targets.
+- [x] Sprite manifests support user-provided sprite ids and bundled fallback
+  sprites.
+- [x] Sprite image loading is cached and pruned on pane removal.
+- [x] Scene authoring helpers cover fixture install, validation, edit
+  operations, formatting, and doctor diagnostics.
+- [x] Noninteractive verification covers fixtures, authoring helpers, doctor,
+  state patches, and focused Rust tests.
+- [x] Runtime patch schema updates entity flags, metadata, and status without
+  rewriting scene JSON.
+- [x] Patch inbox transport supports local file-based updates.
+- [x] Mux/CLI patch transport supports active-overlay and explicit-pane
+  targeting.
+- [x] Missing active overlays and missing target panes fail as transport
+  errors.
+- [x] Patch source transport and source pane are visible in debug state.
+- [x] Multiple simultaneous Scene Mode overlays are allowed; newest overlay is
+  the default active target.
+- [x] macOS smoke helper can launch fixtures and submit a mux patch before
+  capture.
+- [ ] Run and archive a real live mux-submit smoke capture.
+- [ ] Add renderer helper tests for cache invalidation and image-disabled
+  behavior.
+- [ ] Expand patchable runtime state beyond entity flags/metadata/status.
+- [ ] Make agent/process integrations emit Scene Mode patches directly.
+- [ ] Add higher-level authoring UX for templates and guided scene creation.
+
 ## Default Scene Reload
 
 Scene Mode currently loads the optional default scene from:

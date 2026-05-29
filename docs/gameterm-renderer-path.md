@@ -164,11 +164,20 @@ later frame passes continue to draw over pane content.
 
 ## Next Checklist
 
-1. Capture one optional `VisualRenderSnapshot` for the active visual pane.
-2. Thread the snapshot reference into `RenderScreenLineParams`.
-3. Populate `LineQuadCacheKey.visual_generation` from the snapshot.
-4. Add row-local tile and entity filtering helpers near `render_screen_line`.
-5. Emit deterministic placeholder quads for filtered tiles on sublayer 0.
-6. Emit deterministic placeholder quads for filtered entities on sublayer 2.
-7. Verify skipped off-screen records do not perform atlas or placeholder work.
-8. Swap placeholder quads for atlas-backed sprite quads once sprite assets land.
+- [x] Capture one optional `VisualRenderSnapshot` for the active visual pane.
+- [x] Thread the snapshot reference into `RenderScreenLineParams`.
+- [x] Populate `LineQuadCacheKey.visual_generation` from the snapshot.
+- [x] Add row-local tile and entity filtering helpers near `render_screen_line`.
+- [x] Emit deterministic placeholder quads for filtered tiles on sublayer 0.
+- [x] Emit deterministic placeholder quads for filtered entities on sublayer 2.
+- [x] Swap placeholder quads for atlas-backed sprite quads once sprite assets
+  land.
+- [x] Isolate visual quad population in
+  `gameterm-gui/src/termwindow/render/visual_quad.rs`.
+- [x] Cache sprite image data per pane metadata and prune it on pane removal.
+- [ ] Verify skipped off-screen records do not perform atlas or placeholder
+  work with focused helper tests.
+- [ ] Add helper tests for image-disabled mode and sprite fallback behavior.
+- [ ] Add cache-invalidation tests for visual generation and sprite generation.
+- [ ] Decide whether/when to replace cached individual images with a packed
+  sprite atlas.
