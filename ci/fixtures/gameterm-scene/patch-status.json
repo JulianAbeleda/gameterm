@@ -1,0 +1,23 @@
+{
+  "scene_patch_version": 1,
+  "updates": [
+    {
+      "entity_id": "project-harness",
+      "state_flags": [
+        "loaded",
+        "verified"
+      ],
+      "metadata": [
+        [
+          "fixture",
+          "default"
+        ],
+        [
+          "status",
+          "patched"
+        ]
+      ]
+    }
+  ],
+  "status": "Fixture patch applied"
+}

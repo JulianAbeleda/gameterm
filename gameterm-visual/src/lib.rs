@@ -199,6 +199,24 @@ pub struct VisualSceneDebugReport {
     pub status: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VisualScenePatch {
+    pub scene_patch_version: u32,
+    #[serde(default)]
+    pub updates: Vec<VisualSceneEntityPatch>,
+    #[serde(default)]
+    pub status: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VisualSceneEntityPatch {
+    pub entity_id: String,
+    #[serde(default)]
+    pub state_flags: Option<Vec<String>>,
+    #[serde(default)]
+    pub metadata: Option<Vec<(String, String)>>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum VisualSceneLoadStatus {
     Bundled,
@@ -366,6 +384,68 @@ pub enum VisualSpriteManifestError {
     EmptySpritePath { id: String },
     #[error("duplicate sprite id `{0}`")]
     DuplicateSpriteId(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum VisualScenePatchError {
+    #[error("scene patch json error: {0}")]
+    Json(String),
+    #[error("scene patch file error for `{path}`: {message}")]
+    File { path: String, message: String },
+    #[error("unsupported scene patch version `{0}`")]
+    UnsupportedVersion(u32),
+    #[error("scene patch must contain at least one entity update or a status")]
+    EmptyPatch,
+    #[error("scene patch entity id must be non-empty")]
+    EmptyEntityId,
+    #[error("scene patch references unknown entity id `{0}`")]
+    UnknownEntityId(String),
+    #[error("scene patch metadata for `{entity_id}` contains an empty key")]
+    EmptyMetadataKey { entity_id: String },
+}
+
+impl VisualScenePatch {
+    pub const VERSION: u32 = 1;
+
+    pub fn from_json(json: &str) -> Result<Self, VisualScenePatchError> {
+        let patch: Self = serde_json::from_str(json)
+            .map_err(|err| VisualScenePatchError::Json(err.to_string()))?;
+        patch.validate()?;
+        Ok(patch)
+    }
+
+    pub fn load_from_path(path: impl AsRef<Path>) -> Result<Self, VisualScenePatchError> {
+        let path = path.as_ref();
+        let json = std::fs::read_to_string(path).map_err(|err| VisualScenePatchError::File {
+            path: path.display().to_string(),
+            message: err.to_string(),
+        })?;
+        Self::from_json(&json)
+    }
+
+    pub fn validate(&self) -> Result<(), VisualScenePatchError> {
+        if self.scene_patch_version != Self::VERSION {
+            return Err(VisualScenePatchError::UnsupportedVersion(
+                self.scene_patch_version,
+            ));
+        }
+        if self.updates.is_empty() && self.status.is_none() {
+            return Err(VisualScenePatchError::EmptyPatch);
+        }
+        for update in &self.updates {
+            if update.entity_id.trim().is_empty() {
+                return Err(VisualScenePatchError::EmptyEntityId);
+            }
+            if let Some(metadata) = &update.metadata {
+                if metadata.iter().any(|(key, _)| key.trim().is_empty()) {
+                    return Err(VisualScenePatchError::EmptyMetadataKey {
+                        entity_id: update.entity_id.clone(),
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 impl VisualSpriteManifest {
@@ -752,6 +832,48 @@ impl SceneRuntime {
     pub fn mark_action_status(&mut self, status: impl Into<String>) {
         self.status = status.into();
         self.bump_generation();
+    }
+
+    pub fn apply_scene_patch(
+        &mut self,
+        patch: VisualScenePatch,
+    ) -> Result<(), VisualScenePatchError> {
+        patch.validate()?;
+        for update in &patch.updates {
+            if !self
+                .scene
+                .entities
+                .iter()
+                .any(|entity| entity.id == update.entity_id)
+            {
+                return Err(VisualScenePatchError::UnknownEntityId(
+                    update.entity_id.clone(),
+                ));
+            }
+        }
+
+        let update_count = patch.updates.len();
+        for update in patch.updates {
+            if let Some(entity) = self
+                .scene
+                .entities
+                .iter_mut()
+                .find(|entity| entity.id == update.entity_id)
+            {
+                if let Some(state_flags) = update.state_flags {
+                    entity.state_flags = state_flags;
+                }
+                if let Some(metadata) = update.metadata {
+                    entity.metadata = metadata;
+                }
+            }
+        }
+
+        self.status = patch
+            .status
+            .unwrap_or_else(|| format!("Applied scene patch: {} entity update(s)", update_count));
+        self.bump_generation();
+        Ok(())
     }
 
     pub fn mark_open_file_dispatched(&mut self, path: &Path) {
@@ -2086,5 +2208,92 @@ mod tests {
         assert!(
             intersecting_entities_for_row(&snapshot, snapshot.height, 0..snapshot.width).is_empty()
         );
+    }
+
+    #[test]
+    fn scene_patch_updates_entity_state_and_status() {
+        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        let initial_generation = runtime.generation();
+        let patch = VisualScenePatch {
+            scene_patch_version: VisualScenePatch::VERSION,
+            updates: vec![VisualSceneEntityPatch {
+                entity_id: "task-render".to_string(),
+                state_flags: Some(vec!["running".to_string(), "verified".to_string()]),
+                metadata: Some(vec![("status".to_string(), "tests passed".to_string())]),
+            }],
+            status: Some("Verification passed".to_string()),
+        };
+
+        runtime.apply_scene_patch(patch).unwrap();
+
+        assert!(runtime.generation() > initial_generation);
+        assert_eq!(runtime.debug_report().status, "Verification passed");
+        let entity = runtime
+            .render_snapshot()
+            .entities
+            .into_iter()
+            .find(|entity| entity.id == "task-render")
+            .unwrap();
+        assert_eq!(entity.state_flags, vec!["running", "verified"]);
+        assert!(runtime
+            .debug_report()
+            .selected_entity_metadata
+            .iter()
+            .all(|(key, _)| key != "status"));
+    }
+
+    #[test]
+    fn scene_patch_rejects_unknown_entity_without_mutation() {
+        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        let before = runtime.render_snapshot();
+        let patch = VisualScenePatch {
+            scene_patch_version: VisualScenePatch::VERSION,
+            updates: vec![VisualSceneEntityPatch {
+                entity_id: "missing".to_string(),
+                state_flags: Some(vec!["bad".to_string()]),
+                metadata: None,
+            }],
+            status: Some("Should not apply".to_string()),
+        };
+
+        assert_eq!(
+            runtime.apply_scene_patch(patch),
+            Err(VisualScenePatchError::UnknownEntityId(
+                "missing".to_string()
+            ))
+        );
+        assert_eq!(runtime.render_snapshot(), before);
+    }
+
+    #[test]
+    fn scene_patch_fixture_applies_to_default_scene() {
+        let scene = VisualScene::load_from_path(scene_fixture_path("default.json")).unwrap();
+        let patch =
+            VisualScenePatch::load_from_path(scene_fixture_path("patch-status.json")).unwrap();
+        let mut runtime = SceneRuntime::new(scene).unwrap();
+
+        runtime.apply_scene_patch(patch).unwrap();
+        let report = runtime.debug_report();
+
+        assert_eq!(report.status, "Fixture patch applied");
+        assert_eq!(report.selected_entity_id.as_deref(), Some("project-harness"));
+        assert_eq!(report.selected_entity_flags, vec!["loaded", "verified"]);
+        assert!(report
+            .selected_entity_metadata
+            .contains(&("status".to_string(), "patched".to_string())));
+    }
+
+    #[test]
+    fn scene_patch_fixture_rejects_unknown_entity() {
+        let scene = VisualScene::load_from_path(scene_fixture_path("default.json")).unwrap();
+        let patch =
+            VisualScenePatch::load_from_path(scene_fixture_path("patch-unknown-entity.json"))
+                .unwrap();
+        let mut runtime = SceneRuntime::new(scene).unwrap();
+
+        assert!(matches!(
+            runtime.apply_scene_patch(patch),
+            Err(VisualScenePatchError::UnknownEntityId(id)) if id == "missing-entity"
+        ));
     }
 }

@@ -283,6 +283,34 @@ run_doctor_check() {
   echo "doctor: ok"
 }
 
+run_patch_check() {
+  cargo run -q -p gameterm-visual --example scene_patch_apply -- \
+    "${fixture_root}/default.json" \
+    "${fixture_root}/patch-status.json" \
+    >/tmp/gameterm-scene-patch-verify-ok.out
+  grep -q "status=Fixture patch applied" \
+    /tmp/gameterm-scene-patch-verify-ok.out
+  grep -q "metadata.status=patched" \
+    /tmp/gameterm-scene-patch-verify-ok.out
+
+  set +e
+  cargo run -q -p gameterm-visual --example scene_patch_apply -- \
+    "${fixture_root}/default.json" \
+    "${fixture_root}/patch-unknown-entity.json" \
+    >/tmp/gameterm-scene-patch-verify-bad.out \
+    2>/tmp/gameterm-scene-patch-verify-bad.err
+  patch_rc=$?
+  set -e
+  if [[ "${patch_rc}" -eq 0 ]]; then
+    echo "expected scene patch apply to reject unknown entity" >&2
+    exit 1
+  fi
+  grep -q 'unknown entity id `missing-entity`' \
+    /tmp/gameterm-scene-patch-verify-bad.err
+
+  echo "scene patch: ok"
+}
+
 run_smoke_asset_check() {
   "${repo_root}/ci/gameterm-scene-smoke.sh" --check-assets >/dev/null
   echo "smoke assets: ok"
@@ -293,6 +321,7 @@ run_cargo_checks() {
   cargo test -p gameterm-visual open_file
   cargo test -p gameterm-visual navigate
   cargo test -p gameterm-visual debug_report
+  cargo test -p gameterm-visual scene_patch
   cargo test -p gameterm-gui overlay::visual
 }
 
@@ -301,6 +330,7 @@ run_all() {
   run_init_helper_check
   run_author_helper_check
   run_doctor_check
+  run_patch_check
   run_smoke_asset_check
   for fixture in basic navigate invalid sprites missing-sprite run-command-targets; do
     run_fixture_setup_check "${fixture}"

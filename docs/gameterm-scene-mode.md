@@ -157,6 +157,39 @@ successful navigation, `r` reloads the active scene rather than returning to
 `default.json`. If navigation fails, Scene Mode keeps the current scene visible
 and reports the error in the scene status.
 
+## State patches
+
+Scene Mode now has a versioned in-memory patch schema in `gameterm-visual`.
+Patches update the active runtime only; they do not rewrite the source scene
+JSON.
+
+```json
+{
+  "scene_patch_version": 1,
+  "updates": [
+    {
+      "entity_id": "task-render",
+      "state_flags": ["running", "verified"],
+      "metadata": [["status", "tests passed"]]
+    }
+  ],
+  "status": "Verification passed"
+}
+```
+
+The first supported update fields are `state_flags` and `metadata`. Unknown
+entity ids are rejected and accepted patches bump the visual generation so
+renderer caches refresh. The current command-line verification path is:
+
+```sh
+cargo run -q -p gameterm-visual --example scene_patch_apply -- \
+  ci/fixtures/gameterm-scene/default.json \
+  ci/fixtures/gameterm-scene/patch-status.json
+```
+
+The GUI transport from panes or agents into the active Scene Mode overlay is the
+next implementation step.
+
 ## Sprite manifest
 
 Scene Mode can render scene sprite ids through image files listed in:
@@ -191,7 +224,7 @@ See [the example sprite manifest](examples/gameterm-scene-sprites.json).
 
 The noninteractive verification harness checks scene fixtures, authoring init
 behavior, authoring validation, doctor output, JSON validity, debugger state,
-and focused Rust tests:
+scene patch application, and focused Rust tests:
 
 ```sh
 ci/gameterm-scene-verify.sh --all

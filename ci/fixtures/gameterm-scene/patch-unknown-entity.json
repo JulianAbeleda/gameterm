@@ -1,0 +1,12 @@
+{
+  "scene_patch_version": 1,
+  "updates": [
+    {
+      "entity_id": "missing-entity",
+      "state_flags": [
+        "missing"
+      ]
+    }
+  ],
+  "status": "This patch should fail"
+}

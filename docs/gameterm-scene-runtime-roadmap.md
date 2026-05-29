@@ -88,6 +88,8 @@ Implemented verification behavior:
 6. Use `ci/gameterm-scene-smoke.sh --launch --fixture run-command-targets` for
    live mux/window checks of `tab`, `split_right`, and `split_down` command
    targets.
+7. Use `cargo run -q -p gameterm-visual --example scene_patch_apply -- SCENE
+   PATCH` for fixture-backed validation of in-memory state patches.
 
 ## Tile Debugger Path, Action, And Status
 
@@ -189,12 +191,12 @@ Implemented `Navigate` behavior:
 
 ## State Update Channel
 
-The next major architecture lane is a structured update channel from panes,
-agents, or external tools back into Scene Mode. This is intentionally not
-coupled to `RunCommand` stdout today: command output remains pane output until a
-schema exists for state updates.
+The first state update channel is implemented in `gameterm-visual` as an
+in-memory runtime patch. It is intentionally not coupled to `RunCommand` stdout
+today: command output remains pane output until the GUI has an explicit message
+transport for patches.
 
-Candidate first contract:
+Implemented patch contract:
 
 ```json
 {
@@ -210,13 +212,31 @@ Candidate first contract:
 }
 ```
 
-Initial constraints:
+Implemented constraints:
 
 - Apply patches only to the active scene runtime, not directly to the source
   JSON file.
 - Reject unknown entity ids and malformed patches with visible Scene Mode
-  status.
+  status once GUI transport exists. The current library API returns a typed
+  error.
 - Bump the visual generation after every accepted patch so render caches
   invalidate correctly.
 - Keep persistence as a later explicit authoring action rather than silently
   rewriting local config.
+
+Current verification:
+
+```sh
+cargo run -q -p gameterm-visual --example scene_patch_apply -- \
+  ci/fixtures/gameterm-scene/default.json \
+  ci/fixtures/gameterm-scene/patch-status.json
+```
+
+Next transport step:
+
+1. Define how a pane or agent submits a `VisualScenePatch` to the active Scene
+   Mode overlay.
+2. Apply patches through `SceneRuntime::apply_scene_patch`.
+3. Render success/failure in the Scene Mode status and Tile Debugger.
+4. Keep the first transport local and explicit; do not parse arbitrary command
+   stdout as scene patches.
