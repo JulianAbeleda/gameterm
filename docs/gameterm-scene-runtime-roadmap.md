@@ -69,9 +69,12 @@ Implemented verification behavior:
 
 1. Use `ci/fixtures/gameterm-scene` for deterministic Scene Mode fixtures.
 2. Use `ci/gameterm-scene-verify.sh --all` for noninteractive checks covering
-   fixture setup, init helper behavior, JSON validity, and focused Rust tests.
+   fixture setup, init helper behavior, authoring validation, JSON validity,
+   and focused Rust tests.
 3. Use `ci/gameterm-scene-smoke.sh --launch --fixture <name>` for macOS visual
    smoke runs against the same fixture set.
+4. Use `ci/gameterm-scene-author.sh validate <path>` for local scene authoring
+   checks backed by the Rust scene parser.
 
 ## Tile Debugger Path And Status
 
@@ -91,6 +94,9 @@ Minimum fields:
 The path/status line should be visible without selecting an entity. Entity
 selection should continue to drive entity-specific debugger rows, but source
 status belongs to the scene as a whole.
+
+The runtime also exposes a structured `VisualSceneDebugReport` so tests and
+authoring tools can assert debugger state without scraping rendered text.
 
 ## Choice Actions
 

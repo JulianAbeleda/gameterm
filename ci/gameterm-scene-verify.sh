@@ -19,6 +19,16 @@ EOF
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fixture_root="${repo_root}/ci/fixtures/gameterm-scene"
 mode="all"
+tmp_paths=()
+
+cleanup() {
+  for path in "${tmp_paths[@]}"; do
+    if [[ -n "${path}" && -d "${path}" ]]; then
+      rm -rf "${path}"
+    fi
+  done
+}
+trap cleanup EXIT
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -44,11 +54,8 @@ done
 
 scene_file_for_fixture() {
   case "$1" in
-    basic|sprites|missing-sprite)
+    basic|navigate|sprites|missing-sprite)
       printf '%s\n' "${fixture_root}/default.json"
-      ;;
-    navigate)
-      printf '%s\n' "${fixture_root}/memory.json"
       ;;
     invalid)
       printf '%s\n' "${fixture_root}/invalid.json"
@@ -80,23 +87,30 @@ run_fixture_setup_check() {
   local scene_dir
   local sprite_file
   tmp_home="$(mktemp -d /tmp/gameterm-scene-verify.XXXXXX)"
+  tmp_paths+=("${tmp_home}")
   scene_dir="${tmp_home}/gameterm/scenes"
   mkdir -p "${scene_dir}"
   cp "$(scene_file_for_fixture "${fixture}")" "${scene_dir}/default.json"
+  if [[ "${fixture}" == "navigate" ]]; then
+    cp "${fixture_root}/memory.json" "${scene_dir}/memory.json"
+  fi
   if sprite_file="$(sprite_file_for_fixture "${fixture}")"; then
     cp "${sprite_file}" "${scene_dir}/sprites.json"
   fi
 
   jq empty "${scene_dir}/default.json"
+  if [[ -f "${scene_dir}/memory.json" ]]; then
+    jq empty "${scene_dir}/memory.json"
+  fi
   if [[ -f "${scene_dir}/sprites.json" ]]; then
     jq empty "${scene_dir}/sprites.json"
   fi
-  rm -rf "${tmp_home}"
   echo "fixture ${fixture}: setup ok"
 }
 
 run_static_checks() {
   for script in \
+    "${repo_root}/ci/gameterm-scene-author.sh" \
     "${repo_root}/ci/gameterm-scene-init.sh" \
     "${repo_root}/ci/gameterm-scene-smoke.sh" \
     "${repo_root}/ci/gameterm-scene-verify.sh"
@@ -110,6 +124,7 @@ run_static_checks() {
 run_init_helper_check() {
   local tmp_home
   tmp_home="$(mktemp -d /tmp/gameterm-scene-init-verify.XXXXXX)"
+  tmp_paths+=("${tmp_home}")
   "${repo_root}/ci/gameterm-scene-init.sh" --config-home "${tmp_home}" >/dev/null
   jq empty "${tmp_home}/gameterm/scenes/default.json"
 
@@ -131,20 +146,52 @@ run_init_helper_check() {
   jq empty \
     "${tmp_home}/gameterm/scenes/default.json" \
     "${tmp_home}/gameterm/scenes/sprites.json"
-  rm -rf "${tmp_home}"
   echo "init helper: ok"
+}
+
+run_author_helper_check() {
+  local tmp_home
+  tmp_home="$(mktemp -d /tmp/gameterm-scene-author-verify.XXXXXX)"
+  tmp_paths+=("${tmp_home}")
+
+  "${repo_root}/ci/gameterm-scene-author.sh" list-fixtures | grep -qx navigate
+  "${repo_root}/ci/gameterm-scene-author.sh" \
+    install-fixture \
+    --config-home "${tmp_home}" \
+    navigate >/dev/null
+  jq empty \
+    "${tmp_home}/gameterm/scenes/default.json" \
+    "${tmp_home}/gameterm/scenes/memory.json"
+  "${repo_root}/ci/gameterm-scene-author.sh" \
+    validate "${tmp_home}/gameterm/scenes/default.json" >/dev/null
+
+  set +e
+  "${repo_root}/ci/gameterm-scene-author.sh" \
+    validate "${fixture_root}/invalid.json" \
+    >/tmp/gameterm-scene-author-verify.out \
+    2>/tmp/gameterm-scene-author-verify.err
+  invalid_rc=$?
+  set -e
+  if [[ "${invalid_rc}" -eq 0 ]]; then
+    echo "expected author validate to reject invalid fixture" >&2
+    exit 1
+  fi
+
+  echo "author helper: ok"
 }
 
 run_cargo_checks() {
   cargo test -p gameterm-visual scene_fixture
   cargo test -p gameterm-visual open_file
   cargo test -p gameterm-visual navigate
+  cargo test -p gameterm-visual debug_report
   cargo test -p gameterm-gui overlay::visual
 }
 
 run_all() {
   run_static_checks
   run_init_helper_check
+  run_author_helper_check
   for fixture in basic navigate invalid sprites missing-sprite; do
     run_fixture_setup_check "${fixture}"
   done

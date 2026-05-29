@@ -53,6 +53,18 @@ ci/gameterm-scene-init.sh --with-sprites
 The sprite manifest is optional because Scene Mode can use bundled sprite
 defaults while custom sprite files are being created.
 
+For fixture-driven authoring, use:
+
+```sh
+ci/gameterm-scene-author.sh list-fixtures
+ci/gameterm-scene-author.sh install-fixture navigate --force
+ci/gameterm-scene-author.sh validate ~/.config/gameterm/scenes/default.json
+```
+
+`validate` runs the same Rust scene parser used by Scene Mode and prints a
+short summary of the scene dimensions, entity count, choices, and initial
+selection.
+
 ## Scene file
 
 Scene Mode looks for a default scene at:
@@ -122,7 +134,7 @@ See [the example sprite manifest](examples/gameterm-scene-sprites.json).
 ## Smoke test
 
 The noninteractive verification harness checks scene fixtures, authoring init
-behavior, JSON validity, and focused Rust tests:
+behavior, authoring validation, JSON validity, and focused Rust tests:
 
 ```sh
 ci/gameterm-scene-verify.sh --all
