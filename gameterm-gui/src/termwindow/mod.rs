@@ -23,7 +23,7 @@ use crate::termwindow::modal::Modal;
 use crate::termwindow::render::paint::AllowImage;
 use crate::termwindow::render::{
     CachedLineState, LineQuadCacheKey, LineQuadCacheValue, LineToEleShapeCacheKey,
-    LineToElementShapeItem,
+    LineToElementShapeItem, VisualSpriteImageCache,
 };
 use crate::termwindow::webgpu::WebGpuState;
 use ::gameterm_term::input::{ClickPosition, MouseButton as TMB};
@@ -430,6 +430,7 @@ pub struct TermWindow {
     next_line_state_id: u64,
 
     line_quad_cache: RefCell<LfuCache<LineQuadCacheKey, LineQuadCacheValue>>,
+    visual_sprite_image_cache: RefCell<HashMap<PaneId, VisualSpriteImageCache>>,
 
     last_status_call: Instant,
     cursor_blink_state: RefCell<ColorEase>,
@@ -747,6 +748,7 @@ impl TermWindow {
                 |config| config.line_quad_cache_size,
                 &config,
             )),
+            visual_sprite_image_cache: RefCell::new(HashMap::new()),
             line_to_ele_shape_cache: RefCell::new(LfuCache::new(
                 "line_to_ele_shape_cache.hit.rate",
                 "line_to_ele_shape_cache.miss.rate",

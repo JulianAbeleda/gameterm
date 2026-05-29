@@ -3,7 +3,7 @@ use crate::selection::SelectionRange;
 use crate::termwindow::box_model::*;
 use crate::termwindow::render::{
     same_hyperlink, CursorProperties, LineQuadCacheKey, LineQuadCacheValue, LineToEleShapeCacheKey,
-    RenderScreenLineParams, VisualSpriteImages,
+    RenderScreenLineParams, VisualSpriteImageCache, VisualSpriteImages,
 };
 use crate::termwindow::{ScrollHit, UIItem, UIItemType};
 use ::window::bitmaps::TextureRect;
@@ -314,9 +314,8 @@ impl crate::TermWindow {
             metadata.hash(&mut hasher);
             hasher.finish()
         });
-        let visual_sprites = visual_sprite_metadata
-            .as_deref()
-            .and_then(visual_sprite_images_from_metadata);
+        let visual_sprites = self
+            .visual_sprite_images_for_pane(pos.pane.pane_id(), visual_sprite_metadata.as_deref());
 
         {
             let stable_range = match current_viewport {
@@ -350,7 +349,7 @@ impl crate::TermWindow {
                 filled_box: TextureRect,
                 window_is_transparent: bool,
                 visual_snapshot: Option<VisualRenderSnapshot>,
-                visual_sprites: Option<VisualSpriteImages>,
+                visual_sprites: Option<Arc<VisualSpriteImages>>,
                 visual_sprite_generation: Option<u64>,
                 layers: &'a mut TripleLayerQuadAllocator<'b>,
                 error: Option<anyhow::Error>,
@@ -398,7 +397,7 @@ impl crate::TermWindow {
                 ) -> anyhow::Result<()> {
                     let stable_row = stable_top + line_idx as StableRowIndex;
                     let visual_snapshot = self.visual_snapshot.as_ref();
-                    let visual_sprites = self.visual_sprites.as_ref();
+                    let visual_sprites = self.visual_sprites.as_deref();
                     let selrange = self
                         .selrange
                         .map_or(0..0, |sel| sel.cols_for_row(stable_row, self.rectangular));
@@ -737,8 +736,46 @@ fn visual_sprite_metadata_for_pane(pos: &PositionedPane) -> Option<String> {
     }
 }
 
-fn visual_sprite_images_from_metadata(metadata: &str) -> Option<VisualSpriteImages> {
-    let status: VisualSpriteManifestStatus = serde_json::from_str(metadata).ok()?;
+impl crate::TermWindow {
+    fn visual_sprite_images_for_pane(
+        &self,
+        pane_id: PaneId,
+        metadata: Option<&str>,
+    ) -> Option<Arc<VisualSpriteImages>> {
+        let Some(metadata) = metadata else {
+            self.visual_sprite_image_cache
+                .borrow_mut()
+                .remove(&pane_id);
+            return None;
+        };
+
+        let mut cache = self.visual_sprite_image_cache.borrow_mut();
+        if let Some(entry) = cache.get(&pane_id) {
+            if entry.metadata == metadata {
+                return entry.images.clone();
+            }
+        }
+
+        let images = visual_sprite_images_from_metadata(metadata);
+        cache.insert(
+            pane_id,
+            VisualSpriteImageCache {
+                metadata: metadata.to_string(),
+                images: images.clone(),
+            },
+        );
+        images
+    }
+}
+
+fn visual_sprite_images_from_metadata(metadata: &str) -> Option<Arc<VisualSpriteImages>> {
+    let status: VisualSpriteManifestStatus = match serde_json::from_str(metadata) {
+        Ok(status) => status,
+        Err(err) => {
+            log::warn!("failed to parse GameTerm visual sprite metadata: {err}");
+            return None;
+        }
+    };
     let mut sprites = HashMap::new();
 
     for sprite in status.sprites {
@@ -756,5 +793,5 @@ fn visual_sprite_images_from_metadata(metadata: &str) -> Option<VisualSpriteImag
         }
     }
 
-    Some(VisualSpriteImages { sprites })
+    Some(Arc::new(VisualSpriteImages { sprites }))
 }

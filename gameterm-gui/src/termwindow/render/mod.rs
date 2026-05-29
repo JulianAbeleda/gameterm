@@ -128,8 +128,14 @@ pub struct RenderScreenLineResult {
     pub invalidate_on_hover_change: bool,
 }
 
+#[derive(Clone)]
 pub struct VisualSpriteImages {
     pub sprites: HashMap<String, Arc<ImageData>>,
+}
+
+pub struct VisualSpriteImageCache {
+    pub metadata: String,
+    pub images: Option<Arc<VisualSpriteImages>>,
 }
 
 pub struct RenderScreenLineParams<'a> {
