@@ -11,7 +11,7 @@ fixtures. The script uses temporary config directories only.
 Options:
   --all                 Run all checks. This is the default.
   --fixture NAME        Run one fixture setup check: basic, navigate, invalid,
-                        sprites, or missing-sprite.
+                        sprites, missing-sprite, or run-command-targets.
   -h, --help            Show this help.
 EOF
 }
@@ -56,6 +56,9 @@ scene_file_for_fixture() {
   case "$1" in
     basic|navigate|sprites|missing-sprite)
       printf '%s\n' "${fixture_root}/default.json"
+      ;;
+    run-command-targets)
+      printf '%s\n' "${fixture_root}/run-command-targets.json"
       ;;
     invalid)
       printf '%s\n' "${fixture_root}/invalid.json"
@@ -241,6 +244,19 @@ run_doctor_check() {
     >/tmp/gameterm-scene-doctor-verify-ok.out
   grep -q "Doctor summary: 0 error(s), 0 warning(s)" \
     /tmp/gameterm-scene-doctor-verify-ok.out
+  grep -q "OK: RunCommand target is valid: Run visual check -> tab" \
+    /tmp/gameterm-scene-doctor-verify-ok.out
+
+  "${repo_root}/ci/gameterm-scene-doctor.sh" \
+    --scene "${fixture_root}/run-command-targets.json" \
+    --sprites "${fixture_root}/sprites.json" \
+    >/tmp/gameterm-scene-doctor-verify-targets.out
+  grep -q "OK: RunCommand target is valid: Run in tab -> tab" \
+    /tmp/gameterm-scene-doctor-verify-targets.out
+  grep -q "OK: RunCommand target is valid: Run in right split -> split_right" \
+    /tmp/gameterm-scene-doctor-verify-targets.out
+  grep -q "OK: RunCommand target is valid: Run in down split -> split_down" \
+    /tmp/gameterm-scene-doctor-verify-targets.out
 
   "${repo_root}/ci/gameterm-scene-doctor.sh" \
     --scene "${fixture_root}/default.json" \
@@ -286,7 +302,7 @@ run_all() {
   run_author_helper_check
   run_doctor_check
   run_smoke_asset_check
-  for fixture in basic navigate invalid sprites missing-sprite; do
+  for fixture in basic navigate invalid sprites missing-sprite run-command-targets; do
     run_fixture_setup_check "${fixture}"
   done
   run_cargo_checks
@@ -298,7 +314,7 @@ case "${mode}" in
   all)
     run_all
     ;;
-  basic|navigate|invalid|sprites|missing-sprite)
+  basic|navigate|invalid|sprites|missing-sprite|run-command-targets)
     run_static_checks
     run_fixture_setup_check "${mode}"
     ;;

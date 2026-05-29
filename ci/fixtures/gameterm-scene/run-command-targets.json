@@ -1,0 +1,64 @@
+{
+  "title": "Scene Harness RunCommand Targets",
+  "background": "workspace-map",
+  "width": 12,
+  "height": 7,
+  "entities": [
+    {
+      "id": "project-core",
+      "kind": "Project",
+      "label": "Project Core",
+      "position": {
+        "x": 2,
+        "y": 2
+      },
+      "sprite": "project_core",
+      "state_flags": [
+        "active"
+      ],
+      "metadata": [
+        [
+          "fixture",
+          "run-command-targets"
+        ]
+      ]
+    }
+  ],
+  "dialogue_speaker": "Harness",
+  "dialogue": "Use Enter to launch the selected command target, then Next to test the next target.",
+  "choices": [
+    {
+      "label": "Run in tab",
+      "kind": {
+        "RunCommand": {
+          "argv": [
+            "true"
+          ],
+          "target": "tab"
+        }
+      }
+    },
+    {
+      "label": "Run in right split",
+      "kind": {
+        "RunCommand": {
+          "argv": [
+            "true"
+          ],
+          "target": "split_right"
+        }
+      }
+    },
+    {
+      "label": "Run in down split",
+      "kind": {
+        "RunCommand": {
+          "argv": [
+            "true"
+          ],
+          "target": "split_down"
+        }
+      }
+    }
+  ]
+}

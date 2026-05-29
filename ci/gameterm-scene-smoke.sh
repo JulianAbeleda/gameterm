@@ -15,8 +15,9 @@ Options:
   --check-assets           Check bundled Scene Mode PNG assets and fixture
                            sprite manifests without launching or capturing.
   --fixture NAME           Fixture to install when --launch is used: basic,
-                           navigate, invalid, sprites, missing-sprite, or
-                           renderer-rows. Default: renderer-rows.
+                           navigate, invalid, sprites, missing-sprite,
+                           run-command-targets, or renderer-rows. Default:
+                           renderer-rows.
   --wait-before-capture N  Seconds to wait after launch before capture.
                            Use this time to press Ctrl+Shift+G. Default: 10.
   --device DEVICE          AVFoundation device string. Default: 0:none.
@@ -156,6 +157,10 @@ install_scene_fixture() {
       cp "${fixture_root}/default.json" "${scene_dir}/default.json"
       cp "${fixture_root}/sprites-missing.json" "${scene_dir}/sprites.json"
       ;;
+    run-command-targets)
+      cp "${fixture_root}/run-command-targets.json" "${scene_dir}/default.json"
+      cp "${fixture_root}/sprites.json" "${scene_dir}/sprites.json"
+      ;;
     *)
       echo "unknown fixture: ${fixture}" >&2
       usage >&2
@@ -249,6 +254,9 @@ EOF
   gui_pid=$!
   echo "GameTerm pid: ${gui_pid}"
   echo "Press Ctrl+Shift+G in the GameTerm window to open Scene Mode."
+  if [[ "${fixture}" == "run-command-targets" ]]; then
+    echo "RunCommand audit: press Enter for tab, Next then Enter for split_right, Next then Enter for split_down."
+  fi
   echo "Waiting ${wait_before_capture}s before capture..."
   sleep "${wait_before_capture}"
 fi

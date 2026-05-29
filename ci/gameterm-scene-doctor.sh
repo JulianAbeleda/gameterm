@@ -151,6 +151,60 @@ check_open_file_targets() {
   done < <(jq -r '.choices[]? | select(.kind.OpenFile?) | .kind.OpenFile.path' "${scene_path}")
 }
 
+check_run_command_actions() {
+  if [[ "${scene_valid}" -ne 1 ]]; then
+    return
+  fi
+
+  local index=0
+  while IFS=$'\t' read -r label target cwd argv_len; do
+    [[ -z "${label}" && -z "${target}" && -z "${cwd}" && -z "${argv_len}" ]] && continue
+    if [[ "${cwd}" == "__GAMETERM_EMPTY__" ]]; then
+      cwd=""
+    fi
+    index=$((index + 1))
+    case "${target}" in
+      tab|split_right|split_down)
+        ok "RunCommand target is valid: ${label} -> ${target}"
+        ;;
+      *)
+        error "RunCommand target is invalid: ${label} -> ${target}"
+        suggest "set target to one of: tab, split_right, split_down"
+        ;;
+    esac
+
+    if [[ "${argv_len}" == "0" ]]; then
+      error "RunCommand argv is empty: ${label}"
+      suggest "set an explicit argv array, for example: [\"true\"]"
+    else
+      ok "RunCommand argv is explicit: ${label} (${argv_len} arg(s))"
+    fi
+
+    if [[ -n "${cwd}" ]]; then
+      local resolved
+      resolved="$(resolve_path "${repo_root}" "${cwd}")"
+      if [[ -d "${resolved}" ]]; then
+        ok "RunCommand cwd exists: ${label} -> ${resolved}"
+      else
+        warn "RunCommand cwd missing or not a directory: ${label} -> ${resolved}"
+        suggest "create ${resolved}, remove cwd, or update cwd for ${label}"
+      fi
+    fi
+  done < <(
+    jq -r '
+      .choices[]?
+      | select(.kind.RunCommand?)
+      | [
+          .label,
+          (.kind.RunCommand.target // "tab"),
+          (.kind.RunCommand.cwd // "__GAMETERM_EMPTY__"),
+          ((.kind.RunCommand.argv // []) | length)
+        ]
+      | @tsv
+    ' "${scene_path}"
+  )
+}
+
 validate_sprite_manifest() {
   if [[ ! -f "${sprites_path}" ]]; then
     warn "sprite manifest missing at ${sprites_path}; Scene Mode will use bundled sprites and placeholders"
@@ -234,6 +288,7 @@ echo
 validate_scene
 check_navigate_targets
 check_open_file_targets
+check_run_command_actions
 validate_sprite_manifest
 check_scene_sprite_coverage
 
