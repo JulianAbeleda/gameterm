@@ -32,6 +32,7 @@ use gameterm_font::units::{IntPixelLength, PixelLength};
 use gameterm_font::{ClearShapeCache, GlyphInfo, LoadedFont};
 use gameterm_term::color::{ColorAttribute, ColorPalette};
 use gameterm_term::{CellAttributes, Line, StableRowIndex};
+use gameterm_visual::VisualRenderSnapshot;
 use window::color::LinearRgba;
 
 pub mod borders;
@@ -58,6 +59,7 @@ pub struct LineQuadCacheKey {
     pub config_generation: usize,
     pub shape_generation: usize,
     pub quad_generation: usize,
+    pub visual_generation: Option<u64>,
     /// Only set if cursor.y == stable_row
     pub composing: Option<String>,
     pub selection: Range<usize>,
@@ -139,6 +141,7 @@ pub struct RenderScreenLineParams<'a> {
     pub dims: &'a RenderableDimensions,
     pub config: &'a ConfigHandle,
     pub pane: Option<&'a Arc<dyn Pane>>,
+    pub visual_snapshot: Option<&'a VisualRenderSnapshot>,
 
     pub white_space: TextureRect,
     pub filled_box: TextureRect,

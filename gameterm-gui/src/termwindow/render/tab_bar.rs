@@ -74,6 +74,7 @@ impl crate::TermWindow {
                     reverse_video: false,
                 },
                 config: &self.config,
+                visual_snapshot: None,
                 cursor_border_color: LinearRgba::default(),
                 foreground: palette.foreground.to_linear(),
                 pane: None,
