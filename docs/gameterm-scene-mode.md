@@ -4,11 +4,13 @@ GameTerm Scene Mode is a native visual state surface inspired by visual novel sc
 
 The first implementation is intentionally small:
 
-- a built-in demo scene
+- a bundled default scene
 - optional JSON scene loading from `~/.config/gameterm/scenes/default.json`
 - optional sprite manifest loading from `~/.config/gameterm/scenes/sprites.json`
+- a bundled sprite fallback for first-run rendering
 - symbolic project/task/agent entities
 - keyboard selection
+- manual reload while Scene Mode is open
 - a dialogue/inspection panel
 - placeholder command actions
 - a Tile Debugger view for scene layers, entities, sprite ids, positions, flags, and metadata
@@ -35,9 +37,11 @@ If `XDG_CONFIG_HOME` is set, the path is:
 $XDG_CONFIG_HOME/gameterm/scenes/default.json
 ```
 
-If the file is missing, Scene Mode uses the built-in demo scene. If the file is present but invalid, Scene Mode shows an error frame and stays open so the problem is visible.
+If the file is missing, Scene Mode uses the bundled default scene. If the file is present but invalid, Scene Mode shows an error frame and stays open so the problem is visible.
 
 The scene file uses the same JSON shape as `VisualScene`: title, background, width, height, entities, dialogue speaker/text, and choices. See [the example scene](examples/gameterm-scene-default.json).
+
+Press `r` while Scene Mode is open to reload the scene file and sprite manifest.
 
 ## Sprite manifest
 
@@ -61,10 +65,11 @@ contains `sprites.json`.
 }
 ```
 
-If the manifest is missing, invalid, or references files that cannot be read,
-Scene Mode still opens and uses deterministic placeholder blocks for unresolved
-sprite ids. Warnings are shown in the scene frame and logged for renderer-side
-file loading failures.
+If the manifest is missing, Scene Mode uses bundled sprite defaults. If a
+manifest is invalid or references files that cannot be read, Scene Mode still
+opens and uses deterministic placeholder blocks for unresolved sprite ids.
+Warnings are shown in the scene frame and logged for renderer-side file loading
+failures.
 
 See [the example sprite manifest](examples/gameterm-scene-sprites.json).
 

@@ -4,7 +4,7 @@ Activates GameTerm Scene Mode.
 
 Scene Mode is the first GameTerm-native visual state surface. It displays a symbolic workspace scene with selectable entities, a visual-novel-style inspection panel, choices, and a tile debugger view.
 
-By default, it loads `~/.config/gameterm/scenes/default.json` when present. If the file is absent, it uses the built-in demo scene.
+By default, it loads `~/.config/gameterm/scenes/default.json` when present. If the file is absent, it uses the bundled default scene.
 
 Scene Mode also looks for `~/.config/gameterm/scenes/sprites.json`. This JSON
 file maps scene sprite ids to image files:
@@ -19,8 +19,9 @@ file maps scene sprite ids to image files:
 ```
 
 Relative sprite paths are resolved against the directory containing
-`sprites.json`. Missing or invalid sprite entries fall back to visible
-placeholder blocks so Scene Mode remains usable while the manifest is fixed.
+`sprites.json`. If the manifest is absent, Scene Mode uses bundled sprite
+defaults. Missing or invalid sprite entries fall back to visible placeholder
+blocks so Scene Mode remains usable while the manifest is fixed.
 
 Default key assignment:
 
@@ -33,4 +34,5 @@ While Scene Mode is active:
 - Arrow keys or `h`/`j`/`k`/`l` move selection.
 - `Enter` activates the selected choice.
 - `Tab` toggles the Tile Debugger.
+- `r` reloads the scene file and sprite manifest.
 - `Esc` or `q` closes the scene.
