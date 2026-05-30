@@ -57,7 +57,7 @@ Current status:
 - [x] Expand patchable runtime state beyond entity flags/metadata/status.
 - [x] Make agent/process integrations emit Scene Mode patches directly.
 - [x] Add higher-level authoring UX for templates and guided scene creation.
-- [ ] Define the Scene Mode narrative/RPG layer.
+- [x] Define the Scene Mode narrative/RPG layer.
 - [ ] Add dialogue and branching-choice runtime state.
 - [ ] Add explicit story-state save/load or export/import.
 - [ ] Prototype lightweight RPG state such as inventory, stats, quests, and
@@ -327,6 +327,17 @@ The narrative/RPG layer should stay terminal-first:
 - persistence is explicit export/save behavior, not silent source-file mutation;
 - Ren'Py, Ink, Yarn, emulator tile debuggers, and RPG engines remain references,
   not vendored runtimes.
+
+Definition: the narrative/RPG layer is structured scene state plus deterministic
+runtime transitions. It owns dialogue position, branch availability, story
+variables, and lightweight RPG records such as inventory, stats, quests, and
+relationships. It does not own terminal process execution, shell parsing, mux
+routing, or renderer-specific sprite loading.
+
+Acceptance boundary: each new narrative/RPG concept must be inspectable through
+`VisualSceneDebugReport`, visible in the Tile Debugger when active, serializable
+as stable JSON, and covered by focused `gameterm-visual` tests before GUI
+transport or authoring helpers depend on it.
 
 ### Phase 1: Visual Novel Foundation
 
