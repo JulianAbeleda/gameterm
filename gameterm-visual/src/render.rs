@@ -55,6 +55,7 @@ mod tests {
             active_mode: VisualModeDescriptor::default(),
             selected_entity_mode: None,
             variables: Vec::new(),
+            rpg: crate::VisualRpgState::default(),
             title: "Test".to_string(),
             background: "bg".to_string(),
             width: 4,

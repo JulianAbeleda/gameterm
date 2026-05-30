@@ -60,7 +60,7 @@ Current status:
 - [x] Define the Scene Mode narrative/RPG layer.
 - [x] Add dialogue and branching-choice runtime state.
 - [x] Add explicit story-state save/load or export/import.
-- [ ] Prototype lightweight RPG state such as inventory, stats, quests, and
+- [x] Prototype lightweight RPG state such as inventory, stats, quests, and
   relationships.
 - [x] Define Scene Mode computational modes.
 - [x] Add mode descriptors for conversation, memory, agent, and workspace
@@ -374,11 +374,14 @@ Add state that can survive scene navigation and GameTerm restarts:
 
 Prototype RPG features as structured state before adding rules:
 
-1. Inventory: item ids, labels, counts, ownership, and metadata.
+1. Inventory: item ids, labels, counts, ownership, and metadata. Implemented as
+   validated `VisualInventoryItem` records.
 2. Stats: named numeric or textual values attached to player, entities, or
-   parties.
-3. Quests: quest ids, stages, completion state, and journal text.
+   parties. Implemented as typed `VisualStat` records with optional owners.
+3. Quests: quest ids, stages, completion state, and journal text. Implemented
+   as `VisualQuest` records.
 4. Relationships: named relationship values between entities or agents.
+   Implemented as `VisualRelationship` records.
 5. Action resolution: small deterministic operations that update the above
    state through the patch runtime.
 

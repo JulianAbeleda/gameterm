@@ -122,6 +122,69 @@ pub struct VisualCondition {
     pub equals: VisualStateValue,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VisualRpgState {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub inventory: Vec<VisualInventoryItem>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stats: Vec<VisualStat>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub quests: Vec<VisualQuest>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub relationships: Vec<VisualRelationship>,
+}
+
+impl VisualRpgState {
+    pub fn is_empty(&self) -> bool {
+        self.inventory.is_empty()
+            && self.stats.is_empty()
+            && self.quests.is_empty()
+            && self.relationships.is_empty()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VisualInventoryItem {
+    pub item_id: String,
+    pub label: String,
+    pub count: u32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub metadata: Vec<(String, String)>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VisualStat {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner_id: Option<String>,
+    pub key: String,
+    pub value: VisualStateValue,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VisualQuest {
+    pub quest_id: String,
+    pub label: String,
+    pub stage: i64,
+    #[serde(default)]
+    pub completed: bool,
+    #[serde(default)]
+    pub journal: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VisualRelationship {
+    pub source_id: String,
+    pub target_id: String,
+    pub kind: String,
+    pub value: i64,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub metadata: Vec<(String, String)>,
+}
+
+fn is_empty_rpg_state(state: &VisualRpgState) -> bool {
+    state.is_empty()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VisualModeDescriptor {
     pub mode_id: String,
@@ -152,6 +215,8 @@ pub struct VisualScene {
     pub mode: VisualModeDescriptor,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub variables: Vec<VisualStateEntry>,
+    #[serde(default, skip_serializing_if = "is_empty_rpg_state")]
+    pub rpg: VisualRpgState,
     pub entities: Vec<VisualEntity>,
     pub dialogue_speaker: String,
     pub dialogue: String,
@@ -234,6 +299,7 @@ pub struct VisualRenderSnapshot {
     pub active_mode: VisualModeDescriptor,
     pub selected_entity_mode: Option<String>,
     pub variables: Vec<VisualStateEntry>,
+    pub rpg: VisualRpgState,
     pub title: String,
     pub background: String,
     pub width: usize,
@@ -265,6 +331,7 @@ pub struct VisualSceneDebugReport {
     pub active_mode_default_transition: Option<String>,
     pub selected_entity_mode: Option<String>,
     pub variables: Vec<VisualStateEntry>,
+    pub rpg: VisualRpgState,
     pub title: String,
     pub background: String,
     pub width: usize,
@@ -311,6 +378,8 @@ pub struct VisualStoryState {
     pub story_state_version: u32,
     #[serde(default)]
     pub variables: Vec<VisualStateEntry>,
+    #[serde(default, skip_serializing_if = "is_empty_rpg_state")]
+    pub rpg: VisualRpgState,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dialogue_index: Option<usize>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -396,6 +465,80 @@ fn validate_dialogue_lines(lines: &[VisualDialogueLine]) -> Result<(), VisualDia
             return Err(VisualDialogueLineError::EmptyText { index });
         }
     }
+    Ok(())
+}
+
+fn validate_rpg_state(state: &VisualRpgState) -> Result<(), VisualSceneError> {
+    let mut item_ids = HashSet::new();
+    for item in &state.inventory {
+        if item.item_id.trim().is_empty() {
+            return Err(VisualSceneError::EmptyInventoryItemId);
+        }
+        if item.label.trim().is_empty() {
+            return Err(VisualSceneError::EmptyInventoryLabel {
+                item_id: item.item_id.clone(),
+            });
+        }
+        if !item_ids.insert(item.item_id.as_str()) {
+            return Err(VisualSceneError::DuplicateInventoryItemId(
+                item.item_id.clone(),
+            ));
+        }
+    }
+
+    let mut stats = HashSet::new();
+    for stat in &state.stats {
+        if stat.key.trim().is_empty() {
+            return Err(VisualSceneError::EmptyStatKey);
+        }
+        if matches!(stat.owner_id.as_ref(), Some(owner_id) if owner_id.trim().is_empty()) {
+            return Err(VisualSceneError::EmptyStatOwnerId);
+        }
+        let key = format!(
+            "{}:{}",
+            stat.owner_id.as_deref().unwrap_or("scene"),
+            stat.key
+        );
+        if !stats.insert(key.clone()) {
+            return Err(VisualSceneError::DuplicateStatKey(key));
+        }
+    }
+
+    let mut quest_ids = HashSet::new();
+    for quest in &state.quests {
+        if quest.quest_id.trim().is_empty() {
+            return Err(VisualSceneError::EmptyQuestId);
+        }
+        if quest.label.trim().is_empty() {
+            return Err(VisualSceneError::EmptyQuestLabel {
+                quest_id: quest.quest_id.clone(),
+            });
+        }
+        if !quest_ids.insert(quest.quest_id.as_str()) {
+            return Err(VisualSceneError::DuplicateQuestId(quest.quest_id.clone()));
+        }
+    }
+
+    let mut relationships = HashSet::new();
+    for relationship in &state.relationships {
+        if relationship.source_id.trim().is_empty() {
+            return Err(VisualSceneError::EmptyRelationshipSourceId);
+        }
+        if relationship.target_id.trim().is_empty() {
+            return Err(VisualSceneError::EmptyRelationshipTargetId);
+        }
+        if relationship.kind.trim().is_empty() {
+            return Err(VisualSceneError::EmptyRelationshipKind);
+        }
+        let key = format!(
+            "{}:{}:{}",
+            relationship.source_id, relationship.target_id, relationship.kind
+        );
+        if !relationships.insert(key.clone()) {
+            return Err(VisualSceneError::DuplicateRelationship(key));
+        }
+    }
+
     Ok(())
 }
 
@@ -528,6 +671,32 @@ pub enum VisualSceneError {
     EmptyDialogueText { index: usize },
     #[error("choice action `{label}` references missing dialogue line {target}")]
     DialogueTargetOutOfBounds { label: String, target: usize },
+    #[error("inventory item id must be non-empty")]
+    EmptyInventoryItemId,
+    #[error("inventory item `{item_id}` label must be non-empty")]
+    EmptyInventoryLabel { item_id: String },
+    #[error("duplicate inventory item id `{0}`")]
+    DuplicateInventoryItemId(String),
+    #[error("stat key must be non-empty")]
+    EmptyStatKey,
+    #[error("stat owner id must be non-empty when provided")]
+    EmptyStatOwnerId,
+    #[error("duplicate stat `{0}`")]
+    DuplicateStatKey(String),
+    #[error("quest id must be non-empty")]
+    EmptyQuestId,
+    #[error("quest `{quest_id}` label must be non-empty")]
+    EmptyQuestLabel { quest_id: String },
+    #[error("duplicate quest id `{0}`")]
+    DuplicateQuestId(String),
+    #[error("relationship source id must be non-empty")]
+    EmptyRelationshipSourceId,
+    #[error("relationship target id must be non-empty")]
+    EmptyRelationshipTargetId,
+    #[error("relationship kind must be non-empty")]
+    EmptyRelationshipKind,
+    #[error("duplicate relationship `{0}`")]
+    DuplicateRelationship(String),
     #[error("scene json error: {0}")]
     Json(String),
     #[error("scene file error for `{path}`: {message}")]
@@ -598,6 +767,8 @@ pub enum VisualStoryStateError {
     EmptyDialogueSpeaker { index: usize },
     #[error("story state dialogue line {index} must provide non-empty text")]
     EmptyDialogueText { index: usize },
+    #[error("story state RPG state is invalid: {0}")]
+    InvalidRpgState(String),
     #[error("story state references missing dialogue line {target}")]
     DialogueIndexOutOfBounds { target: usize },
 }
@@ -633,6 +804,8 @@ impl VisualStoryState {
                 VisualStoryStateError::DuplicateVariableKey(key)
             }
         })?;
+        validate_rpg_state(&self.rpg)
+            .map_err(|err| VisualStoryStateError::InvalidRpgState(err.to_string()))?;
         validate_dialogue_lines(&self.dialogue_history).map_err(|err| match err {
             VisualDialogueLineError::EmptySpeaker { index } => {
                 VisualStoryStateError::EmptyDialogueSpeaker { index }
@@ -813,6 +986,7 @@ impl VisualScene {
             VisualStateEntryError::EmptyKey => VisualSceneError::EmptyVariableKey,
             VisualStateEntryError::DuplicateKey(key) => VisualSceneError::DuplicateVariableKey(key),
         })?;
+        validate_rpg_state(&self.rpg)?;
 
         let mut ids = HashSet::new();
         for entity in &self.entities {
@@ -903,6 +1077,33 @@ impl VisualScene {
                     value: VisualStateValue::Text("visual-state".to_string()),
                 },
             ],
+            rpg: VisualRpgState {
+                inventory: vec![VisualInventoryItem {
+                    item_id: "scene-token".to_string(),
+                    label: "Scene Token".to_string(),
+                    count: 1,
+                    metadata: vec![("source".to_string(), "demo".to_string())],
+                }],
+                stats: vec![VisualStat {
+                    owner_id: Some("project-gameterm".to_string()),
+                    key: "focus".to_string(),
+                    value: VisualStateValue::Number(3),
+                }],
+                quests: vec![VisualQuest {
+                    quest_id: "verify-scene-runtime".to_string(),
+                    label: "Verify Scene Runtime".to_string(),
+                    stage: 1,
+                    completed: false,
+                    journal: "Keep Scene Mode state visible and testable.".to_string(),
+                }],
+                relationships: vec![VisualRelationship {
+                    source_id: "agent-audit".to_string(),
+                    target_id: "task-render".to_string(),
+                    kind: "monitors".to_string(),
+                    value: 2,
+                    metadata: vec![],
+                }],
+            },
             entities: vec![
                 VisualEntity {
                     id: "project-gameterm".to_string(),
@@ -1067,6 +1268,7 @@ impl SceneRuntime {
         VisualStoryState {
             story_state_version: VisualStoryState::VERSION,
             variables: self.scene.variables.clone(),
+            rpg: self.scene.rpg.clone(),
             dialogue_index: dialogue_index(&self.scene, self.dialogue_index),
             dialogue_history: self.dialogue_history.clone(),
         }
@@ -1095,6 +1297,7 @@ impl SceneRuntime {
         };
 
         self.scene.variables = state.variables;
+        self.scene.rpg = state.rpg;
         self.dialogue_index = dialogue_index;
         self.dialogue_history = dialogue_history;
         self.status = "Imported story state".to_string();
@@ -1456,6 +1659,7 @@ impl SceneRuntime {
             active_mode: self.scene.mode.clone(),
             selected_entity_mode,
             variables: self.scene.variables.clone(),
+            rpg: self.scene.rpg.clone(),
             title: self.scene.title.clone(),
             background: self.scene.background.clone(),
             width: self.scene.width,
@@ -1499,6 +1703,7 @@ impl SceneRuntime {
             active_mode_default_transition: self.scene.mode.default_transition.clone(),
             selected_entity_mode: selected_entity.and_then(entity_mode),
             variables: self.scene.variables.clone(),
+            rpg: self.scene.rpg.clone(),
             title: self.scene.title.clone(),
             background: self.scene.background.clone(),
             width: self.scene.width,
@@ -1634,6 +1839,15 @@ impl SceneRuntime {
             }
             out.push_str("\r\n");
         }
+        if !self.scene.rpg.is_empty() {
+            out.push_str(&format!(
+                "RPG: inventory={} stats={} quests={} relationships={}\r\n",
+                self.scene.rpg.inventory.len(),
+                self.scene.rpg.stats.len(),
+                self.scene.rpg.quests.len(),
+                self.scene.rpg.relationships.len()
+            ));
+        }
         out.push_str(&format!(
             "{}: {}\r\n\r\n",
             self.active_dialogue_line().speaker,
@@ -1768,6 +1982,19 @@ impl SceneRuntime {
             "  History entries: {}\r\n",
             report.dialogue_history.len()
         ));
+        if !report.rpg.is_empty() {
+            out.push_str("\r\nRPG:\r\n");
+            out.push_str(&format!(
+                "  Inventory items: {}\r\n",
+                report.rpg.inventory.len()
+            ));
+            out.push_str(&format!("  Stats: {}\r\n", report.rpg.stats.len()));
+            out.push_str(&format!("  Quests: {}\r\n", report.rpg.quests.len()));
+            out.push_str(&format!(
+                "  Relationships: {}\r\n",
+                report.rpg.relationships.len()
+            ));
+        }
         out.push_str("\r\n");
         out.push_str(&format!(
             "scene={} background={} size={}x{} entities={} choices={}\r\n\r\n",
@@ -2004,6 +2231,7 @@ mod tests {
             active_mode: default_scene_mode(),
             selected_entity_mode: None,
             variables: Vec::new(),
+            rpg: VisualRpgState::default(),
             title: "Filter Fixture".to_string(),
             background: "floor".to_string(),
             width: 4,
@@ -2155,6 +2383,72 @@ mod tests {
         assert!(matches!(
             scene.validate(),
             Err(VisualSceneError::DuplicateVariableKey(key)) if key == "workspace_level"
+        ));
+    }
+
+    #[test]
+    fn rpg_state_is_visible_in_snapshot_and_debugger() {
+        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        let snapshot = runtime.render_snapshot();
+
+        assert_eq!(snapshot.rpg.inventory.len(), 1);
+        assert_eq!(snapshot.rpg.inventory[0].item_id, "scene-token");
+        assert_eq!(snapshot.rpg.stats.len(), 1);
+        assert_eq!(snapshot.rpg.quests[0].quest_id, "verify-scene-runtime");
+        assert_eq!(snapshot.rpg.relationships[0].kind, "monitors");
+
+        let report = runtime.debug_report();
+        assert_eq!(report.rpg, snapshot.rpg);
+
+        runtime.toggle_debugger();
+        let frame = runtime.render_text_frame(120, 48);
+        assert!(frame.contains("RPG:"));
+        assert!(frame.contains("Inventory items: 1"));
+        assert!(frame.contains("Relationships: 1"));
+    }
+
+    #[test]
+    fn scene_rejects_duplicate_inventory_item_id() {
+        let mut scene = VisualScene::demo();
+        scene.rpg.inventory.push(scene.rpg.inventory[0].clone());
+
+        assert!(matches!(
+            scene.validate(),
+            Err(VisualSceneError::DuplicateInventoryItemId(id)) if id == "scene-token"
+        ));
+    }
+
+    #[test]
+    fn scene_rejects_empty_stat_key() {
+        let mut scene = VisualScene::demo();
+        scene.rpg.stats[0].key = " ".to_string();
+
+        assert_eq!(scene.validate(), Err(VisualSceneError::EmptyStatKey));
+    }
+
+    #[test]
+    fn scene_rejects_duplicate_quest_id() {
+        let mut scene = VisualScene::demo();
+        scene.rpg.quests.push(scene.rpg.quests[0].clone());
+
+        assert!(matches!(
+            scene.validate(),
+            Err(VisualSceneError::DuplicateQuestId(id)) if id == "verify-scene-runtime"
+        ));
+    }
+
+    #[test]
+    fn scene_rejects_duplicate_relationship() {
+        let mut scene = VisualScene::demo();
+        scene
+            .rpg
+            .relationships
+            .push(scene.rpg.relationships[0].clone());
+
+        assert!(matches!(
+            scene.validate(),
+            Err(VisualSceneError::DuplicateRelationship(key))
+                if key == "agent-audit:task-render:monitors"
         ));
     }
 
@@ -2548,6 +2842,7 @@ mod tests {
         }));
         assert_eq!(state.dialogue_index, Some(1));
         assert_eq!(state.dialogue_history.len(), 2);
+        assert_eq!(state.rpg.inventory.len(), 1);
 
         let json = runtime.story_state_json_pretty().unwrap();
         assert!(json.contains("\"story_state_version\": 1"));
@@ -2576,6 +2871,7 @@ mod tests {
             key: "quest_stage".to_string(),
             value: VisualStateValue::Number(3),
         }));
+        assert_eq!(snapshot.rpg.inventory.len(), 1);
         assert_eq!(snapshot.status, "Imported story state");
     }
 
@@ -2607,6 +2903,7 @@ mod tests {
                     value: VisualStateValue::Number(2),
                 },
             ],
+            rpg: VisualRpgState::default(),
             dialogue_index: None,
             dialogue_history: vec![],
         };
@@ -2622,6 +2919,7 @@ mod tests {
         let state = VisualStoryState {
             story_state_version: VisualStoryState::VERSION,
             variables: vec![],
+            rpg: VisualRpgState::default(),
             dialogue_index: None,
             dialogue_history: vec![VisualDialogueLine {
                 speaker: "Guide".to_string(),
