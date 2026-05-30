@@ -58,7 +58,7 @@ Current status:
 - [x] Make agent/process integrations emit Scene Mode patches directly.
 - [x] Add higher-level authoring UX for templates and guided scene creation.
 - [x] Define the Scene Mode narrative/RPG layer.
-- [ ] Add dialogue and branching-choice runtime state.
+- [x] Add dialogue and branching-choice runtime state.
 - [ ] Add explicit story-state save/load or export/import.
 - [ ] Prototype lightweight RPG state such as inventory, stats, quests, and
   relationships.
@@ -344,9 +344,13 @@ transport or authoring helpers depend on it.
 Add a first-class dialogue model on top of the existing scene JSON shape:
 
 1. Represent dialogue as ordered lines with speaker, body text, optional
-   portrait/sprite id, and optional metadata.
+   portrait/sprite id, and optional metadata. Implemented with
+   `dialogue_lines`.
 2. Add dialogue history so users can inspect previous lines in Scene Mode.
+   Implemented in runtime state and the Tile Debugger.
 3. Let choices advance dialogue, navigate scenes, or apply runtime flags.
+   Implemented for dialogue advancement through `AdvanceDialogue`; navigation
+   already uses `Navigate`, and state changes continue to use scene patches.
 4. Add authoring templates for simple branching dialogue scenes.
 5. Cover templates and dialogue parsing in `ci/gameterm-scene-verify.sh --all`.
 

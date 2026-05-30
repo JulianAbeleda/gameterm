@@ -51,6 +51,9 @@ pub enum SceneActionKind {
     Navigate {
         target: String,
     },
+    AdvanceDialogue {
+        target: usize,
+    },
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -104,6 +107,16 @@ pub struct VisualStateEntry {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VisualDialogueLine {
+    pub speaker: String,
+    pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub portrait: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub metadata: Vec<(String, String)>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VisualCondition {
     pub variable: String,
     pub equals: VisualStateValue,
@@ -142,6 +155,8 @@ pub struct VisualScene {
     pub entities: Vec<VisualEntity>,
     pub dialogue_speaker: String,
     pub dialogue: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dialogue_lines: Vec<VisualDialogueLine>,
     pub choices: Vec<SceneAction>,
 }
 
@@ -229,6 +244,8 @@ pub struct VisualRenderSnapshot {
     pub entities: Vec<VisualRenderEntity>,
     pub dialogue_speaker: String,
     pub dialogue: String,
+    pub dialogue_index: Option<usize>,
+    pub dialogue_history: Vec<VisualDialogueLine>,
     pub status: String,
     pub choices: Vec<String>,
 }
@@ -260,6 +277,9 @@ pub struct VisualSceneDebugReport {
     pub selected_entity_sprite: Option<String>,
     pub selected_entity_flags: Vec<String>,
     pub selected_entity_metadata: Vec<(String, String)>,
+    pub dialogue_index: Option<usize>,
+    pub dialogue_line_count: usize,
+    pub dialogue_history: Vec<VisualDialogueLine>,
     pub selected_choice: usize,
     pub selected_choice_label: Option<String>,
     pub selected_choice_kind: Option<String>,
@@ -473,6 +493,12 @@ pub enum VisualSceneError {
     DuplicateVariableKey(String),
     #[error("choice action `{label}` has an empty condition variable")]
     EmptyConditionVariable { label: String },
+    #[error("dialogue line {index} must provide a non-empty speaker")]
+    EmptyDialogueSpeaker { index: usize },
+    #[error("dialogue line {index} must provide non-empty text")]
+    EmptyDialogueText { index: usize },
+    #[error("choice action `{label}` references missing dialogue line {target}")]
+    DialogueTargetOutOfBounds { label: String, target: usize },
     #[error("scene json error: {0}")]
     Json(String),
     #[error("scene file error for `{path}`: {message}")]
@@ -710,6 +736,15 @@ impl VisualScene {
             }
         }
 
+        for (index, line) in self.dialogue_lines.iter().enumerate() {
+            if line.speaker.trim().is_empty() {
+                return Err(VisualSceneError::EmptyDialogueSpeaker { index });
+            }
+            if line.text.trim().is_empty() {
+                return Err(VisualSceneError::EmptyDialogueText { index });
+            }
+        }
+
         for choice in &self.choices {
             for condition in &choice.conditions {
                 if condition.variable.trim().is_empty() {
@@ -727,6 +762,14 @@ impl VisualScene {
                 if matches!(cwd.as_ref(), Some(cwd) if cwd.trim().is_empty()) {
                     return Err(VisualSceneError::EmptyRunCommandCwd {
                         label: choice.label.clone(),
+                    });
+                }
+            }
+            if let SceneActionKind::AdvanceDialogue { target } = &choice.kind {
+                if *target >= self.dialogue_lines.len() {
+                    return Err(VisualSceneError::DialogueTargetOutOfBounds {
+                        label: choice.label.clone(),
+                        target: *target,
                     });
                 }
             }
@@ -808,6 +851,7 @@ impl VisualScene {
             ],
             dialogue_speaker: "GameTerm".to_string(),
             dialogue: "Scene Mode renders project state as symbolic entities while preserving terminal control.".to_string(),
+            dialogue_lines: vec![],
             choices: vec![
                 SceneAction {
                     label: "Inspect selected entity".to_string(),
@@ -853,6 +897,8 @@ pub struct SceneRuntime {
     action_base_dir: PathBuf,
     selected_entity: usize,
     selected_choice: usize,
+    dialogue_index: usize,
+    dialogue_history: Vec<VisualDialogueLine>,
     view: VisualView,
     status: String,
     generation: u64,
@@ -883,12 +929,15 @@ impl SceneRuntime {
         action_base_dir: impl Into<PathBuf>,
     ) -> Result<Self, VisualSceneError> {
         scene.validate()?;
+        let dialogue_history = initial_dialogue_history(&scene, 0);
         Ok(Self {
             scene,
             scene_source,
             action_base_dir: action_base_dir.into(),
             selected_entity: 0,
             selected_choice: 0,
+            dialogue_index: 0,
+            dialogue_history,
             view: VisualView::Scene,
             status: "Ready".to_string(),
             generation: 0,
@@ -939,8 +988,16 @@ impl SceneRuntime {
     ) -> Result<(), VisualSceneError> {
         scene.validate()?;
         let selected_entity_id = self.selected_entity().map(|entity| entity.id.clone());
+        let dialogue_index = if scene.dialogue_lines.is_empty() {
+            0
+        } else {
+            self.dialogue_index.min(scene.dialogue_lines.len() - 1)
+        };
+        let dialogue_history = initial_dialogue_history(&scene, dialogue_index);
         self.scene = scene;
         self.scene_source = scene_source;
+        self.dialogue_index = dialogue_index;
+        self.dialogue_history = dialogue_history;
         self.status = "Ready".to_string();
 
         self.selected_entity = selected_entity_id
@@ -1009,7 +1066,7 @@ impl SceneRuntime {
 
     pub fn activate_choice(&mut self) {
         self.pending_action = None;
-        if let Some(choice) = self.scene.choices.get(self.selected_choice) {
+        if let Some(choice) = self.scene.choices.get(self.selected_choice).cloned() {
             if !conditions_match(&choice.conditions, &self.scene.variables) {
                 self.status = format!(
                     "Choice unavailable: {}",
@@ -1043,6 +1100,15 @@ impl SceneRuntime {
                         target: target.clone(),
                     });
                     format!("Navigate ready: {target}")
+                }
+                SceneActionKind::AdvanceDialogue { target } => {
+                    self.dialogue_index = *target;
+                    if let Some(line) = self.scene.dialogue_lines.get(*target).cloned() {
+                        self.dialogue_history.push(line.clone());
+                        format!("Dialogue advanced: {}", line.speaker)
+                    } else {
+                        format!("Dialogue target missing: {target}")
+                    }
                 }
             };
             self.pending_action = pending_action;
@@ -1216,6 +1282,10 @@ impl SceneRuntime {
         self.scene.entities.get(self.selected_entity)
     }
 
+    pub fn active_dialogue_line(&self) -> VisualDialogueLine {
+        active_dialogue_line(&self.scene, self.dialogue_index)
+    }
+
     fn open_file_action_status(&self, path: &str) -> (String, Option<VisualActionRequest>) {
         let raw_path = PathBuf::from(path);
         let resolved = if raw_path.is_absolute() {
@@ -1247,6 +1317,7 @@ impl SceneRuntime {
     pub fn render_snapshot(&self) -> VisualRenderSnapshot {
         let selected_entity_id = self.selected_entity().map(|entity| entity.id.clone());
         let selected_entity_mode = self.selected_entity().and_then(entity_mode);
+        let active_dialogue = self.active_dialogue_line();
         VisualRenderSnapshot {
             generation: self.generation,
             view: self.view,
@@ -1262,8 +1333,10 @@ impl SceneRuntime {
             selected_choice: self.selected_choice,
             tiles: self.render_tiles(),
             entities: self.render_entities(),
-            dialogue_speaker: self.scene.dialogue_speaker.clone(),
-            dialogue: self.scene.dialogue.clone(),
+            dialogue_speaker: active_dialogue.speaker,
+            dialogue: active_dialogue.text,
+            dialogue_index: dialogue_index(&self.scene, self.dialogue_index),
+            dialogue_history: self.dialogue_history.clone(),
             status: self.status.clone(),
             choices: self
                 .scene
@@ -1311,6 +1384,9 @@ impl SceneRuntime {
             selected_entity_metadata: selected_entity
                 .map(|entity| entity.metadata.clone())
                 .unwrap_or_default(),
+            dialogue_index: dialogue_index(&self.scene, self.dialogue_index),
+            dialogue_line_count: self.scene.dialogue_lines.len(),
+            dialogue_history: self.dialogue_history.clone(),
             selected_choice: self.selected_choice,
             selected_choice_label: selected_choice.map(|choice| choice.label.clone()),
             selected_choice_kind: selected_choice.map(|choice| action_kind_name(&choice.kind)),
@@ -1429,7 +1505,8 @@ impl SceneRuntime {
         }
         out.push_str(&format!(
             "{}: {}\r\n\r\n",
-            self.scene.dialogue_speaker, self.scene.dialogue
+            self.active_dialogue_line().speaker,
+            self.active_dialogue_line().text
         ));
 
         out.push_str("Choices:\r\n");
@@ -1547,6 +1624,19 @@ impl SceneRuntime {
             }
             (None, _) => out.push_str("  Last patch: none\r\n"),
         }
+        out.push_str("\r\nDialogue:\r\n");
+        match report.dialogue_index {
+            Some(index) => out.push_str(&format!(
+                "  Active line: {} of {}\r\n",
+                index + 1,
+                report.dialogue_line_count
+            )),
+            None => out.push_str("  Active line: legacy\r\n"),
+        }
+        out.push_str(&format!(
+            "  History entries: {}\r\n",
+            report.dialogue_history.len()
+        ));
         out.push_str("\r\n");
         out.push_str(&format!(
             "scene={} background={} size={}x{} entities={} choices={}\r\n\r\n",
@@ -1599,6 +1689,7 @@ fn action_kind_name(kind: &SceneActionKind) -> String {
         SceneActionKind::OpenFile { .. } => "OpenFile",
         SceneActionKind::RunCommand { .. } => "RunCommand",
         SceneActionKind::Navigate { .. } => "Navigate",
+        SceneActionKind::AdvanceDialogue { .. } => "AdvanceDialogue",
     }
     .to_string()
 }
@@ -1616,6 +1707,7 @@ fn action_kind_detail(kind: &SceneActionKind) -> String {
             detail
         }
         SceneActionKind::Navigate { target } => format!("target={target}"),
+        SceneActionKind::AdvanceDialogue { target } => format!("target={target}"),
     }
 }
 
@@ -1670,6 +1762,33 @@ fn condition_guard_detail(conditions: &[VisualCondition]) -> Option<String> {
             .collect::<Vec<_>>()
             .join(", ")
     ))
+}
+
+fn dialogue_index(scene: &VisualScene, index: usize) -> Option<usize> {
+    if scene.dialogue_lines.is_empty() {
+        None
+    } else {
+        Some(index.min(scene.dialogue_lines.len() - 1))
+    }
+}
+
+fn active_dialogue_line(scene: &VisualScene, index: usize) -> VisualDialogueLine {
+    dialogue_index(scene, index)
+        .and_then(|index| scene.dialogue_lines.get(index).cloned())
+        .unwrap_or_else(|| VisualDialogueLine {
+            speaker: scene.dialogue_speaker.clone(),
+            text: scene.dialogue.clone(),
+            portrait: None,
+            metadata: Vec::new(),
+        })
+}
+
+fn initial_dialogue_history(scene: &VisualScene, index: usize) -> Vec<VisualDialogueLine> {
+    if scene.dialogue_lines.is_empty() {
+        Vec::new()
+    } else {
+        vec![active_dialogue_line(scene, index)]
+    }
 }
 
 fn entity_mode(entity: &VisualEntity) -> Option<String> {
@@ -1816,6 +1935,8 @@ mod tests {
             ],
             dialogue_speaker: String::new(),
             dialogue: String::new(),
+            dialogue_index: None,
+            dialogue_history: Vec::new(),
             status: String::new(),
             choices: Vec::new(),
         }
@@ -1917,6 +2038,85 @@ mod tests {
         assert!(matches!(
             scene.validate(),
             Err(VisualSceneError::EmptyConditionVariable { label }) if label == "Inspect selected entity"
+        ));
+    }
+
+    fn branching_dialogue_scene() -> VisualScene {
+        let mut scene = VisualScene::demo();
+        scene.dialogue_speaker = "Narrator".to_string();
+        scene.dialogue = "Legacy fallback".to_string();
+        scene.dialogue_lines = vec![
+            VisualDialogueLine {
+                speaker: "Guide".to_string(),
+                text: "Choose a route.".to_string(),
+                portrait: Some("guide_neutral".to_string()),
+                metadata: vec![("node".to_string(), "start".to_string())],
+            },
+            VisualDialogueLine {
+                speaker: "Guide".to_string(),
+                text: "Workspace branch selected.".to_string(),
+                portrait: Some("guide_work".to_string()),
+                metadata: vec![("node".to_string(), "workspace".to_string())],
+            },
+            VisualDialogueLine {
+                speaker: "Guide".to_string(),
+                text: "Memory branch selected.".to_string(),
+                portrait: Some("guide_memory".to_string()),
+                metadata: vec![("node".to_string(), "memory".to_string())],
+            },
+        ];
+        scene.choices = vec![
+            SceneAction {
+                label: "Choose workspace".to_string(),
+                kind: SceneActionKind::AdvanceDialogue { target: 1 },
+                conditions: vec![VisualCondition {
+                    variable: "active_track".to_string(),
+                    equals: VisualStateValue::Text("visual-state".to_string()),
+                }],
+            },
+            SceneAction {
+                label: "Choose memory".to_string(),
+                kind: SceneActionKind::AdvanceDialogue { target: 2 },
+                conditions: vec![VisualCondition {
+                    variable: "active_track".to_string(),
+                    equals: VisualStateValue::Text("memory".to_string()),
+                }],
+            },
+        ];
+        scene
+    }
+
+    #[test]
+    fn scene_rejects_empty_dialogue_line_speaker() {
+        let mut scene = branching_dialogue_scene();
+        scene.dialogue_lines[0].speaker = " ".to_string();
+
+        assert!(matches!(
+            scene.validate(),
+            Err(VisualSceneError::EmptyDialogueSpeaker { index }) if index == 0
+        ));
+    }
+
+    #[test]
+    fn scene_rejects_empty_dialogue_line_text() {
+        let mut scene = branching_dialogue_scene();
+        scene.dialogue_lines[1].text = " ".to_string();
+
+        assert!(matches!(
+            scene.validate(),
+            Err(VisualSceneError::EmptyDialogueText { index }) if index == 1
+        ));
+    }
+
+    #[test]
+    fn scene_rejects_dialogue_choice_target_out_of_bounds() {
+        let mut scene = branching_dialogue_scene();
+        scene.choices[0].kind = SceneActionKind::AdvanceDialogue { target: 99 };
+
+        assert!(matches!(
+            scene.validate(),
+            Err(VisualSceneError::DialogueTargetOutOfBounds { label, target })
+                if label == "Choose workspace" && target == 99
         ));
     }
 
@@ -2138,6 +2338,69 @@ mod tests {
         let frame = runtime.render_text_frame(120, 40);
 
         assert!(frame.contains("> Inspect selected entity [locked]"));
+    }
+
+    #[test]
+    fn dialogue_lines_override_legacy_dialogue_in_snapshot() {
+        let runtime = SceneRuntime::new(branching_dialogue_scene()).unwrap();
+        let snapshot = runtime.render_snapshot();
+
+        assert_eq!(snapshot.dialogue_speaker, "Guide");
+        assert_eq!(snapshot.dialogue, "Choose a route.");
+        assert_eq!(snapshot.dialogue_index, Some(0));
+        assert_eq!(snapshot.dialogue_history.len(), 1);
+        assert_eq!(snapshot.dialogue_history[0].metadata[0].1, "start");
+    }
+
+    #[test]
+    fn advance_dialogue_choice_updates_runtime_history() {
+        let mut runtime = SceneRuntime::new(branching_dialogue_scene()).unwrap();
+
+        runtime.activate_choice();
+        let snapshot = runtime.render_snapshot();
+
+        assert_eq!(snapshot.dialogue_index, Some(1));
+        assert_eq!(snapshot.dialogue, "Workspace branch selected.");
+        assert_eq!(snapshot.dialogue_history.len(), 2);
+        assert_eq!(snapshot.status, "Dialogue advanced: Guide");
+    }
+
+    #[test]
+    fn guarded_branching_choice_blocks_unavailable_dialogue_path() {
+        let mut runtime = SceneRuntime::new(branching_dialogue_scene()).unwrap();
+        runtime.select_next_choice();
+
+        runtime.activate_choice();
+        let snapshot = runtime.render_snapshot();
+
+        assert_eq!(snapshot.dialogue_index, Some(0));
+        assert_eq!(
+            snapshot.status,
+            "Choice unavailable: requires active_track=memory"
+        );
+        assert_eq!(snapshot.dialogue_history.len(), 1);
+    }
+
+    #[test]
+    fn dialogue_runtime_state_is_visible_in_debugger() {
+        let mut runtime = SceneRuntime::new(branching_dialogue_scene()).unwrap();
+        runtime.activate_choice();
+        let report = runtime.debug_report();
+
+        assert_eq!(report.dialogue_index, Some(1));
+        assert_eq!(report.dialogue_line_count, 3);
+        assert_eq!(report.dialogue_history.len(), 2);
+        assert_eq!(
+            report.selected_choice_kind.as_deref(),
+            Some("AdvanceDialogue")
+        );
+        assert_eq!(report.selected_choice_detail.as_deref(), Some("target=1"));
+
+        runtime.toggle_debugger();
+        let frame = runtime.render_text_frame(120, 40);
+        assert!(frame.contains("Active line: 2 of 3"));
+        assert!(frame.contains("History entries: 2"));
+        assert!(frame.contains("Choice kind: AdvanceDialogue"));
     }
 
     #[test]

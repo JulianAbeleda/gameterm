@@ -112,6 +112,8 @@ mod tests {
             ],
             dialogue_speaker: String::new(),
             dialogue: String::new(),
+            dialogue_index: None,
+            dialogue_history: Vec::new(),
             status: String::new(),
             choices: Vec::new(),
         }
