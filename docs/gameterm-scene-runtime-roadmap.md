@@ -67,7 +67,7 @@ Current status:
   contexts.
 - [x] Add typed runtime variables for mode/story/RPG state.
 - [x] Add guarded choice conditions backed by typed runtime variables.
-- [ ] Add mode lifecycle hooks for enter, update/poll, and exit behavior.
+- [x] Add mode lifecycle hooks for enter, update/poll, and exit behavior.
 - [ ] Add per-mode input/action maps and guarded transitions.
 
 ## Default Scene Reload
@@ -275,9 +275,12 @@ behavior" from "different scene file."
 
 Add explicit behavior boundaries:
 
-1. Enter actions run when a mode becomes active.
-2. Update/poll actions run while the mode is active.
-3. Exit actions run before leaving the mode.
+1. Enter actions run when a mode becomes active. Implemented first as
+   declarative `enter_status` hooks.
+2. Update/poll actions run while the mode is active. Implemented first as
+   declarative `update_status` hooks.
+3. Exit actions run before leaving the mode. Implemented first as declarative
+   `exit_status` hooks.
 4. Failure during enter or update should transition to a visible error state or
    report a mode error without closing Scene Mode.
 

@@ -197,6 +197,24 @@ pub struct VisualModeDescriptor {
     pub allowed_actions: Vec<String>,
     #[serde(default)]
     pub default_transition: Option<String>,
+    #[serde(default, skip_serializing_if = "VisualModeLifecycle::is_empty")]
+    pub lifecycle: VisualModeLifecycle,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VisualModeLifecycle {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enter_status: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub update_status: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit_status: Option<String>,
+}
+
+impl VisualModeLifecycle {
+    pub fn is_empty(&self) -> bool {
+        self.enter_status.is_none() && self.update_status.is_none() && self.exit_status.is_none()
+    }
 }
 
 impl Default for VisualModeDescriptor {
@@ -329,6 +347,7 @@ pub struct VisualSceneDebugReport {
     pub active_mode_scene_profile: Option<String>,
     pub active_mode_allowed_actions: Vec<String>,
     pub active_mode_default_transition: Option<String>,
+    pub active_mode_lifecycle: VisualModeLifecycle,
     pub selected_entity_mode: Option<String>,
     pub variables: Vec<VisualStateEntry>,
     pub rpg: VisualRpgState,
@@ -424,6 +443,7 @@ fn default_scene_mode() -> VisualModeDescriptor {
             "Navigate".to_string(),
         ],
         default_transition: None,
+        lifecycle: VisualModeLifecycle::default(),
     }
 }
 
@@ -659,6 +679,8 @@ pub enum VisualSceneError {
     EmptyModeLabel,
     #[error("scene mode allowed action must be non-empty")]
     EmptyModeAllowedAction,
+    #[error("scene mode lifecycle status must be non-empty when provided")]
+    EmptyModeLifecycleStatus,
     #[error("scene variable key must be non-empty")]
     EmptyVariableKey,
     #[error("duplicate scene variable key `{0}`")]
@@ -982,6 +1004,27 @@ impl VisualScene {
         {
             return Err(VisualSceneError::EmptyModeAllowedAction);
         }
+        if self
+            .mode
+            .lifecycle
+            .enter_status
+            .as_ref()
+            .is_some_and(|status| status.trim().is_empty())
+            || self
+                .mode
+                .lifecycle
+                .update_status
+                .as_ref()
+                .is_some_and(|status| status.trim().is_empty())
+            || self
+                .mode
+                .lifecycle
+                .exit_status
+                .as_ref()
+                .is_some_and(|status| status.trim().is_empty())
+        {
+            return Err(VisualSceneError::EmptyModeLifecycleStatus);
+        }
         validate_state_entries(&self.variables).map_err(|err| match err {
             VisualStateEntryError::EmptyKey => VisualSceneError::EmptyVariableKey,
             VisualStateEntryError::DuplicateKey(key) => VisualSceneError::DuplicateVariableKey(key),
@@ -1062,6 +1105,7 @@ impl VisualScene {
                     "Navigate".to_string(),
                 ],
                 default_transition: None,
+                lifecycle: VisualModeLifecycle::default(),
             },
             variables: vec![
                 VisualStateEntry {
@@ -1223,7 +1267,7 @@ impl SceneRuntime {
     ) -> Result<Self, VisualSceneError> {
         scene.validate()?;
         let dialogue_history = initial_dialogue_history(&scene, 0);
-        Ok(Self {
+        let mut runtime = Self {
             scene,
             scene_source,
             action_base_dir: action_base_dir.into(),
@@ -1237,7 +1281,9 @@ impl SceneRuntime {
             pending_action: None,
             last_patch_transport: None,
             last_patch_source_pane_id: None,
-        })
+        };
+        runtime.run_mode_enter_hooks();
+        Ok(runtime)
     }
 
     pub fn generation(&self) -> u64 {
@@ -1350,6 +1396,9 @@ impl SceneRuntime {
         } else if self.selected_choice >= self.scene.choices.len() {
             self.selected_choice = self.scene.choices.len() - 1;
         }
+        if let Some(status) = &self.scene.mode.lifecycle.enter_status {
+            self.status = status.clone();
+        }
         self.bump_generation();
         Ok(())
     }
@@ -1360,6 +1409,27 @@ impl SceneRuntime {
             VisualView::TileDebugger => VisualView::Scene,
         };
         self.bump_generation();
+    }
+
+    pub fn run_mode_enter_hooks(&mut self) {
+        if let Some(status) = &self.scene.mode.lifecycle.enter_status {
+            self.status = status.clone();
+            self.bump_generation();
+        }
+    }
+
+    pub fn run_mode_update_hooks(&mut self) {
+        if let Some(status) = &self.scene.mode.lifecycle.update_status {
+            self.status = status.clone();
+            self.bump_generation();
+        }
+    }
+
+    pub fn run_mode_exit_hooks(&mut self) {
+        if let Some(status) = &self.scene.mode.lifecycle.exit_status {
+            self.status = status.clone();
+            self.bump_generation();
+        }
     }
 
     pub fn select_next_entity(&mut self) {
@@ -1701,6 +1771,7 @@ impl SceneRuntime {
             active_mode_scene_profile: self.scene.mode.scene_profile.clone(),
             active_mode_allowed_actions: self.scene.mode.allowed_actions.clone(),
             active_mode_default_transition: self.scene.mode.default_transition.clone(),
+            active_mode_lifecycle: self.scene.mode.lifecycle.clone(),
             selected_entity_mode: selected_entity.and_then(entity_mode),
             variables: self.scene.variables.clone(),
             rpg: self.scene.rpg.clone(),
@@ -1910,6 +1981,19 @@ impl SceneRuntime {
         }
         if let Some(transition) = &report.active_mode_default_transition {
             out.push_str(&format!("  Default transition: {transition}\r\n"));
+        }
+        if !report.active_mode_lifecycle.is_empty() {
+            out.push_str("  Lifecycle:");
+            if report.active_mode_lifecycle.enter_status.is_some() {
+                out.push_str(" enter");
+            }
+            if report.active_mode_lifecycle.update_status.is_some() {
+                out.push_str(" update");
+            }
+            if report.active_mode_lifecycle.exit_status.is_some() {
+                out.push_str(" exit");
+            }
+            out.push_str("\r\n");
         }
         if let Some(mode) = &report.selected_entity_mode {
             out.push_str(&format!("  Selected entity mode: {mode}\r\n"));
@@ -2356,6 +2440,50 @@ mod tests {
             scene.validate(),
             Err(VisualSceneError::EmptyModeAllowedAction)
         ));
+    }
+
+    #[test]
+    fn scene_rejects_empty_mode_lifecycle_status() {
+        let mut scene = VisualScene::demo();
+        scene.mode.lifecycle.update_status = Some(" ".to_string());
+
+        assert_eq!(
+            scene.validate(),
+            Err(VisualSceneError::EmptyModeLifecycleStatus)
+        );
+    }
+
+    #[test]
+    fn mode_lifecycle_hooks_update_status_and_generation() {
+        let mut scene = VisualScene::demo();
+        scene.mode.lifecycle = VisualModeLifecycle {
+            enter_status: Some("Entered conversation".to_string()),
+            update_status: Some("Conversation update".to_string()),
+            exit_status: Some("Exited conversation".to_string()),
+        };
+        let mut runtime = SceneRuntime::new(scene).unwrap();
+
+        assert_eq!(runtime.render_snapshot().status, "Entered conversation");
+        let entered_generation = runtime.generation();
+
+        runtime.run_mode_update_hooks();
+        assert!(runtime.generation() > entered_generation);
+        assert_eq!(runtime.render_snapshot().status, "Conversation update");
+
+        runtime.run_mode_exit_hooks();
+        assert_eq!(runtime.render_snapshot().status, "Exited conversation");
+        assert_eq!(
+            runtime
+                .debug_report()
+                .active_mode_lifecycle
+                .update_status
+                .as_deref(),
+            Some("Conversation update")
+        );
+
+        runtime.toggle_debugger();
+        let frame = runtime.render_text_frame(120, 40);
+        assert!(frame.contains("Lifecycle: enter update exit"));
     }
 
     #[test]
