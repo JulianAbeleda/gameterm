@@ -76,6 +76,8 @@ impl RunCommandTarget {
 pub struct SceneAction {
     pub label: String,
     pub kind: SceneActionKind,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub conditions: Vec<VisualCondition>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -99,6 +101,12 @@ impl VisualStateValue {
 pub struct VisualStateEntry {
     pub key: String,
     pub value: VisualStateValue,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VisualCondition {
+    pub variable: String,
+    pub equals: VisualStateValue,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -256,6 +264,8 @@ pub struct VisualSceneDebugReport {
     pub selected_choice_label: Option<String>,
     pub selected_choice_kind: Option<String>,
     pub selected_choice_detail: Option<String>,
+    pub selected_choice_enabled: bool,
+    pub selected_choice_guard_detail: Option<String>,
     pub pending_action_kind: Option<String>,
     pub pending_action_detail: Option<String>,
     pub last_patch_transport: Option<String>,
@@ -461,6 +471,8 @@ pub enum VisualSceneError {
     EmptyVariableKey,
     #[error("duplicate scene variable key `{0}`")]
     DuplicateVariableKey(String),
+    #[error("choice action `{label}` has an empty condition variable")]
+    EmptyConditionVariable { label: String },
     #[error("scene json error: {0}")]
     Json(String),
     #[error("scene file error for `{path}`: {message}")]
@@ -699,6 +711,13 @@ impl VisualScene {
         }
 
         for choice in &self.choices {
+            for condition in &choice.conditions {
+                if condition.variable.trim().is_empty() {
+                    return Err(VisualSceneError::EmptyConditionVariable {
+                        label: choice.label.clone(),
+                    });
+                }
+            }
             if let SceneActionKind::RunCommand { argv, cwd, .. } = &choice.kind {
                 if argv.is_empty() || argv.iter().any(|arg| arg.trim().is_empty()) {
                     return Err(VisualSceneError::EmptyRunCommand {
@@ -793,12 +812,14 @@ impl VisualScene {
                 SceneAction {
                     label: "Inspect selected entity".to_string(),
                     kind: SceneActionKind::Inspect,
+                    conditions: vec![],
                 },
                 SceneAction {
                     label: "Open MIGRATION.md".to_string(),
                     kind: SceneActionKind::OpenFile {
                         path: "MIGRATION.md".to_string(),
                     },
+                    conditions: vec![],
                 },
                 SceneAction {
                     label: "Run cargo check -p gameterm-visual".to_string(),
@@ -812,6 +833,7 @@ impl VisualScene {
                         cwd: None,
                         target: RunCommandTarget::Tab,
                     },
+                    conditions: vec![],
                 },
             ],
         }
@@ -988,6 +1010,15 @@ impl SceneRuntime {
     pub fn activate_choice(&mut self) {
         self.pending_action = None;
         if let Some(choice) = self.scene.choices.get(self.selected_choice) {
+            if !conditions_match(&choice.conditions, &self.scene.variables) {
+                self.status = format!(
+                    "Choice unavailable: {}",
+                    condition_guard_detail(&choice.conditions)
+                        .unwrap_or_else(|| "guard condition not met".to_string())
+                );
+                self.bump_generation();
+                return;
+            }
             let mut pending_action = None;
             self.status = match &choice.kind {
                 SceneActionKind::Inspect => self
@@ -1246,6 +1277,9 @@ impl SceneRuntime {
     pub fn debug_report(&self) -> VisualSceneDebugReport {
         let selected_entity = self.selected_entity();
         let selected_choice = self.scene.choices.get(self.selected_choice);
+        let selected_choice_enabled = selected_choice
+            .map(|choice| conditions_match(&choice.conditions, &self.scene.variables))
+            .unwrap_or(false);
         let pending_action = self.pending_action.as_ref();
         VisualSceneDebugReport {
             scene_path: self.scene_source.scene_path.clone(),
@@ -1281,6 +1315,9 @@ impl SceneRuntime {
             selected_choice_label: selected_choice.map(|choice| choice.label.clone()),
             selected_choice_kind: selected_choice.map(|choice| action_kind_name(&choice.kind)),
             selected_choice_detail: selected_choice.map(|choice| action_kind_detail(&choice.kind)),
+            selected_choice_enabled,
+            selected_choice_guard_detail: selected_choice
+                .and_then(|choice| condition_guard_detail(&choice.conditions)),
             pending_action_kind: pending_action.map(action_request_name),
             pending_action_detail: pending_action.map(action_request_detail),
             last_patch_transport: self.last_patch_transport.clone(),
@@ -1402,7 +1439,12 @@ impl SceneRuntime {
             } else {
                 " "
             };
-            out.push_str(&format!("{marker} {}\r\n", choice.label));
+            let guard = if conditions_match(&choice.conditions, &self.scene.variables) {
+                ""
+            } else {
+                " [locked]"
+            };
+            out.push_str(&format!("{marker} {}{}\r\n", choice.label, guard));
         }
         out.push_str(&format!("\r\nStatus: {}\r\n", self.status));
         truncate_to_screen(out, cols, rows)
@@ -1474,6 +1516,13 @@ impl SceneRuntime {
         }
         if let Some(detail) = &report.selected_choice_detail {
             out.push_str(&format!("  Choice detail: {detail}\r\n"));
+        }
+        out.push_str(&format!(
+            "  Choice enabled: {}\r\n",
+            report.selected_choice_enabled
+        ));
+        if let Some(detail) = &report.selected_choice_guard_detail {
+            out.push_str(&format!("  Choice guard: {detail}\r\n"));
         }
         match (&report.pending_action_kind, &report.pending_action_detail) {
             (Some(kind), Some(detail)) => {
@@ -1592,6 +1641,35 @@ fn action_request_detail(action: &VisualActionRequest) -> String {
         }
         VisualActionRequest::Navigate { target } => format!("target={target}"),
     }
+}
+
+fn conditions_match(conditions: &[VisualCondition], variables: &[VisualStateEntry]) -> bool {
+    conditions.iter().all(|condition| {
+        variables
+            .iter()
+            .find(|entry| entry.key == condition.variable)
+            .map(|entry| entry.value == condition.equals)
+            .unwrap_or(false)
+    })
+}
+
+fn condition_guard_detail(conditions: &[VisualCondition]) -> Option<String> {
+    if conditions.is_empty() {
+        return None;
+    }
+
+    Some(format!(
+        "requires {}",
+        conditions
+            .iter()
+            .map(|condition| format!(
+                "{}={}",
+                condition.variable,
+                condition.equals.as_debug_string()
+            ))
+            .collect::<Vec<_>>()
+            .join(", ")
+    ))
 }
 
 fn entity_mode(entity: &VisualEntity) -> Option<String> {
@@ -1829,6 +1907,20 @@ mod tests {
     }
 
     #[test]
+    fn scene_rejects_empty_choice_condition_variable() {
+        let mut scene = VisualScene::demo();
+        scene.choices[0].conditions = vec![VisualCondition {
+            variable: " ".to_string(),
+            equals: VisualStateValue::Bool(true),
+        }];
+
+        assert!(matches!(
+            scene.validate(),
+            Err(VisualSceneError::EmptyConditionVariable { label }) if label == "Inspect selected entity"
+        ));
+    }
+
+    #[test]
     fn scene_fixture_default_loads_runtime_actions() {
         let scene = VisualScene::load_from_path(scene_fixture_path("default.json")).unwrap();
         let runtime = SceneRuntime::new(scene).unwrap();
@@ -1974,6 +2066,81 @@ mod tests {
     }
 
     #[test]
+    fn guarded_choice_blocks_action_when_variable_mismatches() {
+        let mut scene = VisualScene::demo();
+        scene.choices[0].conditions = vec![VisualCondition {
+            variable: "conversation_unlocked".to_string(),
+            equals: VisualStateValue::Bool(false),
+        }];
+        let mut runtime = SceneRuntime::new(scene).unwrap();
+        let initial_generation = runtime.generation();
+
+        runtime.activate_choice();
+        let snapshot = runtime.render_snapshot();
+
+        assert!(runtime.generation() > initial_generation);
+        assert_eq!(
+            snapshot.status,
+            "Choice unavailable: requires conversation_unlocked=false"
+        );
+        assert_eq!(runtime.take_pending_action(), None);
+    }
+
+    #[test]
+    fn guarded_choice_allows_action_when_variable_matches() {
+        let mut scene = VisualScene::demo();
+        scene.choices[0].conditions = vec![VisualCondition {
+            variable: "conversation_unlocked".to_string(),
+            equals: VisualStateValue::Bool(true),
+        }];
+        let mut runtime = SceneRuntime::new(scene).unwrap();
+
+        runtime.activate_choice();
+
+        assert_eq!(
+            runtime.render_snapshot().status,
+            "Inspecting GameTerm (project-gameterm)"
+        );
+    }
+
+    #[test]
+    fn guarded_choice_state_is_visible_in_debugger() {
+        let mut scene = VisualScene::demo();
+        scene.choices[0].conditions = vec![VisualCondition {
+            variable: "workspace_level".to_string(),
+            equals: VisualStateValue::Number(2),
+        }];
+        let mut runtime = SceneRuntime::new(scene).unwrap();
+
+        let report = runtime.debug_report();
+
+        assert!(!report.selected_choice_enabled);
+        assert_eq!(
+            report.selected_choice_guard_detail.as_deref(),
+            Some("requires workspace_level=2")
+        );
+
+        runtime.toggle_debugger();
+        let frame = runtime.render_text_frame(100, 40);
+        assert!(frame.contains("Choice enabled: false"));
+        assert!(frame.contains("Choice guard: requires workspace_level=2"));
+    }
+
+    #[test]
+    fn guarded_choice_renders_locked_marker() {
+        let mut scene = VisualScene::demo();
+        scene.choices[0].conditions = vec![VisualCondition {
+            variable: "active_track".to_string(),
+            equals: VisualStateValue::Text("memory".to_string()),
+        }];
+        let runtime = SceneRuntime::new(scene).unwrap();
+
+        let frame = runtime.render_text_frame(120, 40);
+
+        assert!(frame.contains("> Inspect selected entity [locked]"));
+    }
+
+    #[test]
     fn runtime_snapshot_includes_scene_source_status() {
         let source = VisualSceneSource::new("bundled default", VisualSceneLoadStatus::Bundled, 1);
         let runtime = SceneRuntime::new_with_source(VisualScene::demo(), source.clone()).unwrap();
@@ -1994,6 +2161,7 @@ mod tests {
             kind: SceneActionKind::OpenFile {
                 path: "docs/scene.md".to_string(),
             },
+            conditions: vec![],
         }];
         let mut runtime = SceneRuntime::new_with_source_and_action_base_dir(
             scene,
@@ -2025,6 +2193,7 @@ mod tests {
             kind: SceneActionKind::OpenFile {
                 path: "missing.md".to_string(),
             },
+            conditions: vec![],
         }];
         let mut runtime = SceneRuntime::new_with_source_and_action_base_dir(
             scene,
@@ -2050,6 +2219,7 @@ mod tests {
             kind: SceneActionKind::OpenFile {
                 path: ".".to_string(),
             },
+            conditions: vec![],
         }];
         let mut runtime = SceneRuntime::new_with_source_and_action_base_dir(
             scene,
@@ -2090,6 +2260,7 @@ mod tests {
             kind: SceneActionKind::Navigate {
                 target: "memory.json".to_string(),
             },
+            conditions: vec![],
         }];
         let mut runtime = SceneRuntime::new(scene).unwrap();
 
@@ -2115,6 +2286,7 @@ mod tests {
                 cwd: Some("/tmp".to_string()),
                 target: RunCommandTarget::SplitRight,
             },
+            conditions: vec![],
         }];
         let mut runtime = SceneRuntime::new(scene).unwrap();
 
@@ -2142,6 +2314,7 @@ mod tests {
                 cwd: None,
                 target: RunCommandTarget::Tab,
             },
+            conditions: vec![],
         }];
 
         assert!(matches!(

@@ -66,6 +66,7 @@ Current status:
 - [x] Add mode descriptors for conversation, memory, agent, and workspace
   contexts.
 - [x] Add typed runtime variables for mode/story/RPG state.
+- [x] Add guarded choice conditions backed by typed runtime variables.
 - [ ] Add mode lifecycle hooks for enter, update/poll, and exit behavior.
 - [ ] Add per-mode input/action maps and guarded transitions.
 

@@ -970,6 +970,7 @@ mod tests {
             kind: gameterm_visual::SceneActionKind::Navigate {
                 target: "memory.json".to_string(),
             },
+            conditions: vec![],
         }];
         let mut target_scene = VisualScene::demo();
         target_scene.title = "Memory Scene".to_string();
