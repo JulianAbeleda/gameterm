@@ -62,8 +62,8 @@ Current status:
 - [ ] Add explicit story-state save/load or export/import.
 - [ ] Prototype lightweight RPG state such as inventory, stats, quests, and
   relationships.
-- [ ] Define Scene Mode computational modes.
-- [ ] Add mode descriptors for conversation, memory, agent, and workspace
+- [x] Define Scene Mode computational modes.
+- [x] Add mode descriptors for conversation, memory, agent, and workspace
   contexts.
 - [ ] Add mode lifecycle hooks for enter, update/poll, and exit behavior.
 - [ ] Add per-mode input/action maps and guarded transitions.

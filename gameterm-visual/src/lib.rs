@@ -79,11 +79,33 @@ pub struct SceneAction {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VisualModeDescriptor {
+    pub mode_id: String,
+    pub label: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub scene_profile: Option<String>,
+    #[serde(default)]
+    pub allowed_actions: Vec<String>,
+    #[serde(default)]
+    pub default_transition: Option<String>,
+}
+
+impl Default for VisualModeDescriptor {
+    fn default() -> Self {
+        default_scene_mode()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VisualScene {
     pub title: String,
     pub background: String,
     pub width: usize,
     pub height: usize,
+    #[serde(default, skip_serializing_if = "is_default_scene_mode")]
+    pub mode: VisualModeDescriptor,
     pub entities: Vec<VisualEntity>,
     pub dialogue_speaker: String,
     pub dialogue: String,
@@ -161,6 +183,8 @@ pub struct VisualRenderSnapshot {
     pub generation: u64,
     pub view: VisualView,
     pub scene_source: VisualSceneSource,
+    pub active_mode: VisualModeDescriptor,
+    pub selected_entity_mode: Option<String>,
     pub title: String,
     pub background: String,
     pub width: usize,
@@ -182,6 +206,13 @@ pub struct VisualSceneDebugReport {
     pub reload_count: u64,
     pub last_error: Option<String>,
     pub action_base_dir: String,
+    pub active_mode_id: String,
+    pub active_mode_label: String,
+    pub active_mode_description: String,
+    pub active_mode_scene_profile: Option<String>,
+    pub active_mode_allowed_actions: Vec<String>,
+    pub active_mode_default_transition: Option<String>,
+    pub selected_entity_mode: Option<String>,
     pub title: String,
     pub background: String,
     pub width: usize,
@@ -239,6 +270,26 @@ fn default_true() -> bool {
 
 fn is_true(value: &bool) -> bool {
     *value
+}
+
+fn default_scene_mode() -> VisualModeDescriptor {
+    VisualModeDescriptor {
+        mode_id: "workspace".to_string(),
+        label: "Workspace".to_string(),
+        description: "Default Scene Mode workspace context".to_string(),
+        scene_profile: Some("scene".to_string()),
+        allowed_actions: vec![
+            "Inspect".to_string(),
+            "OpenFile".to_string(),
+            "RunCommand".to_string(),
+            "Navigate".to_string(),
+        ],
+        default_transition: None,
+    }
+}
+
+fn is_default_scene_mode(mode: &VisualModeDescriptor) -> bool {
+    mode == &default_scene_mode()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -352,6 +403,12 @@ pub enum VisualSceneError {
     EmptyRunCommand { label: String },
     #[error("RunCommand action `{label}` has an empty cwd")]
     EmptyRunCommandCwd { label: String },
+    #[error("scene mode id must be non-empty")]
+    EmptyModeId,
+    #[error("scene mode label must be non-empty")]
+    EmptyModeLabel,
+    #[error("scene mode allowed action must be non-empty")]
+    EmptyModeAllowedAction,
     #[error("scene json error: {0}")]
     Json(String),
     #[error("scene file error for `{path}`: {message}")]
@@ -546,6 +603,20 @@ impl VisualScene {
         if self.width == 0 || self.height == 0 {
             return Err(VisualSceneError::EmptyScene);
         }
+        if self.mode.mode_id.trim().is_empty() {
+            return Err(VisualSceneError::EmptyModeId);
+        }
+        if self.mode.label.trim().is_empty() {
+            return Err(VisualSceneError::EmptyModeLabel);
+        }
+        if self
+            .mode
+            .allowed_actions
+            .iter()
+            .any(|action| action.trim().is_empty())
+        {
+            return Err(VisualSceneError::EmptyModeAllowedAction);
+        }
 
         let mut ids = HashSet::new();
         for entity in &self.entities {
@@ -585,6 +656,19 @@ impl VisualScene {
             background: "workspace-map".to_string(),
             width: 18,
             height: 9,
+            mode: VisualModeDescriptor {
+                mode_id: "workspace".to_string(),
+                label: "Workspace".to_string(),
+                description: "Project and process-oriented Scene Mode workspace".to_string(),
+                scene_profile: Some("scene".to_string()),
+                allowed_actions: vec![
+                    "Inspect".to_string(),
+                    "OpenFile".to_string(),
+                    "RunCommand".to_string(),
+                    "Navigate".to_string(),
+                ],
+                default_transition: None,
+            },
             entities: vec![
                 VisualEntity {
                     id: "project-gameterm".to_string(),
@@ -1036,10 +1120,13 @@ impl SceneRuntime {
 
     pub fn render_snapshot(&self) -> VisualRenderSnapshot {
         let selected_entity_id = self.selected_entity().map(|entity| entity.id.clone());
+        let selected_entity_mode = self.selected_entity().and_then(entity_mode);
         VisualRenderSnapshot {
             generation: self.generation,
             view: self.view,
             scene_source: self.scene_source.clone(),
+            active_mode: self.scene.mode.clone(),
+            selected_entity_mode,
             title: self.scene.title.clone(),
             background: self.scene.background.clone(),
             width: self.scene.width,
@@ -1070,6 +1157,13 @@ impl SceneRuntime {
             reload_count: self.scene_source.reload_count,
             last_error: self.scene_source.last_error.clone(),
             action_base_dir: self.action_base_dir.display().to_string(),
+            active_mode_id: self.scene.mode.mode_id.clone(),
+            active_mode_label: self.scene.mode.label.clone(),
+            active_mode_description: self.scene.mode.description.clone(),
+            active_mode_scene_profile: self.scene.mode.scene_profile.clone(),
+            active_mode_allowed_actions: self.scene.mode.allowed_actions.clone(),
+            active_mode_default_transition: self.scene.mode.default_transition.clone(),
+            selected_entity_mode: selected_entity.and_then(entity_mode),
             title: self.scene.title.clone(),
             background: self.scene.background.clone(),
             width: self.scene.width,
@@ -1182,6 +1276,10 @@ impl SceneRuntime {
             ));
         }
         out.push_str(&format!(
+            "Mode: {} ({})\r\n",
+            self.scene.mode.label, self.scene.mode.mode_id
+        ));
+        out.push_str(&format!(
             "{}: {}\r\n\r\n",
             self.scene.dialogue_speaker, self.scene.dialogue
         ));
@@ -1214,6 +1312,32 @@ impl SceneRuntime {
         ));
         if let Some(error) = &report.last_error {
             out.push_str(&format!("  Error: {error}\r\n"));
+        }
+        out.push_str("\r\nMode:\r\n");
+        out.push_str(&format!(
+            "  Active: {} ({})\r\n",
+            report.active_mode_label, report.active_mode_id
+        ));
+        if !report.active_mode_description.is_empty() {
+            out.push_str(&format!(
+                "  Description: {}\r\n",
+                report.active_mode_description
+            ));
+        }
+        if let Some(profile) = &report.active_mode_scene_profile {
+            out.push_str(&format!("  Scene profile: {profile}\r\n"));
+        }
+        if !report.active_mode_allowed_actions.is_empty() {
+            out.push_str(&format!(
+                "  Allowed actions: {}\r\n",
+                report.active_mode_allowed_actions.join(", ")
+            ));
+        }
+        if let Some(transition) = &report.active_mode_default_transition {
+            out.push_str(&format!("  Default transition: {transition}\r\n"));
+        }
+        if let Some(mode) = &report.selected_entity_mode {
+            out.push_str(&format!("  Selected entity mode: {mode}\r\n"));
         }
         out.push_str("\r\nAction:\r\n");
         out.push_str(&format!("  Status: {}\r\n", report.status));
@@ -1349,6 +1473,14 @@ fn action_request_detail(action: &VisualActionRequest) -> String {
     }
 }
 
+fn entity_mode(entity: &VisualEntity) -> Option<String> {
+    entity
+        .metadata
+        .iter()
+        .find(|(key, value)| key == "mode" && !value.trim().is_empty())
+        .map(|(_, value)| value.clone())
+}
+
 impl VisualMode for SceneRuntime {
     fn generation(&self) -> u64 {
         SceneRuntime::generation(self)
@@ -1420,6 +1552,8 @@ mod tests {
             generation: 7,
             view: VisualView::Scene,
             scene_source: VisualSceneSource::new("fixture", VisualSceneLoadStatus::Loaded, 1),
+            active_mode: default_scene_mode(),
+            selected_entity_mode: None,
             title: "Filter Fixture".to_string(),
             background: "floor".to_string(),
             width: 4,
@@ -1493,12 +1627,65 @@ mod tests {
     }
 
     #[test]
+    fn scene_without_mode_uses_default_workspace_mode() {
+        let scene = VisualScene::from_json(
+            r#"{
+                "title": "Legacy Scene",
+                "background": "floor",
+                "width": 2,
+                "height": 2,
+                "entities": [],
+                "dialogue_speaker": "Narrator",
+                "dialogue": "No explicit mode.",
+                "choices": []
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(scene.mode, default_scene_mode());
+    }
+
+    #[test]
+    fn scene_rejects_empty_mode_id() {
+        let mut scene = VisualScene::demo();
+        scene.mode.mode_id = " ".to_string();
+
+        assert!(matches!(
+            scene.validate(),
+            Err(VisualSceneError::EmptyModeId)
+        ));
+    }
+
+    #[test]
+    fn scene_rejects_empty_mode_label() {
+        let mut scene = VisualScene::demo();
+        scene.mode.label = " ".to_string();
+
+        assert!(matches!(
+            scene.validate(),
+            Err(VisualSceneError::EmptyModeLabel)
+        ));
+    }
+
+    #[test]
+    fn scene_rejects_empty_mode_allowed_action() {
+        let mut scene = VisualScene::demo();
+        scene.mode.allowed_actions.push(" ".to_string());
+
+        assert!(matches!(
+            scene.validate(),
+            Err(VisualSceneError::EmptyModeAllowedAction)
+        ));
+    }
+
+    #[test]
     fn scene_fixture_default_loads_runtime_actions() {
         let scene = VisualScene::load_from_path(scene_fixture_path("default.json")).unwrap();
         let runtime = SceneRuntime::new(scene).unwrap();
         let snapshot = runtime.render_snapshot();
 
         assert_eq!(snapshot.title, "Scene Harness Default");
+        assert_eq!(snapshot.active_mode.mode_id, "workspace");
         assert!(snapshot
             .choices
             .iter()
@@ -1959,6 +2146,7 @@ mod tests {
         assert!(frame.contains("Scene path: /tmp/default.json"));
         assert!(frame.contains("Load status: loaded"));
         assert!(frame.contains("Reload counter: 3"));
+        assert!(frame.contains("Active: Workspace (workspace)"));
         assert!(frame.contains("Status: Inspecting GameTerm"));
         assert!(frame.contains("Choice kind: Inspect"));
         assert!(frame.contains("Pending action: none"));
@@ -1978,6 +2166,17 @@ mod tests {
         assert_eq!(report.load_status, "loaded");
         assert_eq!(report.reload_count, 3);
         assert!(!report.action_base_dir.is_empty());
+        assert_eq!(report.active_mode_id, "workspace");
+        assert_eq!(report.active_mode_label, "Workspace");
+        assert_eq!(
+            report.active_mode_description,
+            "Project and process-oriented Scene Mode workspace"
+        );
+        assert_eq!(report.active_mode_scene_profile.as_deref(), Some("scene"));
+        assert!(report
+            .active_mode_allowed_actions
+            .contains(&"Inspect".to_string()));
+        assert_eq!(report.active_mode_default_transition, None);
         assert_eq!(report.title, "GameTerm Scene Mode");
         assert_eq!(report.background, "workspace-map");
         assert_eq!(report.width, 18);
@@ -1985,6 +2184,7 @@ mod tests {
         assert_eq!(report.entity_count, 3);
         assert_eq!(report.choice_count, 3);
         assert_eq!(report.selected_entity_id.as_deref(), Some("task-render"));
+        assert_eq!(report.selected_entity_mode.as_deref(), None);
         assert_eq!(
             report.selected_entity_label.as_deref(),
             Some("Render Scene")

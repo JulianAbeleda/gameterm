@@ -43,8 +43,8 @@ fn clipped_columns(columns: Range<usize>, width: usize) -> Range<usize> {
 mod tests {
     use super::*;
     use crate::{
-        VisualPosition, VisualRenderEntity, VisualRenderLayer, VisualSceneLoadStatus,
-        VisualSceneSource, VisualView,
+        VisualModeDescriptor, VisualPosition, VisualRenderEntity, VisualRenderLayer,
+        VisualSceneLoadStatus, VisualSceneSource, VisualView,
     };
 
     fn snapshot_for_filtering() -> VisualRenderSnapshot {
@@ -52,6 +52,8 @@ mod tests {
             generation: 7,
             view: VisualView::Scene,
             scene_source: VisualSceneSource::new("test", VisualSceneLoadStatus::Loaded, 0),
+            active_mode: VisualModeDescriptor::default(),
+            selected_entity_mode: None,
             title: "Test".to_string(),
             background: "bg".to_string(),
             width: 4,
