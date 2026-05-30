@@ -51,12 +51,22 @@ Current status:
   the default active target.
 - [x] macOS smoke helper can launch fixtures and submit a mux patch before
   capture.
-- [ ] Run and archive a real live mux-submit smoke capture.
+- [x] Run and archive a real live mux-submit smoke capture.
 - [x] Add renderer helper tests for cache invalidation and image-disabled
   behavior.
 - [x] Expand patchable runtime state beyond entity flags/metadata/status.
 - [x] Make agent/process integrations emit Scene Mode patches directly.
 - [x] Add higher-level authoring UX for templates and guided scene creation.
+- [ ] Define the Scene Mode narrative/RPG layer.
+- [ ] Add dialogue and branching-choice runtime state.
+- [ ] Add explicit story-state save/load or export/import.
+- [ ] Prototype lightweight RPG state such as inventory, stats, quests, and
+  relationships.
+- [ ] Define Scene Mode computational modes.
+- [ ] Add mode descriptors for conversation, memory, agent, and workspace
+  contexts.
+- [ ] Add mode lifecycle hooks for enter, update/poll, and exit behavior.
+- [ ] Add per-mode input/action maps and guarded transitions.
 
 ## Default Scene Reload
 
@@ -223,12 +233,164 @@ Implemented `Navigate` behavior:
 4. Keep the current scene visible and report an action error if navigation
    fails.
 
+## Computational Modes
+
+Scene Mode should treat state as active behavior, not only as data shown on a
+different screen. A computational mode is a context that can change input,
+simulation, rendering, polling, available actions, and transition rules while
+the same terminal and mux runtime stays underneath it.
+
+Candidate GameTerm modes:
+
+- Conversation: chat input, LLM responses, dialogue history, context
+  inspection.
+- Memory: memory navigation, relationship exploration, recall/search.
+- Agent: planning, task execution, process monitoring, handoff, and patch
+  intake.
+- Workspace: files, projects, panes, processes, and command actions.
+
+The first implementation should be declarative. A mode descriptor should be
+data that the runtime can inspect, validate, render, and expose through the
+Tile Debugger before modes gain richer lifecycle behavior.
+
+### Phase 1: Mode Descriptors
+
+Add a small mode descriptor model:
+
+1. `mode_id`: stable id such as `conversation`, `memory`, `agent`, or
+   `workspace`.
+2. `label`: user-facing mode name.
+3. `description`: short authoring/debug description.
+4. `scene_profile`: optional render/layout profile for the mode.
+5. `allowed_actions`: the action kinds available in this mode.
+6. `default_transition`: optional fallback transition target.
+
+Scene Mode should show the active mode and selected entity mode in the Tile
+Debugger. This gives users and tests a way to distinguish "same scene, different
+behavior" from "different scene file."
+
+### Phase 2: Lifecycle Hooks
+
+Add explicit behavior boundaries:
+
+1. Enter actions run when a mode becomes active.
+2. Update/poll actions run while the mode is active.
+3. Exit actions run before leaving the mode.
+4. Failure during enter or update should transition to a visible error state or
+   report a mode error without closing Scene Mode.
+
+Hooks should start with safe, existing action types: scene patches, navigation,
+status updates, and process-wrapper integration. They should not introduce
+implicit shell execution.
+
+### Phase 3: Input And Transition Rules
+
+Add mode-specific controls:
+
+1. Per-mode choices and key/action maps.
+2. Guarded transitions based on flags, variables, selected entity, process
+   status, or story state.
+3. Explicit fallback/error transitions.
+4. Debug output for the last transition attempt, guard result, and target mode.
+
+This is the point where Conversation, Memory, Agent, and Workspace can feel like
+different computational realities rather than different pages.
+
+### Phase 4: Layered State Machines
+
+Large game-like systems often need multiple simultaneous state machines. After
+single active mode support is stable, support layered modes:
+
+1. Global mode: startup, workspace, paused/error.
+2. UI mode: scene, dialogue, debugger, command palette.
+3. Agent/process mode: idle, planning, running, blocked, complete.
+4. Selected entity mode: idle, focused, actionable, hidden.
+5. Story mode: dialogue, choice, transition, save/load.
+
+Layered state should be added only after the single-mode descriptor, lifecycle,
+and transition rules are covered by fixtures and focused tests.
+
+## Narrative/RPG Layer
+
+Scene Mode is already close to a visual-novel-style prototype because it has
+scene loading, dialogue text, choices, navigation, sprites, entity inspection,
+runtime patches, and mux/script transport. The next product track is to make
+that direction explicit without turning GameTerm into a separate game engine.
+
+The narrative/RPG layer should stay terminal-first:
+
+- story and RPG state remains visible through Scene Mode and the Tile Debugger;
+- actions are explicit choices, commands, patches, or scene transitions;
+- scripts and agents update runtime state through the existing patch transport;
+- persistence is explicit export/save behavior, not silent source-file mutation;
+- Ren'Py, Ink, Yarn, emulator tile debuggers, and RPG engines remain references,
+  not vendored runtimes.
+
+### Phase 1: Visual Novel Foundation
+
+Add a first-class dialogue model on top of the existing scene JSON shape:
+
+1. Represent dialogue as ordered lines with speaker, body text, optional
+   portrait/sprite id, and optional metadata.
+2. Add dialogue history so users can inspect previous lines in Scene Mode.
+3. Let choices advance dialogue, navigate scenes, or apply runtime flags.
+4. Add authoring templates for simple branching dialogue scenes.
+5. Cover templates and dialogue parsing in `ci/gameterm-scene-verify.sh --all`.
+
+This phase should prefer static JSON plus runtime patches. It should not add a
+general scripting language until the data model is proven.
+
+### Phase 2: Persistent Story State
+
+Add state that can survive scene navigation and GameTerm restarts:
+
+1. Add variables and flags with explicit types and predictable JSON
+   serialization.
+2. Add conditional choice visibility and conditional entity visibility.
+3. Add explicit save/load or export/import helpers for runtime state.
+4. Keep source scene files immutable unless the user runs an explicit authoring
+   or export command.
+5. Show active flags, variables, and save source in the Tile Debugger.
+
+### Phase 3: Lightweight RPG Systems
+
+Prototype RPG features as structured state before adding rules:
+
+1. Inventory: item ids, labels, counts, ownership, and metadata.
+2. Stats: named numeric or textual values attached to player, entities, or
+   parties.
+3. Quests: quest ids, stages, completion state, and journal text.
+4. Relationships: named relationship values between entities or agents.
+5. Action resolution: small deterministic operations that update the above
+   state through the patch runtime.
+
+Combat, equipment rules, leveling, and procedural maps should wait until the
+basic inventory/stat/quest model is useful and testable.
+
+### Phase 4: Engine Boundary
+
+After the narrative and RPG data model settles, decide whether it remains in
+`gameterm-visual` or moves into a dedicated GameTerm crate. The boundary should
+be based on real complexity: parsing/story-state/rules tests may justify a
+separate crate, while rendering and mux transport should stay integrated with
+the existing Scene Mode path.
+
 ## Open Questions
 
 - Should future scene files be able to specify a base directory for relative
   `OpenFile` paths?
 - Should `RunCommand` support additional split sizing or domain selection
   beyond the current `tab`, `split_right`, and `split_down` targets?
+- Should narrative state live in the existing scene JSON file, in a separate
+  runtime-state file, or both?
+- What minimum save/load format is enough before RPG inventory and quest state
+  are introduced?
+- Should dialogue history be patchable through mux, or only produced by local
+  Scene Mode choices?
+- Should computational modes live inside scene JSON, in a separate mode
+  registry, or both?
+- Which mode layer should own input when UI mode, agent mode, and story mode all
+  have active bindings?
 
 ## State Update Channel
 
