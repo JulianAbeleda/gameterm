@@ -199,6 +199,8 @@ pub struct VisualModeDescriptor {
     pub default_transition: Option<String>,
     #[serde(default, skip_serializing_if = "VisualModeLifecycle::is_empty")]
     pub lifecycle: VisualModeLifecycle,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub input_map: Vec<VisualInputBinding>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -215,6 +217,14 @@ impl VisualModeLifecycle {
     pub fn is_empty(&self) -> bool {
         self.enter_status.is_none() && self.update_status.is_none() && self.exit_status.is_none()
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VisualInputBinding {
+    pub input: String,
+    pub action: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub conditions: Vec<VisualCondition>,
 }
 
 impl Default for VisualModeDescriptor {
@@ -348,6 +358,7 @@ pub struct VisualSceneDebugReport {
     pub active_mode_allowed_actions: Vec<String>,
     pub active_mode_default_transition: Option<String>,
     pub active_mode_lifecycle: VisualModeLifecycle,
+    pub active_mode_input_map: Vec<VisualInputBinding>,
     pub selected_entity_mode: Option<String>,
     pub variables: Vec<VisualStateEntry>,
     pub rpg: VisualRpgState,
@@ -444,6 +455,7 @@ fn default_scene_mode() -> VisualModeDescriptor {
         ],
         default_transition: None,
         lifecycle: VisualModeLifecycle::default(),
+        input_map: Vec::new(),
     }
 }
 
@@ -633,6 +645,42 @@ pub enum VisualInput {
     Other,
 }
 
+impl VisualInput {
+    fn binding_key(self) -> &'static str {
+        match self {
+            Self::Close => "close",
+            Self::Reload => "reload",
+            Self::ToggleDebug => "toggle_debug",
+            Self::Activate => "activate",
+            Self::Next => "next",
+            Self::Previous => "previous",
+            Self::Other => "other",
+        }
+    }
+}
+
+fn is_supported_mode_input(input: &str) -> bool {
+    matches!(
+        input,
+        "close" | "reload" | "toggle_debug" | "activate" | "next" | "previous" | "other"
+    )
+}
+
+fn is_supported_mode_input_action(action: &str) -> bool {
+    matches!(
+        action,
+        "close"
+            | "reload"
+            | "toggle_debug"
+            | "activate_choice"
+            | "select_next"
+            | "select_previous"
+            | "run_update_hooks"
+            | "run_exit_hooks"
+            | "ignore"
+    )
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VisualModeOutcome {
     Continue,
@@ -681,6 +729,16 @@ pub enum VisualSceneError {
     EmptyModeAllowedAction,
     #[error("scene mode lifecycle status must be non-empty when provided")]
     EmptyModeLifecycleStatus,
+    #[error("scene mode input binding input must be non-empty")]
+    EmptyModeInputBindingInput,
+    #[error("scene mode input binding action must be non-empty")]
+    EmptyModeInputBindingAction,
+    #[error("unknown scene mode input binding input `{0}`")]
+    UnknownModeInputBindingInput(String),
+    #[error("unknown scene mode input binding action `{0}`")]
+    UnknownModeInputBindingAction(String),
+    #[error("scene mode input binding condition variable must be non-empty")]
+    EmptyModeInputBindingConditionVariable,
     #[error("scene variable key must be non-empty")]
     EmptyVariableKey,
     #[error("duplicate scene variable key `{0}`")]
@@ -1025,6 +1083,31 @@ impl VisualScene {
         {
             return Err(VisualSceneError::EmptyModeLifecycleStatus);
         }
+        for binding in &self.mode.input_map {
+            if binding.input.trim().is_empty() {
+                return Err(VisualSceneError::EmptyModeInputBindingInput);
+            }
+            if binding.action.trim().is_empty() {
+                return Err(VisualSceneError::EmptyModeInputBindingAction);
+            }
+            if !is_supported_mode_input(binding.input.trim()) {
+                return Err(VisualSceneError::UnknownModeInputBindingInput(
+                    binding.input.clone(),
+                ));
+            }
+            if !is_supported_mode_input_action(binding.action.trim()) {
+                return Err(VisualSceneError::UnknownModeInputBindingAction(
+                    binding.action.clone(),
+                ));
+            }
+            if binding
+                .conditions
+                .iter()
+                .any(|condition| condition.variable.trim().is_empty())
+            {
+                return Err(VisualSceneError::EmptyModeInputBindingConditionVariable);
+            }
+        }
         validate_state_entries(&self.variables).map_err(|err| match err {
             VisualStateEntryError::EmptyKey => VisualSceneError::EmptyVariableKey,
             VisualStateEntryError::DuplicateKey(key) => VisualSceneError::DuplicateVariableKey(key),
@@ -1106,6 +1189,7 @@ impl VisualScene {
                 ],
                 default_transition: None,
                 lifecycle: VisualModeLifecycle::default(),
+                input_map: Vec::new(),
             },
             variables: vec![
                 VisualStateEntry {
@@ -1429,6 +1513,40 @@ impl SceneRuntime {
         if let Some(status) = &self.scene.mode.lifecycle.exit_status {
             self.status = status.clone();
             self.bump_generation();
+        }
+    }
+
+    fn run_mode_input_action(&mut self, action: &str) -> VisualModeOutcome {
+        match action {
+            "close" => VisualModeOutcome::Exit,
+            "reload" | "ignore" => VisualModeOutcome::Continue,
+            "toggle_debug" => {
+                self.toggle_debugger();
+                VisualModeOutcome::Continue
+            }
+            "activate_choice" => {
+                self.activate_choice();
+                VisualModeOutcome::Continue
+            }
+            "select_next" => {
+                self.select_next_entity();
+                self.select_next_choice();
+                VisualModeOutcome::Continue
+            }
+            "select_previous" => {
+                self.select_prev_entity();
+                self.select_prev_choice();
+                VisualModeOutcome::Continue
+            }
+            "run_update_hooks" => {
+                self.run_mode_update_hooks();
+                VisualModeOutcome::Continue
+            }
+            "run_exit_hooks" => {
+                self.run_mode_exit_hooks();
+                VisualModeOutcome::Continue
+            }
+            _ => VisualModeOutcome::Continue,
         }
     }
 
@@ -1772,6 +1890,7 @@ impl SceneRuntime {
             active_mode_allowed_actions: self.scene.mode.allowed_actions.clone(),
             active_mode_default_transition: self.scene.mode.default_transition.clone(),
             active_mode_lifecycle: self.scene.mode.lifecycle.clone(),
+            active_mode_input_map: self.scene.mode.input_map.clone(),
             selected_entity_mode: selected_entity.and_then(entity_mode),
             variables: self.scene.variables.clone(),
             rpg: self.scene.rpg.clone(),
@@ -1994,6 +2113,18 @@ impl SceneRuntime {
                 out.push_str(" exit");
             }
             out.push_str("\r\n");
+        }
+        if !report.active_mode_input_map.is_empty() {
+            out.push_str("  Input map:\r\n");
+            for binding in &report.active_mode_input_map {
+                let guard = condition_guard_detail(&binding.conditions)
+                    .map(|detail| format!(" ({detail})"))
+                    .unwrap_or_default();
+                out.push_str(&format!(
+                    "    {} -> {}{}\r\n",
+                    binding.input, binding.action, guard
+                ));
+            }
         }
         if let Some(mode) = &report.selected_entity_mode {
             out.push_str(&format!("  Selected entity mode: {mode}\r\n"));
@@ -2255,29 +2386,39 @@ impl VisualMode for SceneRuntime {
     }
 
     fn handle_input(&mut self, input: VisualInput) -> VisualModeOutcome {
-        match input {
-            VisualInput::Close => VisualModeOutcome::Exit,
-            VisualInput::Reload => VisualModeOutcome::Continue,
-            VisualInput::ToggleDebug => {
-                self.toggle_debugger();
-                VisualModeOutcome::Continue
+        if let Some(binding) = self
+            .scene
+            .mode
+            .input_map
+            .iter()
+            .find(|binding| binding.input.trim() == input.binding_key())
+            .cloned()
+        {
+            if !conditions_match(&binding.conditions, &self.scene.variables) {
+                self.status = format!(
+                    "Input unavailable: {}",
+                    condition_guard_detail(&binding.conditions)
+                        .unwrap_or_else(|| "guard condition not met".to_string())
+                );
+                self.bump_generation();
+                return VisualModeOutcome::Continue;
             }
-            VisualInput::Activate => {
-                self.activate_choice();
-                VisualModeOutcome::Continue
-            }
-            VisualInput::Next => {
-                self.select_next_entity();
-                self.select_next_choice();
-                VisualModeOutcome::Continue
-            }
-            VisualInput::Previous => {
-                self.select_prev_entity();
-                self.select_prev_choice();
-                VisualModeOutcome::Continue
-            }
-            VisualInput::Other => VisualModeOutcome::Continue,
+            return self.run_mode_input_action(binding.action.trim());
         }
+
+        self.run_mode_input_action(default_mode_input_action(input))
+    }
+}
+
+fn default_mode_input_action(input: VisualInput) -> &'static str {
+    match input {
+        VisualInput::Close => "close",
+        VisualInput::Reload => "reload",
+        VisualInput::ToggleDebug => "toggle_debug",
+        VisualInput::Activate => "activate_choice",
+        VisualInput::Next => "select_next",
+        VisualInput::Previous => "select_previous",
+        VisualInput::Other => "ignore",
     }
 }
 
@@ -2815,6 +2956,128 @@ mod tests {
         assert_eq!(
             runtime.render_snapshot().status,
             "Inspecting GameTerm (project-gameterm)"
+        );
+    }
+
+    #[test]
+    fn mode_input_map_remaps_input_action() {
+        let mut scene = VisualScene::demo();
+        scene.mode.input_map = vec![VisualInputBinding {
+            input: "next".to_string(),
+            action: "activate_choice".to_string(),
+            conditions: Vec::new(),
+        }];
+        let mut runtime = SceneRuntime::new(scene).unwrap();
+
+        let outcome = runtime.handle_input(VisualInput::Next);
+
+        assert_eq!(outcome, VisualModeOutcome::Continue);
+        assert_eq!(
+            runtime.render_snapshot().status,
+            "Inspecting GameTerm (project-gameterm)"
+        );
+        assert_eq!(
+            runtime.render_snapshot().selected_entity_id.as_deref(),
+            Some("project-gameterm")
+        );
+    }
+
+    #[test]
+    fn guarded_mode_input_map_blocks_action_when_variable_mismatches() {
+        let mut scene = VisualScene::demo();
+        scene.mode.input_map = vec![VisualInputBinding {
+            input: "other".to_string(),
+            action: "toggle_debug".to_string(),
+            conditions: vec![VisualCondition {
+                variable: "active_track".to_string(),
+                equals: VisualStateValue::Text("memory".to_string()),
+            }],
+        }];
+        let mut runtime = SceneRuntime::new(scene).unwrap();
+
+        let outcome = runtime.handle_input(VisualInput::Other);
+
+        assert_eq!(outcome, VisualModeOutcome::Continue);
+        assert_eq!(runtime.view(), VisualView::Scene);
+        assert_eq!(
+            runtime.render_snapshot().status,
+            "Input unavailable: requires active_track=memory"
+        );
+    }
+
+    #[test]
+    fn mode_input_map_is_visible_in_debugger() {
+        let mut scene = VisualScene::demo();
+        scene.mode.input_map = vec![VisualInputBinding {
+            input: "other".to_string(),
+            action: "run_update_hooks".to_string(),
+            conditions: Vec::new(),
+        }];
+        scene.mode.lifecycle.update_status = Some("Polled mode".to_string());
+        let mut runtime = SceneRuntime::new(scene).unwrap();
+
+        let outcome = runtime.handle_input(VisualInput::Other);
+
+        assert_eq!(outcome, VisualModeOutcome::Continue);
+        assert_eq!(runtime.render_snapshot().status, "Polled mode");
+        assert_eq!(
+            runtime.debug_report().active_mode_input_map[0].action,
+            "run_update_hooks"
+        );
+
+        runtime.toggle_debugger();
+        let frame = runtime.render_text_frame(120, 40);
+        assert!(frame.contains("Input map:"));
+        assert!(frame.contains("other -> run_update_hooks"));
+    }
+
+    #[test]
+    fn scene_rejects_empty_mode_input_map_fields() {
+        let mut scene = VisualScene::demo();
+        scene.mode.input_map = vec![VisualInputBinding {
+            input: " ".to_string(),
+            action: "ignore".to_string(),
+            conditions: Vec::new(),
+        }];
+
+        assert_eq!(
+            scene.validate(),
+            Err(VisualSceneError::EmptyModeInputBindingInput)
+        );
+
+        scene.mode.input_map[0].input = "other".to_string();
+        scene.mode.input_map[0].action = " ".to_string();
+
+        assert_eq!(
+            scene.validate(),
+            Err(VisualSceneError::EmptyModeInputBindingAction)
+        );
+    }
+
+    #[test]
+    fn scene_rejects_unknown_mode_input_map_values() {
+        let mut scene = VisualScene::demo();
+        scene.mode.input_map = vec![VisualInputBinding {
+            input: "space".to_string(),
+            action: "ignore".to_string(),
+            conditions: Vec::new(),
+        }];
+
+        assert_eq!(
+            scene.validate(),
+            Err(VisualSceneError::UnknownModeInputBindingInput(
+                "space".to_string()
+            ))
+        );
+
+        scene.mode.input_map[0].input = "other".to_string();
+        scene.mode.input_map[0].action = "jump".to_string();
+
+        assert_eq!(
+            scene.validate(),
+            Err(VisualSceneError::UnknownModeInputBindingAction(
+                "jump".to_string()
+            ))
         );
     }
 

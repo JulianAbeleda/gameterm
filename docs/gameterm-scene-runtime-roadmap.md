@@ -68,7 +68,7 @@ Current status:
 - [x] Add typed runtime variables for mode/story/RPG state.
 - [x] Add guarded choice conditions backed by typed runtime variables.
 - [x] Add mode lifecycle hooks for enter, update/poll, and exit behavior.
-- [ ] Add per-mode input/action maps and guarded transitions.
+- [x] Add per-mode input/action maps and guarded transitions.
 
 ## Default Scene Reload
 
@@ -313,7 +313,9 @@ single active mode support is stable, support layered modes:
 5. Story mode: dialogue, choice, transition, save/load.
 
 Layered state should be added only after the single-mode descriptor, lifecycle,
-and transition rules are covered by fixtures and focused tests.
+and transition rules are covered by fixtures and focused tests. The current
+single-mode runtime now covers descriptors, lifecycle status hooks, guarded
+choices, and guarded input/action maps.
 
 ## Narrative/RPG Layer
 
