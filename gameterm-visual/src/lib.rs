@@ -27,6 +27,8 @@ pub struct VisualEntity {
     pub label: String,
     pub position: VisualPosition,
     pub sprite: String,
+    #[serde(default = "default_true", skip_serializing_if = "is_true")]
+    pub visible: bool,
     #[serde(default)]
     pub state_flags: Vec<String>,
     #[serde(default)]
@@ -209,6 +211,8 @@ pub struct VisualScenePatch {
     #[serde(default)]
     pub updates: Vec<VisualSceneEntityPatch>,
     #[serde(default)]
+    pub selected_entity_id: Option<String>,
+    #[serde(default)]
     pub status: Option<String>,
 }
 
@@ -222,9 +226,19 @@ pub struct VisualSceneEntityPatch {
     #[serde(default)]
     pub sprite: Option<String>,
     #[serde(default)]
+    pub visible: Option<bool>,
+    #[serde(default)]
     pub state_flags: Option<Vec<String>>,
     #[serde(default)]
     pub metadata: Option<Vec<(String, String)>>,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn is_true(value: &bool) -> bool {
+    *value
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -436,6 +450,9 @@ impl VisualScenePatch {
                 }
             }
         }
+        if matches!(self.selected_entity_id.as_ref(), Some(id) if id.trim().is_empty()) {
+            return Err(VisualScenePatchError::EmptyEntityId);
+        }
         Ok(())
     }
 }
@@ -573,6 +590,7 @@ impl VisualScene {
                     label: "GameTerm".to_string(),
                     position: VisualPosition { x: 3, y: 2 },
                     sprite: "project_core".to_string(),
+                    visible: true,
                     state_flags: vec!["active".to_string()],
                     metadata: vec![
                         ("repo".to_string(), "JulianAbeleda/gameterm".to_string()),
@@ -585,6 +603,7 @@ impl VisualScene {
                     label: "Render Scene".to_string(),
                     position: VisualPosition { x: 9, y: 4 },
                     sprite: "task_tile".to_string(),
+                    visible: true,
                     state_flags: vec!["running".to_string()],
                     metadata: vec![
                         ("reference".to_string(), "Ren'Py scene flow".to_string()),
@@ -597,6 +616,7 @@ impl VisualScene {
                     label: "Audit Agent".to_string(),
                     position: VisualPosition { x: 14, y: 2 },
                     sprite: "agent_idle".to_string(),
+                    visible: true,
                     state_flags: vec!["watching".to_string()],
                     metadata: vec![("role".to_string(), "review scene state".to_string())],
                 },
@@ -873,6 +893,17 @@ impl SceneRuntime {
                 }
             }
         }
+        let selected_entity = patch.selected_entity_id.as_ref().map(|id| {
+            self.scene
+                .entities
+                .iter()
+                .position(|entity| entity.id == *id)
+                .ok_or_else(|| VisualScenePatchError::UnknownEntityId(id.clone()))
+        });
+        let selected_entity = match selected_entity {
+            Some(result) => Some(result?),
+            None => None,
+        };
 
         let update_count = patch.updates.len();
         for update in patch.updates {
@@ -891,6 +922,9 @@ impl SceneRuntime {
                 if let Some(sprite) = update.sprite {
                     entity.sprite = sprite;
                 }
+                if let Some(visible) = update.visible {
+                    entity.visible = visible;
+                }
                 if let Some(state_flags) = update.state_flags {
                     entity.state_flags = state_flags;
                 }
@@ -898,6 +932,9 @@ impl SceneRuntime {
                     entity.metadata = metadata;
                 }
             }
+        }
+        if let Some(selected_entity) = selected_entity {
+            self.selected_entity = selected_entity;
         }
 
         self.status = patch
@@ -1078,6 +1115,7 @@ impl SceneRuntime {
             .entities
             .iter()
             .enumerate()
+            .filter(|(_, entity)| entity.visible)
             .map(|(idx, entity)| VisualRenderEntity {
                 id: entity.id.clone(),
                 kind: entity.kind.clone(),
@@ -2288,9 +2326,11 @@ mod tests {
                 label: None,
                 position: None,
                 sprite: None,
+                visible: None,
                 state_flags: Some(vec!["running".to_string(), "verified".to_string()]),
                 metadata: Some(vec![("status".to_string(), "tests passed".to_string())]),
             }],
+            selected_entity_id: None,
             status: Some("Verification passed".to_string()),
         };
 
@@ -2318,6 +2358,7 @@ mod tests {
         let patch = VisualScenePatch {
             scene_patch_version: VisualScenePatch::VERSION,
             updates: vec![],
+            selected_entity_id: None,
             status: Some("Source tracked".to_string()),
         };
 
@@ -2360,9 +2401,11 @@ mod tests {
                 label: None,
                 position: None,
                 sprite: None,
+                visible: None,
                 state_flags: Some(vec!["bad".to_string()]),
                 metadata: None,
             }],
+            selected_entity_id: None,
             status: Some("Should not apply".to_string()),
         };
 
@@ -2386,9 +2429,11 @@ mod tests {
                 label: Some("Render Verified".to_string()),
                 position: Some(VisualPosition { x: 5, y: 6 }),
                 sprite: Some("task_tile_done".to_string()),
+                visible: None,
                 state_flags: None,
                 metadata: None,
             }],
+            selected_entity_id: None,
             status: Some("Visual state patched".to_string()),
         };
 
@@ -2417,9 +2462,11 @@ mod tests {
                 label: None,
                 position: Some(VisualPosition { x: 99, y: 6 }),
                 sprite: None,
+                visible: None,
                 state_flags: None,
                 metadata: None,
             }],
+            selected_entity_id: None,
             status: Some("Should not apply".to_string()),
         };
 
@@ -2432,6 +2479,34 @@ mod tests {
             })
         );
         assert_eq!(runtime.render_snapshot(), before);
+    }
+
+    #[test]
+    fn scene_patch_updates_visibility_and_focus() {
+        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        let patch = VisualScenePatch {
+            scene_patch_version: VisualScenePatch::VERSION,
+            updates: vec![VisualSceneEntityPatch {
+                entity_id: "task-render".to_string(),
+                label: None,
+                position: None,
+                sprite: None,
+                visible: Some(false),
+                state_flags: None,
+                metadata: None,
+            }],
+            selected_entity_id: Some("agent-audit".to_string()),
+            status: Some("Visibility patched".to_string()),
+        };
+
+        runtime.apply_scene_patch(patch).unwrap();
+        let snapshot = runtime.render_snapshot();
+
+        assert_eq!(snapshot.selected_entity_id.as_deref(), Some("agent-audit"));
+        assert!(snapshot
+            .entities
+            .iter()
+            .all(|entity| entity.id != "task-render"));
     }
 
     #[test]

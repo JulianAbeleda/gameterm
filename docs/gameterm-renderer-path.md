@@ -179,5 +179,9 @@ later frame passes continue to draw over pane content.
   work with focused helper tests.
 - [x] Add helper tests for image-disabled mode and sprite fallback behavior.
 - [x] Add cache-invalidation tests for visual generation and sprite generation.
-- [ ] Decide whether/when to replace cached individual images with a packed
+- [x] Decide whether/when to replace cached individual images with a packed
   sprite atlas.
+
+Packed atlas decision: defer it until real scenes have enough distinct sprites
+or frame-time evidence to justify the added cache and invalidation complexity.
+The current per-pane cached image path remains the authoring MVP path.

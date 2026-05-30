@@ -117,6 +117,7 @@ run_static_checks() {
     "${repo_root}/ci/gameterm-scene-doctor.sh" \
     "${repo_root}/ci/gameterm-scene-init.sh" \
     "${repo_root}/ci/gameterm-scene-patch.sh" \
+    "${repo_root}/ci/gameterm-scene-process.sh" \
     "${repo_root}/ci/gameterm-scene-smoke.sh" \
     "${repo_root}/ci/gameterm-scene-verify.sh"
   do
@@ -162,6 +163,8 @@ run_author_helper_check() {
 
   fixtures="$("${repo_root}/ci/gameterm-scene-author.sh" list-fixtures)"
   grep -qx navigate <<<"${fixtures}"
+  templates="$("${repo_root}/ci/gameterm-scene-author.sh" list-templates)"
+  grep -qx agent-workflow <<<"${templates}"
   "${repo_root}/ci/gameterm-scene-author.sh" \
     install-fixture \
     --config-home "${tmp_home}" \
@@ -176,6 +179,12 @@ run_author_helper_check() {
     --force \
     --title "Author Check" \
     "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
+  "${repo_root}/ci/gameterm-scene-author.sh" \
+    new-template \
+    --template agent-workflow \
+    "${tmp_home}/gameterm/scenes/template.json" >/dev/null
+  "${repo_root}/ci/gameterm-scene-author.sh" \
+    validate "${tmp_home}/gameterm/scenes/template.json" >/dev/null
   "${repo_root}/ci/gameterm-scene-author.sh" \
     add-entity \
     --id author-task \
@@ -325,6 +334,8 @@ run_patch_check() {
     --label "Harness Verified" \
     --position 5,3 \
     --sprite project_core \
+    --select-entity-id project-harness \
+    --visible \
     --flag loaded \
     --flag authored \
     --metadata fixture=default \
@@ -346,6 +357,9 @@ run_patch_check() {
   "${repo_root}/ci/gameterm-scene-author.sh" \
     validate "${exported_scene}" >/dev/null
   jq -e '
+    .selected_entity_id == "project-harness"
+  ' "${authored_patch}" >/dev/null
+  jq -e '
     any(.entities[]; .id == "project-harness"
       and .label == "Harness Verified"
       and .position == {"x": 5, "y": 3}
@@ -353,6 +367,25 @@ run_patch_check() {
       and (.state_flags == ["loaded", "authored"])
       and (.metadata | any(.[0] == "source" and .[1] == "verify")))
   ' "${exported_scene}" >/dev/null
+
+  "${repo_root}/ci/gameterm-scene-process.sh" \
+    --entity-id project-harness \
+    --patch "${tmp_home}/patches/process.json" \
+    --inbox "${inbox}" \
+    --select \
+    -- \
+    true >/dev/null
+  "${repo_root}/ci/gameterm-scene-patch.sh" \
+    validate \
+    --scene "${fixture_root}/default.json" \
+    --patch "${tmp_home}/patches/process.json" >/dev/null
+  jq -e '
+    .selected_entity_id == "project-harness"
+    and .status == "Process succeeded: true"
+    and any(.updates[]; .entity_id == "project-harness"
+      and (.state_flags == ["succeeded"])
+      and (.metadata | any(.[0] == "exit_code" and .[1] == "0")))
+  ' "${tmp_home}/patches/process.json" >/dev/null
 
   echo "scene patch: ok"
 }

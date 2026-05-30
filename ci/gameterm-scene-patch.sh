@@ -42,6 +42,9 @@ Options for set-entity and set-entity-status:
   --label TEXT                  Entity label.
   --position X,Y                Entity grid position.
   --sprite ID                   Entity sprite id.
+  --visible                     Mark entity visible.
+  --hidden                      Mark entity hidden.
+  --select-entity-id ID         Focus an entity after applying the patch.
   --flag FLAG                   State flag. May be repeated.
   --metadata KEY=VALUE          Metadata pair. May be repeated.
   --force                       Overwrite an existing output file.
@@ -83,6 +86,8 @@ status_text=""
 label_text=""
 position_text=""
 sprite_id=""
+visible_state=""
+selected_entity_id=""
 target_pane_id=""
 source_pane_id=""
 force=0
@@ -133,6 +138,18 @@ while [[ $# -gt 0 ]]; do
       ;;
     --sprite)
       sprite_id="$2"
+      shift 2
+      ;;
+    --visible)
+      visible_state="true"
+      shift
+      ;;
+    --hidden)
+      visible_state="false"
+      shift
+      ;;
+    --select-entity-id)
+      selected_entity_id="$2"
       shift 2
       ;;
     --flag)
@@ -264,6 +281,10 @@ EOF
       | {x: ($parts[0] | tonumber), y: ($parts[1] | tonumber)}
     ')"
   fi
+  visible_json="null"
+  if [[ -n "${visible_state}" ]]; then
+    visible_json="${visible_state}"
+  fi
 
   mkdir -p "$(dirname "${output_path}")"
   jq -n \
@@ -271,7 +292,9 @@ EOF
     --arg status "${status_text}" \
     --arg label "${label_text}" \
     --arg sprite "${sprite_id}" \
+    --arg selected_entity_id "${selected_entity_id}" \
     --argjson position "${position_json}" \
+    --argjson visible "${visible_json}" \
     --argjson flags "${flags_json}" \
     --argjson metadata "${metadata_json}" \
     '{
@@ -281,11 +304,13 @@ EOF
         label: (if $label == "" then null else $label end),
         position: $position,
         sprite: (if $sprite == "" then null else $sprite end),
+        visible: $visible,
         state_flags: $flags,
         metadata: $metadata
       } | with_entries(select(.value != null))],
+      selected_entity_id: (if $selected_entity_id == "" then null else $selected_entity_id end),
       status: $status
-    }' | write_json "${output_path}"
+    } | with_entries(select(.value != null))' | write_json "${output_path}"
   jq empty "${output_path}"
   echo "Wrote Scene Mode patch: ${output_path}"
 }

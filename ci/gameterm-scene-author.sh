@@ -10,6 +10,7 @@ Authoring helper for GameTerm Scene Mode JSON files.
 Commands:
   validate PATH                 Validate a scene file with the Rust scene parser.
   new-scene PATH                Create a minimal editable scene file.
+  new-template PATH             Create a guided template scene.
   add-entity PATH               Add an entity to a scene file.
   add-choice PATH               Add a choice to a scene file.
   remove-choice PATH            Remove a choice by zero-based index.
@@ -20,6 +21,7 @@ Commands:
   format PATH                   Rewrite a scene file with stable JSON format.
   install-fixture NAME          Install a fixture into the Scene Mode config dir.
   list-fixtures                 List available authoring fixtures.
+  list-templates                List available guided templates.
 
 Common options:
   --config-home PATH            Use PATH instead of XDG_CONFIG_HOME or ~/.config.
@@ -29,6 +31,9 @@ Options for new-scene:
   --title TEXT                  Scene title. Default: New GameTerm Scene.
   --width N                     Scene width. Default: 12.
   --height N                    Scene height. Default: 7.
+
+Options for new-template:
+  --template NAME               Template name. Default: agent-workflow.
 
 Options for add-entity:
   --id ID --kind KIND --label TEXT --x N --y N --sprite ID
@@ -70,6 +75,9 @@ Options for update-choice:
 
 Fixtures:
   basic, navigate, invalid, sprites, missing-sprite
+
+Templates:
+  agent-workflow, project-dashboard
 EOF
 }
 
@@ -103,6 +111,7 @@ choice_payload=""
 choice_cwd=""
 choice_target="tab"
 choice_index=""
+template_name="agent-workflow"
 flags=()
 metadata=()
 
@@ -199,6 +208,10 @@ while [[ $# -gt 0 ]]; do
       choice_target="$2"
       shift 2
       ;;
+    --template)
+      template_name="$2"
+      shift 2
+      ;;
     --choice-index)
       choice_index="$2"
       shift 2
@@ -286,6 +299,128 @@ EOF
     }' | write_json "${target}"
   validate_scene_file "${target}" >/dev/null
   echo "Wrote ${target}"
+}
+
+create_template() {
+  local target="$1"
+  if [[ -e "${target}" && "${force}" -ne 1 ]]; then
+    cat >&2 <<EOF
+${target} already exists.
+
+Rerun with --force to overwrite it.
+EOF
+    return 1
+  fi
+
+  mkdir -p "$(dirname "${target}")"
+
+  case "${template_name}" in
+    agent-workflow)
+      jq -n '{
+        title: "Agent Workflow",
+        background: "workspace-map",
+        width: 14,
+        height: 8,
+        entities: [
+          {
+            id: "project",
+            kind: "Project",
+            label: "Project",
+            position: { x: 2, y: 2 },
+            sprite: "project_core",
+            state_flags: ["active"],
+            metadata: [["role", "workspace root"]]
+          },
+          {
+            id: "agent",
+            kind: "Agent",
+            label: "Agent",
+            position: { x: 6, y: 3 },
+            sprite: "agent_idle",
+            state_flags: ["ready"],
+            metadata: [["status", "waiting"]]
+          },
+          {
+            id: "task",
+            kind: "Task",
+            label: "Task",
+            position: { x: 10, y: 3 },
+            sprite: "task_tile",
+            state_flags: ["queued"],
+            metadata: [["next", "run verification"]]
+          }
+        ],
+        dialogue_speaker: "GameTerm",
+        dialogue: "Use Scene Mode patches to move work from queued to running to verified.",
+        choices: [
+          { label: "Inspect selected entity", kind: "Inspect" },
+          {
+            label: "Run visual tests",
+            kind: {
+              RunCommand: {
+                argv: ["cargo", "test", "-p", "gameterm-visual", "scene_patch"],
+                target: "split_down"
+              }
+            }
+          }
+        ]
+      }' | write_json "${target}"
+      ;;
+    project-dashboard)
+      jq -n '{
+        title: "Project Dashboard",
+        background: "workspace-map",
+        width: 16,
+        height: 9,
+        entities: [
+          {
+            id: "scope",
+            kind: "Principle",
+            label: "Scope",
+            position: { x: 2, y: 2 },
+            sprite: "memory_note",
+            state_flags: ["defined"],
+            metadata: [["meaning", "current milestone boundary"]]
+          },
+          {
+            id: "implementation",
+            kind: "Task",
+            label: "Implementation",
+            position: { x: 7, y: 4 },
+            sprite: "task_tile",
+            state_flags: ["running"],
+            metadata: [["owner", "development"]]
+          },
+          {
+            id: "audit",
+            kind: "Agent",
+            label: "Audit",
+            position: { x: 12, y: 2 },
+            sprite: "agent_idle",
+            state_flags: ["watching"],
+            metadata: [["owner", "review"]]
+          }
+        ],
+        dialogue_speaker: "Dashboard",
+        dialogue: "Track scope, implementation, and audit state as symbolic entities.",
+        choices: [
+          { label: "Inspect selected entity", kind: "Inspect" },
+          {
+            label: "Open roadmap",
+            kind: { OpenFile: { path: "docs/gameterm-scene-runtime-roadmap.md" } }
+          }
+        ]
+      }' | write_json "${target}"
+      ;;
+    *)
+      echo "unknown template: ${template_name}" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+
+  validate_scene_file "${target}" >/dev/null
+  echo "Wrote ${template_name} template to ${target}"
 }
 
 add_entity() {
@@ -555,6 +690,13 @@ case "${command}" in
     fi
     create_scene "${positionals[0]}"
     ;;
+  new-template)
+    if [[ "${#positionals[@]}" -ne 1 ]]; then
+      usage >&2
+      exit 2
+    fi
+    create_template "${positionals[0]}"
+    ;;
   add-entity)
     if [[ "${#positionals[@]}" -ne 1 ]]; then
       usage >&2
@@ -624,6 +766,13 @@ case "${command}" in
       exit 2
     fi
     printf '%s\n' basic navigate invalid sprites missing-sprite
+    ;;
+  list-templates)
+    if [[ "${#positionals[@]}" -ne 0 ]]; then
+      usage >&2
+      exit 2
+    fi
+    printf '%s\n' agent-workflow project-dashboard
     ;;
   -h|--help)
     usage

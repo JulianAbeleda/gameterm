@@ -56,7 +56,7 @@ Current status:
   behavior.
 - [x] Expand patchable runtime state beyond entity flags/metadata/status.
 - [x] Make agent/process integrations emit Scene Mode patches directly.
-- [ ] Add higher-level authoring UX for templates and guided scene creation.
+- [x] Add higher-level authoring UX for templates and guided scene creation.
 
 ## Default Scene Reload
 
@@ -250,10 +250,12 @@ Implemented patch contract:
       "label": "Render Verified",
       "position": {"x": 5, "y": 6},
       "sprite": "task_tile_done",
+      "visible": true,
       "state_flags": ["running", "verified"],
       "metadata": [["status", "tests passed"]]
     }
   ],
+  "selected_entity_id": "task-render",
   "status": "Verification passed"
 }
 ```
@@ -264,6 +266,8 @@ Implemented constraints:
   JSON file.
 - Entity patches may update label, grid position, sprite id, state flags, and
   metadata.
+- Entity patches may show or hide entities with `visible`.
+- Patches may move focus with `selected_entity_id`.
 - Reject unknown entity ids and malformed patches with visible Scene Mode
   status once GUI transport exists. The current library API returns a typed
   error.
@@ -291,8 +295,20 @@ ci/gameterm-scene-patch.sh set-entity \
   --label "Harness Verified" \
   --position 5,3 \
   --sprite project_core \
+  --select-entity-id project-harness \
+  --visible \
   --flag loaded --flag verified \
   --metadata status=patched
+
+ci/gameterm-scene-author.sh new-template \
+  --template agent-workflow \
+  ~/.config/gameterm/scenes/default.json
+
+ci/gameterm-scene-process.sh \
+  --entity-id project-harness \
+  --inbox /tmp/gameterm-scene-patch.json \
+  --select \
+  -- cargo test -p gameterm-visual scene_patch
 
 ci/gameterm-scene-patch.sh write-inbox \
   --inbox /tmp/gameterm-scene-patch.json \

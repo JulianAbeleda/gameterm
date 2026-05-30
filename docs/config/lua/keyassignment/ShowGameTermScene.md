@@ -12,6 +12,14 @@ To create an editable scene config from the bundled example, run:
 ci/gameterm-scene-init.sh
 ```
 
+To create a guided starter scene instead, run:
+
+```sh
+ci/gameterm-scene-author.sh new-template \
+  --template agent-workflow \
+  ~/.config/gameterm/scenes/default.json
+```
+
 Scene Mode also looks for `~/.config/gameterm/scenes/sprites.json`. This JSON
 file maps scene sprite ids to image files:
 
@@ -28,6 +36,16 @@ Relative sprite paths are resolved against the directory containing
 `sprites.json`. If the manifest is absent, Scene Mode uses bundled sprite
 defaults. Missing or invalid sprite entries fall back to visible placeholder
 blocks so Scene Mode remains usable while the manifest is fixed.
+
+Processes can emit runtime updates by writing patches to a watched inbox:
+
+```sh
+ci/gameterm-scene-process.sh \
+  --entity-id task \
+  --inbox /tmp/gameterm-scene-patch.json \
+  --select \
+  -- cargo test -p gameterm-visual scene_patch
+```
 
 Default key assignment:
 
