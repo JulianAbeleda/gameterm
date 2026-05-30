@@ -54,6 +54,7 @@ mod tests {
             scene_source: VisualSceneSource::new("test", VisualSceneLoadStatus::Loaded, 0),
             active_mode: VisualModeDescriptor::default(),
             selected_entity_mode: None,
+            variables: Vec::new(),
             title: "Test".to_string(),
             background: "bg".to_string(),
             width: 4,

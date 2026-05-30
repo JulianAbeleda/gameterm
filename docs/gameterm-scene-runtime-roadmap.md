@@ -65,6 +65,7 @@ Current status:
 - [x] Define Scene Mode computational modes.
 - [x] Add mode descriptors for conversation, memory, agent, and workspace
   contexts.
+- [x] Add typed runtime variables for mode/story/RPG state.
 - [ ] Add mode lifecycle hooks for enter, update/poll, and exit behavior.
 - [ ] Add per-mode input/action maps and guarded transitions.
 

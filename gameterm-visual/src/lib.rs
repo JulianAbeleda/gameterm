@@ -79,6 +79,29 @@ pub struct SceneAction {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum VisualStateValue {
+    Bool(bool),
+    Number(i64),
+    Text(String),
+}
+
+impl VisualStateValue {
+    pub fn as_debug_string(&self) -> String {
+        match self {
+            Self::Bool(value) => value.to_string(),
+            Self::Number(value) => value.to_string(),
+            Self::Text(value) => value.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VisualStateEntry {
+    pub key: String,
+    pub value: VisualStateValue,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VisualModeDescriptor {
     pub mode_id: String,
     pub label: String,
@@ -106,6 +129,8 @@ pub struct VisualScene {
     pub height: usize,
     #[serde(default, skip_serializing_if = "is_default_scene_mode")]
     pub mode: VisualModeDescriptor,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub variables: Vec<VisualStateEntry>,
     pub entities: Vec<VisualEntity>,
     pub dialogue_speaker: String,
     pub dialogue: String,
@@ -185,6 +210,7 @@ pub struct VisualRenderSnapshot {
     pub scene_source: VisualSceneSource,
     pub active_mode: VisualModeDescriptor,
     pub selected_entity_mode: Option<String>,
+    pub variables: Vec<VisualStateEntry>,
     pub title: String,
     pub background: String,
     pub width: usize,
@@ -213,6 +239,7 @@ pub struct VisualSceneDebugReport {
     pub active_mode_allowed_actions: Vec<String>,
     pub active_mode_default_transition: Option<String>,
     pub selected_entity_mode: Option<String>,
+    pub variables: Vec<VisualStateEntry>,
     pub title: String,
     pub background: String,
     pub width: usize,
@@ -241,6 +268,8 @@ pub struct VisualScenePatch {
     pub scene_patch_version: u32,
     #[serde(default)]
     pub updates: Vec<VisualSceneEntityPatch>,
+    #[serde(default)]
+    pub variables: Vec<VisualStateEntry>,
     #[serde(default)]
     pub selected_entity_id: Option<String>,
     #[serde(default)]
@@ -290,6 +319,25 @@ fn default_scene_mode() -> VisualModeDescriptor {
 
 fn is_default_scene_mode(mode: &VisualModeDescriptor) -> bool {
     mode == &default_scene_mode()
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum VisualStateEntryError {
+    EmptyKey,
+    DuplicateKey(String),
+}
+
+fn validate_state_entries(entries: &[VisualStateEntry]) -> Result<(), VisualStateEntryError> {
+    let mut keys = HashSet::new();
+    for entry in entries {
+        if entry.key.trim().is_empty() {
+            return Err(VisualStateEntryError::EmptyKey);
+        }
+        if !keys.insert(entry.key.as_str()) {
+            return Err(VisualStateEntryError::DuplicateKey(entry.key.clone()));
+        }
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -409,6 +457,10 @@ pub enum VisualSceneError {
     EmptyModeLabel,
     #[error("scene mode allowed action must be non-empty")]
     EmptyModeAllowedAction,
+    #[error("scene variable key must be non-empty")]
+    EmptyVariableKey,
+    #[error("duplicate scene variable key `{0}`")]
+    DuplicateVariableKey(String),
     #[error("scene json error: {0}")]
     Json(String),
     #[error("scene file error for `{path}`: {message}")]
@@ -457,6 +509,10 @@ pub enum VisualScenePatchError {
     EmptySprite { entity_id: String },
     #[error("scene patch metadata for `{entity_id}` contains an empty key")]
     EmptyMetadataKey { entity_id: String },
+    #[error("scene patch variable key must be non-empty")]
+    EmptyVariableKey,
+    #[error("scene patch contains duplicate variable key `{0}`")]
+    DuplicateVariableKey(String),
 }
 
 impl VisualScenePatch {
@@ -484,9 +540,15 @@ impl VisualScenePatch {
                 self.scene_patch_version,
             ));
         }
-        if self.updates.is_empty() && self.status.is_none() {
+        if self.updates.is_empty() && self.variables.is_empty() && self.status.is_none() {
             return Err(VisualScenePatchError::EmptyPatch);
         }
+        validate_state_entries(&self.variables).map_err(|err| match err {
+            VisualStateEntryError::EmptyKey => VisualScenePatchError::EmptyVariableKey,
+            VisualStateEntryError::DuplicateKey(key) => {
+                VisualScenePatchError::DuplicateVariableKey(key)
+            }
+        })?;
         for update in &self.updates {
             if update.entity_id.trim().is_empty() {
                 return Err(VisualScenePatchError::EmptyEntityId);
@@ -617,6 +679,10 @@ impl VisualScene {
         {
             return Err(VisualSceneError::EmptyModeAllowedAction);
         }
+        validate_state_entries(&self.variables).map_err(|err| match err {
+            VisualStateEntryError::EmptyKey => VisualSceneError::EmptyVariableKey,
+            VisualStateEntryError::DuplicateKey(key) => VisualSceneError::DuplicateVariableKey(key),
+        })?;
 
         let mut ids = HashSet::new();
         for entity in &self.entities {
@@ -669,6 +735,20 @@ impl VisualScene {
                 ],
                 default_transition: None,
             },
+            variables: vec![
+                VisualStateEntry {
+                    key: "conversation_unlocked".to_string(),
+                    value: VisualStateValue::Bool(true),
+                },
+                VisualStateEntry {
+                    key: "workspace_level".to_string(),
+                    value: VisualStateValue::Number(1),
+                },
+                VisualStateEntry {
+                    key: "active_track".to_string(),
+                    value: VisualStateValue::Text("visual-state".to_string()),
+                },
+            ],
             entities: vec![
                 VisualEntity {
                     id: "project-gameterm".to_string(),
@@ -992,6 +1072,7 @@ impl SceneRuntime {
         };
 
         let update_count = patch.updates.len();
+        let variable_count = patch.variables.len();
         for update in patch.updates {
             if let Some(entity) = self
                 .scene
@@ -1019,13 +1100,27 @@ impl SceneRuntime {
                 }
             }
         }
+        for variable in patch.variables {
+            match self
+                .scene
+                .variables
+                .iter_mut()
+                .find(|entry| entry.key == variable.key)
+            {
+                Some(entry) => entry.value = variable.value,
+                None => self.scene.variables.push(variable),
+            }
+        }
         if let Some(selected_entity) = selected_entity {
             self.selected_entity = selected_entity;
         }
 
-        self.status = patch
-            .status
-            .unwrap_or_else(|| format!("Applied scene patch: {} entity update(s)", update_count));
+        self.status = patch.status.unwrap_or_else(|| {
+            format!(
+                "Applied scene patch: {} entity update(s), {} variable update(s)",
+                update_count, variable_count
+            )
+        });
         self.last_patch_transport = transport;
         self.last_patch_source_pane_id = source_pane_id;
         self.bump_generation();
@@ -1127,6 +1222,7 @@ impl SceneRuntime {
             scene_source: self.scene_source.clone(),
             active_mode: self.scene.mode.clone(),
             selected_entity_mode,
+            variables: self.scene.variables.clone(),
             title: self.scene.title.clone(),
             background: self.scene.background.clone(),
             width: self.scene.width,
@@ -1164,6 +1260,7 @@ impl SceneRuntime {
             active_mode_allowed_actions: self.scene.mode.allowed_actions.clone(),
             active_mode_default_transition: self.scene.mode.default_transition.clone(),
             selected_entity_mode: selected_entity.and_then(entity_mode),
+            variables: self.scene.variables.clone(),
             title: self.scene.title.clone(),
             background: self.scene.background.clone(),
             width: self.scene.width,
@@ -1279,6 +1376,20 @@ impl SceneRuntime {
             "Mode: {} ({})\r\n",
             self.scene.mode.label, self.scene.mode.mode_id
         ));
+        if !self.scene.variables.is_empty() {
+            out.push_str("State: ");
+            for (idx, variable) in self.scene.variables.iter().enumerate() {
+                if idx > 0 {
+                    out.push_str(", ");
+                }
+                out.push_str(&format!(
+                    "{}={}",
+                    variable.key,
+                    variable.value.as_debug_string()
+                ));
+            }
+            out.push_str("\r\n");
+        }
         out.push_str(&format!(
             "{}: {}\r\n\r\n",
             self.scene.dialogue_speaker, self.scene.dialogue
@@ -1338,6 +1449,16 @@ impl SceneRuntime {
         }
         if let Some(mode) = &report.selected_entity_mode {
             out.push_str(&format!("  Selected entity mode: {mode}\r\n"));
+        }
+        if !report.variables.is_empty() {
+            out.push_str("\r\nState:\r\n");
+            for variable in &report.variables {
+                out.push_str(&format!(
+                    "  {}: {}\r\n",
+                    variable.key,
+                    variable.value.as_debug_string()
+                ));
+            }
         }
         out.push_str("\r\nAction:\r\n");
         out.push_str(&format!("  Status: {}\r\n", report.status));
@@ -1554,6 +1675,7 @@ mod tests {
             scene_source: VisualSceneSource::new("fixture", VisualSceneLoadStatus::Loaded, 1),
             active_mode: default_scene_mode(),
             selected_entity_mode: None,
+            variables: Vec::new(),
             title: "Filter Fixture".to_string(),
             background: "floor".to_string(),
             width: 4,
@@ -1679,6 +1801,34 @@ mod tests {
     }
 
     #[test]
+    fn scene_rejects_empty_variable_key() {
+        let mut scene = VisualScene::demo();
+        scene.variables.push(VisualStateEntry {
+            key: " ".to_string(),
+            value: VisualStateValue::Text("bad".to_string()),
+        });
+
+        assert!(matches!(
+            scene.validate(),
+            Err(VisualSceneError::EmptyVariableKey)
+        ));
+    }
+
+    #[test]
+    fn scene_rejects_duplicate_variable_key() {
+        let mut scene = VisualScene::demo();
+        scene.variables.push(VisualStateEntry {
+            key: "workspace_level".to_string(),
+            value: VisualStateValue::Number(2),
+        });
+
+        assert!(matches!(
+            scene.validate(),
+            Err(VisualSceneError::DuplicateVariableKey(key)) if key == "workspace_level"
+        ));
+    }
+
+    #[test]
     fn scene_fixture_default_loads_runtime_actions() {
         let scene = VisualScene::load_from_path(scene_fixture_path("default.json")).unwrap();
         let runtime = SceneRuntime::new(scene).unwrap();
@@ -1686,6 +1836,7 @@ mod tests {
 
         assert_eq!(snapshot.title, "Scene Harness Default");
         assert_eq!(snapshot.active_mode.mode_id, "workspace");
+        assert!(snapshot.variables.is_empty());
         assert!(snapshot
             .choices
             .iter()
@@ -2131,7 +2282,7 @@ mod tests {
     #[test]
     fn scene_frame_contains_selected_entity() {
         let runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
-        let frame = runtime.render_text_frame(80, 24);
+        let frame = runtime.render_text_frame(200, 80);
         assert!(frame.contains("Selected: GameTerm"));
     }
 
@@ -2141,7 +2292,7 @@ mod tests {
         let mut runtime = SceneRuntime::new_with_source(VisualScene::demo(), source).unwrap();
         runtime.toggle_debugger();
         runtime.activate_choice();
-        let frame = runtime.render_text_frame(80, 24);
+        let frame = runtime.render_text_frame(200, 80);
 
         assert!(frame.contains("Scene path: /tmp/default.json"));
         assert!(frame.contains("Load status: loaded"));
@@ -2177,6 +2328,11 @@ mod tests {
             .active_mode_allowed_actions
             .contains(&"Inspect".to_string()));
         assert_eq!(report.active_mode_default_transition, None);
+        assert!(report
+            .variables
+            .iter()
+            .any(|entry| entry.key == "workspace_level"
+                && entry.value == VisualStateValue::Number(1)));
         assert_eq!(report.title, "GameTerm Scene Mode");
         assert_eq!(report.background, "workspace-map");
         assert_eq!(report.width, 18);
@@ -2532,6 +2688,7 @@ mod tests {
                 state_flags: Some(vec!["running".to_string(), "verified".to_string()]),
                 metadata: Some(vec![("status".to_string(), "tests passed".to_string())]),
             }],
+            variables: vec![],
             selected_entity_id: None,
             status: Some("Verification passed".to_string()),
         };
@@ -2560,6 +2717,7 @@ mod tests {
         let patch = VisualScenePatch {
             scene_patch_version: VisualScenePatch::VERSION,
             updates: vec![],
+            variables: vec![],
             selected_entity_id: None,
             status: Some("Source tracked".to_string()),
         };
@@ -2573,8 +2731,78 @@ mod tests {
         assert_eq!(report.last_patch_source_pane_id, Some(42));
 
         runtime.toggle_debugger();
-        let frame = runtime.render_text_frame(100, 24);
+        let frame = runtime.render_text_frame(100, 40);
         assert!(frame.contains("Last patch: mux from pane 42"));
+    }
+
+    #[test]
+    fn scene_patch_updates_typed_variables() {
+        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        let patch = VisualScenePatch {
+            scene_patch_version: VisualScenePatch::VERSION,
+            updates: vec![],
+            variables: vec![
+                VisualStateEntry {
+                    key: "conversation_unlocked".to_string(),
+                    value: VisualStateValue::Bool(false),
+                },
+                VisualStateEntry {
+                    key: "quest_stage".to_string(),
+                    value: VisualStateValue::Number(2),
+                },
+                VisualStateEntry {
+                    key: "active_track".to_string(),
+                    value: VisualStateValue::Text("agent".to_string()),
+                },
+            ],
+            selected_entity_id: None,
+            status: None,
+        };
+
+        runtime.apply_scene_patch(patch).unwrap();
+        let report = runtime.debug_report();
+
+        assert_eq!(
+            report.status,
+            "Applied scene patch: 0 entity update(s), 3 variable update(s)"
+        );
+        assert!(report.variables.contains(&VisualStateEntry {
+            key: "conversation_unlocked".to_string(),
+            value: VisualStateValue::Bool(false),
+        }));
+        assert!(report.variables.contains(&VisualStateEntry {
+            key: "quest_stage".to_string(),
+            value: VisualStateValue::Number(2),
+        }));
+        assert!(report.variables.contains(&VisualStateEntry {
+            key: "active_track".to_string(),
+            value: VisualStateValue::Text("agent".to_string()),
+        }));
+    }
+
+    #[test]
+    fn scene_patch_rejects_duplicate_variable_key() {
+        let patch = VisualScenePatch {
+            scene_patch_version: VisualScenePatch::VERSION,
+            updates: vec![],
+            variables: vec![
+                VisualStateEntry {
+                    key: "quest_stage".to_string(),
+                    value: VisualStateValue::Number(1),
+                },
+                VisualStateEntry {
+                    key: "quest_stage".to_string(),
+                    value: VisualStateValue::Number(2),
+                },
+            ],
+            selected_entity_id: None,
+            status: None,
+        };
+
+        assert!(matches!(
+            patch.validate(),
+            Err(VisualScenePatchError::DuplicateVariableKey(key)) if key == "quest_stage"
+        ));
     }
 
     #[test]
@@ -2607,6 +2835,7 @@ mod tests {
                 state_flags: Some(vec!["bad".to_string()]),
                 metadata: None,
             }],
+            variables: vec![],
             selected_entity_id: None,
             status: Some("Should not apply".to_string()),
         };
@@ -2635,6 +2864,7 @@ mod tests {
                 state_flags: None,
                 metadata: None,
             }],
+            variables: vec![],
             selected_entity_id: None,
             status: Some("Visual state patched".to_string()),
         };
@@ -2668,6 +2898,7 @@ mod tests {
                 state_flags: None,
                 metadata: None,
             }],
+            variables: vec![],
             selected_entity_id: None,
             status: Some("Should not apply".to_string()),
         };
@@ -2688,6 +2919,7 @@ mod tests {
         let patch = VisualScenePatch {
             scene_patch_version: VisualScenePatch::VERSION,
             updates: vec![],
+            variables: vec![],
             selected_entity_id: Some(" ".to_string()),
             status: Some("Should not apply".to_string()),
         };
@@ -2712,6 +2944,7 @@ mod tests {
                 state_flags: None,
                 metadata: None,
             }],
+            variables: vec![],
             selected_entity_id: Some("agent-audit".to_string()),
             status: Some("Visibility patched".to_string()),
         };
