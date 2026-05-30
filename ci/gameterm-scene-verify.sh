@@ -295,10 +295,11 @@ run_doctor_check() {
 
 run_patch_check() {
   local tmp_home authored_patch inbox
-  local exported_scene
+  local exported_scene hidden_patch
   tmp_home="$(mktemp -d /tmp/gameterm-scene-patch-verify.XXXXXX)"
   tmp_paths+=("${tmp_home}")
   authored_patch="${tmp_home}/patches/project.json"
+  hidden_patch="${tmp_home}/patches/hidden.json"
   inbox="${tmp_home}/inbox/scene-patch.json"
   exported_scene="${tmp_home}/exported/default.json"
 
@@ -367,6 +368,38 @@ run_patch_check() {
       and (.state_flags == ["loaded", "authored"])
       and (.metadata | any(.[0] == "source" and .[1] == "verify")))
   ' "${exported_scene}" >/dev/null
+
+  "${repo_root}/ci/gameterm-scene-patch.sh" \
+    set-entity \
+    --output "${hidden_patch}" \
+    --entity-id project-harness \
+    --status "Hidden patch applied" \
+    --hidden >/dev/null
+  "${repo_root}/ci/gameterm-scene-patch.sh" \
+    validate \
+    --scene "${fixture_root}/default.json" \
+    --patch "${hidden_patch}" >/dev/null
+  jq -e '
+    any(.updates[]; .entity_id == "project-harness" and .visible == false)
+  ' "${hidden_patch}" >/dev/null
+
+  set +e
+  "${repo_root}/ci/gameterm-scene-patch.sh" \
+    set-entity \
+    --output "${tmp_home}/patches/conflict.json" \
+    --entity-id project-harness \
+    --status "Conflicting visibility" \
+    --visible \
+    --hidden >/tmp/gameterm-scene-patch-conflict.out \
+    2>/tmp/gameterm-scene-patch-conflict.err
+  patch_rc=$?
+  set -e
+  if [[ "${patch_rc}" -eq 0 ]]; then
+    echo "expected scene patch authoring to reject conflicting visibility flags" >&2
+    exit 1
+  fi
+  grep -q -- '--visible and --hidden are mutually exclusive' \
+    /tmp/gameterm-scene-patch-conflict.err
 
   "${repo_root}/ci/gameterm-scene-process.sh" \
     --entity-id project-harness \

@@ -141,10 +141,18 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --visible)
+      if [[ "${visible_state}" == "false" ]]; then
+        echo "--visible and --hidden are mutually exclusive" >&2
+        exit 2
+      fi
       visible_state="true"
       shift
       ;;
     --hidden)
+      if [[ "${visible_state}" == "true" ]]; then
+        echo "--visible and --hidden are mutually exclusive" >&2
+        exit 2
+      fi
       visible_state="false"
       shift
       ;;
@@ -265,11 +273,19 @@ EOF
   fi
 
   local flags_json metadata_json
-  flags_json="$(printf '%s\n' "${flags[@]}" | jq -R -s 'split("\n")[:-1]')"
-  metadata_json="$(printf '%s\n' "${metadata[@]}" | jq -R -s '
-    split("\n")[:-1]
-    | map(capture("(?<key>[^=]+)=(?<value>.*)") | [.key, .value])
-  ')"
+  if ((${#flags[@]} == 0)); then
+    flags_json="[]"
+  else
+    flags_json="$(printf '%s\n' "${flags[@]}" | jq -R -s 'split("\n")[:-1]')"
+  fi
+  if ((${#metadata[@]} == 0)); then
+    metadata_json="[]"
+  else
+    metadata_json="$(printf '%s\n' "${metadata[@]}" | jq -R -s '
+      split("\n")[:-1]
+      | map(capture("(?<key>[^=]+)=(?<value>.*)") | [.key, .value])
+    ')"
+  fi
   position_json="null"
   if [[ -n "${position_text}" ]]; then
     if [[ ! "${position_text}" =~ ^[0-9]+,[0-9]+$ ]]; then

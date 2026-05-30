@@ -384,6 +384,8 @@ pub enum VisualScenePatchError {
     EmptyPatch,
     #[error("scene patch entity id must be non-empty")]
     EmptyEntityId,
+    #[error("scene patch selected entity id must be non-empty")]
+    EmptySelectedEntityId,
     #[error("scene patch references unknown entity id `{0}`")]
     UnknownEntityId(String),
     #[error("scene patch entity `{entity_id}` position {x},{y} is outside scene bounds")]
@@ -451,7 +453,7 @@ impl VisualScenePatch {
             }
         }
         if matches!(self.selected_entity_id.as_ref(), Some(id) if id.trim().is_empty()) {
-            return Err(VisualScenePatchError::EmptyEntityId);
+            return Err(VisualScenePatchError::EmptySelectedEntityId);
         }
         Ok(())
     }
@@ -2479,6 +2481,21 @@ mod tests {
             })
         );
         assert_eq!(runtime.render_snapshot(), before);
+    }
+
+    #[test]
+    fn scene_patch_rejects_empty_selected_entity_id() {
+        let patch = VisualScenePatch {
+            scene_patch_version: VisualScenePatch::VERSION,
+            updates: vec![],
+            selected_entity_id: Some(" ".to_string()),
+            status: Some("Should not apply".to_string()),
+        };
+
+        assert_eq!(
+            patch.validate(),
+            Err(VisualScenePatchError::EmptySelectedEntityId)
+        );
     }
 
     #[test]
