@@ -307,6 +307,17 @@ pub struct VisualScenePatch {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VisualStoryState {
+    pub story_state_version: u32,
+    #[serde(default)]
+    pub variables: Vec<VisualStateEntry>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dialogue_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dialogue_history: Vec<VisualDialogueLine>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VisualSceneEntityPatch {
     pub entity_id: String,
     #[serde(default)]
@@ -357,6 +368,12 @@ enum VisualStateEntryError {
     DuplicateKey(String),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum VisualDialogueLineError {
+    EmptySpeaker { index: usize },
+    EmptyText { index: usize },
+}
+
 fn validate_state_entries(entries: &[VisualStateEntry]) -> Result<(), VisualStateEntryError> {
     let mut keys = HashSet::new();
     for entry in entries {
@@ -365,6 +382,18 @@ fn validate_state_entries(entries: &[VisualStateEntry]) -> Result<(), VisualStat
         }
         if !keys.insert(entry.key.as_str()) {
             return Err(VisualStateEntryError::DuplicateKey(entry.key.clone()));
+        }
+    }
+    Ok(())
+}
+
+fn validate_dialogue_lines(lines: &[VisualDialogueLine]) -> Result<(), VisualDialogueLineError> {
+    for (index, line) in lines.iter().enumerate() {
+        if line.speaker.trim().is_empty() {
+            return Err(VisualDialogueLineError::EmptySpeaker { index });
+        }
+        if line.text.trim().is_empty() {
+            return Err(VisualDialogueLineError::EmptyText { index });
         }
     }
     Ok(())
@@ -553,6 +582,69 @@ pub enum VisualScenePatchError {
     DuplicateVariableKey(String),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum VisualStoryStateError {
+    #[error("story state json error: {0}")]
+    Json(String),
+    #[error("story state file error for `{path}`: {message}")]
+    File { path: String, message: String },
+    #[error("unsupported story state version `{0}`")]
+    UnsupportedVersion(u32),
+    #[error("story state variable key must be non-empty")]
+    EmptyVariableKey,
+    #[error("story state contains duplicate variable key `{0}`")]
+    DuplicateVariableKey(String),
+    #[error("story state dialogue line {index} must provide a non-empty speaker")]
+    EmptyDialogueSpeaker { index: usize },
+    #[error("story state dialogue line {index} must provide non-empty text")]
+    EmptyDialogueText { index: usize },
+    #[error("story state references missing dialogue line {target}")]
+    DialogueIndexOutOfBounds { target: usize },
+}
+
+impl VisualStoryState {
+    pub const VERSION: u32 = 1;
+
+    pub fn from_json(json: &str) -> Result<Self, VisualStoryStateError> {
+        let state: Self = serde_json::from_str(json)
+            .map_err(|err| VisualStoryStateError::Json(err.to_string()))?;
+        state.validate()?;
+        Ok(state)
+    }
+
+    pub fn load_from_path(path: impl AsRef<Path>) -> Result<Self, VisualStoryStateError> {
+        let path = path.as_ref();
+        let json = std::fs::read_to_string(path).map_err(|err| VisualStoryStateError::File {
+            path: path.display().to_string(),
+            message: err.to_string(),
+        })?;
+        Self::from_json(&json)
+    }
+
+    pub fn validate(&self) -> Result<(), VisualStoryStateError> {
+        if self.story_state_version != Self::VERSION {
+            return Err(VisualStoryStateError::UnsupportedVersion(
+                self.story_state_version,
+            ));
+        }
+        validate_state_entries(&self.variables).map_err(|err| match err {
+            VisualStateEntryError::EmptyKey => VisualStoryStateError::EmptyVariableKey,
+            VisualStateEntryError::DuplicateKey(key) => {
+                VisualStoryStateError::DuplicateVariableKey(key)
+            }
+        })?;
+        validate_dialogue_lines(&self.dialogue_history).map_err(|err| match err {
+            VisualDialogueLineError::EmptySpeaker { index } => {
+                VisualStoryStateError::EmptyDialogueSpeaker { index }
+            }
+            VisualDialogueLineError::EmptyText { index } => {
+                VisualStoryStateError::EmptyDialogueText { index }
+            }
+        })?;
+        Ok(())
+    }
+}
+
 impl VisualScenePatch {
     pub const VERSION: u32 = 1;
 
@@ -736,14 +828,14 @@ impl VisualScene {
             }
         }
 
-        for (index, line) in self.dialogue_lines.iter().enumerate() {
-            if line.speaker.trim().is_empty() {
-                return Err(VisualSceneError::EmptyDialogueSpeaker { index });
+        validate_dialogue_lines(&self.dialogue_lines).map_err(|err| match err {
+            VisualDialogueLineError::EmptySpeaker { index } => {
+                VisualSceneError::EmptyDialogueSpeaker { index }
             }
-            if line.text.trim().is_empty() {
-                return Err(VisualSceneError::EmptyDialogueText { index });
+            VisualDialogueLineError::EmptyText { index } => {
+                VisualSceneError::EmptyDialogueText { index }
             }
-        }
+        })?;
 
         for choice in &self.choices {
             for condition in &choice.conditions {
@@ -969,6 +1061,45 @@ impl SceneRuntime {
 
     pub fn scene_json_pretty(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string_pretty(&self.scene)
+    }
+
+    pub fn export_story_state(&self) -> VisualStoryState {
+        VisualStoryState {
+            story_state_version: VisualStoryState::VERSION,
+            variables: self.scene.variables.clone(),
+            dialogue_index: dialogue_index(&self.scene, self.dialogue_index),
+            dialogue_history: self.dialogue_history.clone(),
+        }
+    }
+
+    pub fn story_state_json_pretty(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string_pretty(&self.export_story_state())
+    }
+
+    pub fn import_story_state(
+        &mut self,
+        state: VisualStoryState,
+    ) -> Result<(), VisualStoryStateError> {
+        state.validate()?;
+        if let Some(target) = state.dialogue_index {
+            if target >= self.scene.dialogue_lines.len() {
+                return Err(VisualStoryStateError::DialogueIndexOutOfBounds { target });
+            }
+        }
+
+        let dialogue_index = state.dialogue_index.unwrap_or(0);
+        let dialogue_history = if state.dialogue_history.is_empty() {
+            initial_dialogue_history(&self.scene, dialogue_index)
+        } else {
+            state.dialogue_history
+        };
+
+        self.scene.variables = state.variables;
+        self.dialogue_index = dialogue_index;
+        self.dialogue_history = dialogue_history;
+        self.status = "Imported story state".to_string();
+        self.bump_generation();
+        Ok(())
     }
 
     pub fn take_pending_action(&mut self) -> Option<VisualActionRequest> {
@@ -2401,6 +2532,109 @@ mod tests {
         assert!(frame.contains("Active line: 2 of 3"));
         assert!(frame.contains("History entries: 2"));
         assert!(frame.contains("Choice kind: AdvanceDialogue"));
+    }
+
+    #[test]
+    fn story_state_export_includes_variables_and_dialogue_position() {
+        let mut runtime = SceneRuntime::new(branching_dialogue_scene()).unwrap();
+        runtime.activate_choice();
+
+        let state = runtime.export_story_state();
+
+        assert_eq!(state.story_state_version, VisualStoryState::VERSION);
+        assert!(state.variables.contains(&VisualStateEntry {
+            key: "active_track".to_string(),
+            value: VisualStateValue::Text("visual-state".to_string()),
+        }));
+        assert_eq!(state.dialogue_index, Some(1));
+        assert_eq!(state.dialogue_history.len(), 2);
+
+        let json = runtime.story_state_json_pretty().unwrap();
+        assert!(json.contains("\"story_state_version\": 1"));
+        assert!(json.contains("\"dialogue_index\": 1"));
+    }
+
+    #[test]
+    fn story_state_import_restores_variables_and_dialogue() {
+        let mut source = SceneRuntime::new(branching_dialogue_scene()).unwrap();
+        source.activate_choice();
+        let mut state = source.export_story_state();
+        state.variables.push(VisualStateEntry {
+            key: "quest_stage".to_string(),
+            value: VisualStateValue::Number(3),
+        });
+        let mut target = SceneRuntime::new(branching_dialogue_scene()).unwrap();
+        let initial_generation = target.generation();
+
+        target.import_story_state(state).unwrap();
+        let snapshot = target.render_snapshot();
+
+        assert!(target.generation() > initial_generation);
+        assert_eq!(snapshot.dialogue_index, Some(1));
+        assert_eq!(snapshot.dialogue, "Workspace branch selected.");
+        assert!(snapshot.variables.contains(&VisualStateEntry {
+            key: "quest_stage".to_string(),
+            value: VisualStateValue::Number(3),
+        }));
+        assert_eq!(snapshot.status, "Imported story state");
+    }
+
+    #[test]
+    fn story_state_import_rejects_out_of_bounds_dialogue_without_mutation() {
+        let mut runtime = SceneRuntime::new(branching_dialogue_scene()).unwrap();
+        let before = runtime.render_snapshot();
+        let mut state = runtime.export_story_state();
+        state.dialogue_index = Some(99);
+
+        assert_eq!(
+            runtime.import_story_state(state),
+            Err(VisualStoryStateError::DialogueIndexOutOfBounds { target: 99 })
+        );
+        assert_eq!(runtime.render_snapshot(), before);
+    }
+
+    #[test]
+    fn story_state_rejects_duplicate_variable_key() {
+        let state = VisualStoryState {
+            story_state_version: VisualStoryState::VERSION,
+            variables: vec![
+                VisualStateEntry {
+                    key: "quest_stage".to_string(),
+                    value: VisualStateValue::Number(1),
+                },
+                VisualStateEntry {
+                    key: "quest_stage".to_string(),
+                    value: VisualStateValue::Number(2),
+                },
+            ],
+            dialogue_index: None,
+            dialogue_history: vec![],
+        };
+
+        assert!(matches!(
+            state.validate(),
+            Err(VisualStoryStateError::DuplicateVariableKey(key)) if key == "quest_stage"
+        ));
+    }
+
+    #[test]
+    fn story_state_rejects_empty_history_dialogue_text() {
+        let state = VisualStoryState {
+            story_state_version: VisualStoryState::VERSION,
+            variables: vec![],
+            dialogue_index: None,
+            dialogue_history: vec![VisualDialogueLine {
+                speaker: "Guide".to_string(),
+                text: " ".to_string(),
+                portrait: None,
+                metadata: vec![],
+            }],
+        };
+
+        assert_eq!(
+            state.validate(),
+            Err(VisualStoryStateError::EmptyDialogueText { index: 0 })
+        );
     }
 
     #[test]

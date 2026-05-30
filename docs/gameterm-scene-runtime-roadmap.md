@@ -59,7 +59,7 @@ Current status:
 - [x] Add higher-level authoring UX for templates and guided scene creation.
 - [x] Define the Scene Mode narrative/RPG layer.
 - [x] Add dialogue and branching-choice runtime state.
-- [ ] Add explicit story-state save/load or export/import.
+- [x] Add explicit story-state save/load or export/import.
 - [ ] Prototype lightweight RPG state such as inventory, stats, quests, and
   relationships.
 - [x] Define Scene Mode computational modes.
@@ -365,6 +365,7 @@ Add state that can survive scene navigation and GameTerm restarts:
    serialization.
 2. Add conditional choice visibility and conditional entity visibility.
 3. Add explicit save/load or export/import helpers for runtime state.
+   Implemented in `gameterm-visual` as `VisualStoryState` export/import APIs.
 4. Keep source scene files immutable unless the user runs an explicit authoring
    or export command.
 5. Show active flags, variables, and save source in the Tile Debugger.
