@@ -6,7 +6,9 @@ use ::window::RectF;
 use anyhow::Context;
 use config::HsbTransform;
 use gameterm_visual::{VisualRenderEntity, VisualRenderTile};
+use std::sync::Arc;
 use termwiz::color::LinearRgba;
+use termwiz::image::ImageData;
 
 fn visual_placeholder_color(sprite: &str, alpha: f32, floor: f32) -> LinearRgba {
     let mut hash = 0xcbf29ce484222325u64;
@@ -151,13 +153,8 @@ impl TermWindow {
         params: &RenderScreenLineParams,
         hsv: Option<HsbTransform>,
     ) -> anyhow::Result<bool> {
-        if self.allow_images == AllowImage::No {
-            return Ok(false);
-        }
-
-        let Some(image_data) = params
-            .visual_sprites
-            .and_then(|sprites| sprites.sprites.get(sprite_id))
+        let Some(image_data) =
+            visual_sprite_image_data(sprite_id, self.allow_images, params.visual_sprites)
         else {
             return Ok(false);
         };
@@ -197,9 +194,23 @@ impl TermWindow {
     }
 }
 
+fn visual_sprite_image_data<'a>(
+    sprite_id: &str,
+    allow_images: AllowImage,
+    visual_sprites: Option<&'a crate::termwindow::render::VisualSpriteImages>,
+) -> Option<&'a Arc<ImageData>> {
+    if allow_images == AllowImage::No {
+        return None;
+    }
+
+    visual_sprites.and_then(|sprites| sprites.sprites.get(sprite_id))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::termwindow::render::VisualSpriteImages;
+    use std::collections::HashMap;
 
     #[test]
     fn placeholder_color_is_deterministic_per_sprite() {
@@ -209,5 +220,38 @@ mod tests {
 
         assert_eq!(first, second);
         assert_ne!(first, other);
+    }
+
+    #[test]
+    fn visual_sprite_lookup_is_disabled_when_images_are_disabled() {
+        let mut sprites = HashMap::new();
+        sprites.insert(
+            "task_tile".to_string(),
+            Arc::new(ImageData::with_raw_data(vec![1, 2, 3])),
+        );
+        let images = VisualSpriteImages { sprites };
+
+        assert!(visual_sprite_image_data("task_tile", AllowImage::No, Some(&images)).is_none());
+    }
+
+    #[test]
+    fn visual_sprite_lookup_falls_back_when_sprite_is_missing() {
+        let images = VisualSpriteImages {
+            sprites: HashMap::new(),
+        };
+
+        assert!(visual_sprite_image_data("missing", AllowImage::Yes, Some(&images)).is_none());
+    }
+
+    #[test]
+    fn visual_sprite_lookup_finds_available_sprite_when_images_are_allowed() {
+        let mut sprites = HashMap::new();
+        sprites.insert(
+            "task_tile".to_string(),
+            Arc::new(ImageData::with_raw_data(vec![1, 2, 3])),
+        );
+        let images = VisualSpriteImages { sprites };
+
+        assert!(visual_sprite_image_data("task_tile", AllowImage::Yes, Some(&images)).is_some());
     }
 }

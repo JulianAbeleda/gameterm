@@ -52,10 +52,10 @@ Current status:
 - [x] macOS smoke helper can launch fixtures and submit a mux patch before
   capture.
 - [ ] Run and archive a real live mux-submit smoke capture.
-- [ ] Add renderer helper tests for cache invalidation and image-disabled
+- [x] Add renderer helper tests for cache invalidation and image-disabled
   behavior.
-- [ ] Expand patchable runtime state beyond entity flags/metadata/status.
-- [ ] Make agent/process integrations emit Scene Mode patches directly.
+- [x] Expand patchable runtime state beyond entity flags/metadata/status.
+- [x] Make agent/process integrations emit Scene Mode patches directly.
 - [ ] Add higher-level authoring UX for templates and guided scene creation.
 
 ## Default Scene Reload
@@ -247,6 +247,9 @@ Implemented patch contract:
   "updates": [
     {
       "entity_id": "task-render",
+      "label": "Render Verified",
+      "position": {"x": 5, "y": 6},
+      "sprite": "task_tile_done",
       "state_flags": ["running", "verified"],
       "metadata": [["status", "tests passed"]]
     }
@@ -259,9 +262,12 @@ Implemented constraints:
 
 - Apply patches only to the active scene runtime, not directly to the source
   JSON file.
+- Entity patches may update label, grid position, sprite id, state flags, and
+  metadata.
 - Reject unknown entity ids and malformed patches with visible Scene Mode
   status once GUI transport exists. The current library API returns a typed
   error.
+- Reject patched entity positions outside the current scene bounds.
 - Bump the visual generation after every accepted patch so render caches
   invalidate correctly.
 - Keep persistence as a later explicit authoring action rather than silently
@@ -278,10 +284,13 @@ cargo run -q -p gameterm-visual --example scene_patch_apply -- \
 Authoring and inbox helpers:
 
 ```sh
-ci/gameterm-scene-patch.sh set-entity-status \
+ci/gameterm-scene-patch.sh set-entity \
   --output /tmp/gameterm-scene-patch.json \
   --entity-id project-harness \
   --status "Verification passed" \
+  --label "Harness Verified" \
+  --position 5,3 \
+  --sprite project_core \
   --flag loaded --flag verified \
   --metadata status=patched
 

@@ -229,6 +229,51 @@ pub struct ComputeCellFgBgResult {
     pub cursor_shape: Option<CursorShape>,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cache_key_with_visual_generations(
+        visual_generation: Option<u64>,
+        visual_sprite_generation: Option<u64>,
+    ) -> LineQuadCacheKey {
+        LineQuadCacheKey {
+            config_generation: 1,
+            shape_generation: 2,
+            quad_generation: 3,
+            visual_generation,
+            visual_sprite_generation,
+            composing: None,
+            selection: 0..0,
+            shape_hash: [0; 16],
+            top_pixel_y: NotNan::new(0.0).unwrap(),
+            left_pixel_x: NotNan::new(0.0).unwrap(),
+            phys_line_idx: 0,
+            pane_id: 1,
+            pane_is_active: true,
+            cursor: None,
+            reverse_video: false,
+            password_input: false,
+        }
+    }
+
+    #[test]
+    fn line_quad_cache_key_tracks_visual_generation() {
+        assert_ne!(
+            cache_key_with_visual_generations(Some(1), Some(9)),
+            cache_key_with_visual_generations(Some(2), Some(9))
+        );
+    }
+
+    #[test]
+    fn line_quad_cache_key_tracks_visual_sprite_generation() {
+        assert_ne!(
+            cache_key_with_visual_generations(Some(1), Some(9)),
+            cache_key_with_visual_generations(Some(1), Some(10))
+        );
+    }
+}
+
 /// Basic cache of computed data from prior cluster to avoid doing the same
 /// work for space separated clusters with the same style
 #[derive(Clone, Debug)]

@@ -216,6 +216,12 @@ pub struct VisualScenePatch {
 pub struct VisualSceneEntityPatch {
     pub entity_id: String,
     #[serde(default)]
+    pub label: Option<String>,
+    #[serde(default)]
+    pub position: Option<VisualPosition>,
+    #[serde(default)]
+    pub sprite: Option<String>,
+    #[serde(default)]
     pub state_flags: Option<Vec<String>>,
     #[serde(default)]
     pub metadata: Option<Vec<(String, String)>>,
@@ -366,6 +372,16 @@ pub enum VisualScenePatchError {
     EmptyEntityId,
     #[error("scene patch references unknown entity id `{0}`")]
     UnknownEntityId(String),
+    #[error("scene patch entity `{entity_id}` position {x},{y} is outside scene bounds")]
+    EntityOutOfBounds {
+        entity_id: String,
+        x: usize,
+        y: usize,
+    },
+    #[error("scene patch entity `{entity_id}` label must be non-empty")]
+    EmptyLabel { entity_id: String },
+    #[error("scene patch entity `{entity_id}` sprite must be non-empty")]
+    EmptySprite { entity_id: String },
     #[error("scene patch metadata for `{entity_id}` contains an empty key")]
     EmptyMetadataKey { entity_id: String },
 }
@@ -401,6 +417,16 @@ impl VisualScenePatch {
         for update in &self.updates {
             if update.entity_id.trim().is_empty() {
                 return Err(VisualScenePatchError::EmptyEntityId);
+            }
+            if matches!(update.label.as_ref(), Some(label) if label.trim().is_empty()) {
+                return Err(VisualScenePatchError::EmptyLabel {
+                    entity_id: update.entity_id.clone(),
+                });
+            }
+            if matches!(update.sprite.as_ref(), Some(sprite) if sprite.trim().is_empty()) {
+                return Err(VisualScenePatchError::EmptySprite {
+                    entity_id: update.entity_id.clone(),
+                });
             }
             if let Some(metadata) = &update.metadata {
                 if metadata.iter().any(|(key, _)| key.trim().is_empty()) {
@@ -827,15 +853,24 @@ impl SceneRuntime {
     ) -> Result<(), VisualScenePatchError> {
         patch.validate()?;
         for update in &patch.updates {
-            if !self
+            let Some(entity) = self
                 .scene
                 .entities
                 .iter()
-                .any(|entity| entity.id == update.entity_id)
-            {
+                .find(|entity| entity.id == update.entity_id)
+            else {
                 return Err(VisualScenePatchError::UnknownEntityId(
                     update.entity_id.clone(),
                 ));
+            };
+            if let Some(position) = update.position {
+                if position.x >= self.scene.width || position.y >= self.scene.height {
+                    return Err(VisualScenePatchError::EntityOutOfBounds {
+                        entity_id: entity.id.clone(),
+                        x: position.x,
+                        y: position.y,
+                    });
+                }
             }
         }
 
@@ -847,6 +882,15 @@ impl SceneRuntime {
                 .iter_mut()
                 .find(|entity| entity.id == update.entity_id)
             {
+                if let Some(label) = update.label {
+                    entity.label = label;
+                }
+                if let Some(position) = update.position {
+                    entity.position = position;
+                }
+                if let Some(sprite) = update.sprite {
+                    entity.sprite = sprite;
+                }
                 if let Some(state_flags) = update.state_flags {
                     entity.state_flags = state_flags;
                 }
@@ -1155,9 +1199,14 @@ impl SceneRuntime {
             }
             _ => out.push_str("  Pending action: none\r\n"),
         }
-        match (&report.last_patch_transport, report.last_patch_source_pane_id) {
+        match (
+            &report.last_patch_transport,
+            report.last_patch_source_pane_id,
+        ) {
             (Some(transport), Some(pane_id)) => {
-                out.push_str(&format!("  Last patch: {transport} from pane {pane_id}\r\n"));
+                out.push_str(&format!(
+                    "  Last patch: {transport} from pane {pane_id}\r\n"
+                ));
             }
             (Some(transport), None) => {
                 out.push_str(&format!("  Last patch: {transport}\r\n"));
@@ -2236,6 +2285,9 @@ mod tests {
             scene_patch_version: VisualScenePatch::VERSION,
             updates: vec![VisualSceneEntityPatch {
                 entity_id: "task-render".to_string(),
+                label: None,
+                position: None,
+                sprite: None,
                 state_flags: Some(vec!["running".to_string(), "verified".to_string()]),
                 metadata: Some(vec![("status".to_string(), "tests passed".to_string())]),
             }],
@@ -2305,6 +2357,9 @@ mod tests {
             scene_patch_version: VisualScenePatch::VERSION,
             updates: vec![VisualSceneEntityPatch {
                 entity_id: "missing".to_string(),
+                label: None,
+                position: None,
+                sprite: None,
                 state_flags: Some(vec!["bad".to_string()]),
                 metadata: None,
             }],
@@ -2316,6 +2371,65 @@ mod tests {
             Err(VisualScenePatchError::UnknownEntityId(
                 "missing".to_string()
             ))
+        );
+        assert_eq!(runtime.render_snapshot(), before);
+    }
+
+    #[test]
+    fn scene_patch_updates_entity_visual_state() {
+        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        let initial_generation = runtime.generation();
+        let patch = VisualScenePatch {
+            scene_patch_version: VisualScenePatch::VERSION,
+            updates: vec![VisualSceneEntityPatch {
+                entity_id: "task-render".to_string(),
+                label: Some("Render Verified".to_string()),
+                position: Some(VisualPosition { x: 5, y: 6 }),
+                sprite: Some("task_tile_done".to_string()),
+                state_flags: None,
+                metadata: None,
+            }],
+            status: Some("Visual state patched".to_string()),
+        };
+
+        runtime.apply_scene_patch(patch).unwrap();
+
+        assert!(runtime.generation() > initial_generation);
+        let entity = runtime
+            .render_snapshot()
+            .entities
+            .into_iter()
+            .find(|entity| entity.id == "task-render")
+            .unwrap();
+        assert_eq!(entity.label, "Render Verified");
+        assert_eq!(entity.position, VisualPosition { x: 5, y: 6 });
+        assert_eq!(entity.sprite, "task_tile_done");
+    }
+
+    #[test]
+    fn scene_patch_rejects_out_of_bounds_position_without_mutation() {
+        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        let before = runtime.render_snapshot();
+        let patch = VisualScenePatch {
+            scene_patch_version: VisualScenePatch::VERSION,
+            updates: vec![VisualSceneEntityPatch {
+                entity_id: "task-render".to_string(),
+                label: None,
+                position: Some(VisualPosition { x: 99, y: 6 }),
+                sprite: None,
+                state_flags: None,
+                metadata: None,
+            }],
+            status: Some("Should not apply".to_string()),
+        };
+
+        assert_eq!(
+            runtime.apply_scene_patch(patch),
+            Err(VisualScenePatchError::EntityOutOfBounds {
+                entity_id: "task-render".to_string(),
+                x: 99,
+                y: 6,
+            })
         );
         assert_eq!(runtime.render_snapshot(), before);
     }

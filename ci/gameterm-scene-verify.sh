@@ -318,10 +318,13 @@ run_patch_check() {
     /tmp/gameterm-scene-patch-verify-bad.err
 
   "${repo_root}/ci/gameterm-scene-patch.sh" \
-    set-entity-status \
+    set-entity \
     --output "${authored_patch}" \
     --entity-id project-harness \
     --status "Authored patch applied" \
+    --label "Harness Verified" \
+    --position 5,3 \
+    --sprite project_core \
     --flag loaded \
     --flag authored \
     --metadata fixture=default \
@@ -344,6 +347,9 @@ run_patch_check() {
     validate "${exported_scene}" >/dev/null
   jq -e '
     any(.entities[]; .id == "project-harness"
+      and .label == "Harness Verified"
+      and .position == {"x": 5, "y": 3}
+      and .sprite == "project_core"
       and (.state_flags == ["loaded", "authored"])
       and (.metadata | any(.[0] == "source" and .[1] == "verify")))
   ' "${exported_scene}" >/dev/null
@@ -362,7 +368,10 @@ run_cargo_checks() {
   cargo test -p gameterm-visual navigate
   cargo test -p gameterm-visual debug_report
   cargo test -p gameterm-visual scene_patch
+  cargo test -p gameterm-visual render::tests
   cargo test -p gameterm-gui overlay::visual
+  cargo test -p gameterm-gui visual_quad
+  cargo test -p gameterm-gui render::tests
 }
 
 run_all() {

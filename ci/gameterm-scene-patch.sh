@@ -13,6 +13,7 @@ Commands:
   validate                      Validate a patch by applying it to a scene.
   write-inbox                   Atomically write a patch to a Scene Mode inbox.
   submit-mux                    Submit a patch through gameterm cli scene-patch.
+  set-entity                    Create a patch for one entity's visual/runtime state.
   set-entity-status             Create a patch for one entity's flags/metadata.
 
 Options for apply and validate:
@@ -34,10 +35,13 @@ Options for submit-mux:
   --target-pane-id ID           Target Scene Mode overlay pane. Optional.
   --source-pane-id ID           Source pane id. Optional.
 
-Options for set-entity-status:
+Options for set-entity and set-entity-status:
   --output PATH                 Patch output path. Required.
   --entity-id ID                Entity id to update. Required.
   --status TEXT                 Runtime status string. Required.
+  --label TEXT                  Entity label.
+  --position X,Y                Entity grid position.
+  --sprite ID                   Entity sprite id.
   --flag FLAG                   State flag. May be repeated.
   --metadata KEY=VALUE          Metadata pair. May be repeated.
   --force                       Overwrite an existing output file.
@@ -76,6 +80,9 @@ inbox_path=""
 output_path=""
 entity_id=""
 status_text=""
+label_text=""
+position_text=""
+sprite_id=""
 target_pane_id=""
 source_pane_id=""
 force=0
@@ -114,6 +121,18 @@ while [[ $# -gt 0 ]]; do
       ;;
     --status)
       status_text="$2"
+      shift 2
+      ;;
+    --label)
+      label_text="$2"
+      shift 2
+      ;;
+    --position)
+      position_text="$2"
+      shift 2
+      ;;
+    --sprite)
+      sprite_id="$2"
       shift 2
       ;;
     --flag)
@@ -214,7 +233,7 @@ EOF
     "${output_path}"
 }
 
-create_entity_status_patch() {
+create_entity_patch() {
   require_value "--output" "${output_path}"
   require_value "--entity-id" "${entity_id}"
   require_value "--status" "${status_text}"
@@ -234,20 +253,37 @@ EOF
     split("\n")[:-1]
     | map(capture("(?<key>[^=]+)=(?<value>.*)") | [.key, .value])
   ')"
+  position_json="null"
+  if [[ -n "${position_text}" ]]; then
+    if [[ ! "${position_text}" =~ ^[0-9]+,[0-9]+$ ]]; then
+      echo "--position must use X,Y with non-negative integers" >&2
+      exit 2
+    fi
+    position_json="$(jq -n --arg position "${position_text}" '
+      ($position | split(",")) as $parts
+      | {x: ($parts[0] | tonumber), y: ($parts[1] | tonumber)}
+    ')"
+  fi
 
   mkdir -p "$(dirname "${output_path}")"
   jq -n \
     --arg entity_id "${entity_id}" \
     --arg status "${status_text}" \
+    --arg label "${label_text}" \
+    --arg sprite "${sprite_id}" \
+    --argjson position "${position_json}" \
     --argjson flags "${flags_json}" \
     --argjson metadata "${metadata_json}" \
     '{
       scene_patch_version: 1,
       updates: [{
         entity_id: $entity_id,
+        label: (if $label == "" then null else $label end),
+        position: $position,
+        sprite: (if $sprite == "" then null else $sprite end),
         state_flags: $flags,
         metadata: $metadata
-      }],
+      } | with_entries(select(.value != null))],
       status: $status
     }' | write_json "${output_path}"
   jq empty "${output_path}"
@@ -273,8 +309,11 @@ case "${command}" in
   submit-mux)
     submit_mux
     ;;
+  set-entity)
+    create_entity_patch
+    ;;
   set-entity-status)
-    create_entity_status_patch
+    create_entity_patch
     ;;
   *)
     echo "unknown command: ${command}" >&2

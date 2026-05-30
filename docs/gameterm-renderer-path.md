@@ -175,9 +175,9 @@ later frame passes continue to draw over pane content.
 - [x] Isolate visual quad population in
   `gameterm-gui/src/termwindow/render/visual_quad.rs`.
 - [x] Cache sprite image data per pane metadata and prune it on pane removal.
-- [ ] Verify skipped off-screen records do not perform atlas or placeholder
+- [x] Verify skipped off-screen records do not perform atlas or placeholder
   work with focused helper tests.
-- [ ] Add helper tests for image-disabled mode and sprite fallback behavior.
-- [ ] Add cache-invalidation tests for visual generation and sprite generation.
+- [x] Add helper tests for image-disabled mode and sprite fallback behavior.
+- [x] Add cache-invalidation tests for visual generation and sprite generation.
 - [ ] Decide whether/when to replace cached individual images with a packed
   sprite atlas.
