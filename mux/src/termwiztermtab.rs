@@ -473,11 +473,26 @@ impl termwiz::terminal::Terminal for TermWizTerminal {
 pub fn allocate(
     size: TerminalSize,
     config: Arc<dyn TerminalConfiguration + Send + Sync>,
+    window_id: Option<WindowId>,
 ) -> (TermWizTerminal, Arc<dyn Pane>) {
     let render_pipe = Pipe::new().expect("Pipe creation not to fail");
 
     let (input_tx, input_rx) = channel();
     let metadata = Arc::new(Mutex::new(BTreeMap::new()));
+
+    let domain_id = 0;
+    let pane = TermWizTerminalPane::new(
+        domain_id,
+        size,
+        input_tx.clone(),
+        render_pipe.read,
+        Some(config),
+        Arc::clone(&metadata),
+    );
+
+    // Add the tab to the mux so that the output is processed
+    let pane: Arc<dyn Pane> = Arc::new(pane);
+    let pane_id = pane.pane_id();
 
     let renderer = termwiz_funcs::new_gameterm_terminfo_renderer();
 
@@ -494,23 +509,10 @@ pub fn allocate(
         input_rx,
         renderer,
         grab_mouse: true,
-        metadata: Arc::clone(&metadata),
-        pane_id: None,
-        window_id: None,
-    };
-
-    let domain_id = 0;
-    let pane = TermWizTerminalPane::new(
-        domain_id,
-        size,
-        input_tx,
-        render_pipe.read,
-        Some(config),
         metadata,
-    );
-
-    // Add the tab to the mux so that the output is processed
-    let pane: Arc<dyn Pane> = Arc::new(pane);
+        pane_id: Some(pane_id),
+        window_id,
+    };
 
     let mux = Mux::get();
     mux.add_pane(&pane).expect("to be able to add pane to mux");

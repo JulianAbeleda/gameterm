@@ -41,7 +41,7 @@ where
     let tab_size = tab.get_size();
     let term_config: Arc<dyn TerminalConfiguration + Send + Sync> =
         Arc::new(config::TermConfig::with_config(term_window.config.clone()));
-    let (tw_term, tw_tab) = allocate(tab_size, term_config);
+    let (tw_term, tw_tab) = allocate(tab_size, term_config, Some(term_window.mux_window_id));
 
     let window = term_window.window.clone().unwrap();
 
@@ -79,7 +79,7 @@ where
     };
     let term_config: Arc<dyn TerminalConfiguration + Send + Sync> =
         Arc::new(config::TermConfig::with_config(term_window.config.clone()));
-    let (tw_term, tw_tab) = allocate(size, term_config);
+    let (tw_term, tw_tab) = allocate(size, term_config, Some(term_window.mux_window_id));
 
     let window = term_window.window.clone().unwrap();
 
