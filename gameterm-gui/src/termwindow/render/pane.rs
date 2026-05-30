@@ -742,30 +742,36 @@ impl crate::TermWindow {
         pane_id: PaneId,
         metadata: Option<&str>,
     ) -> Option<Arc<VisualSpriteImages>> {
-        let Some(metadata) = metadata else {
-            self.visual_sprite_image_cache
-                .borrow_mut()
-                .remove(&pane_id);
-            return None;
-        };
-
         let mut cache = self.visual_sprite_image_cache.borrow_mut();
-        if let Some(entry) = cache.get(&pane_id) {
-            if entry.metadata == metadata {
-                return entry.images.clone();
-            }
-        }
-
-        let images = visual_sprite_images_from_metadata(metadata);
-        cache.insert(
-            pane_id,
-            VisualSpriteImageCache {
-                metadata: metadata.to_string(),
-                images: images.clone(),
-            },
-        );
-        images
+        visual_sprite_images_for_pane_cache(&mut cache, pane_id, metadata)
     }
+}
+
+fn visual_sprite_images_for_pane_cache(
+    cache: &mut HashMap<PaneId, VisualSpriteImageCache>,
+    pane_id: PaneId,
+    metadata: Option<&str>,
+) -> Option<Arc<VisualSpriteImages>> {
+    let Some(metadata) = metadata else {
+        cache.remove(&pane_id);
+        return None;
+    };
+
+    if let Some(entry) = cache.get(&pane_id) {
+        if entry.metadata == metadata {
+            return entry.images.clone();
+        }
+    }
+
+    let images = visual_sprite_images_from_metadata(metadata);
+    cache.insert(
+        pane_id,
+        VisualSpriteImageCache {
+            metadata: metadata.to_string(),
+            images: images.clone(),
+        },
+    );
+    images
 }
 
 fn visual_sprite_images_from_metadata(metadata: &str) -> Option<Arc<VisualSpriteImages>> {
@@ -794,4 +800,73 @@ fn visual_sprite_images_from_metadata(metadata: &str) -> Option<Arc<VisualSprite
     }
 
     Some(Arc::new(VisualSpriteImages { sprites }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::NamedTempFile;
+
+    fn sprite_metadata(id: &str, path: &std::path::Path) -> String {
+        serde_json::json!({
+            "manifest_path": null,
+            "sprites": [
+                {
+                    "id": id,
+                    "path": path
+                }
+            ],
+            "warnings": []
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn visual_sprite_cache_reuses_unchanged_metadata() {
+        let sprite = NamedTempFile::new().unwrap();
+        std::fs::write(sprite.path(), [1_u8, 2, 3]).unwrap();
+        let metadata = sprite_metadata("task_tile", sprite.path());
+        let mut cache = HashMap::new();
+
+        let first = visual_sprite_images_for_pane_cache(&mut cache, 7, Some(&metadata)).unwrap();
+        let second = visual_sprite_images_for_pane_cache(&mut cache, 7, Some(&metadata)).unwrap();
+
+        assert!(Arc::ptr_eq(&first, &second));
+        assert_eq!(cache.len(), 1);
+    }
+
+    #[test]
+    fn visual_sprite_cache_invalidates_when_metadata_changes() {
+        let first_sprite = NamedTempFile::new().unwrap();
+        let second_sprite = NamedTempFile::new().unwrap();
+        std::fs::write(first_sprite.path(), [1_u8, 2, 3]).unwrap();
+        std::fs::write(second_sprite.path(), [4_u8, 5, 6]).unwrap();
+        let first_metadata = sprite_metadata("task_tile", first_sprite.path());
+        let second_metadata = sprite_metadata("task_tile", second_sprite.path());
+        let mut cache = HashMap::new();
+
+        let first =
+            visual_sprite_images_for_pane_cache(&mut cache, 7, Some(&first_metadata)).unwrap();
+        let second =
+            visual_sprite_images_for_pane_cache(&mut cache, 7, Some(&second_metadata)).unwrap();
+
+        assert!(!Arc::ptr_eq(&first, &second));
+        assert_eq!(
+            cache.get(&7).map(|entry| entry.metadata.as_str()),
+            Some(second_metadata.as_str())
+        );
+    }
+
+    #[test]
+    fn visual_sprite_cache_clears_when_metadata_disappears() {
+        let sprite = NamedTempFile::new().unwrap();
+        std::fs::write(sprite.path(), [1_u8, 2, 3]).unwrap();
+        let metadata = sprite_metadata("task_tile", sprite.path());
+        let mut cache = HashMap::new();
+
+        assert!(visual_sprite_images_for_pane_cache(&mut cache, 7, Some(&metadata)).is_some());
+        assert!(visual_sprite_images_for_pane_cache(&mut cache, 7, None).is_none());
+
+        assert!(!cache.contains_key(&7));
+    }
 }
