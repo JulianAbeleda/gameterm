@@ -3638,6 +3638,36 @@ mod tests {
     }
 
     #[test]
+    fn scene_fixture_renpy_demo_import_loads_story_choices() {
+        let scene = VisualScene::load_from_path(scene_fixture_path("renpy-demo.json")).unwrap();
+        let mut runtime = SceneRuntime::new(scene).unwrap();
+
+        let snapshot = runtime.render_snapshot();
+        assert_eq!(snapshot.title, "Ren'Py Demo Import");
+        assert!(snapshot.variables.iter().any(|entry| {
+            entry.key == "source_engine"
+                && entry.value == VisualStateValue::Text("renpy".to_string())
+        }));
+        assert!(snapshot
+            .choices
+            .iter()
+            .any(|choice| choice == "Ask about Scene Mode."));
+
+        let options = runtime.command_options();
+        assert!(options.iter().any(|option| {
+            option.origin == "renpy_import"
+                && option.risk == "state_change"
+                && option.scope == "scene"
+        }));
+
+        runtime.activate_choice();
+        assert_eq!(
+            runtime.active_dialogue_line().text,
+            "Labels become dialogue targets, and menu items become Scene Mode choices."
+        );
+    }
+
+    #[test]
     fn scene_fixture_game_states_covers_common_modes() {
         let scene = VisualScene::load_from_path(scene_fixture_path("game-states.json")).unwrap();
         let mut runtime = SceneRuntime::new(scene).unwrap();

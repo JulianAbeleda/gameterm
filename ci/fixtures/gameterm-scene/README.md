@@ -14,6 +14,9 @@ These fixtures exercise Scene Mode without touching user config.
 - `chained-transitions.json`: guarded multi-step state transition fixture for dialogue, inventory, quest, command, stat, and agent state.
 - `workspace-agent.json`: Agent/Workspace product slice for workspace, project, task, agent, process, and file entities.
 - `multi-agent-coordination.json`: two-agent/two-task coordination fixture with ownership, waiting, blocking, and completion state.
+- `renpy-demo-source.rpy`: GameTerm-owned Ren'Py-shaped source fixture for importer verification; not copied from Ren'Py.
+- `renpy-demo.json`: generated Scene Mode import of the Ren'Py-shaped fixture source.
+- `renpy-demo-attribution.json`: attribution/provenance manifest generated beside the imported demo scene.
 - `sprites.json`: sprite manifest that points at bundled test assets.
 - `sprites-missing.json`: sprite manifest with one intentionally missing sprite path.
 
@@ -33,5 +36,6 @@ These fixtures exercise Scene Mode without touching user config.
 | `chained-transitions.json` | Guarded deterministic transition chains over dialogue, inventory, quest, command, stat, and agent state. | `scene_fixture_chained_transitions_completes_state_chain`, fixture `chained-transitions` |
 | `workspace-agent.json` | Agent/Workspace product loop across workspace, project, task, agent, process, and file entities. | `scene_fixture_workspace_agent_completes_product_loop`, smoke scenario `workspace-agent`, fixture `workspace-agent` |
 | `multi-agent-coordination.json` | Multi-agent coordination across two agents, two tasks, relationship ownership, waiting, blocking, and completion state. | `scene_fixture_multi_agent_coordination_updates_independently`, fixture `multi-agent-coordination` |
+| `renpy-demo.json` | Ren'Py-shaped import path for labels, dialogue, menu choices, guards, policy metadata, and attribution. | `scene_fixture_renpy_demo_import_loads_story_choices`, importer check, fixture `renpy-demo` |
 | `sprites.json` | Sprite manifest resolution against bundled assets. | `scene_fixture_sprite_manifest_resolves_relative_paths`, fixture `sprites` |
 | `sprites-missing.json` | Missing sprite paths are reported without dropping valid sprite entries. | `scene_fixture_missing_sprite_manifest_keeps_valid_entries`, fixture `missing-sprite` |

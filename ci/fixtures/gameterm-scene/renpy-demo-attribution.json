@@ -1,0 +1,17 @@
+{
+  "source": "renpy-demo-subset",
+  "source_title": "GameTerm Ren'Py Demo Fixture",
+  "renpy_version": "fixture",
+  "source_path": "ci/fixtures/gameterm-scene/renpy-demo-source.rpy",
+  "asset_root": null,
+  "license_url": "https://www.renpy.org/doc/html/license.html",
+  "assets": [],
+  "notes": [
+    "This importer records asset provenance but does not copy assets.",
+    "The checked-in fixture source is GameTerm-authored Ren'Py-shaped test content.",
+    "When importing upstream Ren'Py demo/tutorial material, preserve upstream credits and license files before vendoring assets."
+  ],
+  "warnings": [
+    "line 19: non-menu jump is recorded as source flow only: ending"
+  ]
+}

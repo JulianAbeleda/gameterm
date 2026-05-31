@@ -1,0 +1,201 @@
+{
+  "title": "Ren'Py Demo Import",
+  "background": "workspace-map",
+  "width": 16,
+  "height": 9,
+  "mode": {
+    "mode_id": "renpy-demo",
+    "label": "Ren'Py Demo",
+    "description": "Imported Ren'Py subset demo",
+    "scene_profile": "scene",
+    "allowed_actions": [
+      "Inspect",
+      "AdvanceDialogue"
+    ]
+  },
+  "variables": [
+    {
+      "key": "source_engine",
+      "value": {
+        "Text": "renpy"
+      }
+    },
+    {
+      "key": "source_title",
+      "value": {
+        "Text": "GameTerm Ren'Py Demo Fixture"
+      }
+    },
+    {
+      "key": "source_file",
+      "value": {
+        "Text": "ci/fixtures/gameterm-scene/renpy-demo-source.rpy"
+      }
+    },
+    {
+      "key": "met_guide",
+      "value": {
+        "Bool": true
+      }
+    },
+    {
+      "key": "renpy_import_warnings",
+      "value": {
+        "Number": 1
+      }
+    }
+  ],
+  "entities": [
+    {
+      "id": "renpy-source",
+      "kind": "Project",
+      "label": "GameTerm Ren'Py Demo Fixture",
+      "position": {
+        "x": 2,
+        "y": 2
+      },
+      "sprite": "project_core",
+      "metadata": [
+        [
+          "source_engine",
+          "renpy"
+        ],
+        [
+          "source_file",
+          "ci/fixtures/gameterm-scene/renpy-demo-source.rpy"
+        ]
+      ]
+    },
+    {
+      "id": "renpy-narrator",
+      "kind": "Agent",
+      "label": "Narrator",
+      "position": {
+        "x": 7,
+        "y": 4
+      },
+      "sprite": "agent_idle",
+      "metadata": [
+        [
+          "source_engine",
+          "renpy"
+        ]
+      ]
+    },
+    {
+      "id": "renpy-importer",
+      "kind": "Task",
+      "label": "Import Check",
+      "position": {
+        "x": 12,
+        "y": 5
+      },
+      "sprite": "task_tile",
+      "metadata": [
+        [
+          "warnings",
+          "1"
+        ]
+      ]
+    }
+  ],
+  "dialogue_speaker": "Narrator",
+  "dialogue": "A terminal window glows like a tiny stage.",
+  "dialogue_lines": [
+    {
+      "speaker": "Narrator",
+      "text": "A terminal window glows like a tiny stage.",
+      "metadata": [
+        [
+          "source_label",
+          "start"
+        ],
+        [
+          "source_line",
+          "8"
+        ]
+      ]
+    },
+    {
+      "speaker": "guide",
+      "text": "Scene Mode can read a Ren'Py-shaped script.",
+      "metadata": [
+        [
+          "source_label",
+          "start"
+        ],
+        [
+          "source_line",
+          "9"
+        ]
+      ]
+    },
+    {
+      "speaker": "guide",
+      "text": "Labels become dialogue targets, and menu items become Scene Mode choices.",
+      "metadata": [
+        [
+          "source_label",
+          "explain"
+        ],
+        [
+          "source_line",
+          "18"
+        ]
+      ]
+    },
+    {
+      "speaker": "Narrator",
+      "text": "The imported demo is ready.",
+      "metadata": [
+        [
+          "source_label",
+          "ending"
+        ],
+        [
+          "source_line",
+          "22"
+        ]
+      ]
+    }
+  ],
+  "choices": [
+    {
+      "label": "Ask about Scene Mode.",
+      "kind": {
+        "AdvanceDialogue": {
+          "target": 2
+        }
+      },
+      "policy": {
+        "origin": "renpy_import",
+        "risk": "state_change",
+        "scope": "scene",
+        "summary": "Continue imported Ren'Py demo at label explain"
+      },
+      "conditions": [
+        {
+          "variable": "met_guide",
+          "equals": {
+            "Bool": true
+          }
+        }
+      ]
+    },
+    {
+      "label": "End the demo.",
+      "kind": {
+        "AdvanceDialogue": {
+          "target": 3
+        }
+      },
+      "policy": {
+        "origin": "renpy_import",
+        "risk": "state_change",
+        "scope": "scene",
+        "summary": "Continue imported Ren'Py demo at label ending"
+      },
+      "conditions": []
+    }
+  ]
+}

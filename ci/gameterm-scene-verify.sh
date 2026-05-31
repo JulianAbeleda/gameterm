@@ -14,7 +14,8 @@ Options:
                         sprites, missing-sprite, run-command-targets,
                         layered-mode, vertical-slice, authoring-loop,
                         game-states, chained-transitions, or
-                        workspace-agent, or multi-agent-coordination.
+                        workspace-agent, multi-agent-coordination, or
+                        renpy-demo.
   -h, --help            Show this help.
 EOF
 }
@@ -30,6 +31,7 @@ scene_scripts=(
   gameterm-scene-init.sh
   gameterm-scene-patch.sh
   gameterm-scene-process.sh
+  gameterm-scene-renpy-import.py
   gameterm-scene-session.sh
   gameterm-scene-smoke.sh
   gameterm-scene-story.sh
@@ -109,6 +111,9 @@ scene_file_for_fixture() {
     multi-agent-coordination)
       printf '%s\n' "${fixture_root}/multi-agent-coordination.json"
       ;;
+    renpy-demo)
+      printf '%s\n' "${fixture_root}/renpy-demo.json"
+      ;;
     invalid)
       printf '%s\n' "${fixture_root}/invalid.json"
       ;;
@@ -163,7 +168,14 @@ run_fixture_setup_check() {
 run_static_checks() {
   local script
   for script in "${scene_scripts[@]}"; do
-    bash -n "${repo_root}/ci/${script}"
+    case "${script}" in
+      *.py)
+        python3 -m py_compile "${repo_root}/ci/${script}"
+        ;;
+      *)
+        bash -n "${repo_root}/ci/${script}"
+        ;;
+    esac
   done
   jq empty "${fixture_root}"/*.json
   git -C "${repo_root}" diff --check
@@ -502,6 +514,48 @@ run_doctor_check() {
   fi
 
   echo "doctor: ok"
+}
+
+run_renpy_import_check() {
+  local tmp_dir
+  local scene_output
+  local attribution_output
+  tmp_dir="$(mktemp -d /tmp/gameterm-scene-renpy-verify.XXXXXX)"
+  tmp_paths+=("${tmp_dir}")
+  scene_output="${tmp_dir}/renpy-demo.json"
+  attribution_output="${tmp_dir}/renpy-demo-attribution.json"
+
+  "${repo_root}/ci/gameterm-scene-renpy-import.py" \
+    --source "${fixture_root}/renpy-demo-source.rpy" \
+    --output "${scene_output}" \
+    --attribution "${attribution_output}" \
+    --source-title "GameTerm Ren'Py Demo Fixture" \
+    --renpy-version fixture \
+    >/tmp/gameterm-scene-renpy-verify.out \
+    2>/tmp/gameterm-scene-renpy-verify.err
+
+  jq -e '
+    .variables[] | select(.key == "source_engine" and .value.Text == "renpy")
+  ' "${scene_output}" >/dev/null
+  jq -e '
+    any(.choices[]; .policy.origin == "renpy_import"
+      and .policy.risk == "state_change"
+      and .policy.scope == "scene")
+    and any(.choices[]; .conditions[]? | .variable == "met_guide")
+  ' "${scene_output}" >/dev/null
+  jq -e '
+    .license_url == "https://www.renpy.org/doc/html/license.html"
+    and (.assets | length) == 0
+    and any(.notes[]; contains("does not copy assets"))
+  ' "${attribution_output}" >/dev/null
+  grep -q "non-menu jump is recorded" /tmp/gameterm-scene-renpy-verify.err
+  cargo run -q -p gameterm-visual --example scene_validate -- "${scene_output}" >/dev/null
+  "${repo_root}/ci/gameterm-scene-doctor.sh" \
+    --scene "${scene_output}" \
+    --sprites "${fixture_root}/sprites.json" >/tmp/gameterm-scene-renpy-doctor.out
+  grep -q "Doctor summary: 0 error(s)" /tmp/gameterm-scene-renpy-doctor.out
+
+  echo "renpy import: ok"
 }
 
 run_patch_check() {
@@ -1150,6 +1204,7 @@ run_all() {
   run_init_helper_check
   run_author_helper_check
   run_doctor_check
+  run_renpy_import_check
   run_patch_check
   run_agent_check
   run_workspace_discovery_check
@@ -1157,7 +1212,7 @@ run_all() {
   run_workspace_session_check
   run_onboarding_check
   run_smoke_asset_check
-  for fixture in basic navigate invalid sprites missing-sprite run-command-targets layered-mode vertical-slice authoring-loop game-states chained-transitions workspace-agent multi-agent-coordination; do
+  for fixture in basic navigate invalid sprites missing-sprite run-command-targets layered-mode vertical-slice authoring-loop game-states chained-transitions workspace-agent multi-agent-coordination renpy-demo; do
     run_fixture_setup_check "${fixture}"
   done
   run_cargo_checks
@@ -1169,7 +1224,7 @@ case "${mode}" in
   all)
     run_all
     ;;
-  basic|navigate|invalid|sprites|missing-sprite|run-command-targets|layered-mode|vertical-slice|authoring-loop|game-states|chained-transitions|workspace-agent|multi-agent-coordination)
+  basic|navigate|invalid|sprites|missing-sprite|run-command-targets|layered-mode|vertical-slice|authoring-loop|game-states|chained-transitions|workspace-agent|multi-agent-coordination|renpy-demo)
     run_static_checks
     run_fixture_setup_check "${mode}"
     ;;

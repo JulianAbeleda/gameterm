@@ -408,7 +408,13 @@ pub(crate) fn relationship_key(source_id: &str, target_id: &str, kind: &str) -> 
 pub(crate) fn is_supported_action_policy_origin(origin: &str) -> bool {
     matches!(
         origin,
-        "authored" | "workspace_discovery" | "agent" | "runtime" | "fixture" | "unknown"
+        "authored"
+            | "workspace_discovery"
+            | "agent"
+            | "runtime"
+            | "fixture"
+            | "renpy_import"
+            | "unknown"
     )
 }
 
