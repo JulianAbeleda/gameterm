@@ -51,6 +51,7 @@ Validated named scenarios:
 - `run-command-targets`
 - `overlay-cleanup`
 - `vertical-slice`
+- `workspace-agent`
 - `agent-lifecycle`
 - `authoring-loop`
 - `patch-inbox`
@@ -58,6 +59,33 @@ Validated named scenarios:
 - `process-state`
 
 ## Live Results
+
+### workspace-agent-live-pass-20260531-1517
+
+Command:
+
+```sh
+cargo build -p gameterm-gui
+ci/gameterm-scene-smoke.sh --launch --scenario workspace-agent \
+  --output /Users/julianabeleda/Desktop/gameterm-scene-smoke-workspace-agent-20260531-151646.png
+```
+
+Result: PASS after rebuilding the GUI binary.
+
+Capture:
+
+```text
+/Users/julianabeleda/Desktop/gameterm-scene-smoke-workspace-agent-20260531-151646.png
+```
+
+Observation: the first live attempt used a stale `target/debug/gameterm-gui`
+binary and showed a scene load error for the newer `SetEntityFlags` operation.
+After rebuilding, Scene Mode loaded the `workspace-agent` fixture, the smoke
+script emitted a real process patch plus planning/running/blocked/complete
+agent lifecycle patches, and the capture showed the selected `Scene Agent`
+entity with `agent_completed` state. The final status line is below the visible
+area in the captured small window, but the entity state and unlocked/locked
+choice state confirm that patch delivery reached the scene.
 
 ### first-pass-live-pass-20260531-1259
 

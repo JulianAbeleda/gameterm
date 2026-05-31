@@ -484,6 +484,31 @@ install_scene_fixture() {
   esac
 }
 
+assert_gui_binary_current() {
+  local gui_bin="$1"
+  local stale_source
+
+  stale_source="$(
+    find \
+      "${repo_root}/gameterm-gui" \
+      "${repo_root}/gameterm-visual" \
+      -type f \( -name '*.rs' -o -name Cargo.toml \) \
+      -newer "${gui_bin}" \
+      -print \
+      -quit
+  )"
+  if [[ -n "${stale_source}" ]]; then
+    cat >&2 <<EOF
+${gui_bin} is older than Scene Mode source:
+  ${stale_source}
+
+Build the GUI before live smoke:
+  cargo build -p gameterm-gui
+EOF
+    exit 1
+  fi
+}
+
 install_sprite_manifest() {
   local target="$1"
   jq --arg asset_root "${repo_root}/assets/gameterm-scene" '
@@ -881,6 +906,7 @@ Build it first:
 EOF
     exit 1
   fi
+  assert_gui_binary_current "${gui_bin}"
 
   tmp_home="$(mktemp -d /tmp/gameterm-scene-smoke.XXXXXX)"
   gui_class="org.gameterm.scene-smoke.$$"
