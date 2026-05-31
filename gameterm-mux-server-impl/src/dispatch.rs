@@ -127,7 +127,22 @@ where
                 handler.schedule_pane_push(pane_id);
             }
             Ok(Item::Notif(MuxNotification::SaveToDownloads { .. })) => {}
-            Ok(Item::Notif(MuxNotification::GameTermScenePatch { .. })) => {}
+            Ok(Item::Notif(MuxNotification::GameTermScenePatch {
+                patch_json,
+                target_pane_id,
+                source_pane_id,
+            })) => {
+                if let Some(target_pane_id) = target_pane_id {
+                    Pdu::SubmitGameTermScenePatch(codec::SubmitGameTermScenePatch {
+                        patch_json,
+                        target_pane_id: Some(target_pane_id),
+                        source_pane_id,
+                    })
+                    .encode_async(&mut stream, 0)
+                    .await?;
+                    stream.flush().await.context("flushing PDU to client")?;
+                }
+            }
             Ok(Item::Notif(MuxNotification::AssignClipboard {
                 pane_id,
                 selection,

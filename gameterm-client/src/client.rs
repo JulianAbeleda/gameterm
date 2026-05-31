@@ -12,7 +12,7 @@ use mux::connui::ConnectionUI;
 use mux::domain::DomainId;
 use mux::pane::PaneId;
 use mux::ssh::ssh_connect_with_ui;
-use mux::Mux;
+use mux::{Mux, MuxNotification};
 use openssl::ssl::{SslConnector, SslFiletype, SslMethod};
 use openssl::x509::X509;
 use portable_pty::Child;
@@ -271,6 +271,42 @@ fn process_unilateral(
                 let mux = Mux::try_get().ok_or_else(|| anyhow!("no more mux"))?;
                 log::debug!("got a rename {old_workspace} -> {new_workspace}");
                 mux.rename_workspace(&old_workspace, &new_workspace);
+                anyhow::Result::<()>::Ok(())
+            })
+            .detach();
+            return Ok(());
+        }
+        Pdu::SubmitGameTermScenePatch(SubmitGameTermScenePatch {
+            patch_json,
+            target_pane_id,
+            source_pane_id,
+        }) => {
+            let patch_json = patch_json.clone();
+            let target_pane_id = *target_pane_id;
+            let source_pane_id = *source_pane_id;
+            promise::spawn::spawn_into_main_thread(async move {
+                let mux = Mux::try_get().ok_or_else(|| anyhow!("no more mux"))?;
+                let client_domain = mux
+                    .get_domain(local_domain_id)
+                    .ok_or_else(|| anyhow!("no such domain {}", local_domain_id))?;
+                let client_domain =
+                    client_domain
+                        .downcast_ref::<ClientDomain>()
+                        .ok_or_else(|| {
+                            anyhow!("domain {} is not a ClientDomain instance", local_domain_id)
+                        })?;
+
+                let target_pane_id = target_pane_id
+                    .and_then(|pane_id| client_domain.remote_to_local_pane_id(pane_id))
+                    .or(target_pane_id);
+                let source_pane_id = source_pane_id
+                    .and_then(|pane_id| client_domain.remote_to_local_pane_id(pane_id))
+                    .or(source_pane_id);
+                mux.notify(MuxNotification::GameTermScenePatch {
+                    patch_json,
+                    target_pane_id,
+                    source_pane_id,
+                });
                 anyhow::Result::<()>::Ok(())
             })
             .detach();

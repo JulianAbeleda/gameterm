@@ -28,7 +28,8 @@ Options:
   --submit-mux-patch PATH  After --launch wait, submit PATCH through
                            gameterm cli scene-patch before capture.
   --submit-target-pane-id ID
-                           Target pane id for --submit-mux-patch. Optional.
+                           Target pane id for --submit-mux-patch. If omitted,
+                           the smoke harness discovers the GameTerm Scene pane.
   --wait-before-capture N  Seconds to wait after launch before capture.
                            Use this time to press Ctrl+Shift+G. Default: 10.
   --no-auto-open-scene     Do not use macOS automation to foreground GameTerm
@@ -65,6 +66,7 @@ focus_timeout=10
 ffmpeg_bin="${FFMPEG:-}"
 gui_pid=""
 tmp_home=""
+gui_class=""
 patch_inbox=""
 submit_mux_patch=""
 submit_target_pane_id=""
@@ -477,15 +479,26 @@ submit_mux_patch_with_retry() {
   local rc=1
   local submit_args
   submit_args=(submit-mux --patch "${patch}")
+  if [[ -n "${gui_class}" ]]; then
+    submit_args+=(--class "${gui_class}")
+  fi
   if [[ -n "${submit_target_pane_id}" ]]; then
     submit_args+=(--target-pane-id "${submit_target_pane_id}")
   fi
 
   while ((SECONDS <= deadline)); do
     set +e
-    "${repo_root}/ci/gameterm-scene-patch.sh" "${submit_args[@]}" \
-      >/tmp/gameterm-scene-smoke-submit.out \
-      2>/tmp/gameterm-scene-smoke-submit.err
+    if [[ -n "${tmp_home}" ]]; then
+      env -u GAMETERM_UNIX_SOCKET XDG_CONFIG_HOME="${tmp_home}" \
+        "${repo_root}/ci/gameterm-scene-patch.sh" "${submit_args[@]}" \
+        >/tmp/gameterm-scene-smoke-submit.out \
+        2>/tmp/gameterm-scene-smoke-submit.err
+    else
+      env -u GAMETERM_UNIX_SOCKET \
+        "${repo_root}/ci/gameterm-scene-patch.sh" "${submit_args[@]}" \
+        >/tmp/gameterm-scene-smoke-submit.out \
+        2>/tmp/gameterm-scene-smoke-submit.err
+    fi
     rc=$?
     set -e
     if [[ "${rc}" -eq 0 ]]; then
@@ -505,6 +518,60 @@ submit_mux_patch_with_retry() {
   cat /tmp/gameterm-scene-smoke-submit.err >&2 || true
   echo "Timed out waiting for active GameTerm Scene Mode overlay before mux patch submission." >&2
   return "${rc}"
+}
+
+discover_scene_overlay_pane_id() {
+  local timeout="$1"
+  local deadline=$((SECONDS + timeout))
+  local list_out="/tmp/gameterm-scene-smoke-list.out"
+  local list_err="/tmp/gameterm-scene-smoke-list.err"
+  local pane_id=""
+  local rc=1
+
+  while ((SECONDS <= deadline)); do
+    set +e
+    if [[ -n "${tmp_home}" ]]; then
+      env -u GAMETERM_UNIX_SOCKET XDG_CONFIG_HOME="${tmp_home}" \
+        cargo run -q -p gameterm -- cli --class "${gui_class}" list --format json \
+        >"${list_out}" \
+        2>"${list_err}"
+    else
+      env -u GAMETERM_UNIX_SOCKET \
+        cargo run -q -p gameterm -- cli list --format json \
+        >"${list_out}" \
+        2>"${list_err}"
+    fi
+    rc=$?
+    set -e
+
+    if [[ "${rc}" -eq 0 ]]; then
+      pane_id="$(
+        jq -r '
+          (map(select(.title == "GameTerm Scene"))
+            | sort_by(if .is_active then 0 else 1 end)
+            | .[0].pane_id)
+          // (map(select(.is_active == true)) | .[0].pane_id)
+          // empty
+        ' "${list_out}"
+      )"
+      if [[ -n "${pane_id}" ]]; then
+        printf '%s\n' "${pane_id}"
+        return 0
+      fi
+    fi
+
+    sleep 1
+  done
+
+  cat "${list_err}" >&2 || true
+  cat >&2 <<'EOF'
+Timed out waiting for a GameTerm Scene target pane in `gameterm cli list`.
+
+The mux smoke path needs an explicit target pane because the active overlay
+fallback is process-local. The smoke harness launches a uniquely classed GUI
+and connects the CLI to that published class.
+EOF
+  return 1
 }
 
 if [[ "${check_assets}" -eq 1 ]]; then
@@ -558,6 +625,7 @@ EOF
   fi
 
   tmp_home="$(mktemp -d /tmp/gameterm-scene-smoke.XXXXXX)"
+  gui_class="org.gameterm.scene-smoke.$$"
   install_scene_fixture "${tmp_home}/gameterm/scenes"
   if [[ "${patch_inbox}" == "auto" ]]; then
     patch_inbox="${tmp_home}/gameterm/scenes/patch-inbox.json"
@@ -569,13 +637,14 @@ EOF
     echo "Patch inbox: ${patch_inbox}"
     XDG_CONFIG_HOME="${tmp_home}" \
       GAMETERM_SCENE_PATCH_FILE="${patch_inbox}" \
-      "${gui_bin}" start --always-new-process --cwd "${repo_root}" &
+      "${gui_bin}" start --class "${gui_class}" --cwd "${repo_root}" &
   else
-    XDG_CONFIG_HOME="${tmp_home}" "${gui_bin}" start --always-new-process \
+    XDG_CONFIG_HOME="${tmp_home}" "${gui_bin}" start --class "${gui_class}" \
       --cwd "${repo_root}" &
   fi
   gui_pid=$!
   echo "GameTerm pid: ${gui_pid}"
+  echo "GameTerm class: ${gui_class}"
   if [[ "${auto_open_scene}" -eq 1 ]]; then
     foreground_gui_and_open_scene "${gui_pid}" "${focus_timeout}"
   else
@@ -601,6 +670,10 @@ EOF
   sleep "${wait_before_capture}"
 
   if [[ -n "${submit_mux_patch}" ]]; then
+    if [[ -z "${submit_target_pane_id}" ]]; then
+      submit_target_pane_id="$(discover_scene_overlay_pane_id "${focus_timeout}")"
+      echo "Discovered Scene Mode target pane: ${submit_target_pane_id}"
+    fi
     submit_mux_patch_with_retry "${submit_mux_patch}" "${focus_timeout}"
     sleep 1
   fi

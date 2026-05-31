@@ -34,6 +34,7 @@ Options for submit-mux:
   --patch PATH                  Patch file to submit. Required.
   --target-pane-id ID           Target Scene Mode overlay pane. Optional.
   --source-pane-id ID           Source pane id. Optional.
+  --class CLASS                 gameterm GUI class to target. Optional.
 
 Options for set-entity and set-entity-status:
   --output PATH                 Patch output path. Required.
@@ -98,6 +99,7 @@ process_exit_code=""
 process_message=""
 target_pane_id=""
 source_pane_id=""
+gui_class=""
 force=0
 flags=()
 metadata=()
@@ -130,6 +132,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --source-pane-id)
       source_pane_id="$2"
+      shift 2
+      ;;
+    --class)
+      gui_class="$2"
       shift 2
       ;;
     --status)
@@ -253,7 +259,11 @@ submit_mux() {
   jq empty "${patch_path}"
 
   local args
-  args=(cli scene-patch --patch "${patch_path}")
+  args=(cli)
+  if [[ -n "${gui_class}" ]]; then
+    args+=(--class "${gui_class}")
+  fi
+  args+=(scene-patch --patch "${patch_path}")
   if [[ -n "${target_pane_id}" ]]; then
     args+=(--target-pane-id "${target_pane_id}")
   fi
@@ -261,7 +271,11 @@ submit_mux() {
     args+=(--source-pane-id "${source_pane_id}")
   fi
 
-  cargo run -q -p gameterm -- "${args[@]}"
+  if [[ -n "${gui_class}" ]]; then
+    env -u GAMETERM_UNIX_SOCKET cargo run -q -p gameterm -- "${args[@]}"
+  else
+    cargo run -q -p gameterm -- "${args[@]}"
+  fi
 }
 
 export_scene() {

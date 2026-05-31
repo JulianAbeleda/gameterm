@@ -2789,8 +2789,9 @@ impl TermWindow {
                     Some(tab) => tab,
                     None => anyhow::bail!("no active tab!?"),
                 };
+                let route_pane_id = tab.get_active_pane().map(|pane| pane.pane_id());
                 let (overlay, future) = start_overlay(self, &tab, move |_tab_id, term| {
-                    crate::overlay::show_visual_scene_overlay(term)
+                    crate::overlay::show_visual_scene_overlay(term, route_pane_id)
                 });
                 self.assign_overlay(tab.tab_id(), overlay);
                 promise::spawn::spawn(future).detach();

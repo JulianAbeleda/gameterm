@@ -162,17 +162,21 @@ ci/gameterm-scene-smoke.sh \
   --scenario mux-patch \
   --wait-before-capture 2 \
   --capture-timeout 12 \
-  --output /Users/julianabeleda/Desktop/gameterm-scene-smoke-mux-patch-20260531-103307.png
+  --output /Users/julianabeleda/Desktop/gameterm-scene-smoke-mux-patch-20260531-110753.png
 ```
 
-Result: FAIL.
+Result: PASS.
 
-Failure class: patch transport/routing.
+Capture:
 
-Observation: foreground/open-scene automation succeeded, but `submit-mux`
-returned `no active GameTerm Scene Mode overlay` until the retry timeout. This
-is no longer a screen-focus failure; it is a mux routing issue for the launched
-`--always-new-process` smoke GUI and the default CLI submission path.
+```text
+/Users/julianabeleda/Desktop/gameterm-scene-smoke-mux-patch-20260531-110753.png
+```
+
+Observation: foreground/open-scene automation succeeded, the harness discovered
+the route pane through the unique GUI class, submitted the mux patch with an
+explicit `--target-pane-id`, and the capture shows
+`flags=loaded, verified` plus `Status: Fixture patch applied`.
 
 ### process-state
 
@@ -200,9 +204,7 @@ temporary inbox before capture and kept Scene Mode open.
 
 ## Follow-Up
 
-1. Fix mux patch smoke routing for `--always-new-process` launches or require
-   an explicit target pane id in the smoke command.
-2. Add optional key-sequence automation for guarded input and RunCommand target
+1. Add optional key-sequence automation for guarded input and RunCommand target
    interaction.
-3. Keep deterministic smoke registry and asset checks in
+2. Keep deterministic smoke registry and asset checks in
    `ci/gameterm-scene-verify.sh --all`.

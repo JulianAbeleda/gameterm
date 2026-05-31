@@ -25,7 +25,10 @@ use termwiz::input::{InputEvent, KeyCode, KeyEvent};
 use termwiz::surface::Change;
 use termwiz::terminal::Terminal;
 
-pub fn show_visual_scene_overlay(mut term: TermWizTerminal) -> anyhow::Result<()> {
+pub fn show_visual_scene_overlay(
+    mut term: TermWizTerminal,
+    route_pane_id: Option<mux::pane::PaneId>,
+) -> anyhow::Result<()> {
     term.no_grab_mouse_in_raw_mode();
     term.set_raw_mode()?;
     term.render(&[Change::Title("GameTerm Scene".to_string())])?;
@@ -47,7 +50,7 @@ pub fn show_visual_scene_overlay(mut term: TermWizTerminal) -> anyhow::Result<()
     let mut patch_inbox = ScenePatchInbox::from_env();
     let (scene_patch_tx, scene_patch_rx) = mpsc::channel();
     let _scene_patch_subscription =
-        ScenePatchNotificationSubscription::new(pane_id, scene_patch_tx);
+        ScenePatchNotificationSubscription::new(pane_id, route_pane_id, scene_patch_tx);
 
     loop {
         let mut needs_render = false;
@@ -192,6 +195,7 @@ struct ScenePatchNotification {
 impl ScenePatchNotificationSubscription {
     fn new(
         pane_id: mux::pane::PaneId,
+        route_pane_id: Option<mux::pane::PaneId>,
         scene_patch_tx: mpsc::Sender<ScenePatchNotification>,
     ) -> Self {
         let dead = Arc::new(AtomicBool::new(false));
@@ -206,9 +210,12 @@ impl ScenePatchNotificationSubscription {
                 source_pane_id,
             } = notification
             {
-                if target_pane_id.or_else(|| Mux::get().active_gameterm_scene_pane())
-                    != Some(pane_id)
-                {
+                if !scene_patch_target_matches(
+                    target_pane_id,
+                    Mux::get().active_gameterm_scene_pane(),
+                    pane_id,
+                    route_pane_id,
+                ) {
                     return true;
                 }
                 let _ = scene_patch_tx.send(ScenePatchNotification {
@@ -220,6 +227,16 @@ impl ScenePatchNotificationSubscription {
         });
         Self { dead }
     }
+}
+
+fn scene_patch_target_matches(
+    target_pane_id: Option<mux::pane::PaneId>,
+    active_pane_id: Option<mux::pane::PaneId>,
+    overlay_pane_id: mux::pane::PaneId,
+    route_pane_id: Option<mux::pane::PaneId>,
+) -> bool {
+    let target_pane_id = target_pane_id.or(active_pane_id);
+    target_pane_id == Some(overlay_pane_id) || target_pane_id == route_pane_id
 }
 
 struct ActiveSceneOverlay {
@@ -1218,6 +1235,15 @@ mod tests {
         let inbox = ScenePatchInbox::disabled();
 
         assert_eq!(inbox.changed_path(), None);
+    }
+
+    #[test]
+    fn scene_patch_target_matches_overlay_and_route_panes() {
+        assert!(scene_patch_target_matches(Some(7), None, 7, Some(3)));
+        assert!(scene_patch_target_matches(Some(3), None, 7, Some(3)));
+        assert!(scene_patch_target_matches(None, Some(7), 7, Some(3)));
+        assert!(!scene_patch_target_matches(Some(4), None, 7, Some(3)));
+        assert!(!scene_patch_target_matches(None, Some(4), 7, Some(3)));
     }
 }
 

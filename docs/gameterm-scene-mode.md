@@ -293,6 +293,16 @@ ci/gameterm-scene-patch.sh submit-mux \
   --patch ci/fixtures/gameterm-scene/patch-status.json
 ```
 
+For automated smoke launches, prefer explicit targeting through an isolated GUI
+class. The active overlay fallback is process-local, while the CLI submit path
+can be handled by a separate mux process or by the caller's inherited
+`GAMETERM_UNIX_SOCKET`. The smoke harness launches a uniquely classed GUI,
+unsets `GAMETERM_UNIX_SOCKET` for class-targeted CLI calls, discovers the open
+Scene Mode target from `gameterm cli --class CLASS list --format json`,
+preferring a listed `GameTerm Scene` pane title when one is exposed and
+otherwise using the active pane id that owns the overlay, then submits with
+`--target-pane-id`.
+
 If no Scene Mode overlay is active, or if an explicit target pane no longer
 exists, submission fails as a transport error. Malformed JSON or unknown entity
 ids are runtime patch errors and are shown in Scene Mode status without

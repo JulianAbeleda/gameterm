@@ -1061,11 +1061,13 @@ Implemented transport behavior:
 
 Next transport step:
 
-1. Run the live smoke flow regularly: open Scene Mode during
-   `ci/gameterm-scene-smoke.sh --launch --submit-mux-patch PATCH` and confirm
-   the captured scene reflects the submitted patch.
-2. Keep multiple simultaneous Scene Mode overlays allowed, with the most
+1. Keep multiple simultaneous Scene Mode overlays allowed, with the most
    recently opened overlay as the default active target and explicit pane ids
    for older overlays.
+2. Keep the `mux-patch` smoke path using a uniquely classed, published GUI,
+   with `GAMETERM_UNIX_SOCKET` unset for class-targeted CLI calls and explicit
+   pane targeting discovered from `gameterm cli --class CLASS list --format
+   json`; use the listed Scene pane when exposed, otherwise the active pane
+   that owns the overlay.
 3. Keep `GAMETERM_SCENE_PATCH_FILE` as the portable fallback and smoke-test
    path.
