@@ -20,6 +20,9 @@ The first implementation is intentionally small:
 
 This does not vendor or emulate Ren'Py, Ink, Yarn, mGBA, SameBoy, or ares. Those projects are references for architecture and workflow only. GameTerm keeps its scene model native so it can remain terminal-first and integrated with panes, commands, scripts, and future structured state.
 
+For the command-first setup path, start with
+[`docs/gameterm-scene-onboarding.md`](gameterm-scene-onboarding.md).
+
 Open the scene with:
 
 ```lua

@@ -103,6 +103,25 @@ Deterministic verification should cover:
 
 Manual smoke should follow the documented workflow exactly.
 
+## Implementation Status
+
+Implemented:
+
+- `docs/gameterm-scene-onboarding.md` command-first workflow.
+- dry-run, validate, doctor, install, launch, smoke, and recovery steps.
+- explicit generated-file location and overwrite behavior.
+- explicit statement that discovery does not run commands, start agents, or
+  submit prompts.
+- verifier coverage that onboarding docs reference the real helper paths and
+  recovery commands.
+
+Deferred:
+
+- umbrella workflow helper
+- app bundle/menu onboarding
+- installer integration
+- GUI onboarding wizard
+
 ## Commit Lanes
 
 1. `[docs] scope Scene packaging onboarding layer`
