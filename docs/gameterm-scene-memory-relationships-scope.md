@@ -104,6 +104,30 @@ Deterministic verification should cover:
 - missing entity references are rejected or diagnosed
 - `ci/gameterm-scene-verify.sh --all`
 
+## Implementation Status
+
+Implemented:
+
+- relationship endpoint validation against scene entities.
+- compact selected-entity relationship summary in normal view.
+- full relationship rows in the Tile Debugger.
+- deterministic Workspace Discovery relationship generation for:
+  - workspace -> project
+  - project -> files
+  - task -> files
+  - process -> project
+  - pane -> process when pane metadata is provided
+- verifier coverage for generated relationship rows.
+- unit coverage for rendering and missing endpoint validation.
+
+Deferred:
+
+- graph layout mode
+- relationship editing UI
+- semantic search or background indexing
+- relationship updates through scene patches
+- relationship persistence outside existing scene/story/session JSON
+
 ## Commit Lanes
 
 1. `[docs] scope Scene memory relationships layer`

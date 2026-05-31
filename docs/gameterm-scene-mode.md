@@ -276,6 +276,28 @@ ci/gameterm-scene-session.sh restore \
   --output /tmp/gameterm-workspace-restored.story.json
 ```
 
+Relationships are explicit RPG state records that connect scene entities:
+
+```json
+{
+  "source_id": "discovered-task",
+  "target_id": "file-0",
+  "kind": "references",
+  "value": 1,
+  "metadata": [
+    ["source", "workspace-discovery"],
+    ["reason", "task related_files metadata"]
+  ]
+}
+```
+
+`source_id` and `target_id` must reference entities in the same scene. The
+normal Scene Mode view shows incoming/outgoing relationship counts and a compact
+summary for the selected entity. The Tile Debugger shows full relationship rows
+with labels, ids, kind, value, and metadata. Workspace Discovery generates
+local deterministic relationships for workspace/project/file/task/process
+entities; it does not perform background indexing or semantic recall.
+
 `Resolve` choices can update layer state in the same deterministic transaction
 as story/RPG state:
 
