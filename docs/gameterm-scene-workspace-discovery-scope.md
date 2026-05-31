@@ -601,7 +601,7 @@ Acceptance:
 
 Commit:
 
-- `[tools] add Scene workspace discovery helper`
+- `[visual] add Scene workspace discovery helper`
 
 ### Lane 3: Generated Scene Output
 
@@ -622,7 +622,7 @@ Acceptance:
 
 Commit:
 
-- `[tools] generate Scene workspace discovery scene`
+- `[visual] generate Scene workspace discovery scene`
 
 ### Lane 4: Install And Rollback Safety
 
@@ -640,7 +640,7 @@ Acceptance:
 
 Commit:
 
-- `[tools] add Scene workspace discovery install path`
+- `[visual] add Scene workspace discovery install path`
 
 ### Lane 5: Patch Output
 
@@ -659,7 +659,7 @@ Acceptance:
 
 Commit:
 
-- `[tools] add Scene workspace discovery patches`
+- `[visual] add Scene workspace discovery patches`
 
 ### Lane 6: Verification
 
@@ -679,7 +679,7 @@ Acceptance:
 
 Commit:
 
-- `[tools] verify Scene workspace discovery`
+- `[test] verify Scene workspace discovery`
 
 ### Lane 7: Smoke And Docs
 

@@ -118,7 +118,7 @@ Deferred:
 3. `[visual] add Scene multi-agent helper support`
 4. `[test] verify Scene multi-agent coordination`
 5. `[docs] document Scene multi-agent workflow`
-6. `[tools] record Scene multi-agent smoke`
+6. `[test] record Scene multi-agent smoke`
 
 ## Deferred Work
 

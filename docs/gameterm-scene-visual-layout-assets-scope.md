@@ -114,7 +114,7 @@ Deferred:
 2. `[visual] add Scene generated layout rules`
 3. `[test] verify Scene generated layout`
 4. `[docs] document Scene layout workflow`
-5. `[tools] record Scene layout smoke`
+5. `[test] record Scene layout smoke`
 
 ## Deferred Work
 

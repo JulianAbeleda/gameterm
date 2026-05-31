@@ -128,7 +128,7 @@ Deferred:
 2. `[docs] document Scene onboarding workflow`
 3. `[visual] add Scene onboarding helper path` only if helper-owned Scene tooling changes
 4. `[test] verify Scene onboarding workflow`
-5. `[tools] record Scene onboarding smoke`
+5. `[test] record Scene onboarding smoke`
 
 ## Deferred Work
 

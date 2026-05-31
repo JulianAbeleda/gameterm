@@ -131,7 +131,7 @@ Deferred:
 2. `[visual] add Scene task brief generation`
 3. `[test] verify Scene task bootstrap`
 4. `[docs] document Scene task bootstrap workflow`
-5. `[tools] record Scene task bootstrap smoke` when live smoke is run
+5. `[test] record Scene task bootstrap smoke` when live smoke is run
 
 ## Deferred Work
 

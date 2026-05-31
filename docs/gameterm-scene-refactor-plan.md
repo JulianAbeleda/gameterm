@@ -54,8 +54,8 @@ Commit discipline:
 - Use small commits with project-specific prefixes.
 - Mark mechanical behavior-preserving commits with `NFC`.
 - Do not mix an NFC move with a behavior fix.
-- Use `[visual]` for Scene runtime/module changes, `[tools]` for shell helpers,
-  `[test]` for verification-only reshaping, and `[docs]` for documentation.
+- Use `[visual]` for Scene runtime/module and helper changes, `[test]` for
+  verification-only reshaping, and `[docs]` for documentation.
 
 Verification discipline:
 
@@ -219,7 +219,7 @@ Current status:
 Current pressure: `ci/gameterm-scene-author.sh` is useful but growing through
 large case blocks and jq snippets.
 
-Principle fit: this is `[tools]` work. Avoid replacing the helper with a new
+Principle fit: this is `[visual]` work. Avoid replacing the helper with a new
 language or framework unless shell/jq becomes a demonstrated blocker.
 
 Target:
@@ -231,13 +231,13 @@ Target:
 
 Commit lanes:
 
-1. `[tools] NFC - extract Scene author jq filters`
+1. `[visual] NFC - extract Scene author jq filters`
    - Move reusable jq snippets without changing command output.
-2. `[tools] NFC - table-drive Scene author help`
+2. `[visual] NFC - table-drive Scene author help`
    - Keep command names and examples stable.
-3. `[tools] normalize Scene author typed values`
+3. `[visual] normalize Scene author typed values`
    - Behavior change only if tests prove existing examples still work.
-4. `[tools] cover Scene author mutation rollback` ✅ done
+4. `[test] cover Scene author mutation rollback` ✅ done
    - Add regression checks for failed mutations leaving files unchanged.
 5. `[docs] update Scene authoring examples if output changes`
    - Docs only after any intentional output change.
@@ -261,7 +261,7 @@ Current status:
 Current pressure: fixtures, smoke scenarios, and verifier checks are now broad
 enough to need clearer ownership.
 
-Principle fit: this is `[test]` or `[tools]` depending on whether it changes
+Principle fit: this is `[test]` or `[visual]` depending on whether it changes
 verification behavior. Keep smoke changes separate from runtime changes.
 
 Target:
@@ -276,9 +276,9 @@ Commit lanes:
 1. `[docs] document Scene fixture scenario ownership` ✅ done
    - Map each fixture to the feature it proves and the focused tests that load
      it.
-2. `[tools] NFC - table-drive Scene smoke scenarios`
+2. `[visual] NFC - table-drive Scene smoke scenarios`
    - Keep existing scenario names valid.
-3. `[tools] add Scene verifier summary mode`
+3. `[test] add Scene verifier summary mode`
    - Optional, only if verifier output becomes hard to scan.
 4. `[test] cover Scene smoke scenario registry`
    - Add coverage only after the registry exists.
@@ -421,7 +421,7 @@ Completed commits:
 - `[visual] route Scene deterministic actions through transactions`
 - `[visual] unify Scene layer transition actions`
 - `[test] cover Scene action status compatibility`
-- `[tools] cover Scene author mutation rollback`
+- `[test] cover Scene author mutation rollback`
 - `[docs] document Scene fixture ownership`
 - `[test] NFC - move Scene fixture test helper`
 - `[visual] NFC - group Scene runtime lifecycle methods`

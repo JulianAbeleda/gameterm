@@ -589,7 +589,7 @@ Each item should land as a separate commit.
    - Add or generate the first fixture.
    - Use existing schema where possible.
 
-3. `[tools] extend Scene agent workspace helper`
+3. `[visual] extend Scene agent workspace helper`
    - Add helper paths only where existing helpers do not cover the product
      slice.
    - Keep mutation rollback guarantees.
@@ -598,7 +598,7 @@ Each item should land as a separate commit.
    - Add fixture/runtime coverage for guarded lifecycle choices.
    - Prefer existing variable and layer contracts.
 
-5. `[tools] add Scene Agent Workspace smoke`
+5. `[test] add Scene Agent Workspace smoke`
    - Add static and launch smoke coverage.
    - Keep temp files outside tracked workspace state.
 

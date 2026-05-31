@@ -135,7 +135,7 @@ Deferred:
 3. `[visual] add Scene relationship generation` if implemented in helper-owned Scene tooling
 4. `[test] verify Scene memory relationships`
 5. `[docs] document Scene relationship workflow`
-6. `[tools] record Scene relationship smoke` when live smoke is run
+6. `[test] record Scene relationship smoke` when live smoke is run
 
 ## Deferred Work
 

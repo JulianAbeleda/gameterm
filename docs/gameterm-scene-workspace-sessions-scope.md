@@ -121,7 +121,7 @@ Live smoke is useful only after GUI save/load dispatch is wired.
 3. `[visual] add Scene workspace session helper path` if helper belongs to Scene Mode authoring
 4. `[test] verify Scene workspace sessions`
 5. `[docs] document Scene workspace session workflow`
-6. `[tools] record Scene workspace session smoke` when live smoke is run
+6. `[test] record Scene workspace session smoke` when live smoke is run
 
 ## Deferred Work
 

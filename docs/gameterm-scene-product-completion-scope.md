@@ -453,11 +453,11 @@ workflow usable.
 Each broad layer should land in separate commits:
 
 1. `[docs] scope Scene <layer> layer`
-2. `[tools] add Scene <layer> helper path`
+2. `[visual] add Scene <layer> helper path`
 3. `[visual] add Scene <layer> runtime/schema support` when needed
-4. `[tools] verify Scene <layer>`
+4. `[test] verify Scene <layer>`
 5. `[docs] document Scene <layer> workflow`
-6. `[tools] record Scene <layer> smoke` when live smoke is run
+6. `[test] record Scene <layer> smoke` when live smoke is run
 
 Not every layer needs every commit type. Docs-only layers should stay docs-only
 until implementation starts.
