@@ -4,6 +4,10 @@ This note tracks the scene runtime action and reload design. It is scoped to
 runtime behavior for JSON scene files, Tile Debugger visibility, and future
 choice actions.
 
+Current product status and next priorities are consolidated in
+[GameTerm Scene Mode Roadmap](gameterm-scene-roadmap.md). This runtime roadmap
+is retained for historical design context and lower-level runtime detail.
+
 ## Goals
 
 - Make `~/.config/gameterm/scenes/default.json` iteration fast enough for

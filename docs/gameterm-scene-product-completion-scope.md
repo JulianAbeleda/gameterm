@@ -3,6 +3,9 @@
 This document scopes the broader Scene Mode product direction above the
 individual layer scopes.
 
+For current roadmap status and next priority selection, start with the
+consolidated [GameTerm Scene Mode Roadmap](gameterm-scene-roadmap.md).
+
 The first shippable Scene Mode pass is complete. Agent/Workspace and Workspace
 Discovery have also reached first-pass implementation. This document defines
 what remains to turn Scene Mode from a proven visual state surface into a

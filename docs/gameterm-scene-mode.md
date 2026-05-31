@@ -22,6 +22,8 @@ This does not vendor or emulate Ren'Py, Ink, Yarn, mGBA, SameBoy, or ares. Those
 
 For the command-first setup path, start with
 [`docs/gameterm-scene-onboarding.md`](gameterm-scene-onboarding.md).
+For current product status and next priorities, use the consolidated
+[`docs/gameterm-scene-roadmap.md`](gameterm-scene-roadmap.md).
 
 Open the scene with:
 

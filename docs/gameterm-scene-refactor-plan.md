@@ -4,6 +4,10 @@ This plan starts after the first shippable Scene Mode pass. The first pass is
 feature-complete and verified; refactors should preserve behavior and land in
 small commits with focused tests.
 
+Current product status and next priorities are consolidated in
+[GameTerm Scene Mode Roadmap](gameterm-scene-roadmap.md). Use this refactor
+plan only for scoped behavior-preserving cleanup lanes.
+
 This plan is constrained by
 [`structure/Development/coding-principles.md`](../structure/Development/coding-principles.md).
 Scene Mode is a GameTerm-specific surface in a WezTerm fork, so refactors must
