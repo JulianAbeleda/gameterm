@@ -45,6 +45,10 @@ Options for set-entity and set-entity-status:
   --visible                     Mark entity visible.
   --hidden                      Mark entity hidden.
   --select-entity-id ID         Focus an entity after applying the patch.
+  --process-phase PHASE         Add process state: queued/running/blocked/succeeded/failed.
+  --process-command TEXT        Process command text.
+  --process-exit-code CODE      Process exit code.
+  --process-message TEXT        Process message.
   --flag FLAG                   State flag. May be repeated.
   --metadata KEY=VALUE          Metadata pair. May be repeated.
   --force                       Overwrite an existing output file.
@@ -88,6 +92,10 @@ position_text=""
 sprite_id=""
 visible_state=""
 selected_entity_id=""
+process_phase=""
+process_command=""
+process_exit_code=""
+process_message=""
 target_pane_id=""
 source_pane_id=""
 force=0
@@ -158,6 +166,22 @@ while [[ $# -gt 0 ]]; do
       ;;
     --select-entity-id)
       selected_entity_id="$2"
+      shift 2
+      ;;
+    --process-phase)
+      process_phase="$2"
+      shift 2
+      ;;
+    --process-command)
+      process_command="$2"
+      shift 2
+      ;;
+    --process-exit-code)
+      process_exit_code="$2"
+      shift 2
+      ;;
+    --process-message)
+      process_message="$2"
       shift 2
       ;;
     --flag)
@@ -272,7 +296,7 @@ EOF
     exit 1
   fi
 
-  local flags_json metadata_json
+  local flags_json metadata_json process_state_json
   if ((${#flags[@]} == 0)); then
     flags_json="[]"
   else
@@ -301,6 +325,33 @@ EOF
   if [[ -n "${visible_state}" ]]; then
     visible_json="${visible_state}"
   fi
+  process_state_json="null"
+  if [[ -n "${process_phase}" ]]; then
+    case "${process_phase}" in
+      queued|running|blocked|succeeded|failed) ;;
+      *)
+        echo "--process-phase must be queued, running, blocked, succeeded, or failed" >&2
+        exit 2
+        ;;
+    esac
+    if [[ -n "${process_exit_code}" && ! "${process_exit_code}" =~ ^-?[0-9]+$ ]]; then
+      echo "--process-exit-code must be an integer" >&2
+      exit 2
+    fi
+    process_state_json="$(jq -n \
+      --arg entity_id "${entity_id}" \
+      --arg phase "${process_phase}" \
+      --arg command "${process_command}" \
+      --arg exit_code "${process_exit_code}" \
+      --arg message "${process_message}" \
+      '{
+        entity_id: $entity_id,
+        phase: $phase,
+        command: (if $command == "" then null else $command end),
+        exit_code: (if $exit_code == "" then null else ($exit_code | tonumber) end),
+        message: (if $message == "" then null else $message end)
+      } | with_entries(select(.value != null))')"
+  fi
 
   mkdir -p "$(dirname "${output_path}")"
   jq -n \
@@ -313,6 +364,7 @@ EOF
     --argjson visible "${visible_json}" \
     --argjson flags "${flags_json}" \
     --argjson metadata "${metadata_json}" \
+    --argjson process_state "${process_state_json}" \
     '{
       scene_patch_version: 1,
       updates: [{
@@ -325,6 +377,7 @@ EOF
         metadata: $metadata
       } | with_entries(select(.value != null))],
       selected_entity_id: (if $selected_entity_id == "" then null else $selected_entity_id end),
+      process_state: $process_state,
       status: $status
     } | with_entries(select(.value != null))' | write_json "${output_path}"
   jq empty "${output_path}"

@@ -428,13 +428,20 @@ run_patch_check() {
     validate \
     --scene "${fixture_root}/default.json" \
     --patch "${tmp_home}/patches/process.json" >/dev/null
-  jq -e '
-    .selected_entity_id == "project-harness"
-    and .status == "Process succeeded: true"
-    and any(.updates[]; .entity_id == "project-harness"
-      and (.state_flags == ["succeeded"])
-      and (.metadata | any(.[0] == "exit_code" and .[1] == "0")))
-  ' "${tmp_home}/patches/process.json" >/dev/null
+	jq -e '
+	  .selected_entity_id == "project-harness"
+	  and .status == "Process succeeded: true"
+	  and .process_state == {
+	    "entity_id": "project-harness",
+	    "phase": "succeeded",
+	    "command": "true",
+	    "exit_code": 0,
+	    "message": "Process succeeded"
+	  }
+	  and any(.updates[]; .entity_id == "project-harness"
+	    and (.state_flags == ["succeeded"])
+	    and (.metadata | any(.[0] == "exit_code" and .[1] == "0")))
+	' "${tmp_home}/patches/process.json" >/dev/null
 
   echo "scene patch: ok"
 }

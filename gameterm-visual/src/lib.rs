@@ -474,6 +474,7 @@ pub struct VisualSceneDebugReport {
     pub selected_choice_guard_detail: Option<String>,
     pub pending_action_kind: Option<String>,
     pub pending_action_detail: Option<String>,
+    pub process_state: Option<VisualProcessState>,
     pub last_patch_transport: Option<String>,
     pub last_patch_source_pane_id: Option<usize>,
     pub status: String,
@@ -489,7 +490,32 @@ pub struct VisualScenePatch {
     #[serde(default)]
     pub selected_entity_id: Option<String>,
     #[serde(default)]
+    pub process_state: Option<VisualProcessState>,
+    #[serde(default)]
     pub status: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VisualProcessState {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entity_id: Option<String>,
+    pub phase: VisualProcessPhase,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VisualProcessPhase {
+    Queued,
+    Running,
+    Blocked,
+    Succeeded,
+    Failed,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1133,6 +1159,14 @@ pub enum VisualScenePatchError {
     EmptyVariableKey,
     #[error("scene patch contains duplicate variable key `{0}`")]
     DuplicateVariableKey(String),
+    #[error("scene patch process entity id must be non-empty")]
+    EmptyProcessEntityId,
+    #[error("scene patch process command must be non-empty")]
+    EmptyProcessCommand,
+    #[error("scene patch process message must be non-empty")]
+    EmptyProcessMessage,
+    #[error("scene patch process references unknown entity id `{0}`")]
+    UnknownProcessEntityId(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -1227,7 +1261,11 @@ impl VisualScenePatch {
                 self.scene_patch_version,
             ));
         }
-        if self.updates.is_empty() && self.variables.is_empty() && self.status.is_none() {
+        if self.updates.is_empty()
+            && self.variables.is_empty()
+            && self.process_state.is_none()
+            && self.status.is_none()
+        {
             return Err(VisualScenePatchError::EmptyPatch);
         }
         validate_state_entries(&self.variables).map_err(|err| match err {
@@ -1260,6 +1298,19 @@ impl VisualScenePatch {
         }
         if matches!(self.selected_entity_id.as_ref(), Some(id) if id.trim().is_empty()) {
             return Err(VisualScenePatchError::EmptySelectedEntityId);
+        }
+        if let Some(process_state) = &self.process_state {
+            if matches!(process_state.entity_id.as_ref(), Some(id) if id.trim().is_empty()) {
+                return Err(VisualScenePatchError::EmptyProcessEntityId);
+            }
+            if matches!(process_state.command.as_ref(), Some(command) if command.trim().is_empty())
+            {
+                return Err(VisualScenePatchError::EmptyProcessCommand);
+            }
+            if matches!(process_state.message.as_ref(), Some(message) if message.trim().is_empty())
+            {
+                return Err(VisualScenePatchError::EmptyProcessMessage);
+            }
         }
         Ok(())
     }
@@ -1633,6 +1684,7 @@ pub struct SceneRuntime {
     status: String,
     generation: u64,
     pending_action: Option<VisualActionRequest>,
+    last_process_state: Option<VisualProcessState>,
     last_patch_transport: Option<String>,
     last_patch_source_pane_id: Option<usize>,
     last_input_layer: Option<String>,
@@ -1674,6 +1726,7 @@ impl SceneRuntime {
             status: "Ready".to_string(),
             generation: 0,
             pending_action: None,
+            last_process_state: None,
             last_patch_transport: None,
             last_patch_source_pane_id: None,
             last_input_layer: None,
@@ -2239,9 +2292,24 @@ impl SceneRuntime {
             Some(result) => Some(result?),
             None => None,
         };
+        if let Some(process_state) = &patch.process_state {
+            if let Some(entity_id) = &process_state.entity_id {
+                if !self
+                    .scene
+                    .entities
+                    .iter()
+                    .any(|entity| entity.id == *entity_id)
+                {
+                    return Err(VisualScenePatchError::UnknownProcessEntityId(
+                        entity_id.clone(),
+                    ));
+                }
+            }
+        }
 
         let update_count = patch.updates.len();
         let variable_count = patch.variables.len();
+        let process_state = patch.process_state;
         for update in patch.updates {
             if let Some(entity) = self
                 .scene
@@ -2282,6 +2350,9 @@ impl SceneRuntime {
         }
         if let Some(selected_entity) = selected_entity {
             self.selected_entity = selected_entity;
+        }
+        if let Some(process_state) = process_state {
+            self.last_process_state = Some(process_state);
         }
 
         self.status = patch.status.unwrap_or_else(|| {
@@ -2476,6 +2547,7 @@ impl SceneRuntime {
                 .and_then(|choice| condition_guard_detail(&choice.conditions)),
             pending_action_kind: pending_action.map(action_request_name),
             pending_action_detail: pending_action.map(action_request_detail),
+            process_state: self.last_process_state.clone(),
             last_patch_transport: self.last_patch_transport.clone(),
             last_patch_source_pane_id: self.last_patch_source_pane_id,
             status: self.status.clone(),
@@ -2750,6 +2822,21 @@ impl SceneRuntime {
                 out.push_str(&format!("  Pending action: {kind}\r\n"));
             }
             _ => out.push_str("  Pending action: none\r\n"),
+        }
+        if let Some(process_state) = &report.process_state {
+            out.push_str(&format!("  Process phase: {:?}\r\n", process_state.phase));
+            if let Some(entity_id) = &process_state.entity_id {
+                out.push_str(&format!("  Process entity: {entity_id}\r\n"));
+            }
+            if let Some(command) = &process_state.command {
+                out.push_str(&format!("  Process command: {command}\r\n"));
+            }
+            if let Some(exit_code) = process_state.exit_code {
+                out.push_str(&format!("  Process exit code: {exit_code}\r\n"));
+            }
+            if let Some(message) = &process_state.message {
+                out.push_str(&format!("  Process message: {message}\r\n"));
+            }
         }
         match (
             &report.last_patch_transport,
@@ -4970,6 +5057,7 @@ mod tests {
             }],
             variables: vec![],
             selected_entity_id: None,
+            process_state: None,
             status: Some("Verification passed".to_string()),
         };
 
@@ -4999,6 +5087,7 @@ mod tests {
             updates: vec![],
             variables: vec![],
             selected_entity_id: None,
+            process_state: None,
             status: Some("Source tracked".to_string()),
         };
 
@@ -5013,6 +5102,73 @@ mod tests {
         runtime.toggle_debugger();
         let frame = runtime.render_text_frame(100, 40);
         assert!(frame.contains("Last patch: mux from pane 42"));
+    }
+
+    #[test]
+    fn scene_patch_updates_process_state() {
+        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        let patch = VisualScenePatch {
+            scene_patch_version: VisualScenePatch::VERSION,
+            updates: vec![],
+            variables: vec![],
+            selected_entity_id: None,
+            process_state: Some(VisualProcessState {
+                entity_id: Some("task-render".to_string()),
+                phase: VisualProcessPhase::Running,
+                command: Some("cargo check".to_string()),
+                exit_code: None,
+                message: Some("checking workspace".to_string()),
+            }),
+            status: Some("Process running: cargo check".to_string()),
+        };
+
+        runtime.apply_scene_patch(patch).unwrap();
+        let report = runtime.debug_report();
+
+        assert_eq!(
+            report.process_state.as_ref().map(|state| state.phase),
+            Some(VisualProcessPhase::Running)
+        );
+        assert_eq!(
+            report
+                .process_state
+                .as_ref()
+                .and_then(|state| state.entity_id.as_deref()),
+            Some("task-render")
+        );
+        runtime.toggle_debugger();
+        let frame = runtime.render_text_frame(100, 40);
+        assert!(frame.contains("Process phase: Running"));
+        assert!(frame.contains("Process command: cargo check"));
+    }
+
+    #[test]
+    fn scene_patch_rejects_unknown_process_entity_without_mutation() {
+        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        let before = runtime.render_snapshot();
+        let patch = VisualScenePatch {
+            scene_patch_version: VisualScenePatch::VERSION,
+            updates: vec![],
+            variables: vec![],
+            selected_entity_id: None,
+            process_state: Some(VisualProcessState {
+                entity_id: Some("missing".to_string()),
+                phase: VisualProcessPhase::Running,
+                command: Some("cargo check".to_string()),
+                exit_code: None,
+                message: None,
+            }),
+            status: Some("Should not apply".to_string()),
+        };
+
+        assert_eq!(
+            runtime.apply_scene_patch(patch),
+            Err(VisualScenePatchError::UnknownProcessEntityId(
+                "missing".to_string()
+            ))
+        );
+        assert_eq!(runtime.render_snapshot(), before);
+        assert_eq!(runtime.debug_report().process_state, None);
     }
 
     #[test]
@@ -5036,6 +5192,7 @@ mod tests {
                 },
             ],
             selected_entity_id: None,
+            process_state: None,
             status: None,
         };
 
@@ -5076,6 +5233,7 @@ mod tests {
                 },
             ],
             selected_entity_id: None,
+            process_state: None,
             status: None,
         };
 
@@ -5117,6 +5275,7 @@ mod tests {
             }],
             variables: vec![],
             selected_entity_id: None,
+            process_state: None,
             status: Some("Should not apply".to_string()),
         };
 
@@ -5146,6 +5305,7 @@ mod tests {
             }],
             variables: vec![],
             selected_entity_id: None,
+            process_state: None,
             status: Some("Visual state patched".to_string()),
         };
 
@@ -5180,6 +5340,7 @@ mod tests {
             }],
             variables: vec![],
             selected_entity_id: None,
+            process_state: None,
             status: Some("Should not apply".to_string()),
         };
 
@@ -5201,6 +5362,7 @@ mod tests {
             updates: vec![],
             variables: vec![],
             selected_entity_id: Some(" ".to_string()),
+            process_state: None,
             status: Some("Should not apply".to_string()),
         };
 
@@ -5226,6 +5388,7 @@ mod tests {
             }],
             variables: vec![],
             selected_entity_id: Some("agent-audit".to_string()),
+            process_state: None,
             status: Some("Visibility patched".to_string()),
         };
 

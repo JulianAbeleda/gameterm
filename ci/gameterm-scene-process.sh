@@ -112,7 +112,9 @@ write_patch() {
   local flag="$2"
   local exit_code="$3"
   local command_text="$4"
-  shift 4
+  local process_phase="$5"
+  local process_message="$6"
+  shift 6
   local extra_args=("$@")
 
   local args=(
@@ -123,6 +125,10 @@ write_patch() {
     --flag "${flag}"
     --metadata "exit_code=${exit_code}"
     --metadata "command=${command_text}"
+    --process-phase "${process_phase}"
+    --process-command "${command_text}"
+    --process-exit-code "${exit_code}"
+    --process-message "${process_message}"
     --force
   )
   if [[ -n "${label_text}" ]]; then
@@ -156,7 +162,14 @@ write_patch() {
 }
 
 command_text="${command_argv[*]}"
-write_patch "Process running: ${command_text}" running 0 "${command_text}" --visible
+write_patch \
+  "Process running: ${command_text}" \
+  running \
+  0 \
+  "${command_text}" \
+  running \
+  "Process running" \
+  --visible
 
 set +e
 "${command_argv[@]}"
@@ -164,9 +177,23 @@ rc=$?
 set -e
 
 if [[ "${rc}" -eq 0 ]]; then
-  write_patch "Process succeeded: ${command_text}" succeeded "${rc}" "${command_text}" --visible
+  write_patch \
+    "Process succeeded: ${command_text}" \
+    succeeded \
+    "${rc}" \
+    "${command_text}" \
+    succeeded \
+    "Process succeeded" \
+    --visible
 else
-  write_patch "Process failed (${rc}): ${command_text}" failed "${rc}" "${command_text}" --visible
+  write_patch \
+    "Process failed (${rc}): ${command_text}" \
+    failed \
+    "${rc}" \
+    "${command_text}" \
+    failed \
+    "Process failed" \
+    --visible
 fi
 
 exit "${rc}"

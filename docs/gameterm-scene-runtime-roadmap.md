@@ -79,6 +79,8 @@ Current status:
 - [x] Add visual novel, layered mode, and RPG quest authoring templates with
   verification coverage.
 - [x] Add explicit story-state export/import/validate/inspect helper coverage.
+- [x] Add typed process-state patches and debug visibility for agent/process
+  helpers.
 
 ## Scene Mode Product Loop Roadmap
 
