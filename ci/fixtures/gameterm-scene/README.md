@@ -14,3 +14,20 @@ These fixtures exercise Scene Mode without touching user config.
 - `chained-transitions.json`: guarded multi-step state transition fixture for dialogue, inventory, quest, command, stat, and agent state.
 - `sprites.json`: sprite manifest that points at bundled test assets.
 - `sprites-missing.json`: sprite manifest with one intentionally missing sprite path.
+
+## Scenario Ownership
+
+| Fixture | Proves | Focused verifier/test coverage |
+| --- | --- | --- |
+| `default.json` | Baseline Scene Mode runtime actions, default mode, entity selection, and command requests. | `scene_fixture_default_loads_runtime_actions`, `run_author_helper_check`, fixture `basic` |
+| `memory.json` | Navigation target loading and scene source replacement. | `scene_fixture_memory_loads_navigation_target`, fixture `navigate` |
+| `invalid.json` | Parser accepts JSON but schema validation rejects invalid scene content. | `scene_fixture_invalid_is_rejected`, author `validate` negative check, fixture `invalid` |
+| `patch-status.json` | Scene patch transport can update entity status, visibility, and process metadata. | `scene_patch_fixture_applies_to_default_scene`, `scene_patch_updates_entity_state_and_status` |
+| `patch-unknown-entity.json` | Patch application fails without mutating state when an entity is missing. | `scene_patch_fixture_rejects_unknown_entity`, `scene_patch_rejects_unknown_entity_without_mutation` |
+| `run-command-targets.json` | RunCommand target variants remain valid for tab, right split, and down split. | `run_command_action_emits_explicit_argv_request`, doctor target checks, fixture `run-command-targets` |
+| `vertical-slice.json` | First-pass playable loop across dialogue, RPG state, layers, choices, and status. | `scene_fixture_vertical_slice_completes_product_loop`, smoke scenario `vertical-slice`, fixture `vertical-slice` |
+| `authoring-loop.json` | Story-state export/import and authoring-mode status rendering. | `story_state_actions_emit_pending_requests`, smoke scenario `authoring-loop`, fixture `authoring-loop` |
+| `game-states.json` | Common game computational modes: exploration, dialogue, inventory, command, quest, and agent state. | `scene_fixture_game_states_covers_common_modes`, fixture `game-states` |
+| `chained-transitions.json` | Guarded deterministic transition chains over dialogue, inventory, quest, command, stat, and agent state. | `scene_fixture_chained_transitions_completes_state_chain`, fixture `chained-transitions` |
+| `sprites.json` | Sprite manifest resolution against bundled assets. | `scene_fixture_sprite_manifest_resolves_relative_paths`, fixture `sprites` |
+| `sprites-missing.json` | Missing sprite paths are reported without dropping valid sprite entries. | `scene_fixture_missing_sprite_manifest_keeps_valid_entries`, fixture `missing-sprite` |
