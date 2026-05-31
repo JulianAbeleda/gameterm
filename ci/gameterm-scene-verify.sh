@@ -123,6 +123,7 @@ run_static_checks() {
     "${repo_root}/ci/gameterm-scene-patch.sh" \
     "${repo_root}/ci/gameterm-scene-process.sh" \
     "${repo_root}/ci/gameterm-scene-smoke.sh" \
+    "${repo_root}/ci/gameterm-scene-story.sh" \
     "${repo_root}/ci/gameterm-scene-verify.sh"
   do
     bash -n "${script}"
@@ -438,6 +439,38 @@ run_patch_check() {
   echo "scene patch: ok"
 }
 
+run_story_state_check() {
+  local tmp_home
+  local scene_path
+  local state_path
+  local imported_path
+  tmp_home="$(mktemp -d /tmp/gameterm-scene-story-verify.XXXXXX)"
+  tmp_paths+=("${tmp_home}")
+  scene_path="${tmp_home}/rpg-quest.json"
+  state_path="${tmp_home}/story.json"
+  imported_path="${tmp_home}/story-imported.json"
+
+  "${repo_root}/ci/gameterm-scene-author.sh" \
+    new-template \
+    --template rpg-quest \
+    "${scene_path}" >/dev/null
+
+  "${repo_root}/ci/gameterm-scene-story.sh" \
+    export \
+    "${scene_path}" \
+    "${state_path}" >/dev/null
+  jq empty "${state_path}"
+  "${repo_root}/ci/gameterm-scene-story.sh" validate "${state_path}" >/dev/null
+  "${repo_root}/ci/gameterm-scene-story.sh" inspect "${state_path}" | grep -qx "quests=1"
+  "${repo_root}/ci/gameterm-scene-story.sh" \
+    import \
+    "${scene_path}" \
+    "${state_path}" \
+    "${imported_path}" >/dev/null
+  cmp "${state_path}" "${imported_path}" >/dev/null
+  echo "story state: ok"
+}
+
 run_smoke_asset_check() {
   "${repo_root}/ci/gameterm-scene-smoke.sh" --check-assets >/dev/null
   echo "smoke assets: ok"
@@ -461,6 +494,7 @@ run_all() {
   run_author_helper_check
   run_doctor_check
   run_patch_check
+  run_story_state_check
   run_smoke_asset_check
   for fixture in basic navigate invalid sprites missing-sprite run-command-targets layered-mode; do
     run_fixture_setup_check "${fixture}"

@@ -78,6 +78,7 @@ Current status:
   stats, quests, and relationships.
 - [x] Add visual novel, layered mode, and RPG quest authoring templates with
   verification coverage.
+- [x] Add explicit story-state export/import/validate/inspect helper coverage.
 
 ## Scene Mode Product Loop Roadmap
 
