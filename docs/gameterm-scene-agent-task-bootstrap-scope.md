@@ -103,6 +103,28 @@ Deterministic verification should cover:
 - invalid output/overwrite protection
 - `ci/gameterm-scene-verify.sh --all`
 
+## Implementation Status
+
+Implemented:
+
+- `ci/gameterm-scene-workspace.sh brief --cwd . --brief-output <path>`.
+- task brief JSON with workspace, repo, project, files, pane/process context,
+  objective, verification argv, generated-at metadata, and explicit
+  no-auto-run/no-auto-agent constraints.
+- `discover --brief-output <path>` writes the brief and links it from the
+  generated scene as a `task-brief` entity.
+- generated scenes include an explicit `OpenFile` choice for the task brief and
+  a `discovered-task -> task-brief` relationship.
+- overwrite protection and deterministic verifier coverage.
+
+Deferred:
+
+- clipboard/copy integration
+- agent handoff action
+- prompt templating beyond local JSON
+- generated Markdown companion brief
+- runtime approval UI
+
 ## Commit Lanes
 
 1. `[docs] scope Scene agent task bootstrap layer`

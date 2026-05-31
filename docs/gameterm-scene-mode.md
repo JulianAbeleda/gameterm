@@ -133,6 +133,7 @@ workspace discovery helper:
 ci/gameterm-scene-workspace.sh inspect --cwd .
 ci/gameterm-scene-workspace.sh discover \
   --cwd . \
+  --brief-output /tmp/gameterm-task-brief.json \
   --scene-output /tmp/gameterm-workspace.json
 ci/gameterm-scene-author.sh validate /tmp/gameterm-workspace.json
 ```
@@ -145,7 +146,10 @@ ci/gameterm-scene-workspace.sh discover --cwd . --install --force
 
 Discovery reads local cwd, git metadata, important files, and explicit command
 hints. It does not run verification commands; generated commands appear as
-explicit Scene Mode choices.
+explicit Scene Mode choices. When `--brief-output` is provided, discovery also
+writes a local task brief JSON file, adds a `task-brief` entity, and exposes an
+`Open task brief` action. The brief is inspectable local context only; it does
+not start an agent, submit a prompt, or run commands.
 
 When caller code has active pane metadata, it can pass that context into the
 same helper:
