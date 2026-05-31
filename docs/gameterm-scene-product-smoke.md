@@ -53,6 +53,21 @@ Launch GameTerm and open Scene Mode with the configured keybinding:
 - Missing target pane returns a transport error.
 - Invalid patch reports the source and keeps the previous scene state.
 
+## Agent And Workspace Slice
+
+- Install or launch the `workspace-agent` fixture.
+- Confirm workspace, project, task, agent, process, and file entities are
+  visible and selectable.
+- Run the deterministic choices through planning, running, blocked, and review
+  states.
+- Confirm blocked state exposes a visible blocker and recoverable next action.
+- Confirm review-ready state enables the fixture open-file action and explicit
+  verification command.
+- Run `ci/gameterm-scene-smoke.sh --describe-scenario workspace-agent` and
+  confirm the expected final status is documented.
+- When live smoke is available, run
+  `ci/gameterm-scene-smoke.sh --launch --scenario workspace-agent`.
+
 ## Asset And Scene Failure Recovery
 
 - Invalid scene JSON on launch shows an error frame instead of crashing.

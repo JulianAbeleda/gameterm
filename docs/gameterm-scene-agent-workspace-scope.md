@@ -709,3 +709,28 @@ The Agent/Workspace first pass is done when:
 At that point, Scene Mode has enough Agent/Workspace structure to support
 future visual novel, RPG, memory, and agent-control features without treating
 them as unrelated screens.
+
+## First-Pass Implementation Status
+
+Implemented first-pass items:
+
+- `workspace-agent` fixture with workspace, project, task, agent, process, and
+  file-reference entities.
+- Deterministic fixture choices for planning, running, blocked, review-ready,
+  open-file, and explicit verification command states.
+- Runtime test coverage for the fixture product loop.
+- Authoring helper fixture install and `new-template --template
+  workspace-agent` support.
+- Static verifier support through `ci/gameterm-scene-verify.sh --fixture
+  workspace-agent`.
+- Smoke scenario registration through `ci/gameterm-scene-smoke.sh --scenario
+  workspace-agent`.
+- User-facing Scene Mode documentation for the template and smoke scenario.
+
+Remaining deferred items stay intentionally outside the first pass:
+
+- automatic workspace discovery from live panes and git metadata
+- richer persisted workspace sessions
+- multi-agent coordination
+- command policy controls
+- richer visual layout and authored sprites

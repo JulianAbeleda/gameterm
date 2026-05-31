@@ -115,6 +115,17 @@ The `vertical-slice` template combines dialogue, guarded choices, deterministic
 story/RPG actions, layered state, and a process-state task entity into one
 playable Scene Mode loop.
 
+The `workspace-agent` template is the first Agent/Workspace product slice. It
+represents workspace, project, task, agent, process, and file entities, then
+uses deterministic choices and external patches to move agent work through
+planning, running, blocked, and review-ready states:
+
+```sh
+ci/gameterm-scene-author.sh new-template \
+  --template workspace-agent \
+  ~/.config/gameterm/scenes/default.json
+```
+
 For final app-level verification, use the product smoke checklist in
 [`docs/gameterm-scene-product-smoke.md`](gameterm-scene-product-smoke.md).
 
@@ -486,6 +497,16 @@ ci/gameterm-scene-smoke.sh --launch --scenario agent-lifecycle
 The scenario emits `planning`, `blocked`, and `complete` patches through the
 auto-created inbox and captures the final completed agent state. The
 deterministic verifier also covers `waiting` and `cancelled` phase patches.
+
+To live-audit the Agent/Workspace product slice, use:
+
+```sh
+ci/gameterm-scene-smoke.sh --launch --scenario workspace-agent
+```
+
+The scenario launches the `workspace-agent` fixture, runs a real `true` command
+through the process helper, emits planning/running/blocked/complete agent
+patches, and captures the final workspace state.
 
 To live-audit mux submission, let the smoke script launch GameTerm, open Scene
 Mode before the wait timer expires, and have the script submit a patch before
