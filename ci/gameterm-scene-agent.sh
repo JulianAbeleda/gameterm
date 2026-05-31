@@ -14,6 +14,8 @@ Options:
                                 Required.
   --message TEXT                Agent status message.
   --command TEXT                Agent command/task label.
+  --task-id ID                  Explicit task id owned or watched by the agent.
+  --blocked-by ID               Explicit task/process id blocking the agent.
   --patch PATH                  Patch output path. Required unless --inbox is set.
   --inbox PATH                  Also write the patch to a Scene Mode inbox.
   --submit-mux                  Submit the patch through gameterm cli scene-patch.
@@ -39,6 +41,8 @@ entity_id=""
 agent_phase=""
 message_text=""
 command_text=""
+task_id=""
+blocked_by=""
 patch_path=""
 inbox_path=""
 submit_mux=0
@@ -64,6 +68,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --command)
       command_text="$2"
+      shift 2
+      ;;
+    --task-id)
+      task_id="$2"
+      shift 2
+      ;;
+    --blocked-by)
+      blocked_by="$2"
       shift 2
       ;;
     --patch)
@@ -181,6 +193,9 @@ if [[ -n "${message_text}" ]]; then
 else
   message_text="${status_text}"
 fi
+if [[ -n "${task_id}" ]]; then
+  status_text="${entity_id} ${agent_phase_flag} for ${task_id}: ${message_text}"
+fi
 
 args=(
   set-entity
@@ -196,6 +211,12 @@ args=(
   --process-message "${message_text}"
   --force
 )
+if [[ -n "${task_id}" ]]; then
+  args+=(--metadata "agent_task_id=${task_id}")
+fi
+if [[ -n "${blocked_by}" ]]; then
+  args+=(--metadata "blocked_by=${blocked_by}")
+fi
 if ((${#exit_code_args[@]} > 0)); then
   args+=("${exit_code_args[@]}")
 fi
@@ -213,12 +234,24 @@ fi
 
 tmp_patch="$(mktemp /tmp/gameterm-scene-agent-state.XXXXXX.json)"
 jq \
+  --arg entity_id "${entity_id}" \
   --arg phase "${agent_phase_flag}" \
   --arg process_phase "${process_phase}" \
+  --arg task_id "${task_id}" \
+  --arg blocked_by "${blocked_by}" \
   '.variables += [
     {key: "agent_phase", value: {Text: $phase}},
     {key: "agent_process_phase", value: {Text: $process_phase}}
-  ]' \
+  ]
+  | if $task_id == "" then . else
+      .variables += [
+        {key: "active_agent_id", value: {Text: $entity_id}},
+        {key: "active_task_id", value: {Text: $task_id}}
+      ]
+    end
+  | if $blocked_by == "" then . else
+      .variables += [{key: "agent_blocked_by", value: {Text: $blocked_by}}]
+    end' \
   "${patch_path}" >"${tmp_patch}"
 mv "${tmp_patch}" "${patch_path}"
 
