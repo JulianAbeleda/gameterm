@@ -12,8 +12,8 @@ Options:
   --all                 Run all checks. This is the default.
   --fixture NAME        Run one fixture setup check: basic, navigate, invalid,
                         sprites, missing-sprite, run-command-targets,
-                        layered-mode, vertical-slice, authoring-loop, or
-                        game-states.
+                        layered-mode, vertical-slice, authoring-loop,
+                        game-states, or chained-transitions.
   -h, --help            Show this help.
 EOF
 }
@@ -73,6 +73,9 @@ scene_file_for_fixture() {
       ;;
     game-states)
       printf '%s\n' "${fixture_root}/game-states.json"
+      ;;
+    chained-transitions)
+      printf '%s\n' "${fixture_root}/chained-transitions.json"
       ;;
     invalid)
       printf '%s\n' "${fixture_root}/invalid.json"
@@ -759,7 +762,7 @@ run_all() {
   run_agent_check
   run_story_state_check
   run_smoke_asset_check
-  for fixture in basic navigate invalid sprites missing-sprite run-command-targets layered-mode vertical-slice authoring-loop game-states; do
+  for fixture in basic navigate invalid sprites missing-sprite run-command-targets layered-mode vertical-slice authoring-loop game-states chained-transitions; do
     run_fixture_setup_check "${fixture}"
   done
   run_cargo_checks
@@ -771,7 +774,7 @@ case "${mode}" in
   all)
     run_all
     ;;
-  basic|navigate|invalid|sprites|missing-sprite|run-command-targets|layered-mode|vertical-slice|authoring-loop|game-states)
+  basic|navigate|invalid|sprites|missing-sprite|run-command-targets|layered-mode|vertical-slice|authoring-loop|game-states|chained-transitions)
     run_static_checks
     run_fixture_setup_check "${mode}"
     ;;

@@ -4235,6 +4235,49 @@ mod tests {
     }
 
     #[test]
+    fn scene_fixture_chained_transitions_completes_state_chain() {
+        let scene =
+            VisualScene::load_from_path(scene_fixture_path("chained-transitions.json")).unwrap();
+        let mut runtime = SceneRuntime::new(scene).unwrap();
+
+        runtime.activate_choice();
+        runtime.select_next_choice();
+        runtime.activate_choice();
+        runtime.select_next_choice();
+        runtime.activate_choice();
+        runtime.select_next_choice();
+        runtime.activate_choice();
+
+        let snapshot = runtime.render_snapshot();
+        assert!(snapshot.variables.iter().any(|entry| {
+            entry.key == "agent_phase"
+                && entry.value == VisualStateValue::Text("running".to_string())
+        }));
+        assert!(snapshot
+            .active_layers
+            .iter()
+            .any(|layer| layer.layer_id == "story" && layer.state == "exploration"));
+        assert!(snapshot
+            .active_layers
+            .iter()
+            .any(|layer| layer.layer_id == "ui" && layer.state == "inventory"));
+        assert!(snapshot
+            .active_layers
+            .iter()
+            .any(|layer| layer.layer_id == "quest" && layer.state == "route-open"));
+        assert!(snapshot
+            .active_layers
+            .iter()
+            .any(|layer| layer.layer_id == "command" && layer.state == "issued"));
+        assert!(snapshot
+            .active_layers
+            .iter()
+            .any(|layer| layer.layer_id == "agent" && layer.state == "running"));
+        assert_eq!(snapshot.rpg.quests[0].stage, 2);
+        assert_eq!(snapshot.rpg.stats[0].value, VisualStateValue::Number(9));
+    }
+
+    #[test]
     fn scene_fixture_invalid_is_rejected() {
         assert!(matches!(
             VisualScene::load_from_path(scene_fixture_path("invalid.json")),

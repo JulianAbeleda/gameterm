@@ -135,7 +135,7 @@ Options for update-choice:
 
 Fixtures:
   basic, navigate, invalid, sprites, missing-sprite, vertical-slice,
-  authoring-loop, game-states
+  authoring-loop, game-states, chained-transitions
 
 Templates:
   agent-workflow, project-dashboard, visual-novel, layered-mode, rpg-quest,
@@ -1512,6 +1512,10 @@ install_fixture() {
       copy_file "${fixture_root}/game-states.json" "${scene_dir}/default.json"
       copy_file "${fixture_root}/sprites.json" "${scene_dir}/sprites.json"
       ;;
+    chained-transitions)
+      copy_file "${fixture_root}/chained-transitions.json" "${scene_dir}/default.json"
+      copy_file "${fixture_root}/sprites.json" "${scene_dir}/sprites.json"
+      ;;
     *)
       echo "unknown fixture: ${fixture}" >&2
       usage >&2
@@ -1704,7 +1708,7 @@ case "${command}" in
       usage >&2
       exit 2
     fi
-    printf '%s\n' basic navigate invalid sprites missing-sprite vertical-slice authoring-loop game-states
+    printf '%s\n' basic navigate invalid sprites missing-sprite vertical-slice authoring-loop game-states chained-transitions
     ;;
   list-templates)
     if [[ "${#positionals[@]}" -ne 0 ]]; then

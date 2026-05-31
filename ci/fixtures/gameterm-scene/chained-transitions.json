@@ -1,0 +1,258 @@
+{
+  "title": "Scene Chained Transitions",
+  "background": "workspace-map",
+  "width": 16,
+  "height": 9,
+  "mode": {
+    "mode_id": "gameplay",
+    "label": "Gameplay",
+    "description": "Chained state transition fixture",
+    "scene_profile": "scene",
+    "allowed_actions": ["Inspect", "Resolve"]
+  },
+  "layers": [
+    {
+      "layer_id": "story",
+      "state": "dialogue",
+      "label": "Story"
+    },
+    {
+      "layer_id": "ui",
+      "state": "dialogue",
+      "label": "UI"
+    },
+    {
+      "layer_id": "quest",
+      "state": "intro",
+      "label": "Quest"
+    },
+    {
+      "layer_id": "command",
+      "state": "idle",
+      "label": "Command"
+    },
+    {
+      "layer_id": "agent",
+      "state": "idle",
+      "label": "Agent"
+    }
+  ],
+  "variables": [
+    {
+      "key": "intro_complete",
+      "value": { "Bool": false }
+    },
+    {
+      "key": "route_open",
+      "value": { "Bool": false }
+    },
+    {
+      "key": "agent_phase",
+      "value": { "Text": "idle" }
+    }
+  ],
+  "rpg": {
+    "inventory": [
+      {
+        "item_id": "field-map",
+        "label": "Field Map",
+        "count": 1
+      }
+    ],
+    "stats": [
+      {
+        "owner_id": "player",
+        "key": "hp",
+        "value": { "Number": 10 }
+      }
+    ],
+    "quests": [
+      {
+        "quest_id": "route",
+        "label": "Open Route",
+        "stage": 1,
+        "completed": false,
+        "journal": "Complete dialogue, open the route, issue a command, then start the agent."
+      }
+    ],
+    "relationships": []
+  },
+  "entities": [
+    {
+      "id": "player",
+      "kind": "Agent",
+      "label": "Player",
+      "position": { "x": 4, "y": 4 },
+      "sprite": "agent_idle",
+      "state_flags": ["idle"]
+    },
+    {
+      "id": "route",
+      "kind": "Project",
+      "label": "Route",
+      "position": { "x": 8, "y": 4 },
+      "sprite": "project_core",
+      "state_flags": ["closed"]
+    },
+    {
+      "id": "agent-task",
+      "kind": "Task",
+      "label": "Agent Task",
+      "position": { "x": 12, "y": 4 },
+      "sprite": "task_tile",
+      "state_flags": ["idle"]
+    }
+  ],
+  "dialogue_speaker": "Guide",
+  "dialogue": "Move through dialogue, exploration, inventory, command, quest, and agent states.",
+  "choices": [
+    {
+      "label": "Complete dialogue",
+      "kind": {
+        "Resolve": {
+          "operations": [
+            {
+              "SetVariable": {
+                "key": "intro_complete",
+                "value": { "Bool": true }
+              }
+            },
+            {
+              "SetLayerState": {
+                "layer_id": "story",
+                "state": "exploration"
+              }
+            },
+            {
+              "SetLayerState": {
+                "layer_id": "ui",
+                "state": "hud"
+              }
+            }
+          ]
+        }
+      },
+      "conditions": [
+        {
+          "variable": "intro_complete",
+          "equals": { "Bool": false }
+        }
+      ]
+    },
+    {
+      "label": "Open route inventory",
+      "kind": {
+        "Resolve": {
+          "operations": [
+            {
+              "SetVariable": {
+                "key": "route_open",
+                "value": { "Bool": true }
+              }
+            },
+            {
+              "SetLayerState": {
+                "layer_id": "ui",
+                "state": "inventory"
+              }
+            },
+            {
+              "SetLayerState": {
+                "layer_id": "quest",
+                "state": "route-open"
+              }
+            },
+            {
+              "AdvanceQuest": {
+                "quest_id": "route",
+                "stage": 2
+              }
+            }
+          ]
+        }
+      },
+      "conditions": [
+        {
+          "variable": "intro_complete",
+          "equals": { "Bool": true }
+        },
+        {
+          "source": "inventory_count",
+          "variable": "field-map",
+          "equals": { "Number": 1 }
+        }
+      ]
+    },
+    {
+      "label": "Issue command",
+      "kind": {
+        "Resolve": {
+          "operations": [
+            {
+              "SetLayerState": {
+                "layer_id": "command",
+                "state": "issued"
+              }
+            },
+            {
+              "AdjustStat": {
+                "owner_id": "player",
+                "key": "hp",
+                "amount": -1
+              }
+            }
+          ]
+        }
+      },
+      "conditions": [
+        {
+          "variable": "route_open",
+          "equals": { "Bool": true }
+        },
+        {
+          "source": "quest_stage",
+          "variable": "route",
+          "equals": { "Number": 2 }
+        },
+        {
+          "source": "stat",
+          "variable": "player:hp",
+          "equals": { "Number": 10 }
+        }
+      ]
+    },
+    {
+      "label": "Start agent task",
+      "kind": {
+        "Resolve": {
+          "operations": [
+            {
+              "SetVariable": {
+                "key": "agent_phase",
+                "value": { "Text": "running" }
+              }
+            },
+            {
+              "SetLayerState": {
+                "layer_id": "agent",
+                "state": "running"
+              }
+            }
+          ]
+        }
+      },
+      "conditions": [
+        {
+          "source": "quest_stage",
+          "variable": "route",
+          "equals": { "Number": 2 }
+        },
+        {
+          "source": "stat",
+          "variable": "player:hp",
+          "equals": { "Number": 9 }
+        }
+      ]
+    }
+  ]
+}
