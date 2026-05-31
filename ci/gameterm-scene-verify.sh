@@ -14,7 +14,7 @@ Options:
                         sprites, missing-sprite, run-command-targets,
                         layered-mode, vertical-slice, authoring-loop,
                         game-states, chained-transitions, or
-                        workspace-agent.
+                        workspace-agent, or multi-agent-coordination.
   -h, --help            Show this help.
 EOF
 }
@@ -80,6 +80,9 @@ scene_file_for_fixture() {
       ;;
     workspace-agent)
       printf '%s\n' "${fixture_root}/workspace-agent.json"
+      ;;
+    multi-agent-coordination)
+      printf '%s\n' "${fixture_root}/multi-agent-coordination.json"
       ;;
     invalid)
       printf '%s\n' "${fixture_root}/invalid.json"
@@ -195,6 +198,7 @@ run_author_helper_check() {
   grep -qx rpg-quest <<<"${templates}"
   grep -qx vertical-slice <<<"${templates}"
   grep -qx workspace-agent <<<"${templates}"
+  grep -qx multi-agent-coordination <<<"${templates}"
   "${repo_root}/ci/gameterm-scene-author.sh" \
     install-fixture \
     --config-home "${tmp_home}" \
@@ -215,7 +219,7 @@ run_author_helper_check() {
     "${tmp_home}/gameterm/scenes/template.json" >/dev/null
   "${repo_root}/ci/gameterm-scene-author.sh" \
     validate "${tmp_home}/gameterm/scenes/template.json" >/dev/null
-  for template in visual-novel layered-mode rpg-quest vertical-slice workspace-agent; do
+  for template in visual-novel layered-mode rpg-quest vertical-slice workspace-agent multi-agent-coordination; do
     "${repo_root}/ci/gameterm-scene-author.sh" \
       new-template \
       --template "${template}" \
@@ -620,7 +624,7 @@ run_patch_check() {
 }
 
 run_agent_check() {
-  local tmp_home planning_patch blocked_patch complete_patch waiting_patch cancelled_patch inbox
+  local tmp_home planning_patch blocked_patch complete_patch waiting_patch cancelled_patch multi_patch inbox
   tmp_home="$(mktemp -d /tmp/gameterm-scene-agent-verify.XXXXXX)"
   tmp_paths+=("${tmp_home}")
   planning_patch="${tmp_home}/patches/agent-planning.json"
@@ -628,6 +632,7 @@ run_agent_check() {
   complete_patch="${tmp_home}/patches/agent-complete.json"
   waiting_patch="${tmp_home}/patches/agent-waiting.json"
   cancelled_patch="${tmp_home}/patches/agent-cancelled.json"
+  multi_patch="${tmp_home}/patches/agent-multi.json"
   inbox="${tmp_home}/inbox/scene-patch.json"
 
   "${repo_root}/ci/gameterm-scene-agent.sh" \
@@ -709,6 +714,30 @@ run_agent_check() {
     and .process_state.exit_code == 130
     and (.variables | any(.key == "agent_phase" and .value == {"Text": "cancelled"}))
   ' "${cancelled_patch}" >/dev/null
+
+  "${repo_root}/ci/gameterm-scene-agent.sh" \
+    status \
+    --entity-id agent-audit \
+    --task-id task-review \
+    --blocked-by task-build \
+    --phase blocked \
+    --message "Waiting for build output" \
+    --patch "${multi_patch}" \
+    --select >/dev/null
+  "${repo_root}/ci/gameterm-scene-patch.sh" \
+    validate \
+    --scene "${fixture_root}/multi-agent-coordination.json" \
+    --patch "${multi_patch}" >/dev/null
+  jq -e '
+    .selected_entity_id == "agent-audit"
+    and (.status | contains("agent-audit blocked for task-review"))
+    and (.variables | any(.key == "active_agent_id" and .value == {"Text": "agent-audit"}))
+    and (.variables | any(.key == "active_task_id" and .value == {"Text": "task-review"}))
+    and (.variables | any(.key == "agent_blocked_by" and .value == {"Text": "task-build"}))
+    and any(.updates[]; .entity_id == "agent-audit"
+      and (.metadata | any(.[0] == "agent_task_id" and .[1] == "task-review"))
+      and (.metadata | any(.[0] == "blocked_by" and .[1] == "task-build")))
+  ' "${multi_patch}" >/dev/null
 
   set +e
   "${repo_root}/ci/gameterm-scene-agent.sh" \
@@ -1052,7 +1081,7 @@ run_all() {
   run_story_state_check
   run_workspace_session_check
   run_smoke_asset_check
-  for fixture in basic navigate invalid sprites missing-sprite run-command-targets layered-mode vertical-slice authoring-loop game-states chained-transitions workspace-agent; do
+  for fixture in basic navigate invalid sprites missing-sprite run-command-targets layered-mode vertical-slice authoring-loop game-states chained-transitions workspace-agent multi-agent-coordination; do
     run_fixture_setup_check "${fixture}"
   done
   run_cargo_checks
@@ -1064,7 +1093,7 @@ case "${mode}" in
   all)
     run_all
     ;;
-  basic|navigate|invalid|sprites|missing-sprite|run-command-targets|layered-mode|vertical-slice|authoring-loop|game-states|chained-transitions|workspace-agent)
+  basic|navigate|invalid|sprites|missing-sprite|run-command-targets|layered-mode|vertical-slice|authoring-loop|game-states|chained-transitions|workspace-agent|multi-agent-coordination)
     run_static_checks
     run_fixture_setup_check "${mode}"
     ;;
