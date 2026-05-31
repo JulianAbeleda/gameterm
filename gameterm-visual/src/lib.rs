@@ -2805,6 +2805,20 @@ impl SceneRuntime {
                 self.scene.rpg.relationships.len()
             ));
         }
+        if let Some(action) = &self.last_story_state_action {
+            match &self.last_story_state_path {
+                Some(path) => out.push_str(&format!(
+                    "Story State: {action} {}\r\n",
+                    path.display()
+                )),
+                None => out.push_str(&format!("Story State: {action}\r\n")),
+            }
+        } else if self.scene.mode.mode_id == "authoring" {
+            out.push_str(&format!(
+                "Story State: default {}\r\n",
+                self.default_story_state_path().display()
+            ));
+        }
         out.push_str(&format!(
             "{}: {}\r\n\r\n",
             self.active_dialogue_line().speaker,
@@ -4881,6 +4895,28 @@ mod tests {
         runtime.toggle_debugger();
         let frame = runtime.render_text_frame(120, 40);
         assert!(frame.contains("Last story state: export"));
+    }
+
+    #[test]
+    fn authoring_mode_renders_story_state_path_in_scene_view() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("story.json");
+        let mut scene = VisualScene::demo();
+        scene.mode.mode_id = "authoring".to_string();
+        scene.mode.label = "Authoring".to_string();
+        let mut runtime = SceneRuntime::new_with_source_and_action_base_dir(
+            scene,
+            VisualSceneSource::new("/tmp/default.json", VisualSceneLoadStatus::Loaded, 1),
+            dir.path(),
+        )
+        .unwrap();
+
+        let frame = runtime.render_text_frame(120, 40);
+        assert!(frame.contains("Story State: default /tmp/default.story.json"));
+
+        runtime.mark_story_state_imported(&path);
+        let frame = runtime.render_text_frame(120, 40);
+        assert!(frame.contains(&format!("Story State: import {}", path.display())));
     }
 
     #[test]
