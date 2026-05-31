@@ -21,7 +21,8 @@ Options:
   --fixture NAME           Fixture to install when --launch is used: basic,
                            navigate, invalid, sprites, missing-sprite,
                            run-command-targets, layered-mode, vertical-slice,
-                           workspace-agent, authoring-loop, or renderer-rows. Default:
+                           workspace-agent, workspace-discovery, authoring-loop,
+                           or renderer-rows. Default:
                            renderer-rows.
   --patch-inbox PATH       Set GAMETERM_SCENE_PATCH_FILE to PATH when
                            launching. Use "auto" to create a temporary inbox.
@@ -202,6 +203,7 @@ run-command-targets
 overlay-cleanup
 vertical-slice
 workspace-agent
+workspace-discovery
 agent-lifecycle
 authoring-loop
 patch-inbox
@@ -264,6 +266,15 @@ Fixture: workspace-agent
 Setup: launch Agent/Workspace fixture with auto patch inbox, then emit real process and agent lifecycle patches.
 Checks: Scene Mode renders workspace, project, task, agent, process, and file entities while external helpers drive lifecycle state.
 Expected status: Agent complete: Workspace slice ready.
+EOF
+      ;;
+    workspace-discovery)
+      cat <<'EOF'
+Scenario: workspace-discovery
+Fixture: generated workspace scene
+Setup: generate a Scene Mode scene from the current repository with ci/gameterm-scene-workspace.sh, then launch it.
+Checks: Scene Mode renders generated workspace, project, task, process, and file entities from cwd/git state.
+Expected status: Discovered workspace scene is visible.
 EOF
       ;;
     agent-lifecycle)
@@ -355,6 +366,9 @@ apply_smoke_scenario_defaults() {
       if [[ -z "${patch_inbox}" ]]; then
         patch_inbox="auto"
       fi
+      ;;
+    workspace-discovery)
+      fixture="workspace-discovery"
       ;;
     agent-lifecycle)
       fixture="basic"
@@ -470,6 +484,14 @@ install_scene_fixture() {
       ;;
     workspace-agent)
       cp "${fixture_root}/workspace-agent.json" "${scene_dir}/default.json"
+      install_sprite_manifest "${scene_dir}/sprites.json"
+      ;;
+    workspace-discovery)
+      "${repo_root}/ci/gameterm-scene-workspace.sh" \
+        discover \
+        --cwd "${repo_root}" \
+        --scene-output "${scene_dir}/default.json" \
+        --force >/dev/null
       install_sprite_manifest "${scene_dir}/sprites.json"
       ;;
     authoring-loop)
@@ -948,6 +970,9 @@ EOF
   fi
   if [[ "${scenario}" == "workspace-agent" ]]; then
     echo "Agent/Workspace audit: emit process and agent lifecycle patches into the workspace fixture."
+  fi
+  if [[ "${scenario}" == "workspace-discovery" ]]; then
+    echo "Workspace discovery audit: launch a scene generated from ${repo_root}."
   fi
   if [[ -n "${patch_inbox}" ]]; then
     echo "Patch audit: inbox transport is enabled at ${patch_inbox}"

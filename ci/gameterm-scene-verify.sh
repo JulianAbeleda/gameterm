@@ -142,7 +142,8 @@ run_static_checks() {
     "${repo_root}/ci/gameterm-scene-process.sh" \
     "${repo_root}/ci/gameterm-scene-smoke.sh" \
     "${repo_root}/ci/gameterm-scene-story.sh" \
-    "${repo_root}/ci/gameterm-scene-verify.sh"
+    "${repo_root}/ci/gameterm-scene-verify.sh" \
+    "${repo_root}/ci/gameterm-scene-workspace.sh"
   do
     bash -n "${script}"
   done
@@ -726,6 +727,114 @@ run_agent_check() {
   echo "agent helper: ok"
 }
 
+run_workspace_discovery_check() {
+  local tmp_home git_scene non_git_dir non_git_scene patch_path install_home
+  tmp_home="$(mktemp -d /tmp/gameterm-scene-workspace-verify.XXXXXX)"
+  tmp_paths+=("${tmp_home}")
+  git_scene="${tmp_home}/git-workspace.json"
+  non_git_dir="${tmp_home}/non-git"
+  non_git_scene="${tmp_home}/non-git-workspace.json"
+  patch_path="${tmp_home}/workspace.patch.json"
+  install_home="${tmp_home}/config"
+
+  "${repo_root}/ci/gameterm-scene-workspace.sh" \
+    inspect \
+    --cwd "${repo_root}" >/tmp/gameterm-scene-workspace-inspect.out
+  grep -q '^root_dir=' /tmp/gameterm-scene-workspace-inspect.out
+  grep -q '^repo_status=' /tmp/gameterm-scene-workspace-inspect.out
+
+  "${repo_root}/ci/gameterm-scene-workspace.sh" \
+    discover \
+    --cwd "${repo_root}" \
+    --scene-output "${git_scene}" \
+    --force >/dev/null
+  "${repo_root}/ci/gameterm-scene-author.sh" validate "${git_scene}" >/dev/null
+  jq -e '
+    .mode.mode_id == "workspace"
+    and any(.entities[]; .id == "discovered-workspace"
+      and .kind == "Project"
+      and (.metadata | any(.[0] == "repo_status")))
+    and any(.entities[]; .id == "discovered-project"
+      and (.metadata | any(.[0] == "language" and .[1] == "rust")))
+    and any(.entities[]; .id == "discovered-process")
+    and any(.choices[]; .label == "Run verification")
+  ' "${git_scene}" >/dev/null
+
+  mkdir -p "${non_git_dir}"
+  printf '# Temporary workspace\n' >"${non_git_dir}/README.md"
+  "${repo_root}/ci/gameterm-scene-workspace.sh" \
+    discover \
+    --cwd "${non_git_dir}" \
+    --scene-output "${non_git_scene}" \
+    --force >/dev/null
+  "${repo_root}/ci/gameterm-scene-author.sh" validate "${non_git_scene}" >/dev/null
+  jq -e '
+    any(.variables[]; .key == "repo_status" and .value == {"Text": "not_git"})
+    and any(.choices[]; .label == "Open README.md")
+  ' "${non_git_scene}" >/dev/null
+
+  "${repo_root}/ci/gameterm-scene-workspace.sh" \
+    patch \
+    --cwd "${repo_root}" \
+    --patch-output "${patch_path}" \
+    --force >/dev/null
+  "${repo_root}/ci/gameterm-scene-patch.sh" validate \
+    --scene "${fixture_root}/workspace-agent.json" \
+    --patch "${patch_path}" >/dev/null
+  jq -e '
+    .selected_entity_id == "workspace-gameterm"
+    and (.variables | any(.key == "repo_status"))
+    and any(.updates[]; .entity_id == "workspace-gameterm")
+  ' "${patch_path}" >/dev/null
+
+  "${repo_root}/ci/gameterm-scene-workspace.sh" \
+    discover \
+    --cwd "${repo_root}" \
+    --install \
+    --config-home "${install_home}" >/dev/null
+  "${repo_root}/ci/gameterm-scene-author.sh" \
+    validate "${install_home}/gameterm/scenes/default.json" >/dev/null
+  cp "${install_home}/gameterm/scenes/default.json" \
+    "${tmp_home}/installed-before-overwrite.json"
+  set +e
+  "${repo_root}/ci/gameterm-scene-workspace.sh" \
+    discover \
+    --cwd "${repo_root}" \
+    --install \
+    --config-home "${install_home}" \
+    >/tmp/gameterm-scene-workspace-overwrite.out \
+    2>/tmp/gameterm-scene-workspace-overwrite.err
+  overwrite_rc=$?
+  set -e
+  if [[ "${overwrite_rc}" -eq 0 ]]; then
+    echo "expected workspace discovery install overwrite protection to fail" >&2
+    exit 1
+  fi
+  cmp \
+    "${tmp_home}/installed-before-overwrite.json" \
+    "${install_home}/gameterm/scenes/default.json" >/dev/null
+
+  set +e
+  "${repo_root}/ci/gameterm-scene-workspace.sh" \
+    discover \
+    --cwd "${repo_root}" \
+    --open missing-workspace-file.md \
+    --strict \
+    --scene-output "${tmp_home}/strict.json" \
+    >/tmp/gameterm-scene-workspace-strict.out \
+    2>/tmp/gameterm-scene-workspace-strict.err
+  strict_rc=$?
+  set -e
+  if [[ "${strict_rc}" -eq 0 ]]; then
+    echo "expected workspace discovery strict missing file to fail" >&2
+    exit 1
+  fi
+  grep -q "important file does not exist" \
+    /tmp/gameterm-scene-workspace-strict.err
+
+  echo "workspace discovery: ok"
+}
+
 run_story_state_check() {
   local tmp_home
   local scene_path
@@ -769,6 +878,7 @@ run_smoke_asset_check() {
     overlay-cleanup \
     vertical-slice \
     workspace-agent \
+    workspace-discovery \
     agent-lifecycle \
     authoring-loop \
     patch-inbox \
@@ -787,6 +897,8 @@ run_smoke_asset_check() {
     --describe-scenario process-state | grep -q "typed process state"
   "${repo_root}/ci/gameterm-scene-smoke.sh" \
     --describe-scenario workspace-agent | grep -q "Agent/Workspace"
+  "${repo_root}/ci/gameterm-scene-smoke.sh" \
+    --describe-scenario workspace-discovery | grep -q "generated workspace"
   echo "smoke assets: ok"
 }
 
@@ -809,6 +921,7 @@ run_all() {
   run_doctor_check
   run_patch_check
   run_agent_check
+  run_workspace_discovery_check
   run_story_state_check
   run_smoke_asset_check
   for fixture in basic navigate invalid sprites missing-sprite run-command-targets layered-mode vertical-slice authoring-loop game-states chained-transitions workspace-agent; do
