@@ -760,7 +760,7 @@ run_agent_check() {
 }
 
 run_workspace_discovery_check() {
-  local tmp_home git_scene pane_scene non_git_dir non_git_scene patch_path pane_patch_path install_home
+  local tmp_home git_scene pane_scene non_git_dir non_git_scene patch_path pane_patch_path brief_path install_home
   tmp_home="$(mktemp -d /tmp/gameterm-scene-workspace-verify.XXXXXX)"
   tmp_paths+=("${tmp_home}")
   git_scene="${tmp_home}/git-workspace.json"
@@ -769,6 +769,7 @@ run_workspace_discovery_check() {
   non_git_scene="${tmp_home}/non-git-workspace.json"
   patch_path="${tmp_home}/workspace.patch.json"
   pane_patch_path="${tmp_home}/workspace-pane.patch.json"
+  brief_path="${tmp_home}/task-brief.json"
   install_home="${tmp_home}/config"
 
   "${repo_root}/ci/gameterm-scene-workspace.sh" \
@@ -780,9 +781,30 @@ run_workspace_discovery_check() {
   "${repo_root}/ci/gameterm-scene-workspace.sh" \
     discover \
     --cwd "${repo_root}" \
+    --brief-output "${brief_path}" \
     --scene-output "${git_scene}" \
     --force >/dev/null
   "${repo_root}/ci/gameterm-scene-author.sh" validate "${git_scene}" >/dev/null
+  jq -e '
+    .brief_version == 1
+    and .workspace_root == "'"${repo_root}"'"
+    and (.context_files | length > 0)
+    and (.constraints | index("do not run commands automatically"))
+    and (.constraints | index("do not start agents automatically"))
+  ' "${brief_path}" >/dev/null
+  set +e
+  "${repo_root}/ci/gameterm-scene-workspace.sh" \
+    brief \
+    --cwd "${repo_root}" \
+    --brief-output "${brief_path}" \
+    >/tmp/gameterm-scene-brief-overwrite.out \
+    2>/tmp/gameterm-scene-brief-overwrite.err
+  brief_rc=$?
+  set -e
+  if [[ "${brief_rc}" -eq 0 ]]; then
+    echo "expected task brief overwrite protection to fail" >&2
+    exit 1
+  fi
   jq -e '
     .mode.mode_id == "workspace"
     and any(.entities[]; .id == "discovered-workspace"
@@ -800,6 +822,12 @@ run_workspace_discovery_check() {
     and any(.rpg.relationships[]; .source_id == "discovered-task"
       and .target_id == "file-0"
       and .kind == "references")
+    and any(.entities[]; .id == "task-brief"
+      and (.metadata | any(.[0] == "path" and .[1] == "'"${brief_path}"'")))
+    and any(.choices[]; .label == "Open task brief")
+    and any(.rpg.relationships[]; .source_id == "discovered-task"
+      and .target_id == "task-brief"
+      and .kind == "described_by")
     and any(.choices[]; .label == "Run verification")
   ' "${git_scene}" >/dev/null
 
