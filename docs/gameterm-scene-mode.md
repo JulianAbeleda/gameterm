@@ -115,6 +115,9 @@ The `vertical-slice` template combines dialogue, guarded choices, deterministic
 story/RPG actions, layered state, and a process-state task entity into one
 playable Scene Mode loop.
 
+For final app-level verification, use the product smoke checklist in
+[`docs/gameterm-scene-product-smoke.md`](gameterm-scene-product-smoke.md).
+
 `doctor` checks the configured scene and sprite manifest together. It validates
 the scene, reports missing navigation and document targets, checks sprite
 manifest shape, checks sprite asset paths, verifies RunCommand targets and
