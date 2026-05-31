@@ -332,6 +332,7 @@ states without running a process:
 ```sh
 ci/gameterm-scene-agent.sh status \
   --entity-id project-harness \
+  --task-id verify-scene \
   --phase planning \
   --message "Planning visual slice" \
   --patch /tmp/gameterm-agent.json
@@ -342,7 +343,11 @@ Supported phases are `idle`, `planning`, `running`, `waiting`, `blocked`,
 onto typed process state so Scene Mode can render agent work as queued,
 running, blocked, succeeded, or failed. It also writes `agent_phase` and
 `agent_process_phase` variables into the patch, so scenes can drive guards or
-layer transitions from the agent lifecycle without parsing entity metadata.
+layer transitions from the agent lifecycle without parsing entity metadata. For
+multi-agent scenes, pass `--task-id` and, when relevant, `--blocked-by`; the
+patch records `agent_task_id`, `blocked_by`, `active_agent_id`,
+`active_task_id`, and `agent_blocked_by` so one agent/task can be updated
+without rewriting unrelated actor metadata.
 
 ## State patches
 

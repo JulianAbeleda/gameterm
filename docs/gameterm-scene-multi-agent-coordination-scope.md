@@ -91,6 +91,26 @@ Deterministic verification should cover:
 Live smoke should cover at least two lifecycle updates while Scene Mode is open
 after deterministic checks are stable.
 
+## Implementation Status
+
+Implemented:
+
+- `multi-agent-coordination` fixture with two agents, two tasks, one process,
+  ownership relationships, waiting/blocking relationships, and guarded
+  completion flow.
+- author helper fixture/template install support.
+- agent helper `--task-id` and `--blocked-by` metadata/variable support.
+- deterministic helper verification for task-scoped blocked patches.
+- runtime fixture test proving both agents can update independently without
+  losing unrelated actor state.
+
+Deferred:
+
+- real concurrent agent processes
+- scheduler/conflict resolution
+- task reassignment UI
+- live mux smoke for two simultaneous lifecycle updates
+
 ## Commit Lanes
 
 1. `[docs] scope Scene multi-agent coordination layer`
