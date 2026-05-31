@@ -6,8 +6,7 @@ usage() {
 Usage: ci/gameterm-scene-smoke.sh [OPTIONS]
 
 Checks whether macOS ffmpeg screen capture works for GameTerm Scene Mode smoke
-testing. By default it lists AVFoundation devices and attempts one still-frame
-capture from "0:none".
+testing. By default it attempts one still-frame capture from "0:none".
 
 Options:
   --list-scenarios        List named smoke scenarios and exit.
@@ -47,6 +46,7 @@ Options:
   --focus-timeout N        Seconds to wait for the launched GUI process to
                            become visible to macOS automation. Default: 10.
   --device DEVICE          AVFoundation device string. Default: 0:none.
+  --list-devices           Print AVFoundation devices before capture.
   --output PATH            Capture output path. Default:
                            /tmp/gameterm-scene-smoke.png.
   --min-bytes N            Minimum acceptable capture size. Default: 1000.
@@ -76,6 +76,7 @@ require_frontmost=1
 post_action_wait=1
 focus_timeout=10
 ffmpeg_bin="${FFMPEG:-}"
+list_devices=0
 gui_pid=""
 tmp_home=""
 gui_class=""
@@ -150,6 +151,10 @@ while [[ $# -gt 0 ]]; do
     --device)
       device="$2"
       shift 2
+      ;;
+    --list-devices)
+      list_devices=1
+      shift
       ;;
     --output)
       output="$2"
@@ -833,14 +838,16 @@ echo "Using ffmpeg: ${ffmpeg_bin}"
 "${ffmpeg_bin}" -version | sed -n '1,3p'
 echo
 
-echo "AVFoundation devices:"
-set +e
-"${ffmpeg_bin}" -hide_banner -f avfoundation -list_devices true -i "" 2>&1
-list_rc=$?
-set -e
-echo
-if [[ ${list_rc} -ne 0 ]]; then
-  echo "Device listing returned ${list_rc}; this can still happen after listing devices." >&2
+if [[ "${list_devices}" -eq 1 ]]; then
+  echo "AVFoundation devices:"
+  set +e
+  "${ffmpeg_bin}" -hide_banner -f avfoundation -list_devices true -i "" 2>&1
+  list_rc=$?
+  set -e
+  echo
+  if [[ ${list_rc} -ne 0 ]]; then
+    echo "Device listing returned ${list_rc}; this can still happen after listing devices." >&2
+  fi
 fi
 
 if [[ "${launch}" -eq 1 ]]; then
