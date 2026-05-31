@@ -1252,9 +1252,7 @@ impl SceneRuntime {
         } else if self.selected_choice >= self.scene.choices.len() {
             self.selected_choice = self.scene.choices.len() - 1;
         }
-        if let Some(status) = &self.scene.mode.lifecycle.enter_status {
-            self.status = status.clone();
-        }
+        self.apply_mode_enter_status();
         self.bump_generation();
         Ok(())
     }
@@ -1270,8 +1268,7 @@ impl SceneRuntime {
     }
 
     pub fn run_mode_enter_hooks(&mut self) {
-        if let Some(status) = &self.scene.mode.lifecycle.enter_status {
-            self.status = status.clone();
+        if self.apply_mode_enter_status() {
             self.bump_generation();
         }
     }
@@ -1289,6 +1286,15 @@ impl SceneRuntime {
             self.status = status.clone();
             self.record_runtime_event("lifecycle", "mode exit");
             self.bump_generation();
+        }
+    }
+
+    fn apply_mode_enter_status(&mut self) -> bool {
+        if let Some(status) = &self.scene.mode.lifecycle.enter_status {
+            self.status = status.clone();
+            true
+        } else {
+            false
         }
     }
 }
