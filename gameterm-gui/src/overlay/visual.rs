@@ -1,3 +1,4 @@
+use crate::termwindow::TermWindowNotif;
 use anyhow::Context;
 use config::keyassignment::SpawnTabDomain;
 use gameterm_dynamic::Value;
@@ -24,10 +25,12 @@ use std::time::{Duration, SystemTime};
 use termwiz::input::{InputEvent, KeyCode, KeyEvent};
 use termwiz::surface::Change;
 use termwiz::terminal::Terminal;
+use window::{Window, WindowOps};
 
 pub fn show_visual_scene_overlay(
     mut term: TermWizTerminal,
     route_pane_id: Option<mux::pane::PaneId>,
+    gui_window: Option<Window>,
 ) -> anyhow::Result<()> {
     term.no_grab_mouse_in_raw_mode();
     term.set_raw_mode()?;
@@ -145,7 +148,7 @@ pub fn show_visual_scene_overlay(
                             window_id: term
                                 .window_id()
                                 .context("Scene Mode terminal is not attached to a mux window")?,
-                            pane_id: term.pane_id(),
+                            pane_id: route_pane_id.or_else(|| term.pane_id()),
                             terminal_size: TerminalSize {
                                 rows: size.rows,
                                 cols: size.cols,
@@ -153,6 +156,7 @@ pub fn show_visual_scene_overlay(
                                 pixel_height: size.ypixel.saturating_mul(size.rows),
                                 dpi: 0,
                             },
+                            gui_window: gui_window.clone(),
                             command_tx: command_tx.clone(),
                         },
                     )?;
@@ -459,6 +463,7 @@ struct RunCommandDispatch {
     window_id: mux::window::WindowId,
     pane_id: Option<mux::pane::PaneId>,
     terminal_size: TerminalSize,
+    gui_window: Option<Window>,
     command_tx: mpsc::Sender<RunCommandResult>,
 }
 
@@ -532,28 +537,39 @@ fn dispatch_run_command(
     dispatch: RunCommandDispatch,
 ) {
     runtime.mark_run_command_spawning(&argv, target);
-    promise::spawn::spawn(async move {
-        let command_dir = cwd.as_ref().map(|cwd| cwd.display().to_string());
-        let mut builder = CommandBuilder::from_argv(argv.iter().map(Into::into).collect());
-        if let Some(cwd) = cwd.as_ref() {
-            builder.cwd(cwd);
-        }
+    let Some(gui_window) = dispatch.gui_window.clone() else {
+        let _ = dispatch.command_tx.send(RunCommandResult::Failed {
+            argv,
+            target,
+            error: "Scene Mode RunCommand dispatch is not attached to a GUI window".to_string(),
+        });
+        return;
+    };
 
-        let result = match spawn_run_command(target, builder, command_dir, &dispatch).await {
-            Ok(pane_id) => RunCommandResult::Spawned {
-                argv,
-                target,
-                pane_id,
-            },
-            Err(err) => RunCommandResult::Failed {
-                argv,
-                target,
-                error: err.to_string(),
-            },
-        };
-        let _ = dispatch.command_tx.send(result);
-    })
-    .detach();
+    gui_window.notify(TermWindowNotif::Apply(Box::new(move |_term_window| {
+        promise::spawn::spawn(async move {
+            let command_dir = cwd.as_ref().map(|cwd| cwd.display().to_string());
+            let mut builder = CommandBuilder::from_argv(argv.iter().map(Into::into).collect());
+            if let Some(cwd) = cwd.as_ref() {
+                builder.cwd(cwd);
+            }
+
+            let result = match spawn_run_command(target, builder, command_dir, &dispatch).await {
+                Ok(pane_id) => RunCommandResult::Spawned {
+                    argv,
+                    target,
+                    pane_id,
+                },
+                Err(err) => RunCommandResult::Failed {
+                    argv,
+                    target,
+                    error: err.to_string(),
+                },
+            };
+            let _ = dispatch.command_tx.send(result);
+        })
+        .detach();
+    })));
 }
 
 async fn spawn_run_command(
@@ -1038,6 +1054,7 @@ mod tests {
                 window_id: 0,
                 pane_id: None,
                 terminal_size: TerminalSize::default(),
+                gui_window: None,
                 command_tx,
             },
         )
@@ -1088,6 +1105,7 @@ mod tests {
                 window_id: 0,
                 pane_id: None,
                 terminal_size: TerminalSize::default(),
+                gui_window: None,
                 command_tx,
             },
         )
@@ -1151,6 +1169,7 @@ mod tests {
                 window_id: 0,
                 pane_id: None,
                 terminal_size: TerminalSize::default(),
+                gui_window: None,
                 command_tx,
             },
         )

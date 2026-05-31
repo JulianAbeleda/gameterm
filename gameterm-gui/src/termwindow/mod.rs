@@ -2790,8 +2790,13 @@ impl TermWindow {
                     None => anyhow::bail!("no active tab!?"),
                 };
                 let route_pane_id = tab.get_active_pane().map(|pane| pane.pane_id());
+                let gui_window = self.window.clone();
                 let (overlay, future) = start_overlay(self, &tab, move |_tab_id, term| {
-                    crate::overlay::show_visual_scene_overlay(term, route_pane_id)
+                    crate::overlay::show_visual_scene_overlay(
+                        term,
+                        route_pane_id,
+                        gui_window.clone(),
+                    )
                 });
                 self.assign_overlay(tab.tab_id(), overlay);
                 promise::spawn::spawn(future).detach();
