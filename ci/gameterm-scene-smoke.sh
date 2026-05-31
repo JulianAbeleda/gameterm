@@ -30,6 +30,10 @@ Options:
   --submit-target-pane-id ID
                            Target pane id for --submit-mux-patch. If omitted,
                            the smoke harness discovers the GameTerm Scene pane.
+  --key-sequence LIST       Comma-separated keys to send before capture after
+                           launch setup. Supported keys: enter, tab, escape,
+                           space, up, down, left, right, h, j, k, l, q, r,
+                           and delay:N.
   --wait-before-capture N  Seconds to wait after launch before capture.
                            Use this time to press Ctrl+Shift+G. Default: 10.
   --no-auto-open-scene     Do not use macOS automation to foreground GameTerm
@@ -70,6 +74,7 @@ gui_class=""
 patch_inbox=""
 submit_mux_patch=""
 submit_target_pane_id=""
+key_sequence=""
 log_file="/tmp/gameterm-scene-smoke-ffmpeg.log"
 
 while [[ $# -gt 0 ]]; do
@@ -108,6 +113,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --submit-target-pane-id)
       submit_target_pane_id="$2"
+      shift 2
+      ;;
+    --key-sequence)
+      key_sequence="$2"
       shift 2
       ;;
     --wait-before-capture)
@@ -169,6 +178,7 @@ list_smoke_scenarios() {
 renderer-rows
 guarded-input
 run-command-targets
+overlay-cleanup
 patch-inbox
 mux-patch
 process-state
@@ -190,7 +200,7 @@ EOF
 Scenario: guarded-input
 Fixture: layered-mode
 Setup: launch layered state fixture.
-Checks: layer-owned input updates state; guarded transitions report status without closing Scene Mode.
+Checks: automated input exercises a layer-owned update and guarded transition without closing Scene Mode.
 EOF
       ;;
     run-command-targets)
@@ -198,7 +208,15 @@ EOF
 Scenario: run-command-targets
 Fixture: run-command-targets
 Setup: launch RunCommand target fixture.
-Checks: tab, split_right, and split_down choices open the expected pane targets.
+Checks: automated input activates tab, split_right, and split_down RunCommand choices.
+EOF
+      ;;
+    overlay-cleanup)
+      cat <<'EOF'
+Scenario: overlay-cleanup
+Fixture: basic
+Setup: launch Scene Mode and send Escape before capture.
+Checks: overlay cleanup returns to the underlying terminal without crashing the GUI.
 EOF
       ;;
     patch-inbox)
@@ -242,9 +260,21 @@ apply_smoke_scenario_defaults() {
       ;;
     guarded-input)
       fixture="layered-mode"
+      if [[ -z "${key_sequence}" ]]; then
+        key_sequence="space,enter"
+      fi
       ;;
     run-command-targets)
       fixture="run-command-targets"
+      if [[ -z "${key_sequence}" ]]; then
+        key_sequence="enter,j,enter,j,enter"
+      fi
+      ;;
+    overlay-cleanup)
+      fixture="basic"
+      if [[ -z "${key_sequence}" ]]; then
+        key_sequence="escape"
+      fi
       ;;
     patch-inbox)
       fixture="basic"
@@ -454,6 +484,113 @@ EOF
   fi
 }
 
+send_key_sequence() {
+  local pid="$1"
+  local sequence="$2"
+
+  if [[ -z "${sequence}" ]]; then
+    return 0
+  fi
+  if [[ "$(uname -s)" != "Darwin" ]]; then
+    echo "Automatic key sequences are only supported on macOS; skipping ${sequence}." >&2
+    return 0
+  fi
+  if ! command -v osascript >/dev/null 2>&1; then
+    echo "osascript is unavailable; skipping key sequence ${sequence}." >&2
+    return 0
+  fi
+
+  echo "Sending Scene Mode key sequence: ${sequence}"
+  if ! osascript - "${pid}" "${sequence}" <<'EOF'
+on trimText(valueText)
+  set oldDelimiters to AppleScript's text item delimiters
+  set AppleScript's text item delimiters to ""
+  set charactersList to characters of valueText
+  repeat while (count of charactersList) > 0 and item 1 of charactersList is in {" ", tab, return, linefeed}
+    if (count of charactersList) is 1 then
+      set charactersList to {}
+    else
+      set charactersList to items 2 thru -1 of charactersList
+    end if
+  end repeat
+  repeat while (count of charactersList) > 0 and item -1 of charactersList is in {" ", tab, return, linefeed}
+    if (count of charactersList) is 1 then
+      set charactersList to {}
+    else
+      set charactersList to items 1 thru -2 of charactersList
+    end if
+  end repeat
+  set trimmedText to charactersList as text
+  set AppleScript's text item delimiters to oldDelimiters
+  return trimmedText
+end trimText
+
+on sendNamedKey(keyName)
+  tell application "System Events"
+    if keyName is "enter" or keyName is "return" then
+      key code 36
+    else if keyName is "tab" then
+      key code 48
+    else if keyName is "escape" or keyName is "esc" then
+      key code 53
+    else if keyName is "space" then
+      key code 49
+    else if keyName is "up" then
+      key code 126
+    else if keyName is "down" then
+      key code 125
+    else if keyName is "left" then
+      key code 123
+    else if keyName is "right" then
+      key code 124
+    else if keyName is "h" or keyName is "j" or keyName is "k" or keyName is "l" or keyName is "q" or keyName is "r" then
+      keystroke keyName
+    else
+      error "unsupported Scene Mode smoke key: " & keyName
+    end if
+  end tell
+end sendNamedKey
+
+on run argv
+  set targetPid to (item 1 of argv) as integer
+  set keySequence to item 2 of argv
+  set oldDelimiters to AppleScript's text item delimiters
+  set AppleScript's text item delimiters to ","
+  set keyItems to text items of keySequence
+  set AppleScript's text item delimiters to oldDelimiters
+
+  tell application "System Events"
+    if not (exists (first application process whose unix id is targetPid)) then
+      error "GameTerm GUI process is not visible to System Events"
+    end if
+    set targetProcess to first application process whose unix id is targetPid
+    set frontmost of targetProcess to true
+  end tell
+  delay 0.3
+
+  repeat with rawKey in keyItems
+    set keyName to trimText(rawKey as text)
+    if keyName starts with "delay:" then
+      set delaySeconds to text 7 thru -1 of keyName as real
+      delay delaySeconds
+    else if keyName is not "" then
+      sendNamedKey(keyName)
+      delay 0.35
+    end if
+  end repeat
+end run
+EOF
+  then
+    cat >&2 <<'EOF'
+Failed to send the Scene Mode key sequence through macOS automation.
+
+Check Accessibility permission for the terminal/host app running this script,
+or rerun without --key-sequence and drive the interaction manually.
+EOF
+    exit 8
+  fi
+}
+
 assert_gui_foreground() {
   local pid="$1"
   local front
@@ -651,10 +788,13 @@ EOF
     echo "Press Ctrl+Shift+G in the GameTerm window to open Scene Mode."
   fi
   if [[ "${fixture}" == "run-command-targets" ]]; then
-    echo "RunCommand audit: press Enter for tab, Next then Enter for split_right, Next then Enter for split_down."
+    echo "RunCommand audit: activate tab, split_right, and split_down choices."
   fi
   if [[ "${scenario}" == "guarded-input" ]]; then
-    echo "Guarded input audit: use the fixture controls and confirm layer state/status changes without closing Scene Mode."
+    echo "Guarded input audit: exercise layer-owned update and guarded transition inputs."
+  fi
+  if [[ "${scenario}" == "overlay-cleanup" ]]; then
+    echo "Overlay cleanup audit: close Scene Mode before capture."
   fi
   if [[ -n "${patch_inbox}" ]]; then
     echo "Patch audit: inbox transport is enabled at ${patch_inbox}"
@@ -695,6 +835,10 @@ EOF
       -- \
       true >/dev/null
     echo "Wrote process-state smoke patch: ${process_patch}"
+    sleep 1
+  fi
+  if [[ -n "${key_sequence}" ]]; then
+    send_key_sequence "${gui_pid}" "${key_sequence}"
     sleep 1
   fi
   assert_gui_foreground "${gui_pid}"

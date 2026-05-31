@@ -49,6 +49,7 @@ Validated named scenarios:
 - `renderer-rows`
 - `guarded-input`
 - `run-command-targets`
+- `overlay-cleanup`
 - `patch-inbox`
 - `mux-patch`
 - `process-state`
@@ -94,16 +95,17 @@ ci/gameterm-scene-smoke.sh \
 ```
 
 Result: PASS for launch, foreground, Scene Mode open, sprite path resolution,
-and capture.
+automated layer input, guarded transition, and capture.
 
 Capture:
 
 ```text
-/Users/julianabeleda/Desktop/gameterm-scene-smoke-guarded-input-20260531-103430.png
+/Users/julianabeleda/Desktop/gameterm-scene-smoke-guarded-input-20260531-111548.png
 ```
 
-Observation: capture shows the layered-mode Scene window. Manual transition
-interaction is still a human audit step.
+Observation: the default `space,enter` key sequence ran a layer-owned update
+hook, then activated the guarded story transition. The capture shows
+`Status: Layer story transitioned: dialogue -> choice`.
 
 ### run-command-targets
 
@@ -118,15 +120,44 @@ ci/gameterm-scene-smoke.sh \
   --output /Users/julianabeleda/Desktop/gameterm-scene-smoke-run-command-targets-20260531-103151.png
 ```
 
-Result: PASS for launch, foreground, Scene Mode open, and capture.
+Result: PASS for launch, foreground, Scene Mode open, automated RunCommand
+input, route-pane split dispatch, and capture.
 
 Capture:
 
 ```text
-/Users/julianabeleda/Desktop/gameterm-scene-smoke-run-command-targets-20260531-103151.png
+/Users/julianabeleda/Desktop/gameterm-scene-smoke-run-command-targets-20260531-112343.png
 ```
 
-Observation: pane-target key interaction remains a manual audit step.
+Observation: the default `enter,j,enter,j,enter` key sequence activated the
+tab, split-right, and split-down choices. A crash discovered during the first
+automated run was fixed by dispatching RunCommand work through the GUI window
+event loop, then spawning the local future on the GUI thread. Split targets now
+use the underlying route pane instead of the overlay pane.
+
+### overlay-cleanup
+
+Command:
+
+```sh
+ci/gameterm-scene-smoke.sh \
+  --launch \
+  --scenario overlay-cleanup \
+  --wait-before-capture 2 \
+  --capture-timeout 12 \
+  --output /Users/julianabeleda/Desktop/gameterm-scene-smoke-overlay-cleanup-20260531-111623.png
+```
+
+Result: PASS.
+
+Capture:
+
+```text
+/Users/julianabeleda/Desktop/gameterm-scene-smoke-overlay-cleanup-20260531-111623.png
+```
+
+Observation: the default `escape` key sequence closed Scene Mode before
+capture, returning to the underlying shell without crashing the GUI.
 
 ### patch-inbox
 
@@ -204,7 +235,5 @@ temporary inbox before capture and kept Scene Mode open.
 
 ## Follow-Up
 
-1. Add optional key-sequence automation for guarded input and RunCommand target
-   interaction.
-2. Keep deterministic smoke registry and asset checks in
+1. Keep deterministic smoke registry and asset checks in
    `ci/gameterm-scene-verify.sh --all`.

@@ -402,8 +402,18 @@ cargo build -p gameterm-gui
 ci/gameterm-scene-smoke.sh --launch --scenario run-command-targets
 ```
 
-After opening Scene Mode, trigger the three choices in order to verify `tab`,
-`split_right`, and `split_down` behavior in the real mux/window path.
+The scenario sends `enter,j,enter,j,enter` by default, which activates the
+`tab`, `split_right`, and `split_down` choices in the real mux/window path.
+Override it with `--key-sequence LIST` when auditing a narrower interaction.
+
+To live-audit overlay cleanup, use:
+
+```sh
+ci/gameterm-scene-smoke.sh --launch --scenario overlay-cleanup
+```
+
+The scenario sends `escape` before capture and should show the underlying
+terminal instead of Scene Mode.
 
 To live-audit the patch inbox, launch with an inbox path:
 
@@ -429,6 +439,8 @@ On macOS, `--launch` now foregrounds the launched GameTerm process and sends
 `Ctrl+Shift+G` before capture. Use `--no-auto-open-scene` to disable that
 automation and open Scene Mode manually. The script prints the frontmost macOS
 process before capture so missed-focus captures are obvious in the smoke log.
+Use `--key-sequence` with comma-separated keys such as `space,enter` or
+`delay:1,escape` to automate post-launch Scene Mode interaction.
 
 macOS requires Screen Recording permission for the terminal or host app that
 runs the script. Enable it in System Settings -> Privacy & Security -> Screen

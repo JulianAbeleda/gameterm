@@ -88,6 +88,8 @@ Current status:
   automation remains a follow-up.
 - [x] Add macOS smoke foreground/open-scene automation and frontmost-process
   diagnostics before capture.
+- [x] Add macOS smoke key-sequence automation for guarded input, RunCommand
+  targets, and overlay cleanup.
 - [x] Add a vertical-slice template and fixture that combines dialogue,
   guarded choices, deterministic RPG/story state, layers, process state, and
   story export coverage.

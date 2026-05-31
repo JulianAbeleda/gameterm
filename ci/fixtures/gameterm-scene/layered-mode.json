@@ -8,7 +8,10 @@
     "label": "Workspace",
     "description": "Layered mode fixture",
     "scene_profile": "scene",
-    "allowed_actions": ["Inspect", "Navigate"]
+    "allowed_actions": ["Inspect", "Navigate"],
+    "lifecycle": {
+      "update_status": "Layer input handled update hook"
+    }
   },
   "layers": [
     {
