@@ -2132,15 +2132,20 @@ pub fn truncate_to_screen(text: String, cols: usize, rows: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use test_support::scene_fixture_path;
 
-    fn scene_fixture_path(name: &str) -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
-            .join("ci")
-            .join("fixtures")
-            .join("gameterm-scene")
-            .join(name)
+    mod test_support {
+        use std::path::PathBuf;
+
+        pub(super) fn scene_fixture_path(name: &str) -> PathBuf {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .unwrap()
+                .join("ci")
+                .join("fixtures")
+                .join("gameterm-scene")
+                .join(name)
+        }
     }
 
     fn snapshot_for_filtering() -> VisualRenderSnapshot {
