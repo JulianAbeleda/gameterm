@@ -664,14 +664,35 @@ scene_json() {
         }
       ],
       choices: ([
-        { label: "Inspect workspace", kind: "Inspect" }
+        {
+          label: "Inspect workspace",
+          kind: "Inspect",
+          policy: {
+            origin: "workspace_discovery",
+            risk: "inspect",
+            scope: "workspace",
+            summary: "Inspect the generated workspace state"
+          }
+        }
       ] + (if $brief_output == "" then [] else [{
         label: "Open task brief",
-        kind: { OpenFile: { path: $brief_output } }
+        kind: { OpenFile: { path: $brief_output } },
+        policy: {
+          origin: "workspace_discovery",
+          risk: "open_file",
+          scope: "workspace",
+          summary: "Open the generated local task brief"
+        }
       }] end)
       + ($files | map({
         label: ("Open " + .label),
-        kind: { OpenFile: { path: .path } }
+        kind: { OpenFile: { path: .path } },
+        policy: {
+          origin: "workspace_discovery",
+          risk: "open_file",
+          scope: "workspace",
+          summary: ("Open discovered file " + .label)
+        }
       })) + (if $verify == null then [] else [{
         label: "Run verification",
         kind: {
@@ -680,6 +701,13 @@ scene_json() {
             cwd: $root,
             target: "split_down"
           }
+        },
+        policy: {
+          origin: "workspace_discovery",
+          risk: "command",
+          scope: "workspace",
+          requires_confirmation: true,
+          summary: "Run the explicit verification command in the discovered workspace"
         }
       }] end))
     }'

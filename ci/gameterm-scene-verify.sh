@@ -858,6 +858,12 @@ run_workspace_discovery_check() {
       and .target_id == "task-brief"
       and .kind == "described_by")
     and any(.choices[]; .label == "Run verification")
+    and any(.choices[]; .label == "Run verification"
+      and .policy.origin == "workspace_discovery"
+      and .policy.risk == "command"
+      and .policy.scope == "workspace"
+      and .policy.requires_confirmation == true)
+    and all(.choices[]; .policy.origin == "workspace_discovery")
   ' "${git_scene}" >/dev/null
 
   "${repo_root}/ci/gameterm-scene-workspace.sh" \
