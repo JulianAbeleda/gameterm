@@ -292,6 +292,20 @@ run_author_helper_check() {
     --layer-id verify \
     --state ready \
     "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
+  "${repo_root}/ci/gameterm-scene-author.sh" \
+    add-mode-input \
+    --input other \
+    --action run_update_hooks \
+    --condition-source inventory_count \
+    --condition-variable verify-token \
+    --condition-number 2 \
+    "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
+  "${repo_root}/ci/gameterm-scene-author.sh" \
+    set-lifecycle \
+    --enter-status "Entered verifier" \
+    --update-status "Updated verifier" \
+    --exit-status "Exited verifier" \
+    "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
   jq -e '
     any(.variables[]; .key == "verifier_ready" and .value == {"Bool": true})
     and any(.variables[]; .key == "verifier_track" and .value == {"Text": "authoring"})
@@ -303,6 +317,14 @@ run_author_helper_check() {
         and .target_state == "complete"
         and (.conditions | any(.variable == "verifier_ready"
           and .equals == {"Bool": true})))))
+    and any(.mode.input_map[]; .input == "other"
+      and .action == "run_update_hooks"
+      and (.conditions | any(.source == "inventory_count"
+        and .variable == "verify-token"
+        and .equals == {"Number": 2})))
+    and .mode.lifecycle.enter_status == "Entered verifier"
+    and .mode.lifecycle.update_status == "Updated verifier"
+    and .mode.lifecycle.exit_status == "Exited verifier"
   ' "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
   "${repo_root}/ci/gameterm-scene-author.sh" \
     add-inventory \

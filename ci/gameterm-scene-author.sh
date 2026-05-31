@@ -23,6 +23,8 @@ Commands:
   add-layer PATH                Add a Scene Mode layer.
   set-layer PATH                Update a layer state.
   add-layer-transition PATH     Add a guarded layer transition.
+  add-mode-input PATH           Add a guarded mode input binding.
+  set-lifecycle PATH            Set Scene Mode lifecycle status hooks.
   add-inventory PATH            Add or replace an RPG inventory item.
   remove-inventory PATH         Remove an RPG inventory item.
   set-stat PATH                 Add or replace an RPG stat.
@@ -78,8 +80,20 @@ Options for set-layer:
 
 Options for add-layer-transition:
   --layer-id ID --input INPUT --target-state STATE
+  --condition-source SOURCE     Optional guard source. Default: variable.
   --condition-variable KEY      Optional guard variable.
   --condition-bool true|false | --condition-number N | --condition-text TEXT
+
+Options for add-mode-input:
+  --input INPUT --action ACTION
+  --condition-source SOURCE     Optional guard source. Default: variable.
+  --condition-variable KEY      Optional guard variable.
+  --condition-bool true|false | --condition-number N | --condition-text TEXT
+
+Options for set-lifecycle:
+  --enter-status TEXT           Optional mode enter status.
+  --update-status TEXT          Optional mode update status.
+  --exit-status TEXT            Optional mode exit status.
 
 Options for add-inventory:
   --item-id ID --label TEXT --count N
@@ -183,10 +197,15 @@ layer_state=""
 layer_label=""
 transition_input=""
 transition_target_state=""
+mode_action=""
+condition_source=""
 condition_variable=""
 condition_bool=""
 condition_number=""
 condition_text=""
+lifecycle_enter_status=""
+lifecycle_update_status=""
+lifecycle_exit_status=""
 rpg_label=""
 item_id=""
 item_count=""
@@ -292,8 +311,16 @@ while [[ $# -gt 0 ]]; do
       transition_input="$2"
       shift 2
       ;;
+    --action)
+      mode_action="$2"
+      shift 2
+      ;;
     --target-state)
       transition_target_state="$2"
+      shift 2
+      ;;
+    --condition-source)
+      condition_source="$2"
       shift 2
       ;;
     --condition-variable)
@@ -338,6 +365,18 @@ while [[ $# -gt 0 ]]; do
       ;;
     --journal)
       quest_journal="$2"
+      shift 2
+      ;;
+    --enter-status)
+      lifecycle_enter_status="$2"
+      shift 2
+      ;;
+    --update-status)
+      lifecycle_update_status="$2"
+      shift 2
+      ;;
+    --exit-status)
+      lifecycle_exit_status="$2"
       shift 2
       ;;
     --flag)
@@ -483,6 +522,20 @@ condition_value_json() {
   else
     jq -n --arg value "${condition_text}" '{Text: $value}'
   fi
+}
+
+condition_json() {
+  local condition_value
+  condition_value="$(condition_value_json)"
+  jq -n \
+    --arg source "${condition_source}" \
+    --arg variable "${condition_variable}" \
+    --argjson equals "${condition_value}" \
+    '[{
+      source: (if $source == "" or $source == "variable" then null else $source end),
+      variable: $variable,
+      equals: $equals
+    } | with_entries(select(.value != null))]'
 }
 
 validate_scene_file() {
@@ -1270,12 +1323,7 @@ add_layer_transition() {
   require_value "--target-state" "${transition_target_state}"
 
   if [[ -n "${condition_variable}" ]]; then
-    local condition_value
-    condition_value="$(condition_value_json)"
-    conditions_json="$(jq -n \
-      --arg variable "${condition_variable}" \
-      --argjson equals "${condition_value}" \
-      '[{ variable: $variable, equals: $equals }]')"
+    conditions_json="$(condition_json)"
   else
     conditions_json="[]"
   fi
@@ -1299,6 +1347,66 @@ add_layer_transition() {
   ' "${target}" | write_json "${target}"
   validate_scene_file "${target}" >/dev/null
   echo "Added layer transition ${layer_id}:${transition_input} to ${target}"
+}
+
+add_mode_input() {
+  local target="$1"
+  local conditions_json
+  require_value "--input" "${transition_input}"
+  require_value "--action" "${mode_action}"
+
+  if [[ -n "${condition_variable}" ]]; then
+    conditions_json="$(condition_json)"
+  else
+    conditions_json="[]"
+  fi
+
+  jq \
+    --arg input "${transition_input}" \
+    --arg action "${mode_action}" \
+    --argjson conditions "${conditions_json}" '
+    .mode = (.mode // {
+      mode_id: "workspace",
+      label: "Workspace",
+      description: "",
+      scene_profile: "scene",
+      allowed_actions: []
+    })
+    | .mode.input_map = ((.mode.input_map // []) + [{
+      input: $input,
+      action: $action,
+      conditions: $conditions
+    }])
+  ' "${target}" | write_json "${target}"
+  validate_scene_file "${target}" >/dev/null
+  echo "Added mode input ${transition_input}->${mode_action} to ${target}"
+}
+
+set_lifecycle() {
+  local target="$1"
+  if [[ -z "${lifecycle_enter_status}" && -z "${lifecycle_update_status}" && -z "${lifecycle_exit_status}" ]]; then
+    echo "provide at least one of --enter-status, --update-status, or --exit-status" >&2
+    exit 2
+  fi
+
+  jq \
+    --arg enter_status "${lifecycle_enter_status}" \
+    --arg update_status "${lifecycle_update_status}" \
+    --arg exit_status "${lifecycle_exit_status}" '
+    .mode = (.mode // {
+      mode_id: "workspace",
+      label: "Workspace",
+      description: "",
+      scene_profile: "scene",
+      allowed_actions: []
+    })
+    | .mode.lifecycle = (.mode.lifecycle // {})
+    | if $enter_status != "" then .mode.lifecycle.enter_status = $enter_status else . end
+    | if $update_status != "" then .mode.lifecycle.update_status = $update_status else . end
+    | if $exit_status != "" then .mode.lifecycle.exit_status = $exit_status else . end
+  ' "${target}" | write_json "${target}"
+  validate_scene_file "${target}" >/dev/null
+  echo "Updated mode lifecycle in ${target}"
 }
 
 add_inventory() {
@@ -1632,6 +1740,20 @@ case "${command}" in
       exit 2
     fi
     add_layer_transition "${positionals[0]}"
+    ;;
+  add-mode-input)
+    if [[ "${#positionals[@]}" -ne 1 ]]; then
+      usage >&2
+      exit 2
+    fi
+    add_mode_input "${positionals[0]}"
+    ;;
+  set-lifecycle)
+    if [[ "${#positionals[@]}" -ne 1 ]]; then
+      usage >&2
+      exit 2
+    fi
+    set_lifecycle "${positionals[0]}"
     ;;
   add-inventory)
     if [[ "${#positionals[@]}" -ne 1 ]]; then

@@ -82,6 +82,12 @@ ci/gameterm-scene-author.sh add-layer ~/.config/gameterm/scenes/experiment.json 
 ci/gameterm-scene-author.sh add-layer-transition ~/.config/gameterm/scenes/experiment.json \
   --layer-id story --input activate --target-state exploration \
   --condition-variable intro_complete --condition-bool true
+ci/gameterm-scene-author.sh add-mode-input ~/.config/gameterm/scenes/experiment.json \
+  --input other --action run_update_hooks \
+  --condition-source inventory_count --condition-variable field-map --condition-number 1
+ci/gameterm-scene-author.sh set-lifecycle ~/.config/gameterm/scenes/experiment.json \
+  --enter-status "Scene entered" --update-status "Scene updated" \
+  --exit-status "Scene exited"
 ci/gameterm-scene-author.sh add-inventory ~/.config/gameterm/scenes/experiment.json \
   --item-id field-map --label "Field Map" --count 1
 ci/gameterm-scene-author.sh set-stat ~/.config/gameterm/scenes/experiment.json \
