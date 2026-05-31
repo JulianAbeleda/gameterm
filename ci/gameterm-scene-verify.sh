@@ -453,6 +453,8 @@ run_doctor_check() {
     /tmp/gameterm-scene-doctor-verify-targets.out
   grep -q "OK: RunCommand target is valid: Run in down split -> split_down" \
     /tmp/gameterm-scene-doctor-verify-targets.out
+  grep -q "WARN: RunCommand cwd is missing: Run in tab" \
+    /tmp/gameterm-scene-doctor-verify-targets.out
 
   "${repo_root}/ci/gameterm-scene-doctor.sh" \
     --scene "${fixture_root}/default.json" \

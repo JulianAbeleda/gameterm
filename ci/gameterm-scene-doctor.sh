@@ -189,6 +189,9 @@ check_run_command_actions() {
         warn "RunCommand cwd missing or not a directory: ${label} -> ${resolved}"
         suggest "create ${resolved}, remove cwd, or update cwd for ${label}"
       fi
+    else
+      warn "RunCommand cwd is missing: ${label}"
+      suggest "set cwd to the intended workspace root so generated commands are auditable"
     fi
   done < <(
     jq -r '

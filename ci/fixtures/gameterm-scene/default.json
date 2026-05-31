@@ -48,7 +48,8 @@
       "label": "Run visual check",
       "kind": {
         "RunCommand": {
-          "argv": ["cargo", "check", "-p", "gameterm-visual"]
+          "argv": ["cargo", "check", "-p", "gameterm-visual"],
+          "cwd": "."
         }
       }
     }
