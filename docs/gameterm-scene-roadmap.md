@@ -48,6 +48,7 @@ implementation details.
 | First shippable Scene Mode pass | [First-Pass Scope](gameterm-scene-first-pass-scope.md) | Complete |
 | Runtime history and lower-level feature roadmap | [Runtime Roadmap](gameterm-scene-runtime-roadmap.md) | Mostly historical; keep for design context |
 | Broad product completion stack | [Product Completion Scope](gameterm-scene-product-completion-scope.md) | Active planning source |
+| Live pane/process context | [Pane And Process Discovery Scope](gameterm-scene-pane-process-discovery-scope.md) | Implemented through explicit metadata |
 | Agent/Workspace authored model | [Agent And Workspace Scope](gameterm-scene-agent-workspace-scope.md) | First-pass implemented |
 | Workspace Discovery | [Workspace Discovery Scope](gameterm-scene-workspace-discovery-scope.md) | First-pass implemented |
 | Stabilization/refactor pass | [Stabilization Refactor Scope](gameterm-scene-stabilization-refactor-scope.md) | First pass complete |
@@ -77,16 +78,19 @@ It is a stateful visual layer over them.
 
 ### Priority 1: Live Pane And Process Context
 
+Status: complete for explicit metadata input; live mux auto-discovery remains
+deferred.
+
 Goal: connect Workspace Discovery to the active GameTerm session.
 
-Why next: Workspace Discovery knows the repo, but not enough about the current
-pane/process to feel like a live operational surface.
+Why it mattered: Workspace Discovery knew the repo, but not enough about the
+current pane/process to feel like a live operational surface.
 
 Scope owner:
 
 - [Pane And Process Discovery Scope](gameterm-scene-pane-process-discovery-scope.md)
 
-First slice:
+Completed first slice:
 
 - accept optional pane metadata input in the workspace helper
 - represent pane cwd, mux window id, pane id, foreground process, and process
@@ -94,14 +98,27 @@ First slice:
 - keep missing metadata non-fatal
 - verify with deterministic fixture metadata before live mux smoke
 
-Commit shape:
+Verified behavior:
 
-- `[docs] scope Scene pane process discovery`
-- `[visual] add Scene pane metadata discovery`
-- `[test] verify Scene pane process discovery`
-- `[test] record Scene pane process smoke` when live smoke runs
+- `ci/gameterm-scene-workspace.sh inspect`, `discover`, and `patch` accept
+  explicit pane/process metadata.
+- `--pane-cwd` becomes the discovery cwd when `--cwd` is absent.
+- Generated scenes include `discovered-pane`, `discovered-process`,
+  `pane_context`, `active_pane_id`, `active_mux_window_id`, and
+  `process_phase` when supplied.
+- Generated patches update workspace/process metadata and write typed
+  `process_state` when a foreground process is known.
+- `ci/gameterm-scene-verify.sh --all` covers supplied and missing metadata.
+
+Deferred:
+
+- automatic live mux discovery
+- multi-pane process maps
+- progress polling
 
 ### Priority 2: Normal View Product Polish
+
+Status: next.
 
 Goal: make Scene Mode useful without opening the Tile Debugger.
 
@@ -249,24 +266,25 @@ Avoid:
 
 ## Next Recommended Work
 
-Do Priority 1 next: live pane and process context.
+Do Priority 2 next: normal view product polish.
 
 Reasoning:
 
-- it is the largest remaining gap between Scene Mode as a generated scene
-  surface and Scene Mode as a live GameTerm surface
-- it makes later normal-view, command-selection, memory, and multi-agent work
-  more grounded
-- it can be implemented incrementally with optional metadata, so missing live
-  mux data does not block deterministic verification
+- Priority 1 is already complete for the explicit metadata path.
+- The debugger explains state well, but the normal product view is still the
+  daily-use bottleneck.
+- Normal-view polish makes live pane/process context, command selection,
+  memory, and multi-agent state easier to understand before adding more data.
 
 Concrete next checklist:
 
-1. Re-read [Pane And Process Discovery Scope](gameterm-scene-pane-process-discovery-scope.md).
-2. Update that scope if it is stale against current Workspace Discovery.
-3. Add optional pane/process metadata input to `ci/gameterm-scene-workspace.sh`.
-4. Generate visible scene metadata and/or process state from that input.
-5. Add verifier coverage with fixture metadata.
-6. Run `ci/gameterm-scene-verify.sh --all`.
-7. Run live mux smoke only after deterministic behavior is stable.
-
+1. Re-read [Normal View Polish Scope](gameterm-scene-normal-view-polish-scope.md).
+2. Update that scope if it is stale against current generated workspace scenes.
+3. Define the normal-view information hierarchy for selected entity, active
+   layers, status, blockers, process/agent state, and choices.
+4. Implement the smallest render/runtime slice that improves generated
+   workspace readability.
+5. Add focused render tests.
+6. Run `cargo test -p gameterm-visual`.
+7. Run `ci/gameterm-scene-verify.sh --all`.
+8. Run screenshot smoke if rendering dimensions or layout behavior changed.
