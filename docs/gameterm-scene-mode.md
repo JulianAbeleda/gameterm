@@ -177,6 +177,32 @@ If `--cwd` is omitted, `--pane-cwd` becomes the discovery cwd. Pane and process
 metadata is rendered as scene variables, entity metadata, and patch process
 state when available.
 
+## Ren'Py demo import
+
+Scene Mode can import a conservative Ren'Py-shaped demo subset into native
+Scene JSON:
+
+```sh
+ci/gameterm-scene-renpy-import.py \
+  --source ci/fixtures/gameterm-scene/renpy-demo-source.rpy \
+  --output /tmp/gameterm-renpy-demo.json \
+  --attribution /tmp/gameterm-renpy-demo-attribution.json \
+  --source-title "GameTerm Ren'Py Demo Fixture"
+ci/gameterm-scene-author.sh validate /tmp/gameterm-renpy-demo.json
+```
+
+The checked-in fixture source is GameTerm-authored test content, not copied
+from Ren'Py. To try this with a local Ren'Py demo/tutorial install, pass that
+local `.rpy` file as `--source` and keep the generated attribution manifest
+beside the generated scene.
+
+First-pass support is intentionally small: `label`, dialogue/say lines,
+`menu`, `jump`, simple literal assignments, and simple variable guards. The
+helper does not execute Python, copy assets, emulate Ren'Py screens, or import
+third-party games automatically. Unsupported statements are reported as
+warnings. Imported choices use `policy.origin=renpy_import` so they remain
+auditable in Scene Mode.
+
 For final app-level verification, use the product smoke checklist in
 [`docs/gameterm-scene-product-smoke.md`](gameterm-scene-product-smoke.md).
 
