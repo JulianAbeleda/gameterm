@@ -257,6 +257,25 @@ Relative paths resolve against GameTerm's current working directory. Input maps
 can also use `export_story_state` or `import_story_state`; those use a default
 path next to the active scene such as `default.story.json`.
 
+For workspace-oriented persistence, use the workspace session helper. It wraps
+the same validated runtime state with workspace metadata and never rewrites the
+source scene JSON:
+
+```sh
+ci/gameterm-scene-session.sh save \
+  --scene ~/.config/gameterm/scenes/default.json \
+  --workspace-root /path/to/workspace \
+  --output /tmp/gameterm-workspace.session.json
+
+ci/gameterm-scene-session.sh inspect \
+  --session /tmp/gameterm-workspace.session.json
+
+ci/gameterm-scene-session.sh restore \
+  --scene ~/.config/gameterm/scenes/default.json \
+  --session /tmp/gameterm-workspace.session.json \
+  --output /tmp/gameterm-workspace-restored.story.json
+```
+
 `Resolve` choices can update layer state in the same deterministic transaction
 as story/RPG state:
 

@@ -60,8 +60,8 @@ Default storage should be explicit and local:
 ~/.local/state/gameterm/scene-workspaces/<workspace-id>.json
 ```
 
-The first pass may use helper-provided paths before standardizing the exact
-default. Every saved file must be JSON and inspectable with `jq`.
+The implemented first pass uses helper-provided paths before standardizing the
+exact default. Every saved file is JSON and inspectable with `jq`.
 
 Workspace id should be deterministic from:
 
@@ -72,11 +72,11 @@ Workspace id should be deterministic from:
 ## Helper Contract
 
 Add a helper path only if runtime dispatch does not cover the full first pass.
-Candidate commands:
+Implemented commands:
 
 ```sh
 ci/gameterm-scene-session.sh save --scene <scene> --output <session>
-ci/gameterm-scene-session.sh restore --scene <scene> --session <session> --output <scene-or-patch>
+ci/gameterm-scene-session.sh restore --scene <scene> --session <session> --output <state>
 ci/gameterm-scene-session.sh inspect --session <session>
 ```
 
@@ -132,6 +132,26 @@ Live smoke is useful only after GUI save/load dispatch is wired.
 - remote workspace session sync
 - cross-device restore
 - background process replay
+
+## Implementation Status
+
+Implemented:
+
+- `ci/gameterm-scene-session.sh` with `save`, `restore`, `validate`, and
+  `inspect`.
+- workspace session JSON wrapper containing scene path, workspace root,
+  timestamp, and nested validated story state.
+- atomic writes and overwrite protection.
+- restore output as validated story-state JSON without mutating source scene
+  JSON.
+- deterministic verifier coverage.
+
+Deferred:
+
+- default state directory wiring
+- GUI dispatch actions
+- session browser UI
+- process-state/session expansion beyond existing story-state fields
 
 ## Done Definition
 
