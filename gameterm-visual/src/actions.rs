@@ -3,10 +3,11 @@ use std::path::PathBuf;
 use crate::conditions::conditions_match;
 use crate::{
     relationship_key, validate_layers, validate_rpg_state, validate_state_entries,
-    validate_state_operations, SceneAction, SceneActionKind, SceneRuntime, VisualActionRequest,
-    VisualDialogueLine, VisualEntity, VisualLayerState, VisualLayerTransitionReport,
-    VisualProcessState, VisualRpgState, VisualRuntimeEvent, VisualSceneError, VisualStat,
-    VisualStateEntry, VisualStateEntryError, VisualStateOperation, VisualStateValue,
+    validate_state_operations, SceneAction, SceneActionKind, SceneActionPolicy, SceneRuntime,
+    VisualActionRequest, VisualDialogueLine, VisualEntity, VisualLayerState,
+    VisualLayerTransitionReport, VisualProcessState, VisualRpgState, VisualRuntimeEvent,
+    VisualSceneError, VisualStat, VisualStateEntry, VisualStateEntryError, VisualStateOperation,
+    VisualStateValue,
 };
 
 pub(crate) fn action_kind_name(kind: &SceneActionKind) -> String {
@@ -40,6 +41,57 @@ pub(crate) fn action_kind_detail(kind: &SceneActionKind) -> String {
         SceneActionKind::ImportStoryState { path } => format!("path={path}"),
         SceneActionKind::AdvanceDialogue { target } => format!("target={target}"),
         SceneActionKind::Resolve { operations } => format!("operations={}", operations.len()),
+    }
+}
+
+pub(crate) fn derived_action_policy(action: &SceneAction) -> SceneActionPolicy {
+    action.policy.clone().unwrap_or_else(|| SceneActionPolicy {
+        origin: "unknown".to_string(),
+        risk: default_action_policy_risk(&action.kind).to_string(),
+        scope: default_action_policy_scope(&action.kind).to_string(),
+        requires_confirmation: matches!(action.kind, SceneActionKind::RunCommand { .. }),
+        summary: None,
+    })
+}
+
+pub(crate) fn action_policy_summary(action: &SceneAction) -> String {
+    let policy = derived_action_policy(action);
+    let mut summary = format!(
+        "origin={} risk={} scope={}",
+        policy.origin, policy.risk, policy.scope
+    );
+    if policy.requires_confirmation {
+        summary.push_str(" confirm=true");
+    }
+    if let Some(text) = policy.summary {
+        summary.push_str(&format!(" summary={text}"));
+    }
+    summary
+}
+
+fn default_action_policy_risk(kind: &SceneActionKind) -> &'static str {
+    match kind {
+        SceneActionKind::Inspect => "inspect",
+        SceneActionKind::OpenFile { .. } => "open_file",
+        SceneActionKind::RunCommand { .. } => "command",
+        SceneActionKind::Navigate { .. } => "navigate",
+        SceneActionKind::ExportStoryState { .. } | SceneActionKind::ImportStoryState { .. } => {
+            "story_io"
+        }
+        SceneActionKind::AdvanceDialogue { .. } | SceneActionKind::Resolve { .. } => "state_change",
+    }
+}
+
+fn default_action_policy_scope(kind: &SceneActionKind) -> &'static str {
+    match kind {
+        SceneActionKind::Inspect => "selected_entity",
+        SceneActionKind::OpenFile { .. }
+        | SceneActionKind::Navigate { .. }
+        | SceneActionKind::ExportStoryState { .. }
+        | SceneActionKind::ImportStoryState { .. }
+        | SceneActionKind::AdvanceDialogue { .. }
+        | SceneActionKind::Resolve { .. } => "scene",
+        SceneActionKind::RunCommand { .. } => "workspace",
     }
 }
 

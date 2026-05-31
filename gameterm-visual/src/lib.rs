@@ -11,7 +11,7 @@ mod schema;
 mod story_state;
 mod validation;
 
-use actions::action_kind_name;
+use actions::{action_kind_name, action_policy_summary, derived_action_policy};
 use conditions::{condition_guard_detail, conditions_match};
 pub use debug::VisualSceneDebugReport;
 pub use patch::{VisualSceneEntityPatch, VisualScenePatch, VisualScenePatchError};
@@ -25,9 +25,11 @@ pub use schema::{
 };
 pub use story_state::{VisualStoryState, VisualStoryStateError};
 pub(crate) use validation::{
-    is_supported_mode_input, is_supported_mode_input_action, relationship_key,
-    validate_dialogue_lines, validate_layers, validate_rpg_state, validate_state_entries,
-    validate_state_operations, VisualDialogueLineError, VisualStateEntryError,
+    is_supported_action_policy_origin, is_supported_action_policy_risk,
+    is_supported_action_policy_scope, is_supported_mode_input, is_supported_mode_input_action,
+    relationship_key, validate_dialogue_lines, validate_layers, validate_rpg_state,
+    validate_state_entries, validate_state_operations, VisualDialogueLineError,
+    VisualStateEntryError,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -113,8 +115,51 @@ impl RunCommandTarget {
 pub struct SceneAction {
     pub label: String,
     pub kind: SceneActionKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub policy: Option<SceneActionPolicy>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub conditions: Vec<VisualCondition>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SceneActionPolicy {
+    pub origin: String,
+    pub risk: String,
+    pub scope: String,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub requires_confirmation: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VisualCommandFilter {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub query: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action_kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub risk: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub enabled_only: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VisualCommandOption {
+    pub choice_index: usize,
+    pub label: String,
+    pub action_kind: String,
+    pub origin: String,
+    pub risk: String,
+    pub scope: String,
+    pub requires_confirmation: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    pub enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub guard_detail: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -457,6 +502,10 @@ fn is_true(value: &bool) -> bool {
     *value
 }
 
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum VisualSceneLoadStatus {
     Bundled,
@@ -674,6 +723,20 @@ pub enum VisualSceneError {
     EmptyDialogueText { index: usize },
     #[error("choice action `{label}` references missing dialogue line {target}")]
     DialogueTargetOutOfBounds { label: String, target: usize },
+    #[error("choice action `{label}` policy origin must be non-empty")]
+    EmptyActionPolicyOrigin { label: String },
+    #[error("choice action `{label}` policy risk must be non-empty")]
+    EmptyActionPolicyRisk { label: String },
+    #[error("choice action `{label}` policy scope must be non-empty")]
+    EmptyActionPolicyScope { label: String },
+    #[error("choice action `{label}` has unknown policy origin `{origin}`")]
+    UnknownActionPolicyOrigin { label: String, origin: String },
+    #[error("choice action `{label}` has unknown policy risk `{risk}`")]
+    UnknownActionPolicyRisk { label: String, risk: String },
+    #[error("choice action `{label}` has unknown policy scope `{scope}`")]
+    UnknownActionPolicyScope { label: String, scope: String },
+    #[error("choice action `{label}` policy summary must be non-empty when provided")]
+    EmptyActionPolicySummary { label: String },
     #[error("inventory item id must be non-empty")]
     EmptyInventoryItemId,
     #[error("inventory item `{item_id}` label must be non-empty")]
@@ -914,6 +977,53 @@ impl VisualScene {
         })?;
 
         for choice in &self.choices {
+            if let Some(policy) = &choice.policy {
+                let origin = policy.origin.trim();
+                let risk = policy.risk.trim();
+                let scope = policy.scope.trim();
+                if origin.is_empty() {
+                    return Err(VisualSceneError::EmptyActionPolicyOrigin {
+                        label: choice.label.clone(),
+                    });
+                }
+                if risk.is_empty() {
+                    return Err(VisualSceneError::EmptyActionPolicyRisk {
+                        label: choice.label.clone(),
+                    });
+                }
+                if scope.is_empty() {
+                    return Err(VisualSceneError::EmptyActionPolicyScope {
+                        label: choice.label.clone(),
+                    });
+                }
+                if !is_supported_action_policy_origin(origin) {
+                    return Err(VisualSceneError::UnknownActionPolicyOrigin {
+                        label: choice.label.clone(),
+                        origin: policy.origin.clone(),
+                    });
+                }
+                if !is_supported_action_policy_risk(risk) {
+                    return Err(VisualSceneError::UnknownActionPolicyRisk {
+                        label: choice.label.clone(),
+                        risk: policy.risk.clone(),
+                    });
+                }
+                if !is_supported_action_policy_scope(scope) {
+                    return Err(VisualSceneError::UnknownActionPolicyScope {
+                        label: choice.label.clone(),
+                        scope: policy.scope.clone(),
+                    });
+                }
+                if policy
+                    .summary
+                    .as_ref()
+                    .is_some_and(|summary| summary.trim().is_empty())
+                {
+                    return Err(VisualSceneError::EmptyActionPolicySummary {
+                        label: choice.label.clone(),
+                    });
+                }
+            }
             for condition in &choice.conditions {
                 if condition.variable.trim().is_empty() {
                     return Err(VisualSceneError::EmptyConditionVariable {
@@ -1075,6 +1185,7 @@ impl VisualScene {
                 SceneAction {
                     label: "Inspect selected entity".to_string(),
                     kind: SceneActionKind::Inspect,
+                    policy: None,
                     conditions: vec![],
                 },
                 SceneAction {
@@ -1082,6 +1193,7 @@ impl VisualScene {
                     kind: SceneActionKind::OpenFile {
                         path: "MIGRATION.md".to_string(),
                     },
+                    policy: None,
                     conditions: vec![],
                 },
                 SceneAction {
@@ -1096,6 +1208,7 @@ impl VisualScene {
                         cwd: None,
                         target: RunCommandTarget::Tab,
                     },
+                    policy: None,
                     conditions: vec![],
                 },
             ],
@@ -1204,6 +1317,46 @@ impl SceneRuntime {
         serde_json::to_string_pretty(&self.scene)
     }
 
+    pub fn command_options(&self) -> Vec<VisualCommandOption> {
+        self.scene
+            .choices
+            .iter()
+            .enumerate()
+            .map(|(choice_index, choice)| {
+                let policy = derived_action_policy(choice);
+                let enabled = conditions_match(
+                    &choice.conditions,
+                    &self.scene.variables,
+                    &self.scene.rpg,
+                    self.selected_entity(),
+                    self.last_process_state.as_ref(),
+                );
+                VisualCommandOption {
+                    choice_index,
+                    label: choice.label.clone(),
+                    action_kind: action_kind_name(&choice.kind),
+                    origin: policy.origin,
+                    risk: policy.risk,
+                    scope: policy.scope,
+                    requires_confirmation: policy.requires_confirmation,
+                    summary: policy.summary,
+                    enabled,
+                    guard_detail: condition_guard_detail(&choice.conditions),
+                }
+            })
+            .collect()
+    }
+
+    pub fn filtered_command_options(
+        &self,
+        filter: &VisualCommandFilter,
+    ) -> Vec<VisualCommandOption> {
+        self.command_options()
+            .into_iter()
+            .filter(|option| command_option_matches_filter(option, filter))
+            .collect()
+    }
+
     pub fn take_pending_action(&mut self) -> Option<VisualActionRequest> {
         self.pending_action.take()
     }
@@ -1256,6 +1409,48 @@ impl SceneRuntime {
         self.bump_generation();
         Ok(())
     }
+}
+
+fn command_option_matches_filter(
+    option: &VisualCommandOption,
+    filter: &VisualCommandFilter,
+) -> bool {
+    if filter.enabled_only && !option.enabled {
+        return false;
+    }
+    if let Some(action_kind) = &filter.action_kind {
+        if option.action_kind != action_kind.trim() {
+            return false;
+        }
+    }
+    if let Some(risk) = &filter.risk {
+        if option.risk != risk.trim() {
+            return false;
+        }
+    }
+    if let Some(scope) = &filter.scope {
+        if option.scope != scope.trim() {
+            return false;
+        }
+    }
+    if let Some(query) = &filter.query {
+        let query = query.trim().to_lowercase();
+        if query.is_empty() {
+            return true;
+        }
+        let haystack = format!(
+            "{} {} {} {} {} {}",
+            option.label,
+            option.action_kind,
+            option.origin,
+            option.risk,
+            option.scope,
+            option.summary.as_deref().unwrap_or_default()
+        )
+        .to_lowercase();
+        return haystack.contains(&query);
+    }
+    true
 }
 
 impl SceneRuntime {
@@ -1806,7 +2001,12 @@ impl SceneRuntime {
             } else {
                 " [locked]"
             };
-            out.push_str(&format!("{marker} {}{}\r\n", choice.label, guard));
+            out.push_str(&format!(
+                "{marker} {}{}  {}\r\n",
+                choice.label,
+                guard,
+                action_policy_summary(choice)
+            ));
         }
         out.push_str(&format!("\r\nStatus: {}\r\n", self.status));
         truncate_to_screen(out, cols, rows)
@@ -1936,6 +2136,9 @@ impl SceneRuntime {
         }
         if let Some(detail) = &report.selected_choice_detail {
             out.push_str(&format!("  Choice detail: {detail}\r\n"));
+        }
+        if let Some(policy) = &report.selected_choice_policy {
+            out.push_str(&format!("  Choice policy: {policy}\r\n"));
         }
         out.push_str(&format!(
             "  Choice enabled: {}\r\n",
@@ -2512,7 +2715,7 @@ mod tests {
         );
 
         runtime.toggle_debugger();
-        let frame = runtime.render_text_frame(120, 40);
+        let frame = runtime.render_text_frame(200, 80);
         assert!(frame.contains("Lifecycle: enter update exit"));
     }
 
@@ -2608,6 +2811,7 @@ mod tests {
                         },
                     ],
                 },
+                policy: None,
                 conditions: Vec::new(),
             },
         );
@@ -2644,6 +2848,7 @@ mod tests {
                         value: VisualStateValue::Bool(true),
                     }],
                 },
+                policy: None,
                 conditions: Vec::new(),
             },
         );
@@ -2699,6 +2904,7 @@ mod tests {
                         },
                     ],
                 },
+                policy: None,
                 conditions: Vec::new(),
             },
         );
@@ -2743,6 +2949,7 @@ mod tests {
                         },
                     ],
                 },
+                policy: None,
                 conditions: Vec::new(),
             },
         );
@@ -2813,6 +3020,7 @@ mod tests {
                         },
                     ],
                 },
+                policy: None,
                 conditions: Vec::new(),
             },
         );
@@ -2866,6 +3074,7 @@ mod tests {
                         },
                     ],
                 },
+                policy: None,
                 conditions: Vec::new(),
             },
         );
@@ -2926,6 +3135,7 @@ mod tests {
                         },
                     ],
                 },
+                policy: None,
                 conditions: Vec::new(),
             },
         );
@@ -3066,6 +3276,7 @@ mod tests {
             SceneAction {
                 label: "Choose workspace".to_string(),
                 kind: SceneActionKind::AdvanceDialogue { target: 1 },
+                policy: None,
                 conditions: vec![VisualCondition {
                     source: None,
                     variable: "active_track".to_string(),
@@ -3075,6 +3286,7 @@ mod tests {
             SceneAction {
                 label: "Choose memory".to_string(),
                 kind: SceneActionKind::AdvanceDialogue { target: 2 },
+                policy: None,
                 conditions: vec![VisualCondition {
                     source: None,
                     variable: "active_track".to_string(),
@@ -3694,7 +3906,7 @@ mod tests {
         );
 
         runtime.toggle_debugger();
-        let frame = runtime.render_text_frame(120, 40);
+        let frame = runtime.render_text_frame(200, 80);
         assert!(frame.contains("Input map:"));
         assert!(frame.contains("other -> run_update_hooks"));
     }
@@ -4278,6 +4490,7 @@ mod tests {
             kind: SceneActionKind::OpenFile {
                 path: "docs/scene.md".to_string(),
             },
+            policy: None,
             conditions: vec![],
         }];
         let mut runtime = SceneRuntime::new_with_source_and_action_base_dir(
@@ -4310,6 +4523,7 @@ mod tests {
             kind: SceneActionKind::OpenFile {
                 path: "missing.md".to_string(),
             },
+            policy: None,
             conditions: vec![],
         }];
         let mut runtime = SceneRuntime::new_with_source_and_action_base_dir(
@@ -4336,6 +4550,7 @@ mod tests {
             kind: SceneActionKind::OpenFile {
                 path: ".".to_string(),
             },
+            policy: None,
             conditions: vec![],
         }];
         let mut runtime = SceneRuntime::new_with_source_and_action_base_dir(
@@ -4379,6 +4594,7 @@ mod tests {
                 kind: SceneActionKind::ExportStoryState {
                     path: "state/story.json".to_string(),
                 },
+                policy: None,
                 conditions: vec![],
             },
             SceneAction {
@@ -4386,6 +4602,7 @@ mod tests {
                 kind: SceneActionKind::ImportStoryState {
                     path: "state/story.json".to_string(),
                 },
+                policy: None,
                 conditions: vec![],
             },
         ];
@@ -4494,6 +4711,7 @@ mod tests {
             kind: SceneActionKind::ExportStoryState {
                 path: " ".to_string(),
             },
+            policy: None,
             conditions: vec![],
         }];
 
@@ -4513,6 +4731,7 @@ mod tests {
             kind: SceneActionKind::Navigate {
                 target: "memory.json".to_string(),
             },
+            policy: None,
             conditions: vec![],
         }];
         let mut runtime = SceneRuntime::new(scene).unwrap();
@@ -4539,6 +4758,7 @@ mod tests {
                 cwd: Some("/tmp".to_string()),
                 target: RunCommandTarget::SplitRight,
             },
+            policy: None,
             conditions: vec![],
         }];
         let mut runtime = SceneRuntime::new(scene).unwrap();
@@ -4569,6 +4789,7 @@ mod tests {
                 kind: SceneActionKind::OpenFile {
                     path: "scene.md".to_string(),
                 },
+                policy: None,
                 conditions: vec![],
             },
             SceneAction {
@@ -4578,6 +4799,7 @@ mod tests {
                     cwd: Some("/tmp".to_string()),
                     target: RunCommandTarget::SplitRight,
                 },
+                policy: None,
                 conditions: vec![],
             },
             SceneAction {
@@ -4585,6 +4807,7 @@ mod tests {
                 kind: SceneActionKind::Navigate {
                     target: "memory.json".to_string(),
                 },
+                policy: None,
                 conditions: vec![],
             },
             SceneAction {
@@ -4592,6 +4815,7 @@ mod tests {
                 kind: SceneActionKind::ExportStoryState {
                     path: "story.json".to_string(),
                 },
+                policy: None,
                 conditions: vec![],
             },
             SceneAction {
@@ -4599,6 +4823,7 @@ mod tests {
                 kind: SceneActionKind::ImportStoryState {
                     path: "story.json".to_string(),
                 },
+                policy: None,
                 conditions: vec![],
             },
         ];
@@ -4680,6 +4905,7 @@ mod tests {
                 cwd: None,
                 target: RunCommandTarget::Tab,
             },
+            policy: None,
             conditions: vec![],
         }];
 
@@ -4886,9 +5112,151 @@ mod tests {
         let runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
         let frame = runtime.render_text_frame(120, 40);
 
-        assert!(frame.contains("Choices:\r\n[Inspect]\r\n> Inspect selected entity"));
-        assert!(frame.contains("[OpenFile]\r\n  Open MIGRATION.md"));
-        assert!(frame.contains("[RunCommand]\r\n  Run cargo check -p gameterm-visual"));
+        assert!(frame.contains(
+            "Choices:\r\n[Inspect]\r\n> Inspect selected entity  origin=unknown risk=inspect scope=selected_entity"
+        ));
+        assert!(frame.contains(
+            "[OpenFile]\r\n  Open MIGRATION.md  origin=unknown risk=open_file scope=scene"
+        ));
+        assert!(frame.contains(
+            "[RunCommand]\r\n  Run cargo check -p gameterm-visual  origin=unknown risk=command scope=workspace confirm=true"
+        ));
+    }
+
+    #[test]
+    fn action_policy_metadata_renders_in_scene_and_debugger() {
+        let mut scene = VisualScene::demo();
+        scene.choices[0].policy = Some(SceneActionPolicy {
+            origin: "workspace_discovery".to_string(),
+            risk: "inspect".to_string(),
+            scope: "workspace".to_string(),
+            requires_confirmation: false,
+            summary: Some("Inspect generated workspace state".to_string()),
+        });
+        let runtime = SceneRuntime::new(scene).unwrap();
+
+        let frame = runtime.render_text_frame(200, 80);
+        assert!(frame.contains(
+            "origin=workspace_discovery risk=inspect scope=workspace summary=Inspect generated workspace state"
+        ));
+
+        let debug = runtime.render_debugger(120, 80);
+        assert!(debug.contains(
+            "Choice policy: origin=workspace_discovery risk=inspect scope=workspace summary=Inspect generated workspace state"
+        ));
+    }
+
+    #[test]
+    fn scene_rejects_invalid_action_policy_values() {
+        let mut scene = VisualScene::demo();
+        scene.choices[0].policy = Some(SceneActionPolicy {
+            origin: "workspace-discovery".to_string(),
+            risk: "inspect".to_string(),
+            scope: "workspace".to_string(),
+            requires_confirmation: false,
+            summary: None,
+        });
+
+        assert!(matches!(
+            SceneRuntime::new(scene),
+            Err(VisualSceneError::UnknownActionPolicyOrigin { .. })
+        ));
+    }
+
+    #[test]
+    fn command_options_include_policy_and_original_choice_index() {
+        let mut scene = VisualScene::demo();
+        scene.choices[1].policy = Some(SceneActionPolicy {
+            origin: "workspace_discovery".to_string(),
+            risk: "open_file".to_string(),
+            scope: "workspace".to_string(),
+            requires_confirmation: false,
+            summary: Some("Open discovered migration notes".to_string()),
+        });
+        scene.choices[1].conditions.push(VisualCondition {
+            source: None,
+            variable: "missing_flag".to_string(),
+            equals: VisualStateValue::Bool(true),
+        });
+        let runtime = SceneRuntime::new(scene).unwrap();
+
+        let options = runtime.command_options();
+
+        assert_eq!(options[1].choice_index, 1);
+        assert_eq!(options[1].label, "Open MIGRATION.md");
+        assert_eq!(options[1].action_kind, "OpenFile");
+        assert_eq!(options[1].origin, "workspace_discovery");
+        assert_eq!(options[1].risk, "open_file");
+        assert_eq!(options[1].scope, "workspace");
+        assert_eq!(
+            options[1].summary.as_deref(),
+            Some("Open discovered migration notes")
+        );
+        assert!(!options[1].requires_confirmation);
+        assert!(!options[1].enabled);
+        assert_eq!(
+            options[1].guard_detail.as_deref(),
+            Some("requires missing_flag=true")
+        );
+    }
+
+    #[test]
+    fn command_options_filter_by_text_kind_risk_scope_and_enabled_state() {
+        let mut scene = VisualScene::demo();
+        scene.choices[0].policy = Some(SceneActionPolicy {
+            origin: "authored".to_string(),
+            risk: "inspect".to_string(),
+            scope: "selected_entity".to_string(),
+            requires_confirmation: false,
+            summary: Some("Inspect the selected entity".to_string()),
+        });
+        scene.choices[2].policy = Some(SceneActionPolicy {
+            origin: "workspace_discovery".to_string(),
+            risk: "command".to_string(),
+            scope: "workspace".to_string(),
+            requires_confirmation: true,
+            summary: Some("Run verification".to_string()),
+        });
+        scene.choices[2].conditions.push(VisualCondition {
+            source: None,
+            variable: "missing_flag".to_string(),
+            equals: VisualStateValue::Bool(true),
+        });
+        let runtime = SceneRuntime::new(scene).unwrap();
+
+        let inspect_options = runtime.filtered_command_options(&VisualCommandFilter {
+            query: Some("selected".to_string()),
+            action_kind: Some("Inspect".to_string()),
+            risk: Some("inspect".to_string()),
+            scope: Some("selected_entity".to_string()),
+            enabled_only: true,
+        });
+        let enabled_command_options = runtime.filtered_command_options(&VisualCommandFilter {
+            query: Some("verification".to_string()),
+            action_kind: Some("RunCommand".to_string()),
+            risk: Some("command".to_string()),
+            scope: Some("workspace".to_string()),
+            enabled_only: true,
+        });
+        let all_command_options = runtime.filtered_command_options(&VisualCommandFilter {
+            query: Some("verification".to_string()),
+            action_kind: Some("RunCommand".to_string()),
+            risk: Some("command".to_string()),
+            scope: Some("workspace".to_string()),
+            enabled_only: false,
+        });
+
+        assert_eq!(
+            inspect_options
+                .iter()
+                .map(|option| option.choice_index)
+                .collect::<Vec<_>>(),
+            vec![0]
+        );
+        assert!(enabled_command_options.is_empty());
+        assert_eq!(all_command_options.len(), 1);
+        assert_eq!(all_command_options[0].choice_index, 2);
+        assert!(!all_command_options[0].enabled);
     }
 
     #[test]

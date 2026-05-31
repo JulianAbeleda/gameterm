@@ -1027,6 +1027,7 @@ mod tests {
             kind: gameterm_visual::SceneActionKind::Navigate {
                 target: "memory.json".to_string(),
             },
+            policy: None,
             conditions: vec![],
         }];
         let mut target_scene = VisualScene::demo();
@@ -1080,6 +1081,7 @@ mod tests {
             kind: gameterm_visual::SceneActionKind::ExportStoryState {
                 path: "story/state.json".to_string(),
             },
+            policy: None,
             conditions: vec![],
         }];
         let mut runtime = SceneRuntime::new_with_source_and_action_base_dir(
@@ -1144,6 +1146,7 @@ mod tests {
             kind: gameterm_visual::SceneActionKind::ImportStoryState {
                 path: "story/state.json".to_string(),
             },
+            policy: None,
             conditions: vec![],
         }];
         let mut runtime = SceneRuntime::new_with_source_and_action_base_dir(

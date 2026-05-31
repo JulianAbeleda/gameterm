@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::actions::{
-    action_kind_detail, action_kind_name, action_request_detail, action_request_name,
+    action_kind_detail, action_kind_name, action_policy_summary, action_request_detail,
+    action_request_name,
 };
 use crate::conditions::{condition_guard_detail, conditions_match};
 use crate::{
@@ -51,6 +52,7 @@ pub struct VisualSceneDebugReport {
     pub selected_choice_label: Option<String>,
     pub selected_choice_kind: Option<String>,
     pub selected_choice_detail: Option<String>,
+    pub selected_choice_policy: Option<String>,
     pub selected_choice_enabled: bool,
     pub selected_choice_guard_detail: Option<String>,
     pub pending_action_kind: Option<String>,
@@ -123,6 +125,7 @@ impl SceneRuntime {
             selected_choice_label: selected_choice.map(|choice| choice.label.clone()),
             selected_choice_kind: selected_choice.map(|choice| action_kind_name(&choice.kind)),
             selected_choice_detail: selected_choice.map(|choice| action_kind_detail(&choice.kind)),
+            selected_choice_policy: selected_choice.map(action_policy_summary),
             selected_choice_enabled,
             selected_choice_guard_detail: selected_choice
                 .and_then(|choice| condition_guard_detail(&choice.conditions)),

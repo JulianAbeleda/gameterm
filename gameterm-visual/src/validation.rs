@@ -405,6 +405,41 @@ pub(crate) fn relationship_key(source_id: &str, target_id: &str, kind: &str) -> 
     format!("{source_id}:{target_id}:{kind}")
 }
 
+pub(crate) fn is_supported_action_policy_origin(origin: &str) -> bool {
+    matches!(
+        origin,
+        "authored" | "workspace_discovery" | "agent" | "runtime" | "fixture" | "unknown"
+    )
+}
+
+pub(crate) fn is_supported_action_policy_risk(risk: &str) -> bool {
+    matches!(
+        risk,
+        "inspect"
+            | "open_file"
+            | "navigate"
+            | "state_change"
+            | "story_io"
+            | "command"
+            | "agent_proposal"
+            | "unknown"
+    )
+}
+
+pub(crate) fn is_supported_action_policy_scope(scope: &str) -> bool {
+    matches!(
+        scope,
+        "scene"
+            | "selected_entity"
+            | "workspace"
+            | "pane"
+            | "process"
+            | "agent"
+            | "external"
+            | "unknown"
+    )
+}
+
 pub(crate) fn is_supported_mode_input(input: &str) -> bool {
     matches!(
         input,
