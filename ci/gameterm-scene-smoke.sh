@@ -10,14 +10,19 @@ testing. By default it lists AVFoundation devices and attempts one still-frame
 capture from "0:none".
 
 Options:
+  --list-scenarios        List named smoke scenarios and exit.
+  --describe-scenario NAME
+                           Print one scenario's fixture, setup, and manual
+                           checks, then exit.
+  --scenario NAME         Apply defaults for a named smoke scenario.
   --launch                 Launch target/debug/gameterm-gui with the renderer
                            row fixture in a temporary XDG_CONFIG_HOME.
   --check-assets           Check bundled Scene Mode PNG assets and fixture
                            sprite manifests without launching or capturing.
   --fixture NAME           Fixture to install when --launch is used: basic,
                            navigate, invalid, sprites, missing-sprite,
-                           run-command-targets, or renderer-rows. Default:
-                           renderer-rows.
+                           run-command-targets, layered-mode, or
+                           renderer-rows. Default: renderer-rows.
   --patch-inbox PATH       Set GAMETERM_SCENE_PATCH_FILE to PATH when
                            launching. Use "auto" to create a temporary inbox.
   --submit-mux-patch PATH  After --launch wait, submit PATCH through
@@ -47,6 +52,9 @@ capture_timeout=12
 launch=0
 check_assets=0
 fixture="renderer-rows"
+scenario=""
+describe_scenario=""
+list_scenarios=0
 wait_before_capture=10
 ffmpeg_bin="${FFMPEG:-}"
 gui_pid=""
@@ -58,6 +66,18 @@ log_file="/tmp/gameterm-scene-smoke-ffmpeg.log"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --list-scenarios)
+      list_scenarios=1
+      shift
+      ;;
+    --describe-scenario)
+      describe_scenario="$2"
+      shift 2
+      ;;
+    --scenario)
+      scenario="$2"
+      shift 2
+      ;;
     --launch)
       launch=1
       shift
@@ -128,6 +148,126 @@ cleanup() {
 }
 trap cleanup EXIT
 
+list_smoke_scenarios() {
+  cat <<'EOF'
+renderer-rows
+guarded-input
+run-command-targets
+patch-inbox
+mux-patch
+process-state
+EOF
+}
+
+describe_smoke_scenario() {
+  case "$1" in
+    renderer-rows)
+      cat <<'EOF'
+Scenario: renderer-rows
+Fixture: renderer-rows
+Setup: launch Scene Mode renderer row fixture.
+Checks: rows remain visually aligned; sprite/entity layers do not shift.
+EOF
+      ;;
+    guarded-input)
+      cat <<'EOF'
+Scenario: guarded-input
+Fixture: layered-mode
+Setup: launch layered state fixture.
+Checks: layer-owned input updates state; guarded transitions report status without closing Scene Mode.
+EOF
+      ;;
+    run-command-targets)
+      cat <<'EOF'
+Scenario: run-command-targets
+Fixture: run-command-targets
+Setup: launch RunCommand target fixture.
+Checks: tab, split_right, and split_down choices open the expected pane targets.
+EOF
+      ;;
+    patch-inbox)
+      cat <<'EOF'
+Scenario: patch-inbox
+Fixture: basic
+Setup: launch with GAMETERM_SCENE_PATCH_FILE auto-inbox.
+Checks: write-inbox patch updates visible entity state and keeps Scene Mode open.
+EOF
+      ;;
+    mux-patch)
+      cat <<'EOF'
+Scenario: mux-patch
+Fixture: basic
+Setup: launch, open Scene Mode, submit ci/fixtures/gameterm-scene/patch-status.json through mux.
+Checks: mux patch updates visible entity state and reports patch source.
+EOF
+      ;;
+    process-state)
+      cat <<'EOF'
+Scenario: process-state
+Fixture: basic
+Setup: launch with auto patch inbox, then run the process helper before capture.
+Checks: entity transitions running -> succeeded/failed and Tile Debugger shows typed process state.
+EOF
+      ;;
+    *)
+      echo "unknown smoke scenario: $1" >&2
+      list_smoke_scenarios >&2
+      exit 2
+      ;;
+  esac
+}
+
+apply_smoke_scenario_defaults() {
+  case "${scenario}" in
+    "")
+      ;;
+    renderer-rows)
+      fixture="renderer-rows"
+      ;;
+    guarded-input)
+      fixture="layered-mode"
+      ;;
+    run-command-targets)
+      fixture="run-command-targets"
+      ;;
+    patch-inbox)
+      fixture="basic"
+      if [[ -z "${patch_inbox}" ]]; then
+        patch_inbox="auto"
+      fi
+      ;;
+    mux-patch)
+      fixture="basic"
+      if [[ -z "${submit_mux_patch}" ]]; then
+        submit_mux_patch="${fixture_root}/patch-status.json"
+      fi
+      ;;
+    process-state)
+      fixture="basic"
+      if [[ -z "${patch_inbox}" ]]; then
+        patch_inbox="auto"
+      fi
+      ;;
+    *)
+      echo "unknown smoke scenario: ${scenario}" >&2
+      list_smoke_scenarios >&2
+      exit 2
+      ;;
+  esac
+}
+
+if [[ "${list_scenarios}" -eq 1 ]]; then
+  list_smoke_scenarios
+  exit 0
+fi
+
+if [[ -n "${describe_scenario}" ]]; then
+  describe_smoke_scenario "${describe_scenario}"
+  exit 0
+fi
+
+apply_smoke_scenario_defaults
+
 resolve_ffmpeg() {
   if [[ -n "${ffmpeg_bin}" ]]; then
     printf '%s\n' "${ffmpeg_bin}"
@@ -180,6 +320,10 @@ install_scene_fixture() {
       ;;
     run-command-targets)
       cp "${fixture_root}/run-command-targets.json" "${scene_dir}/default.json"
+      cp "${fixture_root}/sprites.json" "${scene_dir}/sprites.json"
+      ;;
+    layered-mode)
+      cp "${fixture_root}/layered-mode.json" "${scene_dir}/default.json"
       cp "${fixture_root}/sprites.json" "${scene_dir}/sprites.json"
       ;;
     *)
@@ -293,9 +437,15 @@ EOF
   if [[ "${fixture}" == "run-command-targets" ]]; then
     echo "RunCommand audit: press Enter for tab, Next then Enter for split_right, Next then Enter for split_down."
   fi
+  if [[ "${scenario}" == "guarded-input" ]]; then
+    echo "Guarded input audit: use the fixture controls and confirm layer state/status changes without closing Scene Mode."
+  fi
   if [[ -n "${patch_inbox}" ]]; then
     echo "Patch audit: after opening Scene Mode, run:"
     echo "  ci/gameterm-scene-patch.sh write-inbox --inbox '${patch_inbox}' --patch ci/fixtures/gameterm-scene/patch-status.json"
+  fi
+  if [[ "${scenario}" == "process-state" ]]; then
+    echo "Process-state audit: the script will run a true command through ci/gameterm-scene-process.sh before capture."
   fi
   if [[ -n "${submit_mux_patch}" ]]; then
     echo "Mux patch audit: open Scene Mode before the wait expires; the script will submit:"
@@ -310,6 +460,18 @@ EOF
       submit_args+=(--target-pane-id "${submit_target_pane_id}")
     fi
     "${repo_root}/ci/gameterm-scene-patch.sh" "${submit_args[@]}"
+    sleep 1
+  fi
+  if [[ "${scenario}" == "process-state" ]]; then
+    process_patch="${tmp_home}/gameterm/scenes/process-state.json"
+    "${repo_root}/ci/gameterm-scene-process.sh" \
+      --entity-id project-harness \
+      --patch "${process_patch}" \
+      --inbox "${patch_inbox}" \
+      --select \
+      -- \
+      true >/dev/null
+    echo "Wrote process-state smoke patch: ${process_patch}"
     sleep 1
   fi
 fi

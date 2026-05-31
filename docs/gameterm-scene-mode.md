@@ -317,11 +317,19 @@ The smoke test can launch with a specific fixture:
 ci/gameterm-scene-smoke.sh --launch --fixture sprites
 ```
 
+Named smoke scenarios are available for repeatable audits:
+
+```sh
+ci/gameterm-scene-smoke.sh --list-scenarios
+ci/gameterm-scene-smoke.sh --describe-scenario process-state
+ci/gameterm-scene-smoke.sh --launch --scenario process-state
+```
+
 To live-audit RunCommand pane targets, use:
 
 ```sh
 cargo build -p gameterm-gui
-ci/gameterm-scene-smoke.sh --launch --fixture run-command-targets
+ci/gameterm-scene-smoke.sh --launch --scenario run-command-targets
 ```
 
 After opening Scene Mode, trigger the three choices in order to verify `tab`,
@@ -330,7 +338,7 @@ After opening Scene Mode, trigger the three choices in order to verify `tab`,
 To live-audit the patch inbox, launch with an inbox path:
 
 ```sh
-ci/gameterm-scene-smoke.sh --launch --fixture basic --patch-inbox auto
+ci/gameterm-scene-smoke.sh --launch --scenario patch-inbox
 ```
 
 After Scene Mode opens, write a patch with `ci/gameterm-scene-patch.sh
@@ -341,8 +349,7 @@ Mode before the wait timer expires, and have the script submit a patch before
 capture:
 
 ```sh
-ci/gameterm-scene-smoke.sh --launch --fixture basic \
-  --submit-mux-patch ci/fixtures/gameterm-scene/patch-status.json
+ci/gameterm-scene-smoke.sh --launch --scenario mux-patch
 ```
 
 Use `--min-bytes N` to make capture output checks stricter for local visual

@@ -81,6 +81,8 @@ Current status:
 - [x] Add explicit story-state export/import/validate/inspect helper coverage.
 - [x] Add typed process-state patches and debug visibility for agent/process
   helpers.
+- [x] Add named smoke scenario registry, documentation, and process-state smoke
+  wiring.
 
 ## Scene Mode Product Loop Roadmap
 

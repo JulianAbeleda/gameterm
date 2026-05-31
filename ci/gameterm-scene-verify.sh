@@ -428,20 +428,20 @@ run_patch_check() {
     validate \
     --scene "${fixture_root}/default.json" \
     --patch "${tmp_home}/patches/process.json" >/dev/null
-	jq -e '
-	  .selected_entity_id == "project-harness"
-	  and .status == "Process succeeded: true"
-	  and .process_state == {
-	    "entity_id": "project-harness",
-	    "phase": "succeeded",
-	    "command": "true",
-	    "exit_code": 0,
-	    "message": "Process succeeded"
-	  }
-	  and any(.updates[]; .entity_id == "project-harness"
-	    and (.state_flags == ["succeeded"])
-	    and (.metadata | any(.[0] == "exit_code" and .[1] == "0")))
-	' "${tmp_home}/patches/process.json" >/dev/null
+  jq -e '
+    .selected_entity_id == "project-harness"
+    and .status == "Process succeeded: true"
+    and .process_state == {
+      "entity_id": "project-harness",
+      "phase": "succeeded",
+      "command": "true",
+      "exit_code": 0,
+      "message": "Process succeeded"
+    }
+    and any(.updates[]; .entity_id == "project-harness"
+      and (.state_flags == ["succeeded"])
+      and (.metadata | any(.[0] == "exit_code" and .[1] == "0")))
+  ' "${tmp_home}/patches/process.json" >/dev/null
 
   echo "scene patch: ok"
 }
@@ -479,7 +479,17 @@ run_story_state_check() {
 }
 
 run_smoke_asset_check() {
+  local scenarios
   "${repo_root}/ci/gameterm-scene-smoke.sh" --check-assets >/dev/null
+  scenarios="$("${repo_root}/ci/gameterm-scene-smoke.sh" --list-scenarios)"
+  grep -qx renderer-rows <<<"${scenarios}"
+  grep -qx guarded-input <<<"${scenarios}"
+  grep -qx run-command-targets <<<"${scenarios}"
+  grep -qx patch-inbox <<<"${scenarios}"
+  grep -qx mux-patch <<<"${scenarios}"
+  grep -qx process-state <<<"${scenarios}"
+  "${repo_root}/ci/gameterm-scene-smoke.sh" \
+    --describe-scenario process-state | grep -q "typed process state"
   echo "smoke assets: ok"
 }
 
