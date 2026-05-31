@@ -50,6 +50,7 @@ Validated named scenarios:
 - `guarded-input`
 - `run-command-targets`
 - `overlay-cleanup`
+- `vertical-slice`
 - `patch-inbox`
 - `mux-patch`
 - `process-state`
@@ -158,6 +159,33 @@ Capture:
 
 Observation: the default `escape` key sequence closed Scene Mode before
 capture, returning to the underlying shell without crashing the GUI.
+
+### vertical-slice
+
+Command:
+
+```sh
+ci/gameterm-scene-smoke.sh \
+  --launch \
+  --scenario vertical-slice \
+  --wait-before-capture 2 \
+  --capture-timeout 12 \
+  --output /Users/julianabeleda/Desktop/gameterm-scene-smoke-vertical-slice-20260531-112852.png
+```
+
+Result: PASS.
+
+Capture:
+
+```text
+/Users/julianabeleda/Desktop/gameterm-scene-smoke-vertical-slice-20260531-112852.png
+```
+
+Observation: the default `enter,j,enter,j,enter,j,enter` key sequence drove the
+playable loop through brief acceptance, launch-kit preparation, loop
+completion, and ending dialogue. The capture shows
+`brief_accepted=true`, `launch_ready=true`, `agent_phase=complete`, and the
+`Read ending` choice selected.
 
 ### patch-inbox
 

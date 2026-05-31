@@ -21,8 +21,8 @@ Options:
                            sprite manifests without launching or capturing.
   --fixture NAME           Fixture to install when --launch is used: basic,
                            navigate, invalid, sprites, missing-sprite,
-                           run-command-targets, layered-mode, or
-                           renderer-rows. Default: renderer-rows.
+                           run-command-targets, layered-mode, vertical-slice,
+                           or renderer-rows. Default: renderer-rows.
   --patch-inbox PATH       Set GAMETERM_SCENE_PATCH_FILE to PATH when
                            launching. Use "auto" to create a temporary inbox.
   --submit-mux-patch PATH  After --launch wait, submit PATCH through
@@ -179,6 +179,7 @@ renderer-rows
 guarded-input
 run-command-targets
 overlay-cleanup
+vertical-slice
 patch-inbox
 mux-patch
 process-state
@@ -217,6 +218,14 @@ Scenario: overlay-cleanup
 Fixture: basic
 Setup: launch Scene Mode and send Escape before capture.
 Checks: overlay cleanup returns to the underlying terminal without crashing the GUI.
+EOF
+      ;;
+    vertical-slice)
+      cat <<'EOF'
+Scenario: vertical-slice
+Fixture: vertical-slice
+Setup: launch playable vertical slice fixture.
+Checks: automated input accepts the brief, prepares the launch kit, completes the scene loop, and keeps Scene Mode open.
 EOF
       ;;
     patch-inbox)
@@ -274,6 +283,12 @@ apply_smoke_scenario_defaults() {
       fixture="basic"
       if [[ -z "${key_sequence}" ]]; then
         key_sequence="escape"
+      fi
+      ;;
+    vertical-slice)
+      fixture="vertical-slice"
+      if [[ -z "${key_sequence}" ]]; then
+        key_sequence="enter,j,enter,j,enter,j,enter"
       fi
       ;;
     patch-inbox)
@@ -370,6 +385,10 @@ install_scene_fixture() {
       ;;
     layered-mode)
       cp "${fixture_root}/layered-mode.json" "${scene_dir}/default.json"
+      install_sprite_manifest "${scene_dir}/sprites.json"
+      ;;
+    vertical-slice)
+      cp "${fixture_root}/vertical-slice.json" "${scene_dir}/default.json"
       install_sprite_manifest "${scene_dir}/sprites.json"
       ;;
     *)
@@ -795,6 +814,9 @@ EOF
   fi
   if [[ "${scenario}" == "overlay-cleanup" ]]; then
     echo "Overlay cleanup audit: close Scene Mode before capture."
+  fi
+  if [[ "${scenario}" == "vertical-slice" ]]; then
+    echo "Vertical slice audit: complete the playable brief, launch kit, loop, and ending path."
   fi
   if [[ -n "${patch_inbox}" ]]; then
     echo "Patch audit: inbox transport is enabled at ${patch_inbox}"

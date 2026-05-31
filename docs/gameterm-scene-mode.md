@@ -395,6 +395,15 @@ ci/gameterm-scene-smoke.sh --describe-scenario process-state
 ci/gameterm-scene-smoke.sh --launch --scenario process-state
 ```
 
+To live-audit the playable vertical slice, use:
+
+```sh
+ci/gameterm-scene-smoke.sh --launch --scenario vertical-slice
+```
+
+The scenario sends `enter,j,enter,j,enter,j,enter` by default to accept the
+brief, prepare the launch kit, complete the scene loop, and read the ending.
+
 To live-audit RunCommand pane targets, use:
 
 ```sh

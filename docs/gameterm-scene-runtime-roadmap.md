@@ -93,6 +93,8 @@ Current status:
 - [x] Add a vertical-slice template and fixture that combines dialogue,
   guarded choices, deterministic RPG/story state, layers, process state, and
   story export coverage.
+- [x] Add a live macOS smoke scenario for the playable vertical slice core
+  keyboard loop.
 - [x] Add GUI-dispatched story-state export/import actions, input-map
   shortcuts, visible status/debug reporting, and overlay dispatch tests.
 - [x] Add deterministic `SetLayerState` resolve operations with validation and
