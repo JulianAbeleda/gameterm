@@ -22,7 +22,8 @@ Options:
   --fixture NAME           Fixture to install when --launch is used: basic,
                            navigate, invalid, sprites, missing-sprite,
                            run-command-targets, layered-mode, vertical-slice,
-                           or renderer-rows. Default: renderer-rows.
+                           authoring-loop, or renderer-rows. Default:
+                           renderer-rows.
   --patch-inbox PATH       Set GAMETERM_SCENE_PATCH_FILE to PATH when
                            launching. Use "auto" to create a temporary inbox.
   --submit-mux-patch PATH  After --launch wait, submit PATCH through
@@ -196,6 +197,7 @@ run-command-targets
 overlay-cleanup
 vertical-slice
 agent-lifecycle
+authoring-loop
 patch-inbox
 mux-patch
 process-state
@@ -250,6 +252,14 @@ Scenario: agent-lifecycle
 Fixture: basic
 Setup: launch with auto patch inbox and emit planning, blocked, and complete agent phases.
 Checks: Scene Mode receives structured agent lifecycle patches and renders the final completed agent state.
+EOF
+      ;;
+    authoring-loop)
+      cat <<'EOF'
+Scenario: authoring-loop
+Fixture: authoring-loop
+Setup: launch story-state authoring fixture.
+Checks: automated input saves story state, mutates draft state, reloads the saved state, and keeps Scene Mode open.
 EOF
       ;;
     patch-inbox)
@@ -319,6 +329,12 @@ apply_smoke_scenario_defaults() {
       fixture="basic"
       if [[ -z "${patch_inbox}" ]]; then
         patch_inbox="auto"
+      fi
+      ;;
+    authoring-loop)
+      fixture="authoring-loop"
+      if [[ -z "${key_sequence}" ]]; then
+        key_sequence="enter,j,enter,j,enter"
       fi
       ;;
     patch-inbox)
@@ -419,6 +435,10 @@ install_scene_fixture() {
       ;;
     vertical-slice)
       cp "${fixture_root}/vertical-slice.json" "${scene_dir}/default.json"
+      install_sprite_manifest "${scene_dir}/sprites.json"
+      ;;
+    authoring-loop)
+      cp "${fixture_root}/authoring-loop.json" "${scene_dir}/default.json"
       install_sprite_manifest "${scene_dir}/sprites.json"
       ;;
     *)
@@ -871,6 +891,9 @@ EOF
   fi
   if [[ "${scenario}" == "agent-lifecycle" ]]; then
     echo "Agent lifecycle audit: the script will emit planning, blocked, and complete patches before capture."
+  fi
+  if [[ "${scenario}" == "authoring-loop" ]]; then
+    echo "Authoring loop audit: save story state, mutate draft state, then reload the saved state."
   fi
   if [[ -n "${submit_mux_patch}" ]]; then
     echo "Mux patch audit: open Scene Mode before the wait expires; the script will submit:"

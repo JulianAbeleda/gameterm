@@ -74,7 +74,8 @@ Options for update-choice:
   --target TARGET
 
 Fixtures:
-  basic, navigate, invalid, sprites, missing-sprite, vertical-slice
+  basic, navigate, invalid, sprites, missing-sprite, vertical-slice,
+  authoring-loop
 
 Templates:
   agent-workflow, project-dashboard, visual-novel, layered-mode, rpg-quest,
@@ -1006,6 +1007,10 @@ install_fixture() {
       copy_file "${fixture_root}/vertical-slice.json" "${scene_dir}/default.json"
       copy_file "${fixture_root}/sprites.json" "${scene_dir}/sprites.json"
       ;;
+    authoring-loop)
+      copy_file "${fixture_root}/authoring-loop.json" "${scene_dir}/default.json"
+      copy_file "${fixture_root}/sprites.json" "${scene_dir}/sprites.json"
+      ;;
     *)
       echo "unknown fixture: ${fixture}" >&2
       usage >&2
@@ -1107,7 +1112,7 @@ case "${command}" in
       usage >&2
       exit 2
     fi
-    printf '%s\n' basic navigate invalid sprites missing-sprite vertical-slice
+    printf '%s\n' basic navigate invalid sprites missing-sprite vertical-slice authoring-loop
     ;;
   list-templates)
     if [[ "${#positionals[@]}" -ne 0 ]]; then

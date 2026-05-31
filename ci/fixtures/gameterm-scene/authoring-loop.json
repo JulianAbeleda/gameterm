@@ -1,0 +1,108 @@
+{
+  "title": "Scene Authoring Loop",
+  "background": "workspace-map",
+  "width": 12,
+  "height": 7,
+  "mode": {
+    "mode_id": "authoring",
+    "label": "Authoring",
+    "description": "Story-state save and load fixture",
+    "scene_profile": "tool",
+    "allowed_actions": ["Inspect", "Resolve", "ExportStoryState", "ImportStoryState"]
+  },
+  "variables": [
+    {
+      "key": "draft_dirty",
+      "value": { "Bool": false }
+    },
+    {
+      "key": "save_slot",
+      "value": { "Text": "authoring-loop" }
+    }
+  ],
+  "rpg": {
+    "inventory": [
+      {
+        "item_id": "draft-note",
+        "label": "Draft Note",
+        "count": 1
+      }
+    ],
+    "stats": [
+      {
+        "owner_id": "author",
+        "key": "revision",
+        "value": { "Number": 1 }
+      }
+    ],
+    "quests": [
+      {
+        "quest_id": "authoring-loop",
+        "label": "Authoring Loop",
+        "stage": 1,
+        "completed": false,
+        "journal": "Save, mutate, and reload a story state from inside Scene Mode."
+      }
+    ],
+    "relationships": []
+  },
+  "entities": [
+    {
+      "id": "authoring-workbench",
+      "kind": "Project",
+      "label": "Authoring Workbench",
+      "position": { "x": 4, "y": 2 },
+      "sprite": "project_core",
+      "state_flags": ["draft"],
+      "metadata": [["workflow", "save-load"]]
+    }
+  ],
+  "dialogue_speaker": "Editor",
+  "dialogue": "Save the story state, mark the draft dirty, then reload the saved state.",
+  "choices": [
+    {
+      "label": "Save story state",
+      "kind": {
+        "ExportStoryState": {
+          "path": "/tmp/gameterm-scene-authoring-loop.story.json"
+        }
+      }
+    },
+    {
+      "label": "Mark draft dirty",
+      "kind": {
+        "Resolve": {
+          "operations": [
+            {
+              "SetVariable": {
+                "key": "draft_dirty",
+                "value": { "Bool": true }
+              }
+            },
+            {
+              "AdjustStat": {
+                "owner_id": "author",
+                "key": "revision",
+                "amount": 1
+              }
+            },
+            {
+              "AppendQuestJournal": {
+                "quest_id": "authoring-loop",
+                "text": "Marked the draft dirty after saving."
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "label": "Reload saved story",
+      "kind": {
+        "ImportStoryState": {
+          "path": "/tmp/gameterm-scene-authoring-loop.story.json"
+        }
+      }
+    }
+  ]
+}

@@ -404,6 +404,15 @@ ci/gameterm-scene-smoke.sh --launch --scenario vertical-slice
 The scenario sends `enter,j,enter,j,enter,j,enter` by default to accept the
 brief, prepare the launch kit, complete the scene loop, and read the ending.
 
+To live-audit the in-app authoring loop, use:
+
+```sh
+ci/gameterm-scene-smoke.sh --launch --scenario authoring-loop
+```
+
+The scenario sends `enter,j,enter,j,enter` by default to save story state,
+mutate draft state, and reload the saved state from inside Scene Mode.
+
 To live-audit RunCommand pane targets, use:
 
 ```sh

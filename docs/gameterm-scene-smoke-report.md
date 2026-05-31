@@ -52,6 +52,7 @@ Validated named scenarios:
 - `overlay-cleanup`
 - `vertical-slice`
 - `agent-lifecycle`
+- `authoring-loop`
 - `patch-inbox`
 - `mux-patch`
 - `process-state`
@@ -64,7 +65,8 @@ Command:
 
 ```sh
 for scenario in renderer-rows guarded-input run-command-targets overlay-cleanup \
-  vertical-slice agent-lifecycle patch-inbox mux-patch process-state; do
+  vertical-slice agent-lifecycle authoring-loop patch-inbox mux-patch \
+  process-state; do
   stamp=$(date +%Y%m%d-%H%M%S)
   out="/Users/julianabeleda/Desktop/gameterm-scene-smoke-${scenario}-${stamp}.png"
   ci/gameterm-scene-smoke.sh \
@@ -76,7 +78,8 @@ for scenario in renderer-rows guarded-input run-command-targets overlay-cleanup 
 done
 ```
 
-Result: PASS for all nine named live scenarios.
+Result: PASS for all nine named live scenarios. The `authoring-loop` scenario
+was added after this pass and should be included in the next full-suite run.
 
 Captures:
 
@@ -254,6 +257,32 @@ Observation: the scenario emits `planning`, `blocked`, and `complete` patches
 through the auto-created inbox. The capture shows `flags=agent,
 agent_complete` on the selected entity and `Status: Agent complete: Finished
 visual slice`.
+
+### authoring-loop
+
+Command:
+
+```sh
+ci/gameterm-scene-smoke.sh \
+  --launch \
+  --scenario authoring-loop \
+  --wait-before-capture 2 \
+  --capture-timeout 12 \
+  --output /Users/julianabeleda/Desktop/gameterm-scene-smoke-authoring-loop-20260531-115810.png
+```
+
+Result: PASS.
+
+Capture:
+
+```text
+/Users/julianabeleda/Desktop/gameterm-scene-smoke-authoring-loop-20260531-115810.png
+```
+
+Observation: the default `enter,j,enter,j,enter` key sequence exported the
+story state, mutated draft state, then imported the saved story state again.
+The capture shows `draft_dirty=false`, selected `Reload saved story`, and
+`Status: Story state imported: /tmp/gameterm-scene-authoring-loop.story.json`.
 
 ### patch-inbox
 

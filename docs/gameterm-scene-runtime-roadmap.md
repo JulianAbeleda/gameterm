@@ -97,6 +97,8 @@ Current status:
   keyboard loop.
 - [x] Add GUI-dispatched story-state export/import actions, input-map
   shortcuts, visible status/debug reporting, and overlay dispatch tests.
+- [x] Add an authoring-loop fixture and smoke scenario for in-app story-state
+  save, mutate, and reload workflow.
 - [x] Add deterministic `SetLayerState` resolve operations with validation and
   rollback coverage for variables, RPG state, and layers.
 - [x] Add an agent lifecycle patch helper for planning, running, blocked,

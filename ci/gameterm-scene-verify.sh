@@ -12,7 +12,7 @@ Options:
   --all                 Run all checks. This is the default.
   --fixture NAME        Run one fixture setup check: basic, navigate, invalid,
                         sprites, missing-sprite, run-command-targets,
-                        layered-mode, or vertical-slice.
+                        layered-mode, vertical-slice, or authoring-loop.
   -h, --help            Show this help.
 EOF
 }
@@ -66,6 +66,9 @@ scene_file_for_fixture() {
       ;;
     vertical-slice)
       printf '%s\n' "${fixture_root}/vertical-slice.json"
+      ;;
+    authoring-loop)
+      printf '%s\n' "${fixture_root}/authoring-loop.json"
       ;;
     invalid)
       printf '%s\n' "${fixture_root}/invalid.json"
@@ -600,7 +603,7 @@ run_all() {
   run_agent_check
   run_story_state_check
   run_smoke_asset_check
-  for fixture in basic navigate invalid sprites missing-sprite run-command-targets layered-mode vertical-slice; do
+  for fixture in basic navigate invalid sprites missing-sprite run-command-targets layered-mode vertical-slice authoring-loop; do
     run_fixture_setup_check "${fixture}"
   done
   run_cargo_checks
@@ -612,7 +615,7 @@ case "${mode}" in
   all)
     run_all
     ;;
-  basic|navigate|invalid|sprites|missing-sprite|run-command-targets|layered-mode|vertical-slice)
+  basic|navigate|invalid|sprites|missing-sprite|run-command-targets|layered-mode|vertical-slice|authoring-loop)
     run_static_checks
     run_fixture_setup_check "${mode}"
     ;;
