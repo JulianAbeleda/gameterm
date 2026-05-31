@@ -320,6 +320,12 @@ pub struct VisualLayerTransitionReport {
     pub result: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VisualRuntimeEvent {
+    pub kind: String,
+    pub detail: String,
+}
+
 impl Default for VisualModeDescriptor {
     fn default() -> Self {
         default_scene_mode()
@@ -458,6 +464,7 @@ pub struct VisualSceneDebugReport {
     pub active_layers: Vec<VisualLayerState>,
     pub last_input_layer: Option<String>,
     pub last_layer_transition: Option<VisualLayerTransitionReport>,
+    pub transition_history: Vec<VisualRuntimeEvent>,
     pub selected_entity_mode: Option<String>,
     pub variables: Vec<VisualStateEntry>,
     pub rpg: VisualRpgState,
@@ -1740,6 +1747,7 @@ pub struct SceneRuntime {
     last_patch_source_pane_id: Option<usize>,
     last_input_layer: Option<String>,
     last_layer_transition: Option<VisualLayerTransitionReport>,
+    transition_history: Vec<VisualRuntimeEvent>,
 }
 
 impl SceneRuntime {
@@ -1784,6 +1792,7 @@ impl SceneRuntime {
             last_patch_source_pane_id: None,
             last_input_layer: None,
             last_layer_transition: None,
+            transition_history: Vec::new(),
         };
         runtime.run_mode_enter_hooks();
         Ok(runtime)
@@ -1883,6 +1892,7 @@ impl SceneRuntime {
         self.dialogue_history = dialogue_history;
         self.last_input_layer = None;
         self.last_layer_transition = None;
+        self.record_runtime_event("scene", "reloaded preserving runtime state");
         self.status = "Ready".to_string();
 
         self.selected_entity = selected_entity_id
@@ -1926,6 +1936,7 @@ impl SceneRuntime {
     pub fn run_mode_update_hooks(&mut self) {
         if let Some(status) = &self.scene.mode.lifecycle.update_status {
             self.status = status.clone();
+            self.record_runtime_event("lifecycle", "mode update");
             self.bump_generation();
         }
     }
@@ -1933,6 +1944,7 @@ impl SceneRuntime {
     pub fn run_mode_exit_hooks(&mut self) {
         if let Some(status) = &self.scene.mode.lifecycle.exit_status {
             self.status = status.clone();
+            self.record_runtime_event("lifecycle", "mode exit");
             self.bump_generation();
         }
     }
@@ -1998,8 +2010,8 @@ impl SceneRuntime {
                     self.last_layer_transition = Some(VisualLayerTransitionReport {
                         layer_id: layer_id.clone(),
                         input: input_key.to_string(),
-                        from_state,
-                        target_state,
+                        from_state: from_state.clone(),
+                        target_state: target_state.clone(),
                         result: "guard_failed".to_string(),
                     });
                     self.status = format!(
@@ -2007,6 +2019,10 @@ impl SceneRuntime {
                         layer_id,
                         condition_guard_detail(&transition.conditions)
                             .unwrap_or_else(|| "guard condition not met".to_string())
+                    );
+                    self.record_runtime_event(
+                        "transition",
+                        format!("{layer_id} {from_state} -> {target_state} blocked"),
                     );
                     self.bump_generation();
                     return Some(VisualModeOutcome::Continue);
@@ -2021,6 +2037,10 @@ impl SceneRuntime {
                 });
                 self.status =
                     format!("Layer {layer_id} transitioned: {from_state} -> {target_state}");
+                self.record_runtime_event(
+                    "transition",
+                    format!("{layer_id} {from_state} -> {target_state}"),
+                );
                 self.bump_generation();
                 return Some(VisualModeOutcome::Continue);
             }
@@ -2040,9 +2060,14 @@ impl SceneRuntime {
                         condition_guard_detail(&binding.conditions)
                             .unwrap_or_else(|| "guard condition not met".to_string())
                     );
+                    self.record_runtime_event(
+                        "input",
+                        format!("{layer_id} {input_key} blocked"),
+                    );
                     self.bump_generation();
                     return Some(VisualModeOutcome::Continue);
                 }
+                self.record_runtime_event("input", format!("{layer_id} {input_key}"));
                 return Some(self.run_mode_input_action(binding.action.trim()));
             }
         }
@@ -2138,6 +2163,10 @@ impl SceneRuntime {
                     self.dialogue_index = *target;
                     if let Some(line) = self.scene.dialogue_lines.get(*target).cloned() {
                         self.dialogue_history.push(line.clone());
+                        self.record_runtime_event(
+                            "dialogue",
+                            format!("advanced to line {target}"),
+                        );
                         format!("Dialogue advanced: {}", line.speaker)
                     } else {
                         format!("Dialogue target missing: {target}")
@@ -2145,8 +2174,20 @@ impl SceneRuntime {
                 }
                 SceneActionKind::Resolve { operations } => {
                     match self.apply_state_operations(&choice.label, operations) {
-                        Ok(count) => format!("Resolved {count} operation(s): {}", choice.label),
-                        Err(err) => format!("Resolve failed: {err}"),
+                        Ok(count) => {
+                            self.record_runtime_event(
+                                "state",
+                                format!("{} resolved {count} operation(s)", choice.label),
+                            );
+                            format!("Resolved {count} operation(s): {}", choice.label)
+                        }
+                        Err(err) => {
+                            self.record_runtime_event(
+                                "state",
+                                format!("{} failed: {err}", choice.label),
+                            );
+                            format!("Resolve failed: {err}")
+                        }
                     }
                 }
             };
@@ -2364,6 +2405,7 @@ impl SceneRuntime {
         self.last_story_state_action = Some("export".to_string());
         self.last_story_state_path = Some(path.to_path_buf());
         self.status = format!("Story state exported: {}", path.display());
+        self.record_runtime_event("story_state", format!("export {}", path.display()));
         self.bump_generation();
     }
 
@@ -2371,6 +2413,7 @@ impl SceneRuntime {
         self.last_story_state_action = Some("import".to_string());
         self.last_story_state_path = Some(path.to_path_buf());
         self.status = format!("Story state imported: {}", path.display());
+        self.record_runtime_event("story_state", format!("import {}", path.display()));
         self.bump_generation();
     }
 
@@ -2384,6 +2427,10 @@ impl SceneRuntime {
         self.last_story_state_action = Some(action.clone());
         self.last_story_state_path = Some(path.to_path_buf());
         self.status = format!("Story state {action} failed: {}: {error}", path.display());
+        self.record_runtime_event(
+            "story_state",
+            format!("{action} failed {}", path.display()),
+        );
         self.bump_generation();
     }
 
@@ -2504,6 +2551,13 @@ impl SceneRuntime {
         });
         self.last_patch_transport = transport;
         self.last_patch_source_pane_id = source_pane_id;
+        self.record_runtime_event(
+            "patch",
+            format!(
+                "{} entity update(s), {} variable update(s)",
+                update_count, variable_count
+            ),
+        );
         self.bump_generation();
         Ok(())
     }
@@ -2521,6 +2575,7 @@ impl SceneRuntime {
             Some(pane_id) => format!("Scene patch failed from {transport} pane {pane_id}: {error}"),
             None => format!("Scene patch failed from {transport}: {error}"),
         };
+        self.record_runtime_event("patch", format!("{transport} failed: {error}"));
         self.bump_generation();
     }
 
@@ -2652,6 +2707,7 @@ impl SceneRuntime {
             active_layers: self.scene.layers.clone(),
             last_input_layer: self.last_input_layer.clone(),
             last_layer_transition: self.last_layer_transition.clone(),
+            transition_history: self.transition_history.clone(),
             selected_entity_mode: selected_entity.and_then(entity_mode),
             variables: self.scene.variables.clone(),
             rpg: self.scene.rpg.clone(),
@@ -2730,6 +2786,22 @@ impl SceneRuntime {
 
     fn bump_generation(&mut self) {
         self.generation = self.generation.saturating_add(1);
+    }
+
+    fn record_runtime_event(
+        &mut self,
+        kind: impl Into<String>,
+        detail: impl Into<String>,
+    ) {
+        self.transition_history.push(VisualRuntimeEvent {
+            kind: kind.into(),
+            detail: detail.into(),
+        });
+        const MAX_RUNTIME_EVENTS: usize = 8;
+        if self.transition_history.len() > MAX_RUNTIME_EVENTS {
+            let excess = self.transition_history.len() - MAX_RUNTIME_EVENTS;
+            self.transition_history.drain(0..excess);
+        }
     }
 
     fn render_scene(&self, cols: usize, rows: usize) -> String {
@@ -2933,6 +3005,12 @@ impl SceneRuntime {
                 transition.target_state,
                 transition.result
             ));
+        }
+        if !report.transition_history.is_empty() {
+            out.push_str("  History:\r\n");
+            for event in &report.transition_history {
+                out.push_str(&format!("    {}: {}\r\n", event.kind, event.detail));
+            }
         }
         if let Some(mode) = &report.selected_entity_mode {
             out.push_str(&format!("  Selected entity mode: {mode}\r\n"));
@@ -4436,6 +4514,39 @@ mod tests {
                 .map(|transition| transition.result.as_str()),
             Some("guard_failed")
         );
+    }
+
+    #[test]
+    fn transition_history_records_recent_runtime_events() {
+        let mut scene = VisualScene::demo();
+        scene.layers = vec![VisualLayerState {
+            layer_id: "story".to_string(),
+            state: "dialogue".to_string(),
+            label: Some("Story".to_string()),
+            input_map: Vec::new(),
+            transitions: vec![VisualLayerTransition {
+                input: "activate".to_string(),
+                target_state: "choice".to_string(),
+                conditions: Vec::new(),
+            }],
+        }];
+        let mut runtime = SceneRuntime::new(scene).unwrap();
+
+        runtime.handle_input(VisualInput::Activate);
+        runtime.mark_scene_patch_failed("mux", Some(7), "bad patch");
+
+        let report = runtime.debug_report();
+        assert!(report.transition_history.iter().any(|event| {
+            event.kind == "transition" && event.detail == "story dialogue -> choice"
+        }));
+        assert!(report.transition_history.iter().any(|event| {
+            event.kind == "patch" && event.detail == "mux failed: bad patch"
+        }));
+
+        runtime.toggle_debugger();
+        let frame = runtime.render_text_frame(120, 40);
+        assert!(frame.contains("History:"));
+        assert!(frame.contains("transition: story dialogue -> choice"));
     }
 
     #[test]
