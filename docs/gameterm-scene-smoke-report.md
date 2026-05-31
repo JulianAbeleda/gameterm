@@ -61,6 +61,31 @@ Validated named scenarios:
 
 ## Live Results
 
+### stabilization-refactor-workspace-discovery-20260531-1835
+
+Command:
+
+```sh
+cargo build -p gameterm-gui
+ci/gameterm-scene-smoke.sh --launch --scenario workspace-discovery \
+  --output /Users/julianabeleda/Desktop/gameterm-scene-smoke-workspace-discovery-20260531-183532.png
+```
+
+Result: PASS after rebuilding the GUI binary.
+
+Capture:
+
+```text
+/Users/julianabeleda/Desktop/gameterm-scene-smoke-workspace-discovery-20260531-183532.png
+```
+
+Observation: the stabilization refactor smoke used the documented onboarding
+scenario after helper/runtime NFC cleanup. The smoke helper generated a scene
+from `/Users/julianabeleda/env/gameterm`, launched an isolated
+`gameterm-gui`, foregrounded the process, opened Scene Mode, and captured a
+non-empty 1920x1080 PNG. The helper reported the launched `gameterm-gui`
+process as frontmost before capture.
+
 ### workspace-agent-live-pass-20260531-1517
 
 Command:
