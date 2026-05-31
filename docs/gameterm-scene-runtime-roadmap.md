@@ -120,6 +120,13 @@ That document defines the 100% first-pass target by runtime, authoring,
 state-model, persistence, integration, presentation, observability, and smoke
 layers.
 
+The broader product completion scope is tracked in
+[GameTerm Scene Mode Product Completion Scope](gameterm-scene-product-completion-scope.md).
+That document defines the remaining product stack above individual layer
+scopes: live pane/process context, normal-view polish, command selection,
+policy, workspace sessions, memory/relationships, multi-agent coordination,
+agent bootstrap, visual layout, and onboarding.
+
 The next product layer is scoped in
 [GameTerm Scene Mode Agent And Workspace Scope](gameterm-scene-agent-workspace-scope.md).
 That document defines the purpose, end goal, state contracts, fixture plan,
