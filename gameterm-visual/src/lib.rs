@@ -137,6 +137,10 @@ pub enum VisualStateOperation {
         key: String,
         value: VisualStateValue,
     },
+    SetLayerState {
+        layer_id: String,
+        state: String,
+    },
     IncrementVariable {
         key: String,
         amount: i64,
@@ -778,6 +782,7 @@ fn validate_rpg_state(state: &VisualRpgState) -> Result<(), VisualSceneError> {
 fn validate_state_operations(
     label: &str,
     operations: &[VisualStateOperation],
+    layers: &[VisualLayerState],
     rpg: &VisualRpgState,
 ) -> Result<(), VisualSceneError> {
     if operations.is_empty() {
@@ -793,6 +798,19 @@ fn validate_state_operations(
                 if key.trim().is_empty() {
                     return Err(VisualSceneError::EmptyResolveOperationKey {
                         label: label.to_string(),
+                    });
+                }
+            }
+            VisualStateOperation::SetLayerState { layer_id, state } => {
+                if layer_id.trim().is_empty() || state.trim().is_empty() {
+                    return Err(VisualSceneError::EmptyResolveOperationKey {
+                        label: label.to_string(),
+                    });
+                }
+                if !layers.iter().any(|layer| layer.layer_id == *layer_id) {
+                    return Err(VisualSceneError::UnknownLayer {
+                        label: label.to_string(),
+                        layer_id: layer_id.clone(),
                     });
                 }
             }
@@ -1045,6 +1063,8 @@ pub enum VisualSceneError {
     UnknownQuest { label: String, quest_id: String },
     #[error("Resolve action `{label}` references unknown relationship `{relationship}`")]
     UnknownRelationship { label: String, relationship: String },
+    #[error("Resolve action `{label}` references unknown layer `{layer_id}`")]
+    UnknownLayer { label: String, layer_id: String },
     #[error("scene mode id must be non-empty")]
     EmptyModeId,
     #[error("scene mode label must be non-empty")]
@@ -1549,7 +1569,7 @@ impl VisualScene {
                 }
             }
             if let SceneActionKind::Resolve { operations } = &choice.kind {
-                validate_state_operations(&choice.label, operations, &self.rpg)?;
+                validate_state_operations(&choice.label, operations, &self.layers, &self.rpg)?;
             }
         }
 
@@ -2140,14 +2160,21 @@ impl SceneRuntime {
         label: &str,
         operations: &[VisualStateOperation],
     ) -> Result<usize, VisualSceneError> {
-        validate_state_operations(label, operations, &self.scene.rpg)?;
+        validate_state_operations(label, operations, &self.scene.layers, &self.scene.rpg)?;
         let mut variables = self.scene.variables.clone();
+        let mut layers = self.scene.layers.clone();
         let mut rpg = self.scene.rpg.clone();
 
         for operation in operations {
             match operation {
                 VisualStateOperation::SetVariable { key, value } => {
                     set_variable(&mut variables, key, value.clone());
+                }
+                VisualStateOperation::SetLayerState { layer_id, state } => {
+                    if let Some(layer) = layers.iter_mut().find(|layer| layer.layer_id == *layer_id)
+                    {
+                        layer.state = state.trim().to_string();
+                    }
                 }
                 VisualStateOperation::IncrementVariable { key, amount } => {
                     increment_variable(&mut variables, key, *amount);
@@ -2289,9 +2316,11 @@ impl SceneRuntime {
             VisualStateEntryError::EmptyKey => VisualSceneError::EmptyVariableKey,
             VisualStateEntryError::DuplicateKey(key) => VisualSceneError::DuplicateVariableKey(key),
         })?;
+        validate_layers(&layers)?;
         validate_rpg_state(&rpg)?;
 
         self.scene.variables = variables;
+        self.scene.layers = layers;
         self.scene.rpg = rpg;
         Ok(operations.len())
     }
@@ -3592,6 +3621,120 @@ mod tests {
         assert!(snapshot.status.starts_with(
             "Resolve failed: Resolve action `Broken reward` references unknown quest"
         ));
+        assert!(!snapshot
+            .variables
+            .iter()
+            .any(|entry| entry.key == "should_not_apply"));
+    }
+
+    #[test]
+    fn resolve_action_updates_layer_state_atomically() {
+        let mut scene = VisualScene::demo();
+        scene.layers = vec![VisualLayerState {
+            layer_id: "story".to_string(),
+            state: "dialogue".to_string(),
+            label: Some("Story".to_string()),
+            input_map: Vec::new(),
+            transitions: Vec::new(),
+        }];
+        scene.choices.insert(
+            0,
+            SceneAction {
+                label: "Complete story beat".to_string(),
+                kind: SceneActionKind::Resolve {
+                    operations: vec![
+                        VisualStateOperation::SetLayerState {
+                            layer_id: "story".to_string(),
+                            state: "resolved".to_string(),
+                        },
+                        VisualStateOperation::SetVariable {
+                            key: "story_resolved".to_string(),
+                            value: VisualStateValue::Bool(true),
+                        },
+                    ],
+                },
+                conditions: Vec::new(),
+            },
+        );
+        let mut runtime = SceneRuntime::new(scene).unwrap();
+
+        runtime.activate_choice();
+
+        let snapshot = runtime.render_snapshot();
+        assert_eq!(
+            snapshot.status,
+            "Resolved 2 operation(s): Complete story beat"
+        );
+        assert_eq!(snapshot.active_layers[0].state, "resolved");
+        assert!(snapshot.variables.iter().any(|entry| {
+            entry.key == "story_resolved" && entry.value == VisualStateValue::Bool(true)
+        }));
+    }
+
+    #[test]
+    fn resolve_action_rejects_unknown_layer_without_mutation() {
+        let mut scene = VisualScene::demo();
+        scene.layers = vec![VisualLayerState {
+            layer_id: "story".to_string(),
+            state: "dialogue".to_string(),
+            label: Some("Story".to_string()),
+            input_map: Vec::new(),
+            transitions: Vec::new(),
+        }];
+        scene.choices.insert(
+            0,
+            SceneAction {
+                label: "Broken layer transition".to_string(),
+                kind: SceneActionKind::Resolve {
+                    operations: vec![
+                        VisualStateOperation::SetVariable {
+                            key: "should_not_apply".to_string(),
+                            value: VisualStateValue::Bool(true),
+                        },
+                        VisualStateOperation::SetLayerState {
+                            layer_id: "missing".to_string(),
+                            state: "resolved".to_string(),
+                        },
+                    ],
+                },
+                conditions: Vec::new(),
+            },
+        );
+
+        assert_eq!(
+            scene.validate(),
+            Err(VisualSceneError::UnknownLayer {
+                label: "Broken layer transition".to_string(),
+                layer_id: "missing".to_string()
+            })
+        );
+
+        scene.choices[0].kind = SceneActionKind::Resolve {
+            operations: vec![
+                VisualStateOperation::SetVariable {
+                    key: "should_not_apply".to_string(),
+                    value: VisualStateValue::Bool(true),
+                },
+                VisualStateOperation::SetLayerState {
+                    layer_id: "story".to_string(),
+                    state: "resolved".to_string(),
+                },
+                VisualStateOperation::AdjustStat {
+                    owner_id: Some("project-gameterm".to_string()),
+                    key: "missing".to_string(),
+                    amount: 1,
+                },
+            ],
+        };
+        let mut runtime = SceneRuntime::new(scene).unwrap();
+
+        runtime.activate_choice();
+
+        let snapshot = runtime.render_snapshot();
+        assert!(snapshot.status.starts_with(
+            "Resolve failed: Resolve action `Broken layer transition` references unknown stat"
+        ));
+        assert_eq!(snapshot.active_layers[0].state, "dialogue");
         assert!(!snapshot
             .variables
             .iter()

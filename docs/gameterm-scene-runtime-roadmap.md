@@ -91,6 +91,8 @@ Current status:
   story export coverage.
 - [x] Add GUI-dispatched story-state export/import actions, input-map
   shortcuts, visible status/debug reporting, and overlay dispatch tests.
+- [x] Add deterministic `SetLayerState` resolve operations with validation and
+  rollback coverage for variables, RPG state, and layers.
 
 ## Scene Mode Product Loop Roadmap
 

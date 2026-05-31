@@ -183,6 +183,25 @@ Relative paths resolve against GameTerm's current working directory. Input maps
 can also use `export_story_state` or `import_story_state`; those use a default
 path next to the active scene such as `default.story.json`.
 
+`Resolve` choices can update layer state in the same deterministic transaction
+as story/RPG state:
+
+```json
+{
+  "label": "Complete scene",
+  "kind": {
+    "Resolve": {
+      "operations": [
+        { "SetLayerState": { "layer_id": "story", "state": "complete" } }
+      ]
+    }
+  }
+}
+```
+
+Invalid layer ids or empty target states fail validation. Runtime failures keep
+variables, RPG state, and layers unchanged.
+
 ## State patches
 
 Scene Mode now has a versioned in-memory patch schema in `gameterm-visual`.
