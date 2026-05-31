@@ -58,6 +58,47 @@ Validated named scenarios:
 
 ## Live Results
 
+### full-suite-pass-20260531
+
+Command:
+
+```sh
+for scenario in renderer-rows guarded-input run-command-targets overlay-cleanup \
+  vertical-slice agent-lifecycle patch-inbox mux-patch process-state; do
+  stamp=$(date +%Y%m%d-%H%M%S)
+  out="/Users/julianabeleda/Desktop/gameterm-scene-smoke-${scenario}-${stamp}.png"
+  ci/gameterm-scene-smoke.sh \
+    --launch \
+    --scenario "${scenario}" \
+    --wait-before-capture 2 \
+    --capture-timeout 12 \
+    --output "${out}"
+done
+```
+
+Result: PASS for all nine named live scenarios.
+
+Captures:
+
+```text
+/Users/julianabeleda/Desktop/gameterm-scene-smoke-renderer-rows-20260531-114746.png
+/Users/julianabeleda/Desktop/gameterm-scene-smoke-guarded-input-20260531-114803.png
+/Users/julianabeleda/Desktop/gameterm-scene-smoke-run-command-targets-20260531-114822.png
+/Users/julianabeleda/Desktop/gameterm-scene-smoke-overlay-cleanup-20260531-114842.png
+/Users/julianabeleda/Desktop/gameterm-scene-smoke-vertical-slice-20260531-114900.png
+/Users/julianabeleda/Desktop/gameterm-scene-smoke-agent-lifecycle-20260531-114921.png
+/Users/julianabeleda/Desktop/gameterm-scene-smoke-patch-inbox-20260531-114941.png
+/Users/julianabeleda/Desktop/gameterm-scene-smoke-mux-patch-20260531-114958.png
+/Users/julianabeleda/Desktop/gameterm-scene-smoke-process-state-20260531-115025.png
+```
+
+Observation: every scenario reported the launched `gameterm-gui` process as
+frontmost before capture and produced a non-empty PNG. The mux-patch scenario
+discovered target pane `0` through the unique GUI class and submitted
+`patch-status.json` through the mux path. The process-state and
+agent-lifecycle scenarios wrote structured patches through auto-created inbox
+files before capture.
+
 ### renderer-rows
 
 Command:
