@@ -78,21 +78,22 @@ for scenario in renderer-rows guarded-input run-command-targets overlay-cleanup 
 done
 ```
 
-Result: PASS for all nine named live scenarios. The `authoring-loop` scenario
-was added after this pass and should be included in the next full-suite run.
+Result: PASS for all ten named live scenarios, including the authoring-loop
+scenario added after the previous full-suite run.
 
 Captures:
 
 ```text
-/Users/julianabeleda/Desktop/gameterm-scene-smoke-renderer-rows-20260531-114746.png
-/Users/julianabeleda/Desktop/gameterm-scene-smoke-guarded-input-20260531-114803.png
-/Users/julianabeleda/Desktop/gameterm-scene-smoke-run-command-targets-20260531-114822.png
-/Users/julianabeleda/Desktop/gameterm-scene-smoke-overlay-cleanup-20260531-114842.png
-/Users/julianabeleda/Desktop/gameterm-scene-smoke-vertical-slice-20260531-114900.png
-/Users/julianabeleda/Desktop/gameterm-scene-smoke-agent-lifecycle-20260531-114921.png
-/Users/julianabeleda/Desktop/gameterm-scene-smoke-patch-inbox-20260531-114941.png
-/Users/julianabeleda/Desktop/gameterm-scene-smoke-mux-patch-20260531-114958.png
-/Users/julianabeleda/Desktop/gameterm-scene-smoke-process-state-20260531-115025.png
+/Users/julianabeleda/Desktop/gameterm-scene-smoke-renderer-rows-20260531-120344.png
+/Users/julianabeleda/Desktop/gameterm-scene-smoke-guarded-input-20260531-120344.png
+/Users/julianabeleda/Desktop/gameterm-scene-smoke-run-command-targets-20260531-120344.png
+/Users/julianabeleda/Desktop/gameterm-scene-smoke-overlay-cleanup-20260531-120344.png
+/Users/julianabeleda/Desktop/gameterm-scene-smoke-vertical-slice-20260531-120344.png
+/Users/julianabeleda/Desktop/gameterm-scene-smoke-agent-lifecycle-20260531-120344.png
+/Users/julianabeleda/Desktop/gameterm-scene-smoke-authoring-loop-20260531-120344.png
+/Users/julianabeleda/Desktop/gameterm-scene-smoke-patch-inbox-20260531-120344.png
+/Users/julianabeleda/Desktop/gameterm-scene-smoke-mux-patch-20260531-120344.png
+/Users/julianabeleda/Desktop/gameterm-scene-smoke-process-state-20260531-120344.png
 ```
 
 Observation: every scenario reported the launched `gameterm-gui` process as
