@@ -114,6 +114,12 @@ state: scenes, choices, dialogue, variables, lightweight RPG records, patches,
 mux transport, mode descriptors, lifecycle hooks, and guarded input maps. The
 next roadmap should make that state useful as a repeatable product loop.
 
+The remaining first-pass completion scope is tracked in
+[GameTerm Scene Mode First-Pass Scope](gameterm-scene-first-pass-scope.md).
+That document defines the 100% first-pass target by runtime, authoring,
+state-model, persistence, integration, presentation, observability, and smoke
+layers.
+
 Priority order:
 
 1. Layered state machines.
