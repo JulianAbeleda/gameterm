@@ -48,6 +48,7 @@ implementation details.
 | First shippable Scene Mode pass | [First-Pass Scope](gameterm-scene-first-pass-scope.md) | Complete |
 | Runtime history and lower-level feature roadmap | [Runtime Roadmap](gameterm-scene-runtime-roadmap.md) | Mostly historical; keep for design context |
 | Broad product completion stack | [Product Completion Scope](gameterm-scene-product-completion-scope.md) | Active planning source |
+| Command policy second pass | [Command Policy Second-Pass Scope](gameterm-scene-command-policy-second-pass-scope.md) | Next implementation scope |
 | Live pane/process context | [Pane And Process Discovery Scope](gameterm-scene-pane-process-discovery-scope.md) | Implemented through explicit metadata |
 | Agent/Workspace authored model | [Agent And Workspace Scope](gameterm-scene-agent-workspace-scope.md) | First-pass implemented |
 | Workspace Discovery | [Workspace Discovery Scope](gameterm-scene-workspace-discovery-scope.md) | First-pass implemented |
@@ -334,10 +335,9 @@ Concrete next checklist:
 
 1. Re-read [Command Selection Scope](gameterm-scene-command-selection-scope.md).
 2. Re-read [Policy Boundaries Scope](gameterm-scene-policy-boundaries-scope.md).
-3. Scope a second-pass action model: origin, policy/risk metadata, filtering,
-   and selected-entity command visibility.
-4. Decide whether the UI is a modal command-selection mode, an overlay, or a
-   tighter normal-view command section.
+3. Use [Command Policy Second-Pass Scope](gameterm-scene-command-policy-second-pass-scope.md)
+   as the implementation plan.
+4. Start with the optional action policy schema lane.
 5. Preserve existing choice activation behavior unless a migration is scoped.
 6. Add focused render/runtime tests for policy-aware grouped or filtered
    commands.

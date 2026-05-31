@@ -92,3 +92,6 @@ Deferred:
 - schema-level action origin
 - risk metadata
 - allowlist enforcement
+
+The combined command-selection and policy second pass is scoped in
+[GameTerm Scene Command Policy Second-Pass Scope](gameterm-scene-command-policy-second-pass-scope.md).

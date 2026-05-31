@@ -118,3 +118,5 @@ Deferred:
 Recommendation: treat Product Layer 3 as complete for the current first pass.
 The next meaningful work is a combined command-selection and policy second pass
 that defines action origin, risk display, and filtering together.
+That combined work is scoped in
+[GameTerm Scene Command Policy Second-Pass Scope](gameterm-scene-command-policy-second-pass-scope.md).
