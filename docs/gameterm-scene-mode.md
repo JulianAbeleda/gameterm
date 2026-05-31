@@ -202,6 +202,21 @@ as story/RPG state:
 Invalid layer ids or empty target states fail validation. Runtime failures keep
 variables, RPG state, and layers unchanged.
 
+`ci/gameterm-scene-agent.sh` emits Scene Mode patches for agent lifecycle
+states without running a process:
+
+```sh
+ci/gameterm-scene-agent.sh status \
+  --entity-id project-harness \
+  --phase planning \
+  --message "Planning visual slice" \
+  --patch /tmp/gameterm-agent.json
+```
+
+Supported phases are `planning`, `running`, `blocked`, `complete`, and
+`failed`. The helper maps those phases onto typed process state so Scene Mode
+can render agent work as queued, running, blocked, succeeded, or failed.
+
 ## State patches
 
 Scene Mode now has a versioned in-memory patch schema in `gameterm-visual`.

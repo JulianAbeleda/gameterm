@@ -93,6 +93,8 @@ Current status:
   shortcuts, visible status/debug reporting, and overlay dispatch tests.
 - [x] Add deterministic `SetLayerState` resolve operations with validation and
   rollback coverage for variables, RPG state, and layers.
+- [x] Add an agent lifecycle patch helper for planning, running, blocked,
+  complete, and failed phases with verifier coverage.
 
 ## Scene Mode Product Loop Roadmap
 

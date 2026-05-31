@@ -120,6 +120,7 @@ run_fixture_setup_check() {
 
 run_static_checks() {
   for script in \
+    "${repo_root}/ci/gameterm-scene-agent.sh" \
     "${repo_root}/ci/gameterm-scene-author.sh" \
     "${repo_root}/ci/gameterm-scene-doctor.sh" \
     "${repo_root}/ci/gameterm-scene-init.sh" \
@@ -450,6 +451,87 @@ run_patch_check() {
   echo "scene patch: ok"
 }
 
+run_agent_check() {
+  local tmp_home planning_patch blocked_patch complete_patch inbox
+  tmp_home="$(mktemp -d /tmp/gameterm-scene-agent-verify.XXXXXX)"
+  tmp_paths+=("${tmp_home}")
+  planning_patch="${tmp_home}/patches/agent-planning.json"
+  blocked_patch="${tmp_home}/patches/agent-blocked.json"
+  complete_patch="${tmp_home}/patches/agent-complete.json"
+  inbox="${tmp_home}/inbox/scene-patch.json"
+
+  "${repo_root}/ci/gameterm-scene-agent.sh" \
+    status \
+    --entity-id project-harness \
+    --phase planning \
+    --command "plan visual slice" \
+    --message "Planning visual slice" \
+    --patch "${planning_patch}" \
+    --select >/dev/null
+  "${repo_root}/ci/gameterm-scene-patch.sh" \
+    validate \
+    --scene "${fixture_root}/default.json" \
+    --patch "${planning_patch}" >/dev/null
+  jq -e '
+    .selected_entity_id == "project-harness"
+    and .status == "Agent planning: Planning visual slice"
+    and .process_state == {
+      "entity_id": "project-harness",
+      "phase": "queued",
+      "command": "plan visual slice",
+      "message": "Planning visual slice"
+    }
+    and any(.updates[]; .entity_id == "project-harness"
+      and (.state_flags == ["agent", "agent_planning"])
+      and (.metadata | any(.[0] == "agent_phase" and .[1] == "planning")))
+  ' "${planning_patch}" >/dev/null
+
+  "${repo_root}/ci/gameterm-scene-agent.sh" \
+    status \
+    --entity-id project-harness \
+    --phase blocked \
+    --message "Waiting on credentials" \
+    --patch "${blocked_patch}" \
+    --inbox "${inbox}" >/dev/null
+  cmp "${blocked_patch}" "${inbox}"
+  jq -e '
+    .process_state.phase == "blocked"
+    and .process_state.message == "Waiting on credentials"
+  ' "${blocked_patch}" >/dev/null
+
+  "${repo_root}/ci/gameterm-scene-agent.sh" \
+    status \
+    --entity-id project-harness \
+    --phase complete \
+    --message "Finished visual slice" \
+    --patch "${complete_patch}" >/dev/null
+  jq -e '
+    .process_state.phase == "succeeded"
+    and .process_state.exit_code == 0
+    and any(.updates[]; .entity_id == "project-harness"
+      and (.state_flags == ["agent", "agent_complete"]))
+  ' "${complete_patch}" >/dev/null
+
+  set +e
+  "${repo_root}/ci/gameterm-scene-agent.sh" \
+    status \
+    --entity-id project-harness \
+    --phase paused \
+    --patch "${tmp_home}/patches/bad.json" \
+    >/tmp/gameterm-scene-agent-bad.out \
+    2>/tmp/gameterm-scene-agent-bad.err
+  agent_rc=$?
+  set -e
+  if [[ "${agent_rc}" -eq 0 ]]; then
+    echo "expected agent helper to reject unknown phase" >&2
+    exit 1
+  fi
+  grep -q -- '--phase must be planning, running, blocked, complete, or failed' \
+    /tmp/gameterm-scene-agent-bad.err
+
+  echo "agent helper: ok"
+}
+
 run_story_state_check() {
   local tmp_home
   local scene_path
@@ -515,6 +597,7 @@ run_all() {
   run_author_helper_check
   run_doctor_check
   run_patch_check
+  run_agent_check
   run_story_state_check
   run_smoke_asset_check
   for fixture in basic navigate invalid sprites missing-sprite run-command-targets layered-mode vertical-slice; do
