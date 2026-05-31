@@ -72,6 +72,8 @@ Current status:
 - [x] Scope the next Scene Mode product-loop roadmap across layered modes,
   deterministic actions, authoring, persistence, agent/process integration, and
   live smoke discipline.
+- [x] Add layered state machine model, guarded layer transitions, layer input
+  ownership, debug visibility, and a layered fixture.
 
 ## Scene Mode Product Loop Roadmap
 

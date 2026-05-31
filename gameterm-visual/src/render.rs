@@ -53,6 +53,7 @@ mod tests {
             view: VisualView::Scene,
             scene_source: VisualSceneSource::new("test", VisualSceneLoadStatus::Loaded, 0),
             active_mode: VisualModeDescriptor::default(),
+            active_layers: Vec::new(),
             selected_entity_mode: None,
             variables: Vec::new(),
             rpg: crate::VisualRpgState::default(),

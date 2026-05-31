@@ -11,7 +11,8 @@ fixtures. The script uses temporary config directories only.
 Options:
   --all                 Run all checks. This is the default.
   --fixture NAME        Run one fixture setup check: basic, navigate, invalid,
-                        sprites, missing-sprite, or run-command-targets.
+                        sprites, missing-sprite, run-command-targets, or
+                        layered-mode.
   -h, --help            Show this help.
 EOF
 }
@@ -59,6 +60,9 @@ scene_file_for_fixture() {
       ;;
     run-command-targets)
       printf '%s\n' "${fixture_root}/run-command-targets.json"
+      ;;
+    layered-mode)
+      printf '%s\n' "${fixture_root}/layered-mode.json"
       ;;
     invalid)
       printf '%s\n' "${fixture_root}/invalid.json"
@@ -447,7 +451,7 @@ run_all() {
   run_doctor_check
   run_patch_check
   run_smoke_asset_check
-  for fixture in basic navigate invalid sprites missing-sprite run-command-targets; do
+  for fixture in basic navigate invalid sprites missing-sprite run-command-targets layered-mode; do
     run_fixture_setup_check "${fixture}"
   done
   run_cargo_checks
@@ -459,7 +463,7 @@ case "${mode}" in
   all)
     run_all
     ;;
-  basic|navigate|invalid|sprites|missing-sprite|run-command-targets)
+  basic|navigate|invalid|sprites|missing-sprite|run-command-targets|layered-mode)
     run_static_checks
     run_fixture_setup_check "${mode}"
     ;;

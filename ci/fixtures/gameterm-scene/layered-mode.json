@@ -1,0 +1,65 @@
+{
+  "title": "Scene Harness Layered Mode",
+  "background": "workspace-map",
+  "width": 12,
+  "height": 7,
+  "mode": {
+    "mode_id": "workspace",
+    "label": "Workspace",
+    "description": "Layered mode fixture",
+    "scene_profile": "scene",
+    "allowed_actions": ["Inspect", "Navigate"]
+  },
+  "layers": [
+    {
+      "layer_id": "ui",
+      "state": "scene",
+      "label": "UI",
+      "input_map": [
+        {
+          "input": "other",
+          "action": "run_update_hooks"
+        }
+      ]
+    },
+    {
+      "layer_id": "story",
+      "state": "dialogue",
+      "label": "Story",
+      "transitions": [
+        {
+          "input": "activate",
+          "target_state": "choice",
+          "conditions": [
+            {
+              "variable": "active_track",
+              "equals": { "Text": "visual-state" }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variables": [
+    {
+      "key": "active_track",
+      "value": { "Text": "visual-state" }
+    }
+  ],
+  "entities": [
+    {
+      "id": "layered-project",
+      "kind": "Project",
+      "label": "Layered Runtime",
+      "position": { "x": 3, "y": 2 },
+      "sprite": "project_core",
+      "state_flags": ["layered"],
+      "metadata": [["mode", "workspace"]]
+    }
+  ],
+  "dialogue_speaker": "Harness",
+  "dialogue": "This fixture exercises layered state machines.",
+  "choices": [
+    { "label": "Inspect layered entity", "kind": "Inspect" }
+  ]
+}

@@ -227,6 +227,35 @@ pub struct VisualInputBinding {
     pub conditions: Vec<VisualCondition>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VisualLayerState {
+    pub layer_id: String,
+    pub state: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub input_map: Vec<VisualInputBinding>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub transitions: Vec<VisualLayerTransition>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VisualLayerTransition {
+    pub input: String,
+    pub target_state: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub conditions: Vec<VisualCondition>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VisualLayerTransitionReport {
+    pub layer_id: String,
+    pub input: String,
+    pub from_state: String,
+    pub target_state: String,
+    pub result: String,
+}
+
 impl Default for VisualModeDescriptor {
     fn default() -> Self {
         default_scene_mode()
@@ -241,6 +270,8 @@ pub struct VisualScene {
     pub height: usize,
     #[serde(default, skip_serializing_if = "is_default_scene_mode")]
     pub mode: VisualModeDescriptor,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub layers: Vec<VisualLayerState>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub variables: Vec<VisualStateEntry>,
     #[serde(default, skip_serializing_if = "is_empty_rpg_state")]
@@ -325,6 +356,7 @@ pub struct VisualRenderSnapshot {
     pub view: VisualView,
     pub scene_source: VisualSceneSource,
     pub active_mode: VisualModeDescriptor,
+    pub active_layers: Vec<VisualLayerState>,
     pub selected_entity_mode: Option<String>,
     pub variables: Vec<VisualStateEntry>,
     pub rpg: VisualRpgState,
@@ -359,6 +391,9 @@ pub struct VisualSceneDebugReport {
     pub active_mode_default_transition: Option<String>,
     pub active_mode_lifecycle: VisualModeLifecycle,
     pub active_mode_input_map: Vec<VisualInputBinding>,
+    pub active_layers: Vec<VisualLayerState>,
+    pub last_input_layer: Option<String>,
+    pub last_layer_transition: Option<VisualLayerTransitionReport>,
     pub selected_entity_mode: Option<String>,
     pub variables: Vec<VisualStateEntry>,
     pub rpg: VisualRpgState,
@@ -495,6 +530,84 @@ fn validate_dialogue_lines(lines: &[VisualDialogueLine]) -> Result<(), VisualDia
         }
         if line.text.trim().is_empty() {
             return Err(VisualDialogueLineError::EmptyText { index });
+        }
+    }
+    Ok(())
+}
+
+fn validate_layers(layers: &[VisualLayerState]) -> Result<(), VisualSceneError> {
+    let mut layer_ids = HashSet::new();
+    for layer in layers {
+        if layer.layer_id.trim().is_empty() {
+            return Err(VisualSceneError::EmptyLayerId);
+        }
+        if !layer_ids.insert(layer.layer_id.as_str()) {
+            return Err(VisualSceneError::DuplicateLayerId(layer.layer_id.clone()));
+        }
+        if layer.state.trim().is_empty() {
+            return Err(VisualSceneError::EmptyLayerState {
+                layer_id: layer.layer_id.clone(),
+            });
+        }
+        for binding in &layer.input_map {
+            if binding.input.trim().is_empty() {
+                return Err(VisualSceneError::EmptyLayerInputBindingInput {
+                    layer_id: layer.layer_id.clone(),
+                });
+            }
+            if binding.action.trim().is_empty() {
+                return Err(VisualSceneError::EmptyLayerInputBindingAction {
+                    layer_id: layer.layer_id.clone(),
+                });
+            }
+            if !is_supported_mode_input(binding.input.trim()) {
+                return Err(VisualSceneError::UnknownLayerInputBindingInput {
+                    layer_id: layer.layer_id.clone(),
+                    input: binding.input.clone(),
+                });
+            }
+            if !is_supported_mode_input_action(binding.action.trim()) {
+                return Err(VisualSceneError::UnknownLayerInputBindingAction {
+                    layer_id: layer.layer_id.clone(),
+                    action: binding.action.clone(),
+                });
+            }
+            if binding
+                .conditions
+                .iter()
+                .any(|condition| condition.variable.trim().is_empty())
+            {
+                return Err(VisualSceneError::EmptyLayerInputBindingConditionVariable {
+                    layer_id: layer.layer_id.clone(),
+                });
+            }
+        }
+        for transition in &layer.transitions {
+            if transition.input.trim().is_empty() {
+                return Err(VisualSceneError::EmptyLayerTransitionInput {
+                    layer_id: layer.layer_id.clone(),
+                });
+            }
+            if transition.target_state.trim().is_empty() {
+                return Err(VisualSceneError::EmptyLayerTransitionTarget {
+                    layer_id: layer.layer_id.clone(),
+                });
+            }
+            if !is_supported_mode_input(transition.input.trim()) {
+                return Err(VisualSceneError::UnknownLayerTransitionInput {
+                    layer_id: layer.layer_id.clone(),
+                    input: transition.input.clone(),
+                });
+            }
+            if transition
+                .conditions
+                .iter()
+                .any(|condition| condition.variable.trim().is_empty())
+            {
+                return Err(VisualSceneError::EmptyLayerTransitionConditionVariable {
+                    layer_id: layer.layer_id.clone(),
+                });
+            }
         }
     }
     Ok(())
@@ -739,6 +852,30 @@ pub enum VisualSceneError {
     UnknownModeInputBindingAction(String),
     #[error("scene mode input binding condition variable must be non-empty")]
     EmptyModeInputBindingConditionVariable,
+    #[error("scene layer id must be non-empty")]
+    EmptyLayerId,
+    #[error("duplicate scene layer id `{0}`")]
+    DuplicateLayerId(String),
+    #[error("scene layer `{layer_id}` state must be non-empty")]
+    EmptyLayerState { layer_id: String },
+    #[error("scene layer `{layer_id}` input binding input must be non-empty")]
+    EmptyLayerInputBindingInput { layer_id: String },
+    #[error("scene layer `{layer_id}` input binding action must be non-empty")]
+    EmptyLayerInputBindingAction { layer_id: String },
+    #[error("scene layer `{layer_id}` has unknown input binding input `{input}`")]
+    UnknownLayerInputBindingInput { layer_id: String, input: String },
+    #[error("scene layer `{layer_id}` has unknown input binding action `{action}`")]
+    UnknownLayerInputBindingAction { layer_id: String, action: String },
+    #[error("scene layer `{layer_id}` input binding condition variable must be non-empty")]
+    EmptyLayerInputBindingConditionVariable { layer_id: String },
+    #[error("scene layer `{layer_id}` transition input must be non-empty")]
+    EmptyLayerTransitionInput { layer_id: String },
+    #[error("scene layer `{layer_id}` transition target state must be non-empty")]
+    EmptyLayerTransitionTarget { layer_id: String },
+    #[error("scene layer `{layer_id}` has unknown transition input `{input}`")]
+    UnknownLayerTransitionInput { layer_id: String, input: String },
+    #[error("scene layer `{layer_id}` transition condition variable must be non-empty")]
+    EmptyLayerTransitionConditionVariable { layer_id: String },
     #[error("scene variable key must be non-empty")]
     EmptyVariableKey,
     #[error("duplicate scene variable key `{0}`")]
@@ -1108,6 +1245,7 @@ impl VisualScene {
                 return Err(VisualSceneError::EmptyModeInputBindingConditionVariable);
             }
         }
+        validate_layers(&self.layers)?;
         validate_state_entries(&self.variables).map_err(|err| match err {
             VisualStateEntryError::EmptyKey => VisualSceneError::EmptyVariableKey,
             VisualStateEntryError::DuplicateKey(key) => VisualSceneError::DuplicateVariableKey(key),
@@ -1191,6 +1329,7 @@ impl VisualScene {
                 lifecycle: VisualModeLifecycle::default(),
                 input_map: Vec::new(),
             },
+            layers: Vec::new(),
             variables: vec![
                 VisualStateEntry {
                     key: "conversation_unlocked".to_string(),
@@ -1326,6 +1465,8 @@ pub struct SceneRuntime {
     pending_action: Option<VisualActionRequest>,
     last_patch_transport: Option<String>,
     last_patch_source_pane_id: Option<usize>,
+    last_input_layer: Option<String>,
+    last_layer_transition: Option<VisualLayerTransitionReport>,
 }
 
 impl SceneRuntime {
@@ -1365,6 +1506,8 @@ impl SceneRuntime {
             pending_action: None,
             last_patch_transport: None,
             last_patch_source_pane_id: None,
+            last_input_layer: None,
+            last_layer_transition: None,
         };
         runtime.run_mode_enter_hooks();
         Ok(runtime)
@@ -1462,6 +1605,8 @@ impl SceneRuntime {
         self.scene_source = scene_source;
         self.dialogue_index = dialogue_index;
         self.dialogue_history = dialogue_history;
+        self.last_input_layer = None;
+        self.last_layer_transition = None;
         self.status = "Ready".to_string();
 
         self.selected_entity = selected_entity_id
@@ -1548,6 +1693,74 @@ impl SceneRuntime {
             }
             _ => VisualModeOutcome::Continue,
         }
+    }
+
+    fn handle_layer_input(&mut self, input: VisualInput) -> Option<VisualModeOutcome> {
+        let input_key = input.binding_key();
+        for layer_index in 0..self.scene.layers.len() {
+            let transition = self.scene.layers[layer_index]
+                .transitions
+                .iter()
+                .find(|transition| transition.input.trim() == input_key)
+                .cloned();
+            if let Some(transition) = transition {
+                let layer_id = self.scene.layers[layer_index].layer_id.clone();
+                let from_state = self.scene.layers[layer_index].state.clone();
+                let target_state = transition.target_state.trim().to_string();
+                self.last_input_layer = Some(layer_id.clone());
+                if !conditions_match(&transition.conditions, &self.scene.variables) {
+                    self.last_layer_transition = Some(VisualLayerTransitionReport {
+                        layer_id: layer_id.clone(),
+                        input: input_key.to_string(),
+                        from_state,
+                        target_state,
+                        result: "guard_failed".to_string(),
+                    });
+                    self.status = format!(
+                        "Layer transition unavailable: {} {}",
+                        layer_id,
+                        condition_guard_detail(&transition.conditions)
+                            .unwrap_or_else(|| "guard condition not met".to_string())
+                    );
+                    self.bump_generation();
+                    return Some(VisualModeOutcome::Continue);
+                }
+                self.scene.layers[layer_index].state = target_state.clone();
+                self.last_layer_transition = Some(VisualLayerTransitionReport {
+                    layer_id: layer_id.clone(),
+                    input: input_key.to_string(),
+                    from_state: from_state.clone(),
+                    target_state: target_state.clone(),
+                    result: "transitioned".to_string(),
+                });
+                self.status =
+                    format!("Layer {layer_id} transitioned: {from_state} -> {target_state}");
+                self.bump_generation();
+                return Some(VisualModeOutcome::Continue);
+            }
+
+            let binding = self.scene.layers[layer_index]
+                .input_map
+                .iter()
+                .find(|binding| binding.input.trim() == input_key)
+                .cloned();
+            if let Some(binding) = binding {
+                let layer_id = self.scene.layers[layer_index].layer_id.clone();
+                self.last_input_layer = Some(layer_id.clone());
+                if !conditions_match(&binding.conditions, &self.scene.variables) {
+                    self.status = format!(
+                        "Layer input unavailable: {} {}",
+                        layer_id,
+                        condition_guard_detail(&binding.conditions)
+                            .unwrap_or_else(|| "guard condition not met".to_string())
+                    );
+                    self.bump_generation();
+                    return Some(VisualModeOutcome::Continue);
+                }
+                return Some(self.run_mode_input_action(binding.action.trim()));
+            }
+        }
+        None
     }
 
     pub fn select_next_entity(&mut self) {
@@ -1845,6 +2058,7 @@ impl SceneRuntime {
             view: self.view,
             scene_source: self.scene_source.clone(),
             active_mode: self.scene.mode.clone(),
+            active_layers: self.scene.layers.clone(),
             selected_entity_mode,
             variables: self.scene.variables.clone(),
             rpg: self.scene.rpg.clone(),
@@ -1891,6 +2105,9 @@ impl SceneRuntime {
             active_mode_default_transition: self.scene.mode.default_transition.clone(),
             active_mode_lifecycle: self.scene.mode.lifecycle.clone(),
             active_mode_input_map: self.scene.mode.input_map.clone(),
+            active_layers: self.scene.layers.clone(),
+            last_input_layer: self.last_input_layer.clone(),
+            last_layer_transition: self.last_layer_transition.clone(),
             selected_entity_mode: selected_entity.and_then(entity_mode),
             variables: self.scene.variables.clone(),
             rpg: self.scene.rpg.clone(),
@@ -2125,6 +2342,33 @@ impl SceneRuntime {
                     binding.input, binding.action, guard
                 ));
             }
+        }
+        if !report.active_layers.is_empty() {
+            out.push_str("  Layers:\r\n");
+            for layer in &report.active_layers {
+                let label = layer
+                    .label
+                    .as_ref()
+                    .map(|label| format!(" label={label}"))
+                    .unwrap_or_default();
+                out.push_str(&format!(
+                    "    {} state={}{}\r\n",
+                    layer.layer_id, layer.state, label
+                ));
+            }
+        }
+        if let Some(layer) = &report.last_input_layer {
+            out.push_str(&format!("  Last input layer: {layer}\r\n"));
+        }
+        if let Some(transition) = &report.last_layer_transition {
+            out.push_str(&format!(
+                "  Last transition: {} {} {} -> {} ({})\r\n",
+                transition.layer_id,
+                transition.input,
+                transition.from_state,
+                transition.target_state,
+                transition.result
+            ));
         }
         if let Some(mode) = &report.selected_entity_mode {
             out.push_str(&format!("  Selected entity mode: {mode}\r\n"));
@@ -2386,6 +2630,10 @@ impl VisualMode for SceneRuntime {
     }
 
     fn handle_input(&mut self, input: VisualInput) -> VisualModeOutcome {
+        if let Some(outcome) = self.handle_layer_input(input) {
+            return outcome;
+        }
+
         if let Some(binding) = self
             .scene
             .mode
@@ -2454,6 +2702,7 @@ mod tests {
             view: VisualView::Scene,
             scene_source: VisualSceneSource::new("fixture", VisualSceneLoadStatus::Loaded, 1),
             active_mode: default_scene_mode(),
+            active_layers: Vec::new(),
             selected_entity_mode: None,
             variables: Vec::new(),
             rpg: VisualRpgState::default(),
@@ -2847,6 +3096,18 @@ mod tests {
     }
 
     #[test]
+    fn scene_fixture_layered_mode_loads_active_layers() {
+        let scene = VisualScene::load_from_path(scene_fixture_path("layered-mode.json")).unwrap();
+        let runtime = SceneRuntime::new(scene).unwrap();
+        let snapshot = runtime.render_snapshot();
+
+        assert_eq!(snapshot.title, "Scene Harness Layered Mode");
+        assert_eq!(snapshot.active_layers.len(), 2);
+        assert_eq!(snapshot.active_layers[0].layer_id, "ui");
+        assert_eq!(snapshot.active_layers[1].layer_id, "story");
+    }
+
+    #[test]
     fn scene_fixture_invalid_is_rejected() {
         assert!(matches!(
             VisualScene::load_from_path(scene_fixture_path("invalid.json")),
@@ -3078,6 +3339,156 @@ mod tests {
             Err(VisualSceneError::UnknownModeInputBindingAction(
                 "jump".to_string()
             ))
+        );
+    }
+
+    #[test]
+    fn layered_state_defaults_empty_for_existing_scenes() {
+        let scene = VisualScene::from_json(
+            r#"{
+              "title": "Legacy",
+              "background": "floor",
+              "width": 2,
+              "height": 2,
+              "entities": [],
+              "dialogue_speaker": "System",
+              "dialogue": "Ready",
+              "choices": []
+            }"#,
+        )
+        .unwrap();
+        let runtime = SceneRuntime::new(scene).unwrap();
+
+        assert!(runtime.render_snapshot().active_layers.is_empty());
+        assert!(runtime.debug_report().active_layers.is_empty());
+    }
+
+    #[test]
+    fn layered_state_transition_updates_layer_and_debug_report() {
+        let mut scene = VisualScene::demo();
+        scene.layers = vec![VisualLayerState {
+            layer_id: "story".to_string(),
+            state: "dialogue".to_string(),
+            label: Some("Story".to_string()),
+            input_map: Vec::new(),
+            transitions: vec![VisualLayerTransition {
+                input: "activate".to_string(),
+                target_state: "choice".to_string(),
+                conditions: Vec::new(),
+            }],
+        }];
+        let mut runtime = SceneRuntime::new(scene).unwrap();
+
+        let outcome = runtime.handle_input(VisualInput::Activate);
+
+        assert_eq!(outcome, VisualModeOutcome::Continue);
+        assert_eq!(runtime.render_snapshot().active_layers[0].state, "choice");
+        assert_eq!(
+            runtime.debug_report().last_input_layer.as_deref(),
+            Some("story")
+        );
+        assert_eq!(
+            runtime
+                .debug_report()
+                .last_layer_transition
+                .as_ref()
+                .map(|transition| transition.result.as_str()),
+            Some("transitioned")
+        );
+
+        runtime.toggle_debugger();
+        let frame = runtime.render_text_frame(120, 40);
+        assert!(frame.contains("Layers:"));
+        assert!(frame.contains("story state=choice label=Story"));
+        assert!(frame.contains("Last transition: story activate dialogue -> choice (transitioned)"));
+    }
+
+    #[test]
+    fn guarded_layer_transition_fails_without_mutation() {
+        let mut scene = VisualScene::demo();
+        scene.layers = vec![VisualLayerState {
+            layer_id: "agent".to_string(),
+            state: "idle".to_string(),
+            label: None,
+            input_map: Vec::new(),
+            transitions: vec![VisualLayerTransition {
+                input: "other".to_string(),
+                target_state: "running".to_string(),
+                conditions: vec![VisualCondition {
+                    variable: "active_track".to_string(),
+                    equals: VisualStateValue::Text("agent".to_string()),
+                }],
+            }],
+        }];
+        let mut runtime = SceneRuntime::new(scene).unwrap();
+
+        let outcome = runtime.handle_input(VisualInput::Other);
+
+        assert_eq!(outcome, VisualModeOutcome::Continue);
+        assert_eq!(runtime.render_snapshot().active_layers[0].state, "idle");
+        assert_eq!(
+            runtime.render_snapshot().status,
+            "Layer transition unavailable: agent requires active_track=agent"
+        );
+        assert_eq!(
+            runtime
+                .debug_report()
+                .last_layer_transition
+                .as_ref()
+                .map(|transition| transition.result.as_str()),
+            Some("guard_failed")
+        );
+    }
+
+    #[test]
+    fn layered_input_map_owns_input_before_mode_map() {
+        let mut scene = VisualScene::demo();
+        scene.mode.input_map = vec![VisualInputBinding {
+            input: "other".to_string(),
+            action: "toggle_debug".to_string(),
+            conditions: Vec::new(),
+        }];
+        scene.layers = vec![VisualLayerState {
+            layer_id: "ui".to_string(),
+            state: "scene".to_string(),
+            label: None,
+            input_map: vec![VisualInputBinding {
+                input: "other".to_string(),
+                action: "run_update_hooks".to_string(),
+                conditions: Vec::new(),
+            }],
+            transitions: Vec::new(),
+        }];
+        scene.mode.lifecycle.update_status = Some("Layer handled update".to_string());
+        let mut runtime = SceneRuntime::new(scene).unwrap();
+
+        let outcome = runtime.handle_input(VisualInput::Other);
+
+        assert_eq!(outcome, VisualModeOutcome::Continue);
+        assert_eq!(runtime.view(), VisualView::Scene);
+        assert_eq!(runtime.render_snapshot().status, "Layer handled update");
+        assert_eq!(
+            runtime.debug_report().last_input_layer.as_deref(),
+            Some("ui")
+        );
+    }
+
+    #[test]
+    fn scene_rejects_invalid_layer_state() {
+        let mut scene = VisualScene::demo();
+        scene.layers = vec![VisualLayerState {
+            layer_id: "story".to_string(),
+            state: " ".to_string(),
+            label: None,
+            input_map: Vec::new(),
+            transitions: Vec::new(),
+        }];
+
+        assert_eq!(
+            scene.validate(),
+            Err(VisualSceneError::EmptyLayerState {
+                layer_id: "story".to_string()
+            })
         );
     }
 
