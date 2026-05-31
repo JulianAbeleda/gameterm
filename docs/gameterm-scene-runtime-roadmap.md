@@ -83,6 +83,9 @@ Current status:
   helpers.
 - [x] Add named smoke scenario registry, documentation, and process-state smoke
   wiring.
+- [x] Add next-layer smoke report and artifact convention; first live attempt
+  captured the workspace instead of Scene Mode, so foreground/open-scene
+  automation remains a follow-up.
 
 ## Scene Mode Product Loop Roadmap
 
