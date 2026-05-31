@@ -728,13 +728,15 @@ run_agent_check() {
 }
 
 run_workspace_discovery_check() {
-  local tmp_home git_scene non_git_dir non_git_scene patch_path install_home
+  local tmp_home git_scene pane_scene non_git_dir non_git_scene patch_path pane_patch_path install_home
   tmp_home="$(mktemp -d /tmp/gameterm-scene-workspace-verify.XXXXXX)"
   tmp_paths+=("${tmp_home}")
   git_scene="${tmp_home}/git-workspace.json"
+  pane_scene="${tmp_home}/pane-workspace.json"
   non_git_dir="${tmp_home}/non-git"
   non_git_scene="${tmp_home}/non-git-workspace.json"
   patch_path="${tmp_home}/workspace.patch.json"
+  pane_patch_path="${tmp_home}/workspace-pane.patch.json"
   install_home="${tmp_home}/config"
 
   "${repo_root}/ci/gameterm-scene-workspace.sh" \
@@ -756,9 +758,36 @@ run_workspace_discovery_check() {
       and (.metadata | any(.[0] == "repo_status")))
     and any(.entities[]; .id == "discovered-project"
       and (.metadata | any(.[0] == "language" and .[1] == "rust")))
+    and any(.entities[]; .id == "discovered-pane"
+      and (.metadata | any(.[0] == "context" and .[1] == "absent")))
     and any(.entities[]; .id == "discovered-process")
     and any(.choices[]; .label == "Run verification")
   ' "${git_scene}" >/dev/null
+
+  "${repo_root}/ci/gameterm-scene-workspace.sh" \
+    discover \
+    --cwd "${repo_root}" \
+    --pane-id 231 \
+    --mux-window-id 7 \
+    --pane-cwd "${repo_root}" \
+    --foreground-process-name zsh \
+    --foreground-process-path /bin/zsh \
+    --pane-progress None \
+    --scene-output "${pane_scene}" \
+    --force >/dev/null
+  "${repo_root}/ci/gameterm-scene-author.sh" validate "${pane_scene}" >/dev/null
+  jq -e '
+    any(.variables[]; .key == "pane_context" and .value == {"Text": "provided"})
+    and any(.variables[]; .key == "active_pane_id" and .value == {"Number": 231})
+    and any(.variables[]; .key == "process_phase" and .value == {"Text": "running"})
+    and any(.entities[]; .id == "discovered-pane"
+      and (.metadata | any(.[0] == "pane_id" and .[1] == "231"))
+      and (.metadata | any(.[0] == "mux_window_id" and .[1] == "7")))
+    and any(.entities[]; .id == "discovered-process"
+      and .label == "zsh"
+      and (.state_flags | index("running"))
+      and (.metadata | any(.[0] == "foreground_process_path" and .[1] == "/bin/zsh")))
+  ' "${pane_scene}" >/dev/null
 
   mkdir -p "${non_git_dir}"
   printf '# Temporary workspace\n' >"${non_git_dir}/README.md"
@@ -786,6 +815,32 @@ run_workspace_discovery_check() {
     and (.variables | any(.key == "repo_status"))
     and any(.updates[]; .entity_id == "workspace-gameterm")
   ' "${patch_path}" >/dev/null
+
+  "${repo_root}/ci/gameterm-scene-workspace.sh" \
+    patch \
+    --cwd "${repo_root}" \
+    --pane-id 231 \
+    --mux-window-id 7 \
+    --pane-cwd "${repo_root}" \
+    --foreground-process-name zsh \
+    --foreground-process-path /bin/zsh \
+    --pane-progress None \
+    --patch-output "${pane_patch_path}" \
+    --force >/dev/null
+  "${repo_root}/ci/gameterm-scene-patch.sh" validate \
+    --scene "${fixture_root}/workspace-agent.json" \
+    --patch "${pane_patch_path}" >/dev/null
+  jq -e '
+    .process_state.entity_id == "scene-verify-process"
+    and .process_state.phase == "running"
+    and .process_state.command == "zsh"
+    and (.variables | any(.key == "active_pane_id" and .value == {"Number": 231}))
+    and any(.updates[]; .entity_id == "workspace-gameterm"
+      and (.metadata | any(.[0] == "pane_cwd")))
+    and any(.updates[]; .entity_id == "scene-verify-process"
+      and .label == "zsh"
+      and (.metadata | any(.[0] == "pane_progress" and .[1] == "None")))
+  ' "${pane_patch_path}" >/dev/null
 
   "${repo_root}/ci/gameterm-scene-workspace.sh" \
     discover \
