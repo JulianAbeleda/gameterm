@@ -77,7 +77,7 @@ Fixtures:
   basic, navigate, invalid, sprites, missing-sprite
 
 Templates:
-  agent-workflow, project-dashboard
+  agent-workflow, project-dashboard, visual-novel, layered-mode, rpg-quest
 EOF
 }
 
@@ -408,6 +408,187 @@ EOF
           {
             label: "Open roadmap",
             kind: { OpenFile: { path: "docs/gameterm-scene-runtime-roadmap.md" } }
+          }
+        ]
+      }' | write_json "${target}"
+      ;;
+    visual-novel)
+      jq -n '{
+        title: "Visual Novel Branch",
+        background: "workspace-map",
+        width: 14,
+        height: 8,
+        mode: {
+          mode_id: "conversation",
+          label: "Conversation",
+          description: "Dialogue-first Scene Mode template",
+          scene_profile: "dialogue",
+          allowed_actions: ["Inspect", "AdvanceDialogue", "Resolve"]
+        },
+        variables: [
+          { key: "met_guide", value: { Bool: false } }
+        ],
+        entities: [
+          {
+            id: "guide",
+            kind: "Agent",
+            label: "Guide",
+            position: { x: 6, y: 3 },
+            sprite: "agent_idle",
+            state_flags: ["speaking"],
+            metadata: [["mode", "conversation"]]
+          }
+        ],
+        dialogue_speaker: "Guide",
+        dialogue: "Choose a branch.",
+        dialogue_lines: [
+          { speaker: "Guide", text: "Welcome to Scene Mode.", portrait: "agent_idle" },
+          { speaker: "Guide", text: "The workspace path is open.", portrait: "agent_idle" },
+          { speaker: "Guide", text: "The memory path is still locked.", portrait: "agent_idle" }
+        ],
+        choices: [
+          {
+            label: "Mark introduction complete",
+            kind: {
+              Resolve: {
+                operations: [
+                  { SetVariable: { key: "met_guide", value: { Bool: true } } }
+                ]
+              }
+            }
+          },
+          {
+            label: "Advance workspace branch",
+            kind: { AdvanceDialogue: { target: 1 } },
+            conditions: [
+              { variable: "met_guide", equals: { Bool: true } }
+            ]
+          }
+        ]
+      }' | write_json "${target}"
+      ;;
+    layered-mode)
+      jq -n '{
+        title: "Layered Mode Template",
+        background: "workspace-map",
+        width: 14,
+        height: 8,
+        mode: {
+          mode_id: "workspace",
+          label: "Workspace",
+          description: "Layered state machine authoring template",
+          scene_profile: "scene",
+          allowed_actions: ["Inspect", "Resolve"]
+        },
+        layers: [
+          {
+            layer_id: "ui",
+            state: "scene",
+            label: "UI",
+            input_map: [
+              { input: "other", action: "toggle_debug" }
+            ]
+          },
+          {
+            layer_id: "story",
+            state: "dialogue",
+            label: "Story",
+            transitions: [
+              {
+                input: "activate",
+                target_state: "choice",
+                conditions: [
+                  { variable: "story_ready", equals: { Bool: true } }
+                ]
+              }
+            ]
+          }
+        ],
+        variables: [
+          { key: "story_ready", value: { Bool: true } }
+        ],
+        entities: [
+          {
+            id: "layered-entity",
+            kind: "Project",
+            label: "Layered Entity",
+            position: { x: 4, y: 3 },
+            sprite: "project_core",
+            state_flags: ["layered"],
+            metadata: [["mode", "workspace"]]
+          }
+        ],
+        dialogue_speaker: "System",
+        dialogue: "Layered input and transition state are active.",
+        choices: [
+          { label: "Inspect selected entity", kind: "Inspect" }
+        ]
+      }' | write_json "${target}"
+      ;;
+    rpg-quest)
+      jq -n '{
+        title: "RPG Quest Template",
+        background: "workspace-map",
+        width: 14,
+        height: 8,
+        variables: [
+          { key: "quest_reward_claimed", value: { Bool: false } }
+        ],
+        rpg: {
+          inventory: [
+            { item_id: "scene-token", label: "Scene Token", count: 1 }
+          ],
+          stats: [
+            { owner_id: "player", key: "focus", value: { Number: 1 } }
+          ],
+          quests: [
+            {
+              quest_id: "first-quest",
+              label: "First Quest",
+              stage: 1,
+              completed: false,
+              journal: "Find the memory key."
+            }
+          ],
+          relationships: [
+            {
+              source_id: "player",
+              target_id: "guide",
+              kind: "trust",
+              value: 1
+            }
+          ]
+        },
+        entities: [
+          {
+            id: "guide",
+            kind: "Agent",
+            label: "Guide",
+            position: { x: 5, y: 3 },
+            sprite: "agent_idle",
+            state_flags: ["quest-giver"],
+            metadata: [["mode", "conversation"]]
+          }
+        ],
+        dialogue_speaker: "Guide",
+        dialogue: "Claim the quest reward to update inventory, stats, quest, and relationship state.",
+        choices: [
+          {
+            label: "Claim quest reward",
+            kind: {
+              Resolve: {
+                operations: [
+                  { SetVariable: { key: "quest_reward_claimed", value: { Bool: true } } },
+                  { AddInventory: { item: { item_id: "memory-key", label: "Memory Key", count: 1 } } },
+                  { AdjustStat: { owner_id: "player", key: "focus", amount: 1 } },
+                  { AdvanceQuest: { quest_id: "first-quest", stage: 2 } },
+                  { AdjustRelationship: { source_id: "player", target_id: "guide", kind: "trust", amount: 1 } }
+                ]
+              }
+            },
+            conditions: [
+              { variable: "quest_reward_claimed", equals: { Bool: false } }
+            ]
           }
         ]
       }' | write_json "${target}"
@@ -772,7 +953,7 @@ case "${command}" in
       usage >&2
       exit 2
     fi
-    printf '%s\n' agent-workflow project-dashboard
+    printf '%s\n' agent-workflow project-dashboard visual-novel layered-mode rpg-quest
     ;;
   -h|--help)
     usage

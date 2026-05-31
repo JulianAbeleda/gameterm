@@ -76,6 +76,8 @@ Current status:
   ownership, debug visibility, and a layered fixture.
 - [x] Add deterministic state action resolution for variables, inventory,
   stats, quests, and relationships.
+- [x] Add visual novel, layered mode, and RPG quest authoring templates with
+  verification coverage.
 
 ## Scene Mode Product Loop Roadmap
 

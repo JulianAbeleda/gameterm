@@ -169,6 +169,9 @@ run_author_helper_check() {
   grep -qx navigate <<<"${fixtures}"
   templates="$("${repo_root}/ci/gameterm-scene-author.sh" list-templates)"
   grep -qx agent-workflow <<<"${templates}"
+  grep -qx visual-novel <<<"${templates}"
+  grep -qx layered-mode <<<"${templates}"
+  grep -qx rpg-quest <<<"${templates}"
   "${repo_root}/ci/gameterm-scene-author.sh" \
     install-fixture \
     --config-home "${tmp_home}" \
@@ -189,6 +192,14 @@ run_author_helper_check() {
     "${tmp_home}/gameterm/scenes/template.json" >/dev/null
   "${repo_root}/ci/gameterm-scene-author.sh" \
     validate "${tmp_home}/gameterm/scenes/template.json" >/dev/null
+  for template in visual-novel layered-mode rpg-quest; do
+    "${repo_root}/ci/gameterm-scene-author.sh" \
+      new-template \
+      --template "${template}" \
+      "${tmp_home}/gameterm/scenes/${template}.json" >/dev/null
+    "${repo_root}/ci/gameterm-scene-author.sh" \
+      validate "${tmp_home}/gameterm/scenes/${template}.json" >/dev/null
+  done
   "${repo_root}/ci/gameterm-scene-author.sh" \
     add-entity \
     --id author-task \
