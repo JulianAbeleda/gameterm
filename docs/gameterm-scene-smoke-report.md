@@ -51,6 +51,7 @@ Validated named scenarios:
 - `run-command-targets`
 - `overlay-cleanup`
 - `vertical-slice`
+- `agent-lifecycle`
 - `patch-inbox`
 - `mux-patch`
 - `process-state`
@@ -186,6 +187,32 @@ playable loop through brief acceptance, launch-kit preparation, loop
 completion, and ending dialogue. The capture shows
 `brief_accepted=true`, `launch_ready=true`, `agent_phase=complete`, and the
 `Read ending` choice selected.
+
+### agent-lifecycle
+
+Command:
+
+```sh
+ci/gameterm-scene-smoke.sh \
+  --launch \
+  --scenario agent-lifecycle \
+  --wait-before-capture 2 \
+  --capture-timeout 12 \
+  --output /Users/julianabeleda/Desktop/gameterm-scene-smoke-agent-lifecycle-20260531-113121.png
+```
+
+Result: PASS.
+
+Capture:
+
+```text
+/Users/julianabeleda/Desktop/gameterm-scene-smoke-agent-lifecycle-20260531-113121.png
+```
+
+Observation: the scenario emits `planning`, `blocked`, and `complete` patches
+through the auto-created inbox. The capture shows `flags=agent,
+agent_complete` on the selected entity and `Status: Agent complete: Finished
+visual slice`.
 
 ### patch-inbox
 

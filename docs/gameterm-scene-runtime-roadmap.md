@@ -101,6 +101,8 @@ Current status:
   rollback coverage for variables, RPG state, and layers.
 - [x] Add an agent lifecycle patch helper for planning, running, blocked,
   complete, and failed phases with verifier coverage.
+- [x] Add a live macOS smoke scenario for agent lifecycle patches through the
+  Scene Mode inbox transport.
 
 ## Scene Mode Product Loop Roadmap
 

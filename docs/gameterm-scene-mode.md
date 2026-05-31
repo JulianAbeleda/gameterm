@@ -433,6 +433,15 @@ ci/gameterm-scene-smoke.sh --launch --scenario patch-inbox
 The smoke script writes the fixture patch into the printed inbox path before
 capture.
 
+To live-audit agent lifecycle patches, use:
+
+```sh
+ci/gameterm-scene-smoke.sh --launch --scenario agent-lifecycle
+```
+
+The scenario emits `planning`, `blocked`, and `complete` patches through the
+auto-created inbox and captures the final completed agent state.
+
 To live-audit mux submission, let the smoke script launch GameTerm, open Scene
 Mode before the wait timer expires, and have the script submit a patch before
 capture:

@@ -180,6 +180,7 @@ guarded-input
 run-command-targets
 overlay-cleanup
 vertical-slice
+agent-lifecycle
 patch-inbox
 mux-patch
 process-state
@@ -226,6 +227,14 @@ Scenario: vertical-slice
 Fixture: vertical-slice
 Setup: launch playable vertical slice fixture.
 Checks: automated input accepts the brief, prepares the launch kit, completes the scene loop, and keeps Scene Mode open.
+EOF
+      ;;
+    agent-lifecycle)
+      cat <<'EOF'
+Scenario: agent-lifecycle
+Fixture: basic
+Setup: launch with auto patch inbox and emit planning, blocked, and complete agent phases.
+Checks: Scene Mode receives structured agent lifecycle patches and renders the final completed agent state.
 EOF
       ;;
     patch-inbox)
@@ -289,6 +298,12 @@ apply_smoke_scenario_defaults() {
       fixture="vertical-slice"
       if [[ -z "${key_sequence}" ]]; then
         key_sequence="enter,j,enter,j,enter,j,enter"
+      fi
+      ;;
+    agent-lifecycle)
+      fixture="basic"
+      if [[ -z "${patch_inbox}" ]]; then
+        patch_inbox="auto"
       fi
       ;;
     patch-inbox)
@@ -824,6 +839,9 @@ EOF
   if [[ "${scenario}" == "process-state" ]]; then
     echo "Process-state audit: the script will run a true command through ci/gameterm-scene-process.sh before capture."
   fi
+  if [[ "${scenario}" == "agent-lifecycle" ]]; then
+    echo "Agent lifecycle audit: the script will emit planning, blocked, and complete patches before capture."
+  fi
   if [[ -n "${submit_mux_patch}" ]]; then
     echo "Mux patch audit: open Scene Mode before the wait expires; the script will submit:"
     echo "  ${submit_mux_patch}"
@@ -857,6 +875,41 @@ EOF
       -- \
       true >/dev/null
     echo "Wrote process-state smoke patch: ${process_patch}"
+    sleep 1
+  fi
+  if [[ "${scenario}" == "agent-lifecycle" ]]; then
+    agent_patch_dir="${tmp_home}/gameterm/scenes/agent-lifecycle"
+    mkdir -p "${agent_patch_dir}"
+    "${repo_root}/ci/gameterm-scene-agent.sh" \
+      status \
+      --entity-id project-harness \
+      --phase planning \
+      --command "ship visual slice" \
+      --message "Planning visual slice" \
+      --patch "${agent_patch_dir}/planning.json" \
+      --inbox "${patch_inbox}" \
+      --select >/dev/null
+    sleep 1
+    "${repo_root}/ci/gameterm-scene-agent.sh" \
+      status \
+      --entity-id project-harness \
+      --phase blocked \
+      --command "ship visual slice" \
+      --message "Waiting on approval" \
+      --patch "${agent_patch_dir}/blocked.json" \
+      --inbox "${patch_inbox}" \
+      --select >/dev/null
+    sleep 1
+    "${repo_root}/ci/gameterm-scene-agent.sh" \
+      status \
+      --entity-id project-harness \
+      --phase complete \
+      --command "ship visual slice" \
+      --message "Finished visual slice" \
+      --patch "${agent_patch_dir}/complete.json" \
+      --inbox "${patch_inbox}" \
+      --select >/dev/null
+    echo "Wrote agent-lifecycle smoke patches: ${agent_patch_dir}"
     sleep 1
   fi
   if [[ -n "${key_sequence}" ]]; then
