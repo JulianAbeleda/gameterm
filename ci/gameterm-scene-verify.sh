@@ -764,6 +764,13 @@ run_workspace_discovery_check() {
     and any(.entities[]; .id == "discovered-pane"
       and (.metadata | any(.[0] == "context" and .[1] == "absent")))
     and any(.entities[]; .id == "discovered-process")
+    and any(.rpg.relationships[]; .source_id == "discovered-project"
+      and .target_id == "file-0"
+      and .kind == "includes"
+      and (.metadata | any(.[0] == "source" and .[1] == "workspace-discovery")))
+    and any(.rpg.relationships[]; .source_id == "discovered-task"
+      and .target_id == "file-0"
+      and .kind == "references")
     and any(.choices[]; .label == "Run verification")
   ' "${git_scene}" >/dev/null
 
@@ -790,6 +797,10 @@ run_workspace_discovery_check() {
       and .label == "zsh"
       and (.state_flags | index("running"))
       and (.metadata | any(.[0] == "foreground_process_path" and .[1] == "/bin/zsh")))
+    and any(.rpg.relationships[]; .source_id == "discovered-pane"
+      and .target_id == "discovered-process"
+      and .kind == "observes"
+      and (.metadata | any(.[0] == "source" and .[1] == "pane-metadata")))
   ' "${pane_scene}" >/dev/null
 
   mkdir -p "${non_git_dir}"
