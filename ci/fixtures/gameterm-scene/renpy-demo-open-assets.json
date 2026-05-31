@@ -62,22 +62,6 @@
         "Strong school VN fit, but the page discloses AI-assisted graphics.",
         "Use only if the project accepts AI-assisted art in demo fixtures."
       ]
-    },
-    {
-      "id": "potat0master_school_mini_pack_1",
-      "role": "school_background",
-      "title": "Free Visual Novel Backgrounds (School Mini Pack 1)",
-      "author": "Potat0Master",
-      "source_url": "https://potat0master.itch.io/free-visual-novel-backgrounds-school-mini-pack-1",
-      "download_name": "SchoolMiniPack_1080p_WEBP.zip",
-      "license": "royalty_free_use_no_raw_redistribution",
-      "license_url": "https://potat0master.itch.io/free-visual-novel-backgrounds-school-mini-pack-1",
-      "ai_disclosure": "No generative AI was used",
-      "repo_policy": "local_only_do_not_vendor_raw_images",
-      "notes": [
-        "Excellent DDLC-adjacent school background fit.",
-        "The page allows use in games but says not to resell or distribute the images in downloaded or modified form, so do not commit raw images to this repo."
-      ]
     }
   ]
 }

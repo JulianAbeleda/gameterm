@@ -555,8 +555,7 @@ run_renpy_import_check() {
     and any(.sources[]; .id == "4cher_set4_vn_sprites"
       and .license == "CC-BY-4.0"
       and .repo_policy == "allowed_with_attribution")
-    and any(.sources[]; .id == "potat0master_school_mini_pack_1"
-      and .repo_policy == "local_only_do_not_vendor_raw_images")
+    and all(.sources[]; .id != "potat0master_school_mini_pack_1")
   ' "${fixture_root}/renpy-demo-open-assets.json" >/dev/null
   grep -q "non-menu jump is recorded" /tmp/gameterm-scene-renpy-verify.err
   cargo run -q -p gameterm-visual --example scene_validate -- "${scene_output}" >/dev/null
