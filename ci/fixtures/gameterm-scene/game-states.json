@@ -206,6 +206,11 @@
         {
           "variable": "intro_complete",
           "equals": { "Bool": true }
+        },
+        {
+          "source": "inventory_count",
+          "variable": "field-map",
+          "equals": { "Number": 1 }
         }
       ]
     },
@@ -234,6 +239,11 @@
         {
           "variable": "intro_complete",
           "equals": { "Bool": true }
+        },
+        {
+          "source": "stat",
+          "variable": "player:hp",
+          "equals": { "Number": 10 }
         }
       ]
     },
@@ -261,6 +271,11 @@
         {
           "variable": "intro_complete",
           "equals": { "Bool": true }
+        },
+        {
+          "source": "quest_stage",
+          "variable": "first-route",
+          "equals": { "Number": 2 }
         }
       ]
     }

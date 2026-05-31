@@ -216,6 +216,15 @@ as story/RPG state:
 Invalid layer ids or empty target states fail validation. Runtime failures keep
 variables, RPG state, and layers unchanged.
 
+Choice, input-map, and layer-transition guards read typed variables by default.
+Set `source` on a condition to guard against lightweight RPG state instead:
+
+- `inventory_count`: inventory count by `item_id`.
+- `inventory_has`: whether an inventory item is present.
+- `quest_stage`: quest stage by `quest_id`.
+- `quest_completed`: quest completion by `quest_id`.
+- `stat`: stat value by `key` or `owner_id:key`.
+
 `ci/gameterm-scene-agent.sh` emits Scene Mode patches for agent lifecycle
 states without running a process:
 

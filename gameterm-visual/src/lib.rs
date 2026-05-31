@@ -127,6 +127,8 @@ pub struct VisualDialogueLine {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VisualCondition {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
     pub variable: String,
     pub equals: VisualStateValue,
 }
@@ -2006,7 +2008,11 @@ impl SceneRuntime {
                 let from_state = self.scene.layers[layer_index].state.clone();
                 let target_state = transition.target_state.trim().to_string();
                 self.last_input_layer = Some(layer_id.clone());
-                if !conditions_match(&transition.conditions, &self.scene.variables) {
+                if !conditions_match(
+                    &transition.conditions,
+                    &self.scene.variables,
+                    &self.scene.rpg,
+                ) {
                     self.last_layer_transition = Some(VisualLayerTransitionReport {
                         layer_id: layer_id.clone(),
                         input: input_key.to_string(),
@@ -2053,17 +2059,14 @@ impl SceneRuntime {
             if let Some(binding) = binding {
                 let layer_id = self.scene.layers[layer_index].layer_id.clone();
                 self.last_input_layer = Some(layer_id.clone());
-                if !conditions_match(&binding.conditions, &self.scene.variables) {
+                if !conditions_match(&binding.conditions, &self.scene.variables, &self.scene.rpg) {
                     self.status = format!(
                         "Layer input unavailable: {} {}",
                         layer_id,
                         condition_guard_detail(&binding.conditions)
                             .unwrap_or_else(|| "guard condition not met".to_string())
                     );
-                    self.record_runtime_event(
-                        "input",
-                        format!("{layer_id} {input_key} blocked"),
-                    );
+                    self.record_runtime_event("input", format!("{layer_id} {input_key} blocked"));
                     self.bump_generation();
                     return Some(VisualModeOutcome::Continue);
                 }
@@ -2113,7 +2116,7 @@ impl SceneRuntime {
     pub fn activate_choice(&mut self) {
         self.pending_action = None;
         if let Some(choice) = self.scene.choices.get(self.selected_choice).cloned() {
-            if !conditions_match(&choice.conditions, &self.scene.variables) {
+            if !conditions_match(&choice.conditions, &self.scene.variables, &self.scene.rpg) {
                 self.status = format!(
                     "Choice unavailable: {}",
                     condition_guard_detail(&choice.conditions)
@@ -2163,10 +2166,7 @@ impl SceneRuntime {
                     self.dialogue_index = *target;
                     if let Some(line) = self.scene.dialogue_lines.get(*target).cloned() {
                         self.dialogue_history.push(line.clone());
-                        self.record_runtime_event(
-                            "dialogue",
-                            format!("advanced to line {target}"),
-                        );
+                        self.record_runtime_event("dialogue", format!("advanced to line {target}"));
                         format!("Dialogue advanced: {}", line.speaker)
                     } else {
                         format!("Dialogue target missing: {target}")
@@ -2427,10 +2427,7 @@ impl SceneRuntime {
         self.last_story_state_action = Some(action.clone());
         self.last_story_state_path = Some(path.to_path_buf());
         self.status = format!("Story state {action} failed: {}: {error}", path.display());
-        self.record_runtime_event(
-            "story_state",
-            format!("{action} failed {}", path.display()),
-        );
+        self.record_runtime_event("story_state", format!("{action} failed {}", path.display()));
         self.bump_generation();
     }
 
@@ -2687,7 +2684,9 @@ impl SceneRuntime {
         let selected_entity = self.selected_entity();
         let selected_choice = self.scene.choices.get(self.selected_choice);
         let selected_choice_enabled = selected_choice
-            .map(|choice| conditions_match(&choice.conditions, &self.scene.variables))
+            .map(|choice| {
+                conditions_match(&choice.conditions, &self.scene.variables, &self.scene.rpg)
+            })
             .unwrap_or(false);
         let pending_action = self.pending_action.as_ref();
         VisualSceneDebugReport {
@@ -2788,11 +2787,7 @@ impl SceneRuntime {
         self.generation = self.generation.saturating_add(1);
     }
 
-    fn record_runtime_event(
-        &mut self,
-        kind: impl Into<String>,
-        detail: impl Into<String>,
-    ) {
+    fn record_runtime_event(&mut self, kind: impl Into<String>, detail: impl Into<String>) {
         self.transition_history.push(VisualRuntimeEvent {
             kind: kind.into(),
             detail: detail.into(),
@@ -2879,10 +2874,9 @@ impl SceneRuntime {
         }
         if let Some(action) = &self.last_story_state_action {
             match &self.last_story_state_path {
-                Some(path) => out.push_str(&format!(
-                    "Story State: {action} {}\r\n",
-                    path.display()
-                )),
+                Some(path) => {
+                    out.push_str(&format!("Story State: {action} {}\r\n", path.display()))
+                }
                 None => out.push_str(&format!("Story State: {action}\r\n")),
             }
         } else if self.scene.mode.mode_id == "authoring" {
@@ -2904,11 +2898,12 @@ impl SceneRuntime {
             } else {
                 " "
             };
-            let guard = if conditions_match(&choice.conditions, &self.scene.variables) {
-                ""
-            } else {
-                " [locked]"
-            };
+            let guard =
+                if conditions_match(&choice.conditions, &self.scene.variables, &self.scene.rpg) {
+                    ""
+                } else {
+                    " [locked]"
+                };
             out.push_str(&format!("{marker} {}{}\r\n", choice.label, guard));
         }
         out.push_str(&format!("\r\nStatus: {}\r\n", self.status));
@@ -3231,14 +3226,62 @@ fn action_request_detail(action: &VisualActionRequest) -> String {
     }
 }
 
-fn conditions_match(conditions: &[VisualCondition], variables: &[VisualStateEntry]) -> bool {
+fn conditions_match(
+    conditions: &[VisualCondition],
+    variables: &[VisualStateEntry],
+    rpg: &VisualRpgState,
+) -> bool {
     conditions.iter().all(|condition| {
-        variables
-            .iter()
-            .find(|entry| entry.key == condition.variable)
-            .map(|entry| entry.value == condition.equals)
+        condition_value(condition, variables, rpg)
+            .map(|value| value == condition.equals)
             .unwrap_or(false)
     })
+}
+
+fn condition_value(
+    condition: &VisualCondition,
+    variables: &[VisualStateEntry],
+    rpg: &VisualRpgState,
+) -> Option<VisualStateValue> {
+    match condition.source.as_deref().unwrap_or("variable") {
+        "variable" => variables
+            .iter()
+            .find(|entry| entry.key == condition.variable)
+            .map(|entry| entry.value.clone()),
+        "inventory_count" => rpg
+            .inventory
+            .iter()
+            .find(|item| item.item_id == condition.variable)
+            .map(|item| VisualStateValue::Number(i64::from(item.count))),
+        "inventory_has" => rpg
+            .inventory
+            .iter()
+            .find(|item| item.item_id == condition.variable)
+            .map(|item| VisualStateValue::Bool(item.count > 0))
+            .or(Some(VisualStateValue::Bool(false))),
+        "quest_stage" => rpg
+            .quests
+            .iter()
+            .find(|quest| quest.quest_id == condition.variable)
+            .map(|quest| VisualStateValue::Number(quest.stage)),
+        "quest_completed" => rpg
+            .quests
+            .iter()
+            .find(|quest| quest.quest_id == condition.variable)
+            .map(|quest| VisualStateValue::Bool(quest.completed)),
+        "stat" => {
+            let (owner_id, key) = condition
+                .variable
+                .split_once(':')
+                .map(|(owner_id, key)| (Some(owner_id), key))
+                .unwrap_or((None, condition.variable.as_str()));
+            rpg.stats
+                .iter()
+                .find(|stat| stat.owner_id.as_deref() == owner_id && stat.key == key)
+                .map(|stat| stat.value.clone())
+        }
+        _ => None,
+    }
 }
 
 fn set_variable(variables: &mut Vec<VisualStateEntry>, key: &str, value: VisualStateValue) {
@@ -3274,7 +3317,12 @@ fn condition_guard_detail(conditions: &[VisualCondition]) -> Option<String> {
         conditions
             .iter()
             .map(|condition| format!(
-                "{}={}",
+                "{}{}={}",
+                condition
+                    .source
+                    .as_ref()
+                    .map(|source| format!("{source}:"))
+                    .unwrap_or_default(),
                 condition.variable,
                 condition.equals.as_debug_string()
             ))
@@ -3344,7 +3392,7 @@ impl VisualMode for SceneRuntime {
             .find(|binding| binding.input.trim() == input.binding_key())
             .cloned()
         {
-            if !conditions_match(&binding.conditions, &self.scene.variables) {
+            if !conditions_match(&binding.conditions, &self.scene.variables, &self.scene.rpg) {
                 self.status = format!(
                     "Input unavailable: {}",
                     condition_guard_detail(&binding.conditions)
@@ -3938,6 +3986,7 @@ mod tests {
     fn scene_rejects_empty_choice_condition_variable() {
         let mut scene = VisualScene::demo();
         scene.choices[0].conditions = vec![VisualCondition {
+            source: None,
             variable: " ".to_string(),
             equals: VisualStateValue::Bool(true),
         }];
@@ -3977,6 +4026,7 @@ mod tests {
                 label: "Choose workspace".to_string(),
                 kind: SceneActionKind::AdvanceDialogue { target: 1 },
                 conditions: vec![VisualCondition {
+                    source: None,
                     variable: "active_track".to_string(),
                     equals: VisualStateValue::Text("visual-state".to_string()),
                 }],
@@ -3985,6 +4035,7 @@ mod tests {
                 label: "Choose memory".to_string(),
                 kind: SceneActionKind::AdvanceDialogue { target: 2 },
                 conditions: vec![VisualCondition {
+                    source: None,
                     variable: "active_track".to_string(),
                     equals: VisualStateValue::Text("memory".to_string()),
                 }],
@@ -4326,6 +4377,7 @@ mod tests {
             input: "other".to_string(),
             action: "toggle_debug".to_string(),
             conditions: vec![VisualCondition {
+                source: None,
                 variable: "active_track".to_string(),
                 equals: VisualStateValue::Text("memory".to_string()),
             }],
@@ -4491,6 +4543,7 @@ mod tests {
                 input: "other".to_string(),
                 target_state: "running".to_string(),
                 conditions: vec![VisualCondition {
+                    source: None,
                     variable: "active_track".to_string(),
                     equals: VisualStateValue::Text("agent".to_string()),
                 }],
@@ -4539,9 +4592,10 @@ mod tests {
         assert!(report.transition_history.iter().any(|event| {
             event.kind == "transition" && event.detail == "story dialogue -> choice"
         }));
-        assert!(report.transition_history.iter().any(|event| {
-            event.kind == "patch" && event.detail == "mux failed: bad patch"
-        }));
+        assert!(report
+            .transition_history
+            .iter()
+            .any(|event| { event.kind == "patch" && event.detail == "mux failed: bad patch" }));
 
         runtime.toggle_debugger();
         let frame = runtime.render_text_frame(120, 40);
@@ -4605,6 +4659,7 @@ mod tests {
     fn guarded_choice_blocks_action_when_variable_mismatches() {
         let mut scene = VisualScene::demo();
         scene.choices[0].conditions = vec![VisualCondition {
+            source: None,
             variable: "conversation_unlocked".to_string(),
             equals: VisualStateValue::Bool(false),
         }];
@@ -4626,6 +4681,7 @@ mod tests {
     fn guarded_choice_allows_action_when_variable_matches() {
         let mut scene = VisualScene::demo();
         scene.choices[0].conditions = vec![VisualCondition {
+            source: None,
             variable: "conversation_unlocked".to_string(),
             equals: VisualStateValue::Bool(true),
         }];
@@ -4643,6 +4699,7 @@ mod tests {
     fn guarded_choice_state_is_visible_in_debugger() {
         let mut scene = VisualScene::demo();
         scene.choices[0].conditions = vec![VisualCondition {
+            source: None,
             variable: "workspace_level".to_string(),
             equals: VisualStateValue::Number(2),
         }];
@@ -4666,6 +4723,7 @@ mod tests {
     fn guarded_choice_renders_locked_marker() {
         let mut scene = VisualScene::demo();
         scene.choices[0].conditions = vec![VisualCondition {
+            source: None,
             variable: "active_track".to_string(),
             equals: VisualStateValue::Text("memory".to_string()),
         }];
@@ -4674,6 +4732,49 @@ mod tests {
         let frame = runtime.render_text_frame(120, 40);
 
         assert!(frame.contains("> Inspect selected entity [locked]"));
+    }
+
+    #[test]
+    fn rpg_condition_sources_guard_choices() {
+        let mut scene = VisualScene::demo();
+        scene.choices[0].conditions = vec![
+            VisualCondition {
+                source: Some("inventory_count".to_string()),
+                variable: "scene-token".to_string(),
+                equals: VisualStateValue::Number(1),
+            },
+            VisualCondition {
+                source: Some("quest_stage".to_string()),
+                variable: "verify-scene-runtime".to_string(),
+                equals: VisualStateValue::Number(1),
+            },
+            VisualCondition {
+                source: Some("quest_completed".to_string()),
+                variable: "verify-scene-runtime".to_string(),
+                equals: VisualStateValue::Bool(false),
+            },
+            VisualCondition {
+                source: Some("stat".to_string()),
+                variable: "project-gameterm:focus".to_string(),
+                equals: VisualStateValue::Number(3),
+            },
+        ];
+        let mut runtime = SceneRuntime::new(scene).unwrap();
+
+        runtime.activate_choice();
+
+        assert_eq!(
+            runtime.render_snapshot().status,
+            "Inspecting GameTerm (project-gameterm)"
+        );
+
+        runtime.scene.choices[0].conditions[0].equals = VisualStateValue::Number(2);
+        runtime.activate_choice();
+
+        assert_eq!(
+            runtime.render_snapshot().status,
+            "Choice unavailable: requires inventory_count:scene-token=2, quest_stage:verify-scene-runtime=1, quest_completed:verify-scene-runtime=false, stat:project-gameterm:focus=3"
+        );
     }
 
     #[test]
