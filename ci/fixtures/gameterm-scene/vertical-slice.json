@@ -132,6 +132,25 @@
       ]
     },
     {
+      "id": "player",
+      "kind": "Agent",
+      "label": "Player",
+      "position": {
+        "x": 5,
+        "y": 4
+      },
+      "sprite": "agent_idle",
+      "state_flags": [
+        "player"
+      ],
+      "metadata": [
+        [
+          "relationship_role",
+          "source"
+        ]
+      ]
+    },
+    {
       "id": "build-task",
       "kind": "Task",
       "label": "Launch Check",

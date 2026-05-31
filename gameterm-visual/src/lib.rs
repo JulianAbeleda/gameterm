@@ -700,6 +700,10 @@ pub enum VisualSceneError {
     EmptyRelationshipKind,
     #[error("duplicate relationship `{0}`")]
     DuplicateRelationship(String),
+    #[error("relationship source id `{0}` does not reference a scene entity")]
+    UnknownRelationshipSourceId(String),
+    #[error("relationship target id `{0}` does not reference a scene entity")]
+    UnknownRelationshipTargetId(String),
     #[error("scene json error: {0}")]
     Json(String),
     #[error("scene file error for `{path}`: {message}")]
@@ -885,6 +889,18 @@ impl VisualScene {
                     x: entity.position.x,
                     y: entity.position.y,
                 });
+            }
+        }
+        for relationship in &self.rpg.relationships {
+            if !ids.contains(relationship.source_id.as_str()) {
+                return Err(VisualSceneError::UnknownRelationshipSourceId(
+                    relationship.source_id.clone(),
+                ));
+            }
+            if !ids.contains(relationship.target_id.as_str()) {
+                return Err(VisualSceneError::UnknownRelationshipTargetId(
+                    relationship.target_id.clone(),
+                ));
             }
         }
 
@@ -1706,13 +1722,19 @@ impl SceneRuntime {
             if !metadata.is_empty() {
                 out.push_str(&format!("Details: {metadata}\r\n"));
             }
+            if let Some(summary) = format_relationship_summary(&self.scene, &entity.id, 3) {
+                out.push_str(&format!("Relationships: {summary}\r\n"));
+            }
         }
         out.push_str(&format!(
             "Mode: {} ({})\r\n",
             self.scene.mode.label, self.scene.mode.mode_id
         ));
         if !self.scene.layers.is_empty() {
-            out.push_str(&format!("Layers: {}\r\n", format_layer_summary(&self.scene.layers)));
+            out.push_str(&format!(
+                "Layers: {}\r\n",
+                format_layer_summary(&self.scene.layers)
+            ));
         }
         if let Some(process_state) = &self.last_process_state {
             out.push_str(&format!(
@@ -1991,6 +2013,16 @@ impl SceneRuntime {
                 "  Relationships: {}\r\n",
                 report.rpg.relationships.len()
             ));
+            for relationship in &report.rpg.relationships {
+                out.push_str(&format!(
+                    "    {} --{}({})--> {}{}\r\n",
+                    relationship_entity_label(&self.scene, &relationship.source_id),
+                    relationship.kind,
+                    relationship.value,
+                    relationship_entity_label(&self.scene, &relationship.target_id),
+                    format_relationship_metadata(&relationship.metadata)
+                ));
+            }
         }
         out.push_str("\r\n");
         out.push_str(&format!(
@@ -2032,6 +2064,10 @@ impl SceneRuntime {
             ));
             for (key, value) in &entity.metadata {
                 out.push_str(&format!("  {key}: {value}\r\n"));
+            }
+            if let Some(summary) = format_relationship_summary(&self.scene, &entity.id, 8) {
+                out.push_str("\r\nSelected relationships:\r\n");
+                out.push_str(&format!("  {summary}\r\n"));
             }
         }
         truncate_to_screen(out, cols, rows)
@@ -2171,6 +2207,69 @@ fn format_metadata_summary(metadata: &[(String, String)], max_entries: usize) ->
         parts.push(format!("+{} more", metadata.len() - max_entries));
     }
     parts.join(", ")
+}
+
+fn relationship_entity_label(scene: &VisualScene, entity_id: &str) -> String {
+    scene
+        .entities
+        .iter()
+        .find(|entity| entity.id == entity_id)
+        .map(|entity| format!("{} ({})", entity.label, entity.id))
+        .unwrap_or_else(|| entity_id.to_string())
+}
+
+fn format_relationship_metadata(metadata: &[(String, String)]) -> String {
+    let metadata = format_metadata_summary(metadata, 2);
+    if metadata.is_empty() {
+        String::new()
+    } else {
+        format!(" [{metadata}]")
+    }
+}
+
+fn format_relationship_summary(
+    scene: &VisualScene,
+    entity_id: &str,
+    max_entries: usize,
+) -> Option<String> {
+    let outgoing = scene
+        .rpg
+        .relationships
+        .iter()
+        .filter(|relationship| relationship.source_id == entity_id)
+        .collect::<Vec<_>>();
+    let incoming = scene
+        .rpg
+        .relationships
+        .iter()
+        .filter(|relationship| relationship.target_id == entity_id)
+        .collect::<Vec<_>>();
+    if outgoing.is_empty() && incoming.is_empty() {
+        return None;
+    }
+
+    let mut parts = vec![format!("out={} in={}", outgoing.len(), incoming.len())];
+    for relationship in outgoing.iter().take(max_entries) {
+        parts.push(format!(
+            "-> {} {}",
+            relationship_entity_label(scene, &relationship.target_id),
+            relationship.kind
+        ));
+    }
+    let remaining = max_entries.saturating_sub(outgoing.len().min(max_entries));
+    for relationship in incoming.iter().take(remaining) {
+        parts.push(format!(
+            "<- {} {}",
+            relationship_entity_label(scene, &relationship.source_id),
+            relationship.kind
+        ));
+    }
+    let shown = parts.len().saturating_sub(1);
+    let total = outgoing.len() + incoming.len();
+    if total > shown {
+        parts.push(format!("+{} more", total - shown));
+    }
+    Some(parts.join(", "))
 }
 
 fn format_layer_summary(layers: &[VisualLayerState]) -> String {
@@ -2458,6 +2557,22 @@ mod tests {
         assert!(frame.contains("RPG:"));
         assert!(frame.contains("Inventory items: 1"));
         assert!(frame.contains("Relationships: 1"));
+    }
+
+    #[test]
+    fn relationships_are_visible_in_normal_view_and_debugger() {
+        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        runtime.select_next_entity();
+        runtime.select_next_entity();
+
+        let normal = runtime.render_text_frame(120, 40);
+        assert!(normal.contains("Relationships: out=1 in=0"));
+        assert!(normal.contains("-> Render Scene (task-render) monitors"));
+
+        let debugger = runtime.render_debugger(140, 80);
+        assert!(debugger
+            .contains("Audit Agent (agent-audit) --monitors(2)--> Render Scene (task-render)"));
+        assert!(debugger.contains("Selected relationships:"));
     }
 
     #[test]
@@ -2884,6 +2999,25 @@ mod tests {
     }
 
     #[test]
+    fn scene_rejects_unknown_relationship_entities() {
+        let mut scene = VisualScene::demo();
+        scene.rpg.relationships[0].source_id = "missing-agent".to_string();
+
+        assert!(matches!(
+            scene.validate(),
+            Err(VisualSceneError::UnknownRelationshipSourceId(id)) if id == "missing-agent"
+        ));
+
+        let mut scene = VisualScene::demo();
+        scene.rpg.relationships[0].target_id = "missing-task".to_string();
+
+        assert!(matches!(
+            scene.validate(),
+            Err(VisualSceneError::UnknownRelationshipTargetId(id)) if id == "missing-task"
+        ));
+    }
+
+    #[test]
     fn scene_rejects_empty_choice_condition_variable() {
         let mut scene = VisualScene::demo();
         scene.choices[0].conditions = vec![VisualCondition {
@@ -3092,8 +3226,12 @@ mod tests {
 
     #[test]
     fn scene_fixture_workspace_agent_completes_product_loop() {
-        let scene = VisualScene::load_from_path(scene_fixture_path("workspace-agent.json")).unwrap();
-        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf();
+        let scene =
+            VisualScene::load_from_path(scene_fixture_path("workspace-agent.json")).unwrap();
+        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .to_path_buf();
         let mut runtime = SceneRuntime::new_with_source_and_action_base_dir(
             scene,
             VisualSceneSource::new("workspace-agent.json", VisualSceneLoadStatus::Loaded, 0),
@@ -3152,7 +3290,10 @@ mod tests {
 
         runtime.select_next_choice();
         runtime.activate_choice();
-        assert!(runtime.render_snapshot().status.starts_with("OpenFile ready: "));
+        assert!(runtime
+            .render_snapshot()
+            .status
+            .starts_with("OpenFile ready: "));
 
         runtime.select_next_choice();
         runtime.activate_choice();

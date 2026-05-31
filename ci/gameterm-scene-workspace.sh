@@ -479,6 +479,51 @@ scene_json() {
         { key: "discovered_file_count", value: { Number: ($files | length) } }
       ] + (if $pane_id == "" then [] else [{ key: "active_pane_id", value: { Number: ($pane_id | tonumber) } }] end)
         + (if $mux_window_id == "" then [] else [{ key: "active_mux_window_id", value: { Number: ($mux_window_id | tonumber) } }] end)),
+      rpg: {
+        relationships: ([
+          {
+            source_id: "discovered-workspace",
+            target_id: "discovered-project",
+            kind: "contains",
+            value: 1,
+            metadata: [["source", "workspace-discovery"], ["reason", "project root belongs to workspace"]]
+          },
+          {
+            source_id: "discovered-task",
+            target_id: "discovered-project",
+            kind: "targets",
+            value: 1,
+            metadata: [["source", "workspace-discovery"], ["reason", "task was generated for discovered project"]]
+          },
+          {
+            source_id: "discovered-process",
+            target_id: "discovered-project",
+            kind: "verifies",
+            value: 1,
+            metadata: [["source", "workspace-discovery"], ["reason", $verify_label]]
+          }
+        ] + (if $pane_context == "provided" then [{
+          source_id: "discovered-pane",
+          target_id: "discovered-process",
+          kind: "observes",
+          value: 1,
+          metadata: [["source", "pane-metadata"], ["reason", "pane metadata supplied active process context"]]
+        }] else [] end)
+          + ($files | to_entries | map({
+            source_id: "discovered-project",
+            target_id: ("file-" + (.key | tostring)),
+            kind: "includes",
+            value: 1,
+            metadata: [["source", "workspace-discovery"], ["role", .value.role], ["path", .value.path]]
+          }))
+          + ($files | to_entries | map({
+            source_id: "discovered-task",
+            target_id: ("file-" + (.key | tostring)),
+            kind: "references",
+            value: 1,
+            metadata: [["source", "workspace-discovery"], ["reason", "task related_files metadata"], ["path", .value.path]]
+          })))
+      },
       entities: ([
         {
           id: "discovered-workspace",

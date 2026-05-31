@@ -841,6 +841,15 @@ EOF
         },
         entities: [
           {
+            id: "player",
+            kind: "Agent",
+            label: "Player",
+            position: { x: 3, y: 3 },
+            sprite: "agent_idle",
+            state_flags: ["player"],
+            metadata: [["relationship_role", "source"]]
+          },
+          {
             id: "guide",
             kind: "Agent",
             label: "Guide",
@@ -945,6 +954,15 @@ EOF
             sprite: "project_core",
             state_flags: ["active"],
             metadata: [["goal", "ship vertical slice"]]
+          },
+          {
+            id: "player",
+            kind: "Agent",
+            label: "Player",
+            position: { x: 5, y: 4 },
+            sprite: "agent_idle",
+            state_flags: ["player"],
+            metadata: [["relationship_role", "source"]]
           },
           {
             id: "guide",
