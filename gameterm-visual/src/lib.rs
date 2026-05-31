@@ -4772,6 +4772,10 @@ mod tests {
         reloaded
             .entities
             .retain(|entity| entity.id != "task-render");
+        reloaded
+            .rpg
+            .relationships
+            .retain(|relationship| relationship.target_id != "task-render");
         runtime
             .replace_scene_preserving_state(
                 reloaded,
@@ -5186,6 +5190,7 @@ mod tests {
     fn empty_entities_render_without_selection() {
         let mut scene = VisualScene::demo();
         scene.entities.clear();
+        scene.rpg.relationships.clear();
 
         let runtime = SceneRuntime::new(scene).unwrap();
         let snapshot = runtime.render_snapshot();
