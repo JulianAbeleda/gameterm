@@ -1462,13 +1462,17 @@ impl SceneRuntime {
                 return;
             }
             let outcome = actions::scene_action_outcome(self, &choice);
-            self.status = outcome.status;
-            self.pending_action = outcome.pending_action;
-            for event in outcome.events {
-                self.record_runtime_event(event.kind, event.detail);
-            }
-            self.bump_generation();
+            self.apply_action_outcome(outcome);
         }
+    }
+
+    fn apply_action_outcome(&mut self, outcome: actions::SceneActionOutcome) {
+        self.status = outcome.status;
+        self.pending_action = outcome.pending_action;
+        for event in outcome.events {
+            self.record_runtime_event(event.kind, event.detail);
+        }
+        self.bump_generation();
     }
 
     fn apply_state_operations(

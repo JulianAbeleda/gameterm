@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 
 use crate::{
     dialogue_index, initial_dialogue_history, is_empty_rpg_state, validate_dialogue_lines,
-    validate_rpg_state, validate_state_entries, VisualActionRequest, VisualDialogueLine,
-    VisualDialogueLineError, VisualRpgState, VisualStateEntry, VisualStateEntryError,
+    validate_rpg_state, validate_state_entries, VisualDialogueLine, VisualDialogueLineError,
+    VisualRpgState, VisualStateEntry, VisualStateEntryError,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -139,15 +139,11 @@ impl crate::SceneRuntime {
     }
 
     pub(crate) fn request_story_state_export(&mut self, path: PathBuf) {
-        self.pending_action = Some(VisualActionRequest::ExportStoryState { path: path.clone() });
-        self.status = format!("ExportStoryState ready: {}", path.display());
-        self.bump_generation();
+        self.apply_action_outcome(crate::actions::story_state_export_outcome(path));
     }
 
     pub(crate) fn request_story_state_import(&mut self, path: PathBuf) {
-        self.pending_action = Some(VisualActionRequest::ImportStoryState { path: path.clone() });
-        self.status = format!("ImportStoryState ready: {}", path.display());
-        self.bump_generation();
+        self.apply_action_outcome(crate::actions::story_state_import_outcome(path));
     }
 
     pub fn mark_story_state_exported(&mut self, path: &Path) {

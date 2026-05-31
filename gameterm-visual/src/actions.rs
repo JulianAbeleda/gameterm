@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use crate::conditions::conditions_match;
 use crate::{
     relationship_key, validate_layers, validate_rpg_state, validate_state_entries,
@@ -159,7 +161,7 @@ pub(crate) struct SceneActionOutcome {
 }
 
 impl SceneActionOutcome {
-    fn status(status: impl Into<String>) -> Self {
+    pub(crate) fn status(status: impl Into<String>) -> Self {
         Self {
             status: status.into(),
             pending_action: None,
@@ -167,7 +169,7 @@ impl SceneActionOutcome {
         }
     }
 
-    fn pending(status: impl Into<String>, pending_action: VisualActionRequest) -> Self {
+    pub(crate) fn pending(status: impl Into<String>, pending_action: VisualActionRequest) -> Self {
         Self {
             status: status.into(),
             pending_action: Some(pending_action),
@@ -182,6 +184,20 @@ impl SceneActionOutcome {
         });
         self
     }
+}
+
+pub(crate) fn story_state_export_outcome(path: PathBuf) -> SceneActionOutcome {
+    SceneActionOutcome::pending(
+        format!("ExportStoryState ready: {}", path.display()),
+        VisualActionRequest::ExportStoryState { path },
+    )
+}
+
+pub(crate) fn story_state_import_outcome(path: PathBuf) -> SceneActionOutcome {
+    SceneActionOutcome::pending(
+        format!("ImportStoryState ready: {}", path.display()),
+        VisualActionRequest::ImportStoryState { path },
+    )
 }
 
 pub(crate) fn scene_action_outcome(
@@ -219,17 +235,11 @@ pub(crate) fn scene_action_outcome(
         ),
         SceneActionKind::ExportStoryState { path } => {
             let path = runtime.resolve_action_path(path);
-            SceneActionOutcome::pending(
-                format!("ExportStoryState ready: {}", path.display()),
-                VisualActionRequest::ExportStoryState { path },
-            )
+            story_state_export_outcome(path)
         }
         SceneActionKind::ImportStoryState { path } => {
             let path = runtime.resolve_action_path(path);
-            SceneActionOutcome::pending(
-                format!("ImportStoryState ready: {}", path.display()),
-                VisualActionRequest::ImportStoryState { path },
-            )
+            story_state_import_outcome(path)
         }
         SceneActionKind::AdvanceDialogue { target } => {
             runtime.dialogue_index = *target;
