@@ -181,7 +181,8 @@ Why it matters:
 
 First-pass deliverables:
 
-- Scope command policy model.
+- Scope command policy model:
+  `docs/gameterm-scene-policy-boundaries-scope.md`.
 - Add metadata conventions for action origin and risk.
 - Add doctor/verifier warnings for generated commands without cwd/origin.
 - Add docs explaining command safety.

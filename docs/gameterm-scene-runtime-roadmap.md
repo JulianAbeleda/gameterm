@@ -155,6 +155,11 @@ The action-selection product layer is scoped in
 That document defines the first grouped-choice command surface and the deferred
 modal command palette boundary.
 
+The policy product layer is scoped in
+[GameTerm Scene Mode Policy And Permission Boundaries Scope](gameterm-scene-policy-boundaries-scope.md).
+That document defines the first command-policy diagnostics and the deferred
+origin/risk/allowlist boundary.
+
 Priority order:
 
 1. Layered state machines.
