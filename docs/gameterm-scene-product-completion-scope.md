@@ -120,7 +120,8 @@ Why it matters:
 
 First-pass deliverables:
 
-- Scope normal-view information hierarchy.
+- Scope normal-view information hierarchy:
+  `docs/gameterm-scene-normal-view-polish-scope.md`.
 - Add compact selected-entity metadata rendering.
 - Add concise agent/process/status panel.
 - Add truncation/wrapping rules that preserve choices.
