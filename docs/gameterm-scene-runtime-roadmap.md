@@ -120,6 +120,12 @@ That document defines the 100% first-pass target by runtime, authoring,
 state-model, persistence, integration, presentation, observability, and smoke
 layers.
 
+The next product layer is scoped in
+[GameTerm Scene Mode Agent And Workspace Scope](gameterm-scene-agent-workspace-scope.md).
+That document defines the purpose, end goal, state contracts, fixture plan,
+workflow targets, acceptance criteria, and commit lanes for making Scene Mode
+represent active GameTerm workspace and agent state.
+
 Priority order:
 
 1. Layered state machines.
