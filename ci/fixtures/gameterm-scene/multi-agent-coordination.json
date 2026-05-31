@@ -1,0 +1,187 @@
+{
+  "title": "Scene Multi-Agent Coordination",
+  "background": "workspace-map",
+  "width": 18,
+  "height": 10,
+  "mode": {
+    "mode_id": "workspace",
+    "label": "Workspace",
+    "description": "Two-agent coordination fixture",
+    "scene_profile": "scene",
+    "allowed_actions": ["Inspect", "Resolve"]
+  },
+  "layers": [
+    { "layer_id": "workspace", "state": "coordination", "label": "Workspace" },
+    { "layer_id": "agent-a", "state": "idle", "label": "Audit Agent" },
+    { "layer_id": "agent-b", "state": "idle", "label": "Build Agent" },
+    { "layer_id": "review", "state": "waiting", "label": "Review" }
+  ],
+  "variables": [
+    { "key": "audit_phase", "value": { "Text": "idle" } },
+    { "key": "build_phase", "value": { "Text": "idle" } },
+    { "key": "review_ready", "value": { "Bool": false } },
+    { "key": "blocked_count", "value": { "Number": 0 } }
+  ],
+  "rpg": {
+    "relationships": [
+      {
+        "source_id": "agent-audit",
+        "target_id": "task-review",
+        "kind": "owns",
+        "value": 1,
+        "metadata": [["source", "fixture"], ["reason", "audit agent owns review task"]]
+      },
+      {
+        "source_id": "agent-build",
+        "target_id": "task-build",
+        "kind": "owns",
+        "value": 1,
+        "metadata": [["source", "fixture"], ["reason", "build agent owns build task"]]
+      },
+      {
+        "source_id": "agent-audit",
+        "target_id": "task-build",
+        "kind": "waits_for",
+        "value": 1,
+        "metadata": [["source", "fixture"], ["reason", "review waits for build output"]]
+      },
+      {
+        "source_id": "task-build",
+        "target_id": "process-verify",
+        "kind": "verified_by",
+        "value": 1,
+        "metadata": [["source", "fixture"], ["reason", "verification process checks build task"]]
+      }
+    ]
+  },
+  "entities": [
+    {
+      "id": "agent-audit",
+      "kind": "Agent",
+      "label": "Audit Agent",
+      "position": { "x": 4, "y": 2 },
+      "sprite": "agent_idle",
+      "state_flags": ["agent", "agent_idle"],
+      "metadata": [["agent_phase", "idle"], ["owns_task", "task-review"]]
+    },
+    {
+      "id": "agent-build",
+      "kind": "Agent",
+      "label": "Build Agent",
+      "position": { "x": 12, "y": 2 },
+      "sprite": "agent_idle",
+      "state_flags": ["agent", "agent_idle"],
+      "metadata": [["agent_phase", "idle"], ["owns_task", "task-build"]]
+    },
+    {
+      "id": "task-review",
+      "kind": "Task",
+      "label": "Review Task",
+      "position": { "x": 4, "y": 5 },
+      "sprite": "task_tile",
+      "state_flags": ["task", "waiting"],
+      "metadata": [["phase", "waiting"], ["owner", "agent-audit"]]
+    },
+    {
+      "id": "task-build",
+      "kind": "Task",
+      "label": "Build Task",
+      "position": { "x": 12, "y": 5 },
+      "sprite": "task_tile",
+      "state_flags": ["task", "idle"],
+      "metadata": [["phase", "idle"], ["owner", "agent-build"]]
+    },
+    {
+      "id": "process-verify",
+      "kind": "Task",
+      "label": "Verify Process",
+      "position": { "x": 8, "y": 7 },
+      "sprite": "task_tile",
+      "state_flags": ["process", "queued"],
+      "metadata": [["phase", "queued"], ["command", "ci/gameterm-scene-verify.sh --fixture multi-agent-coordination"]]
+    }
+  ],
+  "dialogue_speaker": "Workspace",
+  "dialogue": "Two agents can be updated and inspected independently.",
+  "dialogue_lines": [
+    {
+      "speaker": "Workspace",
+      "text": "Coordinate audit and build agents without overwriting either actor.",
+      "portrait": "agent_idle"
+    }
+  ],
+  "choices": [
+    {
+      "label": "Start build agent",
+      "kind": {
+        "Resolve": {
+          "operations": [
+            { "SetVariable": { "key": "build_phase", "value": { "Text": "running" } } },
+            { "SetLayerState": { "layer_id": "agent-b", "state": "running" } },
+            { "SetEntityFlags": { "entity_id": "agent-build", "flags": ["agent", "agent_running"] } },
+            { "SetEntityMetadata": { "entity_id": "agent-build", "metadata": [["agent_phase", "running"], ["owns_task", "task-build"]] } },
+            { "SetEntityFlags": { "entity_id": "task-build", "flags": ["task", "running"] } },
+            { "SetEntityMetadata": { "entity_id": "task-build", "metadata": [["phase", "running"], ["owner", "agent-build"]] } },
+            { "SelectEntity": { "entity_id": "agent-build" } }
+          ]
+        }
+      },
+      "conditions": [{ "variable": "build_phase", "equals": { "Text": "idle" } }]
+    },
+    {
+      "label": "Block audit on build",
+      "kind": {
+        "Resolve": {
+          "operations": [
+            { "SetVariable": { "key": "audit_phase", "value": { "Text": "blocked" } } },
+            { "IncrementVariable": { "key": "blocked_count", "amount": 1 } },
+            { "SetLayerState": { "layer_id": "agent-a", "state": "blocked" } },
+            { "SetEntityFlags": { "entity_id": "agent-audit", "flags": ["agent", "agent_blocked"] } },
+            { "SetEntityMetadata": { "entity_id": "agent-audit", "metadata": [["agent_phase", "blocked"], ["owns_task", "task-review"], ["blocked_by", "task-build"]] } },
+            { "SetEntityFlags": { "entity_id": "task-review", "flags": ["task", "blocked"] } },
+            { "SetEntityMetadata": { "entity_id": "task-review", "metadata": [["phase", "blocked"], ["owner", "agent-audit"], ["blocked_by", "task-build"]] } },
+            { "SelectEntity": { "entity_id": "agent-audit" } }
+          ]
+        }
+      },
+      "conditions": [{ "variable": "build_phase", "equals": { "Text": "running" } }]
+    },
+    {
+      "label": "Complete build for review",
+      "kind": {
+        "Resolve": {
+          "operations": [
+            { "SetVariable": { "key": "build_phase", "value": { "Text": "completed" } } },
+            { "SetVariable": { "key": "review_ready", "value": { "Bool": true } } },
+            { "SetLayerState": { "layer_id": "agent-b", "state": "complete" } },
+            { "SetLayerState": { "layer_id": "review", "state": "ready" } },
+            { "SetEntityFlags": { "entity_id": "agent-build", "flags": ["agent", "agent_completed"] } },
+            { "SetEntityMetadata": { "entity_id": "agent-build", "metadata": [["agent_phase", "completed"], ["owns_task", "task-build"]] } },
+            { "SetEntityFlags": { "entity_id": "task-build", "flags": ["task", "completed"] } },
+            { "SetEntityMetadata": { "entity_id": "task-build", "metadata": [["phase", "completed"], ["owner", "agent-build"]] } },
+            { "SetEntityFlags": { "entity_id": "process-verify", "flags": ["process", "succeeded"] } },
+            { "SelectEntity": { "entity_id": "task-build" } }
+          ]
+        }
+      },
+      "conditions": [{ "variable": "audit_phase", "equals": { "Text": "blocked" } }]
+    },
+    {
+      "label": "Complete audit review",
+      "kind": {
+        "Resolve": {
+          "operations": [
+            { "SetVariable": { "key": "audit_phase", "value": { "Text": "completed" } } },
+            { "SetLayerState": { "layer_id": "agent-a", "state": "complete" } },
+            { "SetEntityFlags": { "entity_id": "agent-audit", "flags": ["agent", "agent_completed"] } },
+            { "SetEntityMetadata": { "entity_id": "agent-audit", "metadata": [["agent_phase", "completed"], ["owns_task", "task-review"]] } },
+            { "SetEntityFlags": { "entity_id": "task-review", "flags": ["task", "completed"] } },
+            { "SetEntityMetadata": { "entity_id": "task-review", "metadata": [["phase", "completed"], ["owner", "agent-audit"]] } },
+            { "SelectEntity": { "entity_id": "task-review" } }
+          ]
+        }
+      },
+      "conditions": [{ "variable": "review_ready", "equals": { "Bool": true } }]
+    }
+  ]
+}

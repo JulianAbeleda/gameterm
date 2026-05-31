@@ -3312,6 +3312,114 @@ mod tests {
     }
 
     #[test]
+    fn scene_fixture_multi_agent_coordination_updates_independently() {
+        let scene =
+            VisualScene::load_from_path(scene_fixture_path("multi-agent-coordination.json"))
+                .unwrap();
+        let mut runtime = SceneRuntime::new(scene).unwrap();
+
+        let snapshot = runtime.render_snapshot();
+        assert_eq!(snapshot.title, "Scene Multi-Agent Coordination");
+        assert_eq!(snapshot.entities.len(), 5);
+        assert_eq!(snapshot.rpg.relationships.len(), 4);
+        assert!(snapshot
+            .rpg
+            .relationships
+            .iter()
+            .any(|relationship| relationship.source_id == "agent-audit"
+                && relationship.target_id == "task-build"
+                && relationship.kind == "waits_for"));
+
+        runtime.activate_choice();
+        runtime.select_next_choice();
+        runtime.activate_choice();
+        runtime.select_next_choice();
+        runtime.activate_choice();
+        runtime.select_next_choice();
+        runtime.activate_choice();
+
+        let snapshot = runtime.render_snapshot();
+        assert!(snapshot.variables.iter().any(|entry| {
+            entry.key == "audit_phase"
+                && entry.value == VisualStateValue::Text("completed".to_string())
+        }));
+        assert!(snapshot.variables.iter().any(|entry| {
+            entry.key == "build_phase"
+                && entry.value == VisualStateValue::Text("completed".to_string())
+        }));
+        assert!(snapshot.variables.iter().any(|entry| {
+            entry.key == "blocked_count" && entry.value == VisualStateValue::Number(1)
+        }));
+        assert!(snapshot
+            .entities
+            .iter()
+            .any(|entity| entity.id == "agent-audit"
+                && entity
+                    .state_flags
+                    .iter()
+                    .any(|flag| flag == "agent_completed")));
+        assert!(snapshot
+            .entities
+            .iter()
+            .any(|entity| entity.id == "agent-build"
+                && entity
+                    .state_flags
+                    .iter()
+                    .any(|flag| flag == "agent_completed")));
+        assert_eq!(snapshot.selected_entity_id.as_deref(), Some("task-review"));
+
+        runtime
+            .apply_scene_patch(VisualScenePatch {
+                scene_patch_version: VisualScenePatch::VERSION,
+                updates: vec![VisualSceneEntityPatch {
+                    entity_id: "agent-audit".to_string(),
+                    label: None,
+                    position: None,
+                    sprite: None,
+                    visible: None,
+                    state_flags: Some(vec!["agent".to_string(), "agent_blocked".to_string()]),
+                    metadata: Some(vec![
+                        ("agent_phase".to_string(), "blocked".to_string()),
+                        ("agent_task_id".to_string(), "task-review".to_string()),
+                        ("blocked_by".to_string(), "task-build".to_string()),
+                    ]),
+                }],
+                variables: vec![VisualStateEntry {
+                    key: "active_agent_id".to_string(),
+                    value: VisualStateValue::Text("agent-audit".to_string()),
+                }],
+                selected_entity_id: Some("agent-audit".to_string()),
+                process_state: Some(VisualProcessState {
+                    entity_id: Some("agent-audit".to_string()),
+                    phase: VisualProcessPhase::Blocked,
+                    command: Some("agent:blocked".to_string()),
+                    exit_code: None,
+                    message: Some("Waiting for build output".to_string()),
+                }),
+                status: Some("agent-audit blocked for task-review".to_string()),
+            })
+            .unwrap();
+
+        let snapshot = runtime.render_snapshot();
+        assert!(snapshot
+            .entities
+            .iter()
+            .any(|entity| entity.id == "agent-build"
+                && entity
+                    .state_flags
+                    .iter()
+                    .any(|flag| flag == "agent_completed")));
+        assert!(snapshot
+            .entities
+            .iter()
+            .any(|entity| entity.id == "agent-audit"
+                && entity
+                    .state_flags
+                    .iter()
+                    .any(|flag| flag == "agent_blocked")));
+    }
+
+    #[test]
     fn scene_fixture_game_states_covers_common_modes() {
         let scene = VisualScene::load_from_path(scene_fixture_path("game-states.json")).unwrap();
         let mut runtime = SceneRuntime::new(scene).unwrap();

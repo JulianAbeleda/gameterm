@@ -149,11 +149,12 @@ Options for update-choice:
 
 Fixtures:
   basic, navigate, invalid, sprites, missing-sprite, vertical-slice,
-  authoring-loop, game-states, chained-transitions, workspace-agent
+  authoring-loop, game-states, chained-transitions, workspace-agent,
+  multi-agent-coordination
 
 Templates:
   agent-workflow, project-dashboard, visual-novel, layered-mode, rpg-quest,
-  vertical-slice, workspace-agent
+  vertical-slice, workspace-agent, multi-agent-coordination
 EOF
 }
 
@@ -1050,6 +1051,9 @@ EOF
     workspace-agent)
       jq '.' "${fixture_root}/workspace-agent.json" | write_json "${target}"
       ;;
+    multi-agent-coordination)
+      jq '.' "${fixture_root}/multi-agent-coordination.json" | write_json "${target}"
+      ;;
     *)
       echo "unknown template: ${template_name}" >&2
       usage >&2
@@ -1650,6 +1654,10 @@ install_fixture() {
       copy_file "${fixture_root}/workspace-agent.json" "${scene_dir}/default.json"
       copy_file "${fixture_root}/sprites.json" "${scene_dir}/sprites.json"
       ;;
+    multi-agent-coordination)
+      copy_file "${fixture_root}/multi-agent-coordination.json" "${scene_dir}/default.json"
+      copy_file "${fixture_root}/sprites.json" "${scene_dir}/sprites.json"
+      ;;
     *)
       echo "unknown fixture: ${fixture}" >&2
       usage >&2
@@ -1856,14 +1864,14 @@ case "${command}" in
       usage >&2
       exit 2
     fi
-    printf '%s\n' basic navigate invalid sprites missing-sprite vertical-slice authoring-loop game-states chained-transitions workspace-agent
+    printf '%s\n' basic navigate invalid sprites missing-sprite vertical-slice authoring-loop game-states chained-transitions workspace-agent multi-agent-coordination
     ;;
   list-templates)
     if [[ "${#positionals[@]}" -ne 0 ]]; then
       usage >&2
       exit 2
     fi
-    printf '%s\n' agent-workflow project-dashboard visual-novel layered-mode rpg-quest vertical-slice workspace-agent
+    printf '%s\n' agent-workflow project-dashboard visual-novel layered-mode rpg-quest vertical-slice workspace-agent multi-agent-coordination
     ;;
   -h|--help)
     usage
