@@ -150,6 +150,11 @@ That document defines the compact selected-entity, layer, process, and state
 summary that makes generated workspace scenes understandable outside the Tile
 Debugger.
 
+The action-selection product layer is scoped in
+[GameTerm Scene Mode Command Selection Scope](gameterm-scene-command-selection-scope.md).
+That document defines the first grouped-choice command surface and the deferred
+modal command palette boundary.
+
 Priority order:
 
 1. Layered state machines.

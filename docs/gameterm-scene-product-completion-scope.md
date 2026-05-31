@@ -151,7 +151,8 @@ Why it matters:
 
 First-pass deliverables:
 
-- Scope command/action model.
+- Scope command/action model:
+  `docs/gameterm-scene-command-selection-scope.md`.
 - Reuse existing choices where possible.
 - Add action grouping metadata or command palette mode.
 - Add keyboard flow and smoke scenario.
