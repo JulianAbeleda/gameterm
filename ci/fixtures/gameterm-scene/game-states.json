@@ -1,0 +1,268 @@
+{
+  "title": "Scene Game States",
+  "background": "workspace-map",
+  "width": 16,
+  "height": 9,
+  "mode": {
+    "mode_id": "gameplay",
+    "label": "Gameplay",
+    "description": "Common game-state fixture for Scene Mode",
+    "scene_profile": "scene",
+    "allowed_actions": ["Inspect", "Resolve", "AdvanceDialogue"],
+    "input_map": [
+      {
+        "input": "other",
+        "action": "run_update_hooks"
+      }
+    ],
+    "lifecycle": {
+      "enter_status": "Entered gameplay state",
+      "update_status": "Gameplay systems updated"
+    }
+  },
+  "layers": [
+    {
+      "layer_id": "flow",
+      "state": "gameplay",
+      "label": "Game Flow"
+    },
+    {
+      "layer_id": "story",
+      "state": "dialogue",
+      "label": "Story",
+      "transitions": [
+        {
+          "input": "activate",
+          "target_state": "exploration",
+          "conditions": [
+            {
+              "variable": "intro_complete",
+              "equals": { "Bool": true }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "layer_id": "ui",
+      "state": "dialogue",
+      "label": "UI"
+    },
+    {
+      "layer_id": "quest",
+      "state": "intro",
+      "label": "Quest"
+    },
+    {
+      "layer_id": "agent",
+      "state": "idle",
+      "label": "Agent"
+    },
+    {
+      "layer_id": "combat",
+      "state": "idle",
+      "label": "Command"
+    }
+  ],
+  "variables": [
+    {
+      "key": "intro_complete",
+      "value": { "Bool": false }
+    },
+    {
+      "key": "has_menu_open",
+      "value": { "Bool": false }
+    },
+    {
+      "key": "agent_phase",
+      "value": { "Text": "idle" }
+    }
+  ],
+  "rpg": {
+    "inventory": [
+      {
+        "item_id": "field-map",
+        "label": "Field Map",
+        "count": 1
+      }
+    ],
+    "stats": [
+      {
+        "owner_id": "player",
+        "key": "hp",
+        "value": { "Number": 10 }
+      }
+    ],
+    "quests": [
+      {
+        "quest_id": "first-route",
+        "label": "First Route",
+        "stage": 1,
+        "completed": false,
+        "journal": "Move from dialogue into exploration, menu, command, and agent states."
+      }
+    ],
+    "relationships": []
+  },
+  "entities": [
+    {
+      "id": "player",
+      "kind": "Agent",
+      "label": "Player",
+      "position": { "x": 4, "y": 4 },
+      "sprite": "agent_idle",
+      "state_flags": ["idle"]
+    },
+    {
+      "id": "route",
+      "kind": "Project",
+      "label": "Route",
+      "position": { "x": 8, "y": 4 },
+      "sprite": "project_core",
+      "state_flags": ["exploration"]
+    },
+    {
+      "id": "task-agent",
+      "kind": "Task",
+      "label": "Task Agent",
+      "position": { "x": 12, "y": 4 },
+      "sprite": "task_tile",
+      "state_flags": ["agent_idle"]
+    }
+  ],
+  "dialogue_speaker": "Guide",
+  "dialogue": "Use choices to move through common game states.",
+  "dialogue_lines": [
+    {
+      "speaker": "Guide",
+      "text": "Dialogue state owns input until the intro is complete."
+    },
+    {
+      "speaker": "Guide",
+      "text": "Exploration state is now active."
+    }
+  ],
+  "choices": [
+    {
+      "label": "Finish dialogue intro",
+      "kind": {
+        "Resolve": {
+          "operations": [
+            {
+              "SetVariable": {
+                "key": "intro_complete",
+                "value": { "Bool": true }
+              }
+            },
+            {
+              "SetLayerState": {
+                "layer_id": "story",
+                "state": "exploration"
+              }
+            },
+            {
+              "SetLayerState": {
+                "layer_id": "ui",
+                "state": "hud"
+              }
+            },
+            {
+              "AdvanceQuest": {
+                "quest_id": "first-route",
+                "stage": 2
+              }
+            }
+          ]
+        }
+      },
+      "conditions": [
+        {
+          "variable": "intro_complete",
+          "equals": { "Bool": false }
+        }
+      ]
+    },
+    {
+      "label": "Open inventory menu",
+      "kind": {
+        "Resolve": {
+          "operations": [
+            {
+              "SetVariable": {
+                "key": "has_menu_open",
+                "value": { "Bool": true }
+              }
+            },
+            {
+              "SetLayerState": {
+                "layer_id": "ui",
+                "state": "inventory"
+              }
+            }
+          ]
+        }
+      },
+      "conditions": [
+        {
+          "variable": "intro_complete",
+          "equals": { "Bool": true }
+        }
+      ]
+    },
+    {
+      "label": "Enter command state",
+      "kind": {
+        "Resolve": {
+          "operations": [
+            {
+              "SetLayerState": {
+                "layer_id": "combat",
+                "state": "command"
+              }
+            },
+            {
+              "AdjustStat": {
+                "owner_id": "player",
+                "key": "hp",
+                "amount": -1
+              }
+            }
+          ]
+        }
+      },
+      "conditions": [
+        {
+          "variable": "intro_complete",
+          "equals": { "Bool": true }
+        }
+      ]
+    },
+    {
+      "label": "Start agent task",
+      "kind": {
+        "Resolve": {
+          "operations": [
+            {
+              "SetVariable": {
+                "key": "agent_phase",
+                "value": { "Text": "running" }
+              }
+            },
+            {
+              "SetLayerState": {
+                "layer_id": "agent",
+                "state": "running"
+              }
+            }
+          ]
+        }
+      },
+      "conditions": [
+        {
+          "variable": "intro_complete",
+          "equals": { "Bool": true }
+        }
+      ]
+    }
+  ]
+}

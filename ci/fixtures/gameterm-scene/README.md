@@ -10,5 +10,6 @@ These fixtures exercise Scene Mode without touching user config.
 - `run-command-targets.json`: command target fixture for tab, right split, and down split live audits.
 - `vertical-slice.json`: playable Scene Mode slice for dialogue, RPG state, and layered/process state.
 - `authoring-loop.json`: in-app story-state save, mutate, and reload workflow fixture.
+- `game-states.json`: common layered game-state fixture for dialogue, exploration, inventory, command, quest, and agent state.
 - `sprites.json`: sprite manifest that points at bundled test assets.
 - `sprites-missing.json`: sprite manifest with one intentionally missing sprite path.

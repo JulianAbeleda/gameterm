@@ -75,7 +75,7 @@ Options for update-choice:
 
 Fixtures:
   basic, navigate, invalid, sprites, missing-sprite, vertical-slice,
-  authoring-loop
+  authoring-loop, game-states
 
 Templates:
   agent-workflow, project-dashboard, visual-novel, layered-mode, rpg-quest,
@@ -1011,6 +1011,10 @@ install_fixture() {
       copy_file "${fixture_root}/authoring-loop.json" "${scene_dir}/default.json"
       copy_file "${fixture_root}/sprites.json" "${scene_dir}/sprites.json"
       ;;
+    game-states)
+      copy_file "${fixture_root}/game-states.json" "${scene_dir}/default.json"
+      copy_file "${fixture_root}/sprites.json" "${scene_dir}/sprites.json"
+      ;;
     *)
       echo "unknown fixture: ${fixture}" >&2
       usage >&2
@@ -1112,7 +1116,7 @@ case "${command}" in
       usage >&2
       exit 2
     fi
-    printf '%s\n' basic navigate invalid sprites missing-sprite vertical-slice authoring-loop
+    printf '%s\n' basic navigate invalid sprites missing-sprite vertical-slice authoring-loop game-states
     ;;
   list-templates)
     if [[ "${#positionals[@]}" -ne 0 ]]; then

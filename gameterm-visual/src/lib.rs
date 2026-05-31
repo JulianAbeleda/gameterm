@@ -4061,6 +4061,51 @@ mod tests {
     }
 
     #[test]
+    fn scene_fixture_game_states_covers_common_modes() {
+        let scene = VisualScene::load_from_path(scene_fixture_path("game-states.json")).unwrap();
+        let mut runtime = SceneRuntime::new(scene).unwrap();
+
+        assert_eq!(runtime.render_snapshot().active_mode.mode_id, "gameplay");
+        assert_eq!(runtime.render_snapshot().active_layers.len(), 6);
+        assert_eq!(runtime.render_snapshot().status, "Entered gameplay state");
+
+        runtime.activate_choice();
+        runtime.select_next_choice();
+        runtime.activate_choice();
+        runtime.select_next_choice();
+        runtime.activate_choice();
+        runtime.select_next_choice();
+        runtime.activate_choice();
+
+        let snapshot = runtime.render_snapshot();
+        assert!(snapshot.variables.iter().any(|entry| {
+            entry.key == "intro_complete" && entry.value == VisualStateValue::Bool(true)
+        }));
+        assert!(snapshot.variables.iter().any(|entry| {
+            entry.key == "agent_phase"
+                && entry.value == VisualStateValue::Text("running".to_string())
+        }));
+        assert!(snapshot
+            .active_layers
+            .iter()
+            .any(|layer| layer.layer_id == "story" && layer.state == "exploration"));
+        assert!(snapshot
+            .active_layers
+            .iter()
+            .any(|layer| layer.layer_id == "ui" && layer.state == "inventory"));
+        assert!(snapshot
+            .active_layers
+            .iter()
+            .any(|layer| layer.layer_id == "combat" && layer.state == "command"));
+        assert!(snapshot
+            .active_layers
+            .iter()
+            .any(|layer| layer.layer_id == "agent" && layer.state == "running"));
+        assert_eq!(snapshot.rpg.quests[0].stage, 2);
+        assert_eq!(snapshot.rpg.stats[0].value, VisualStateValue::Number(9));
+    }
+
+    #[test]
     fn scene_fixture_invalid_is_rejected() {
         assert!(matches!(
             VisualScene::load_from_path(scene_fixture_path("invalid.json")),
