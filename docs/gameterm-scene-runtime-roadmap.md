@@ -126,6 +126,12 @@ That document defines the purpose, end goal, state contracts, fixture plan,
 workflow targets, acceptance criteria, and commit lanes for making Scene Mode
 represent active GameTerm workspace and agent state.
 
+The follow-up discovery layer is scoped in
+[GameTerm Scene Mode Workspace Discovery Scope](gameterm-scene-workspace-discovery-scope.md).
+That document defines how authored Agent/Workspace state becomes a generated
+view of cwd, git, project files, explicit commands, and future pane/process
+metadata.
+
 Priority order:
 
 1. Layered state machines.

@@ -729,7 +729,9 @@ Implemented first-pass items:
 
 Remaining deferred items stay intentionally outside the first pass:
 
-- automatic workspace discovery from live panes and git metadata
+- automatic workspace discovery from cwd, git metadata, project files, and
+  later live pane metadata; scoped in
+  [GameTerm Scene Mode Workspace Discovery Scope](gameterm-scene-workspace-discovery-scope.md)
 - richer persisted workspace sessions
 - multi-agent coordination
 - command policy controls
