@@ -1241,7 +1241,9 @@ impl SceneRuntime {
         self.bump_generation();
         Ok(())
     }
+}
 
+impl SceneRuntime {
     pub fn toggle_debugger(&mut self) {
         self.view = match self.view {
             VisualView::Scene => VisualView::TileDebugger,
@@ -1272,7 +1274,9 @@ impl SceneRuntime {
             self.bump_generation();
         }
     }
+}
 
+impl SceneRuntime {
     fn run_mode_input_action(&mut self, action: &str) -> VisualModeOutcome {
         match action {
             "close" => VisualModeOutcome::Exit,
