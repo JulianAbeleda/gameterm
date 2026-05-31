@@ -4,6 +4,12 @@ This plan starts after the first shippable Scene Mode pass. The first pass is
 feature-complete and verified; refactors should preserve behavior and land in
 small commits with focused tests.
 
+This plan is constrained by
+[`structure/Development/coding-principles.md`](../structure/Development/coding-principles.md).
+Scene Mode is a GameTerm-specific surface in a WezTerm fork, so refactors must
+stay narrow, keep upstream behavior intact, and avoid broad rename or ownership
+sweeps.
+
 ## Goals
 
 - Reduce `gameterm-visual/src/lib.rs` size and coupling.
@@ -19,10 +25,46 @@ small commits with focused tests.
 - No schema-breaking rename without migration support.
 - No visual redesign while moving code.
 - No unrelated cleanup of existing macOS warning noise.
+- No upstream-wide reorganization outside the Scene Mode ownership boundary.
+- No crate-boundary changes unless a lane proves they are necessary.
+
+## Coding-Principle Constraints
+
+Fork discipline:
+
+- Keep Scene Mode refactors isolated to GameTerm-specific code paths.
+- Do not rename upstream concepts, docs, binaries, config keys, or packages.
+- Preserve upstream attribution and licensing.
+- Put local planning and audit notes in `structure/` or focused Scene Mode docs;
+  do not scatter transient notes through upstream documentation.
+
+Rust workspace discipline:
+
+- Treat root `Cargo.toml` workspace membership as fixed for this refactor.
+- Prefer existing `gameterm-visual`, `gameterm-gui`, and `ci/` boundaries over
+  new cross-cutting crates.
+- Inspect each target module before moving shared types or APIs.
+- Keep public `gameterm_visual` exports compatible unless a separate migration
+  commit is explicitly scoped.
+
+Commit discipline:
+
+- Use small commits with project-specific prefixes.
+- Mark mechanical behavior-preserving commits with `NFC`.
+- Do not mix an NFC move with a behavior fix.
+- Use `[visual]` for Scene runtime/module changes, `[tools]` for shell helpers,
+  `[test]` for verification-only reshaping, and `[docs]` for documentation.
+
+Verification discipline:
+
+- Start each lane with focused checks, then broaden before commit.
+- Run live smoke only when the lane touches GUI, input, rendering, patch
+  transport, story-state dispatch, or smoke automation.
 
 ## Verification Gate
 
-Every refactor lane should pass:
+Every refactor lane should have a focused check tied to what moved. Before
+committing a lane, broaden to:
 
 ```sh
 cargo test -p gameterm-visual
@@ -44,7 +86,10 @@ Current pressure: `gameterm-visual/src/lib.rs` owns schema, validation, runtime,
 story state, patch application, rendering entry points, debug reports, and
 tests. It is now doing too much.
 
-Target module shape:
+Principle fit: this is an internal `[visual] NFC` refactor. It keeps the crate
+boundary stable and preserves the public `gameterm_visual` API.
+
+Target module shape after the lane is complete:
 
 ```text
 gameterm-visual/src/
@@ -63,25 +108,44 @@ gameterm-visual/src/
 
 Commit lanes:
 
-1. Move plain schema structs/enums into `schema.rs`.
-2. Move validation helpers and `VisualSceneError` into `validation.rs`.
-3. Move condition evaluation into `conditions.rs`.
-4. Move deterministic resolve operations into `actions.rs`.
-5. Move story-state export/import into `story_state.rs`.
-6. Move patch schema/application into `patch.rs`.
-7. Move debug report formatting into `debug.rs`.
+1. `[visual] NFC - move Scene condition helpers`
+   - Move only condition evaluation and guard-detail formatting.
+   - Focused check: `cargo test -p gameterm-visual guarded_choice rpg_condition_sources_guard_choices`.
+2. `[visual] NFC - move Scene action resolution`
+   - Move deterministic operation summaries and transaction helpers without
+     changing status strings.
+   - Focused check: `cargo test -p gameterm-visual resolve_action`.
+3. `[visual] NFC - move Scene story-state helpers`
+   - Move story export/import structures and helpers.
+   - Focused check: `cargo test -p gameterm-visual story_state`.
+4. `[visual] NFC - move Scene patch helpers`
+   - Move patch schema and patch application helpers.
+   - Focused check: `cargo test -p gameterm-visual scene_patch`.
+5. `[visual] NFC - move Scene validation helpers`
+   - Move validation only after schema/action dependencies are stable.
+   - Focused check: `cargo test -p gameterm-visual scene_rejects`.
+6. `[visual] NFC - move Scene debug reporting`
+   - Move debug report text/render helpers.
+   - Focused check: `cargo test -p gameterm-visual debug_report`.
+7. `[visual] NFC - move Scene schema types`
+   - Move plain structs/enums last if it still improves readability.
+   - Focused check: full `cargo test -p gameterm-visual`.
 
 Acceptance:
 
 - Public exports remain compatible from `gameterm_visual`.
 - Tests still pass without changing fixture JSON.
 - Each move commit is mostly mechanical.
+- `git diff --stat` for each commit is dominated by moved code, not rewrites.
 
 ## Priority 2: Normalize Action Execution
 
 Current pressure: choices, mode input maps, layer input maps, layer transitions,
 story-state actions, and deterministic operations are related but implemented
 through separate paths.
+
+Principle fit: this is not NFC unless behavior is provably unchanged. It should
+start only after the module split makes the behavior easy to test.
 
 Target:
 
@@ -93,12 +157,17 @@ Target:
 
 Commit lanes:
 
-1. Introduce an internal `SceneActionOutcome`.
-2. Route `Inspect`, `AdvanceDialogue`, and pending external actions through the
-   outcome type.
-3. Route `Resolve` through a transaction object.
-4. Convert layer-transition trigger logic to reuse the same transaction path.
-5. Add focused tests for unchanged status strings and generation bumps.
+1. `[visual] add internal Scene action outcome`
+   - Introduce the type behind existing behavior.
+   - Tests assert unchanged status strings and generation bumps.
+2. `[visual] route Scene pending actions through action outcome`
+   - Cover `OpenFile`, `RunCommand`, `Navigate`, story export/import.
+3. `[visual] route Scene deterministic actions through transactions`
+   - Preserve rollback behavior and action summaries.
+4. `[visual] unify Scene layer transition trigger path`
+   - Reuse transaction guard evaluation for trigger operations.
+5. `[test] cover Scene action status compatibility`
+   - Add status/generation compatibility tests if earlier commits expose gaps.
 
 Acceptance:
 
@@ -111,6 +180,9 @@ Acceptance:
 Current pressure: `ci/gameterm-scene-author.sh` is useful but growing through
 large case blocks and jq snippets.
 
+Principle fit: this is `[tools]` work. Avoid replacing the helper with a new
+language or framework unless shell/jq becomes a demonstrated blocker.
+
 Target:
 
 - Keep the shell entrypoint for local ergonomics.
@@ -120,11 +192,11 @@ Target:
 
 Commit lanes:
 
-1. Extract jq filters into `ci/scene-author/*.jq`.
-2. Add a small command metadata table for help text.
-3. Normalize typed value and guard construction.
-4. Add helper tests for invalid mutation rollback.
-5. Keep existing command names stable.
+1. `[tools] NFC - extract Scene author jq filters`
+2. `[tools] NFC - table-drive Scene author help`
+3. `[tools] normalize Scene author typed values`
+4. `[tools] cover Scene author mutation rollback`
+5. `[docs] update Scene authoring examples if output changes`
 
 Acceptance:
 
@@ -137,6 +209,9 @@ Acceptance:
 Current pressure: fixtures, smoke scenarios, and verifier checks are now broad
 enough to need clearer ownership.
 
+Principle fit: this is `[test]` or `[tools]` depending on whether it changes
+verification behavior. Keep smoke changes separate from runtime changes.
+
 Target:
 
 - Fixture README maps each fixture to the feature it proves.
@@ -146,11 +221,10 @@ Target:
 
 Commit lanes:
 
-1. Add a scenario table to fixture docs.
-2. Move scenario metadata in `ci/gameterm-scene-smoke.sh` into a structured
-   block or external JSON.
-3. Add a summary mode for the verifier.
-4. Keep full verbose logs available on failure.
+1. `[docs] document Scene fixture scenario ownership`
+2. `[tools] NFC - table-drive Scene smoke scenarios`
+3. `[tools] add Scene verifier summary mode`
+4. `[test] cover Scene smoke scenario registry`
 
 Acceptance:
 
@@ -162,6 +236,9 @@ Acceptance:
 
 Current pressure: runtime tests are comprehensive but concentrated in one file.
 
+Principle fit: this is `[test] NFC` when no assertions change. Keep test moves
+separate from new coverage.
+
 Target:
 
 - Tests grouped by behavior: schema validation, conditions, actions, story
@@ -171,10 +248,11 @@ Target:
 
 Commit lanes:
 
-1. Move test helpers to a local test module.
-2. Group tests by module as code is split.
-3. Add builders for `VisualCondition`, `SceneAction`, and layer state.
-4. Keep fixture tests close to fixture files.
+1. `[test] NFC - move Scene test helpers`
+2. `[test] NFC - group Scene condition tests`
+3. `[test] NFC - group Scene action tests`
+4. `[test] add Scene runtime builders`
+5. `[test] NFC - group Scene fixture tests`
 
 Acceptance:
 
@@ -184,10 +262,24 @@ Acceptance:
 
 ## Suggested Order
 
-1. Split conditions and actions first; they are the highest-change areas.
-2. Split schema/validation after action behavior is isolated.
-3. Refactor authoring helper once runtime modules settle.
-4. Refactor smoke/fixtures last, because they are the safety net.
+1. Split conditions first. It is the smallest useful `[visual] NFC` move.
+2. Split deterministic action helpers next, with focused `resolve_action` tests.
+3. Split story-state and patch helpers before validation/schema.
+4. Split validation and schema only after dependencies are clear.
+5. Normalize action execution after mechanical moves prove behavior is stable.
+6. Refactor authoring helper once runtime module names settle.
+7. Refactor smoke/fixtures last, because they are the safety net.
 
 Do not start second-pass product features until these refactors either land or
 are explicitly deferred.
+
+## Stop Conditions
+
+Pause the refactor lane and reassess if:
+
+- A move requires changing public JSON shape.
+- A move requires touching non-Scene upstream modules beyond imports/exports.
+- Focused tests pass but broad `ci/gameterm-scene-verify.sh --all` fails.
+- The diff stops being mostly mechanical.
+- A behavior fix is discovered; commit or plan that fix separately before
+  continuing NFC work.
