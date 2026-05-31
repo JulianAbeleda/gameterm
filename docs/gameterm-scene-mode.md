@@ -228,11 +228,14 @@ shell commands.
 }
 ```
 
-`cwd` is optional. `target` is optional and defaults to `tab`; supported values
-are `tab`, `split_right`, and `split_down`. Scene Mode opens the command in the
-same window, then reports the spawned pane id or spawn failure in the status
-line and Tile Debugger. Command output belongs to the spawned pane; it does not
-mutate the scene JSON.
+`cwd` is optional. For generated or reusable scenes, prefer setting `cwd`
+explicitly so the command is tied to an auditable workspace root. `doctor` warns
+when a `RunCommand` choice has no cwd because the command then depends on launch
+context. `target` is optional and defaults to `tab`; supported values are
+`tab`, `split_right`, and `split_down`. Scene Mode opens the command in the same
+window, then reports the spawned pane id or spawn failure in the status line and
+Tile Debugger. Command output belongs to the spawned pane; it does not mutate
+the scene JSON.
 
 `Navigate` choices load another scene JSON file. Relative navigation targets
 are resolved against the directory of the currently active scene file. After a
