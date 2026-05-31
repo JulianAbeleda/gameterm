@@ -48,11 +48,13 @@ onboarding_required_patterns=(
 )
 
 cleanup() {
+  set +u
   for path in "${tmp_paths[@]}"; do
     if [[ -n "${path}" && -d "${path}" ]]; then
       rm -rf "${path}"
     fi
   done
+  set -u
 }
 trap cleanup EXIT
 
