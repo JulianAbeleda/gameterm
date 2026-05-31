@@ -15,15 +15,17 @@ daily use.
 
 ## Product End State
 
-The first complete layer is done when:
+Status: complete for the first product-summary pass.
 
-1. Normal view shows the selected entity and a compact metadata summary.
-2. Active mode and active layer state are visible.
-3. Last known process state is visible when present.
-4. Important variables are summarized without taking over the screen.
-5. Choices remain visible and selectable in small terminal windows.
-6. The Tile Debugger continues to expose full detail.
-7. Deterministic tests cover the normal-view summary.
+The first complete layer is done because normal view now:
+
+1. Shows the selected entity and a compact metadata summary.
+2. Shows active mode and active layer state.
+3. Shows last known process state when present.
+4. Summarizes important variables without taking over the screen.
+5. Keeps choices visible and selectable in ordinary terminal windows.
+6. Leaves full detail in the Tile Debugger.
+7. Has deterministic test coverage for the product-state summary.
 
 ## Information Hierarchy
 
@@ -46,17 +48,57 @@ diagnostics to the Tile Debugger.
 
 ## First-Pass Runtime Shape
 
-The first pass keeps the existing text renderer and adds compact summaries:
+The implemented first pass keeps the existing text renderer and adds compact
+summaries:
 
 - selected entity metadata: first four key/value pairs plus overflow count
 - variables: first five entries plus overflow count
 - layers: first four layer states plus overflow count
 - process state: phase, entity id, command, exit code, and message when present
+- relationship summary for the selected entity
+- grouped choices by action kind
 
 Long metadata, variable, and process values are clipped before rendering so one
 large path or message cannot crowd out choices.
 
-## Deferred Work
+## Implemented Evidence
+
+Runtime behavior:
+
+- `render_scene` prints selected entity details through compact metadata.
+- `render_scene` prints selected-entity relationships when present.
+- `render_scene` prints mode, layer, process, variable, RPG, and story-state
+  summaries before dialogue and choices.
+- Choices are grouped by action kind in the normal text frame.
+- Full metadata, variables, transitions, patches, and diagnostics remain in the
+  Tile Debugger.
+
+Focused tests:
+
+- `scene_frame_contains_selected_entity`
+- `scene_frame_contains_product_state_summary`
+- `scene_frame_groups_choices_by_action_kind`
+
+Verification:
+
+- `cargo test -p gameterm-visual`
+- `ci/gameterm-scene-verify.sh --all`
+
+## Second-Pass Scope
+
+The next normal-view pass should be treated as product design work, not a small
+follow-up to the first pass.
+
+Candidate goals:
+
+- define a stable compact layout for generated workspace scenes
+- decide whether normal view needs a two-column text layout or just better
+  section ordering
+- make long paths and process messages predictable across small terminal sizes
+- decide which relationship/memory/agent facts belong in normal view versus
+  command selection or Tile Debugger
+- add screenshot smoke only for layout behavior that deterministic text tests
+  cannot cover
 
 Deferred items:
 
@@ -66,7 +108,8 @@ Deferred items:
 - color/style treatment in the GUI renderer
 - screenshots for several terminal sizes
 
-These belong after the first product summary proves useful and stable.
+These belong after command selection and policy boundaries are clearer, because
+those layers define which actions and safety signals the normal view must carry.
 
 ## Verification
 
@@ -89,6 +132,8 @@ Implemented:
 - active layer summary in normal view
 - process state summary in normal view
 - compact variable summary in normal view
+- selected-entity relationship summary in normal view
+- choice grouping by action kind
 - focused unit coverage for the product-state summary
 
 Deferred:
@@ -96,3 +141,7 @@ Deferred:
 - layout planner
 - command palette view
 - multi-size screenshot assertions
+
+Recommendation: treat Product Layer 2 as complete for the current first pass.
+Move next product work to command selection unless a manual smoke pass shows a
+specific normal-view readability defect.

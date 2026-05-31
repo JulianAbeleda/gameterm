@@ -118,32 +118,42 @@ Deferred:
 
 ### Priority 2: Normal View Product Polish
 
-Status: next.
+Status: complete for the first product-summary pass; second-pass layout work
+is deferred.
 
 Goal: make Scene Mode useful without opening the Tile Debugger.
 
-Why next: the debugger explains the state well, but daily use needs the common
-path visible in normal view.
+Why it mattered: the debugger explained state well, but daily use needed the
+common path visible in normal view.
 
 Scope owner:
 
 - [Normal View Polish Scope](gameterm-scene-normal-view-polish-scope.md)
 
-First slice:
+Completed first slice:
 
 - clarify selected entity, active layers, status, blockers, process/agent
   state, and choices in normal view
 - keep small terminal windows readable
 - add focused render tests and screenshot smoke where layout changes matter
 
-Commit shape:
+Verified behavior:
 
-- `[docs] scope Scene normal view polish`
-- `[visual] polish Scene normal view state`
-- `[test] verify Scene normal view polish`
-- `[test] record Scene layout smoke` when live smoke runs
+- selected entity metadata, relationships, active layers, process state,
+  variables, RPG state, and story-state status render in normal view
+- choices are grouped by action kind
+- focused tests cover selected entity, product-state summary, and grouped
+  choices
+
+Deferred:
+
+- two-column layout
+- terminal-size-specific layout planner
+- screenshot assertions across several terminal sizes
 
 ### Priority 3: Command Selection Surface
+
+Status: next.
 
 Goal: avoid turning generated workspaces into long flat choice lists.
 
@@ -266,25 +276,24 @@ Avoid:
 
 ## Next Recommended Work
 
-Do Priority 2 next: normal view product polish.
+Do Priority 3 next: command selection surface.
 
 Reasoning:
 
 - Priority 1 is already complete for the explicit metadata path.
-- The debugger explains state well, but the normal product view is still the
-  daily-use bottleneck.
-- Normal-view polish makes live pane/process context, command selection,
-  memory, and multi-agent state easier to understand before adding more data.
+- Priority 2 is already complete for the first product-summary pass.
+- Generated workspaces can still produce too many flat choices for repeated
+  daily use.
+- Command selection clarifies the action model before policy, sessions, memory,
+  and multi-agent layers add more commands.
 
 Concrete next checklist:
 
-1. Re-read [Normal View Polish Scope](gameterm-scene-normal-view-polish-scope.md).
-2. Update that scope if it is stale against current generated workspace scenes.
-3. Define the normal-view information hierarchy for selected entity, active
-   layers, status, blockers, process/agent state, and choices.
-4. Implement the smallest render/runtime slice that improves generated
-   workspace readability.
-5. Add focused render tests.
+1. Re-read [Command Selection Scope](gameterm-scene-command-selection-scope.md).
+2. Update that scope if it is stale against current grouped choices.
+3. Decide whether the first pass needs only richer choice metadata or a distinct
+   command-selection mode.
+4. Preserve existing choice activation behavior.
+5. Add focused render/runtime tests for grouped or filtered commands.
 6. Run `cargo test -p gameterm-visual`.
 7. Run `ci/gameterm-scene-verify.sh --all`.
-8. Run screenshot smoke if rendering dimensions or layout behavior changed.
