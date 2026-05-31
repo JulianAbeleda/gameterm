@@ -139,6 +139,11 @@ That document defines how authored Agent/Workspace state becomes a generated
 view of cwd, git, project files, explicit commands, and future pane/process
 metadata.
 
+The first product-completion layer is scoped in
+[GameTerm Scene Mode Pane And Process Discovery Scope](gameterm-scene-pane-process-discovery-scope.md).
+That document defines the explicit pane/process metadata path used by
+Workspace Discovery and the deferred live mux integration boundary.
+
 Priority order:
 
 1. Layered state machines.

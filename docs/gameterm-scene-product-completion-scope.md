@@ -86,7 +86,8 @@ Why it matters:
 
 First-pass deliverables:
 
-- Scope document for pane/process discovery.
+- Scope document for pane/process discovery:
+  `docs/gameterm-scene-pane-process-discovery-scope.md`.
 - Add helper support for optional pane metadata input.
 - Add mux/CLI path only if local APIs are stable enough.
 - Generate/update process entities from pane/process data.
@@ -477,6 +478,9 @@ The next scope document should be:
 ```text
 docs/gameterm-scene-pane-process-discovery-scope.md
 ```
+
+Status: implemented as the explicit-metadata first pass. Live mux
+auto-discovery remains deferred until the caller/API path is stable.
 
 That scope should answer:
 

@@ -259,9 +259,10 @@ Purpose: future bridge to real GameTerm panes.
 
 First-pass status:
 
-- scoped but not required for implementation
+- implemented through explicit pane/process metadata inputs
+- live mux auto-discovery remains deferred
 
-Potential later inputs:
+Supported inputs:
 
 - active mux window id
 - active pane id
@@ -275,6 +276,7 @@ Rules:
 - do not block first pass on mux integration
 - represent unknown pane/process fields as absent metadata
 - when added, keep this data as metadata/variables unless it must drive guards
+- use pane cwd as the discovery cwd only when `--cwd` is not supplied
 
 ## Output Contracts
 
@@ -822,7 +824,7 @@ Implemented first-pass items:
 Remaining deferred items:
 
 - live pane cwd discovery through mux APIs
-- foreground process discovery
+- automatic foreground process discovery through mux APIs
 - persistent workspace sessions
 - richer configurable discovery profiles
 - generated relationship graphs
