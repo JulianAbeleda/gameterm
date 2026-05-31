@@ -18,6 +18,8 @@ sweeps.
 - Separate runtime state, schema validation, action execution, debug reporting,
   and fixture coverage.
 - Preserve the full first-pass verification gate.
+- Keep refactor scope principle-driven: stop when the remaining move is mostly
+  aesthetic, high-churn, or harder to review than the code it replaces.
 
 ## Non-Goals
 
@@ -94,7 +96,7 @@ Target module shape after the lane is complete:
 ```text
 gameterm-visual/src/
   lib.rs
-  schema.rs
+  schema.rs        optional; only if a narrow, low-churn slice is available
   validation.rs
   runtime.rs
   actions.rs
@@ -108,28 +110,43 @@ gameterm-visual/src/
 
 Commit lanes:
 
-1. `[visual] NFC - move Scene condition helpers`
+1. `[visual] NFC - move Scene condition helpers` ✅ done
    - Move only condition evaluation and guard-detail formatting.
    - Focused check: `cargo test -p gameterm-visual guarded_choice rpg_condition_sources_guard_choices`.
-2. `[visual] NFC - move Scene action resolution`
+2. `[visual] NFC - move Scene action resolution` ✅ done
    - Move deterministic operation summaries and transaction helpers without
      changing status strings.
    - Focused check: `cargo test -p gameterm-visual resolve_action`.
-3. `[visual] NFC - move Scene story-state helpers`
+3. `[visual] NFC - move Scene story-state helpers` ✅ done
    - Move story export/import structures and helpers.
    - Focused check: `cargo test -p gameterm-visual story_state`.
-4. `[visual] NFC - move Scene patch helpers`
+4. `[visual] NFC - move Scene patch helpers` ✅ done
    - Move patch schema and patch application helpers.
    - Focused check: `cargo test -p gameterm-visual scene_patch`.
-5. `[visual] NFC - move Scene validation helpers`
+5. `[visual] NFC - move Scene validation helpers` ✅ done
    - Move validation only after schema/action dependencies are stable.
    - Focused check: `cargo test -p gameterm-visual scene_rejects`.
-6. `[visual] NFC - move Scene debug reporting`
-   - Move debug report text/render helpers.
+6. `[visual] NFC - move Scene debug reporting` ✅ done
+   - Move debug report data structure and report builder.
    - Focused check: `cargo test -p gameterm-visual debug_report`.
-7. `[visual] NFC - move Scene schema types`
-   - Move plain structs/enums last if it still improves readability.
-   - Focused check: full `cargo test -p gameterm-visual`.
+7. `[visual] NFC - move Scene debugger text rendering` optional
+   - Move only the text-frame debugger renderer if the extracted function can
+     avoid broad runtime field exposure.
+   - Focused check: `cargo test -p gameterm-visual debugger`.
+8. `[visual] NFC - move Scene mode/layer schema`
+   - Optional schema slice. Move only mode/layer DTOs if serde defaults and
+     default mode construction stay easy to review.
+   - Focused check: `cargo test -p gameterm-visual mode_ layered_`.
+9. `[visual] NFC - move Scene RPG/state schema`
+   - Optional schema slice. Move state values, variables, RPG structs, and
+     state operations only if imports remain local and public exports stay
+     compatible.
+   - Focused check: `cargo test -p gameterm-visual rpg resolve_action`.
+10. `[visual] NFC - move Scene core schema`
+    - Optional final schema slice. Move VisualScene, entity, dialogue, render
+      DTOs, and sprite manifest DTOs only if the diff is still mostly
+      mechanical and does not hide behavior changes.
+    - Focused check: full `cargo test -p gameterm-visual`.
 
 Acceptance:
 
@@ -137,6 +154,17 @@ Acceptance:
 - Tests still pass without changing fixture JSON.
 - Each move commit is mostly mechanical.
 - `git diff --stat` for each commit is dominated by moved code, not rewrites.
+- It is acceptable to leave schema in `lib.rs` if moving it requires a large
+  low-signal diff or exposes private runtime fields just to satisfy a shape.
+
+Current status:
+
+- Completed the core high-value split: conditions, actions, story state, patch,
+  validation helpers, and debug report building.
+- Deferred full schema extraction for now. The remaining schema block is still
+  large and intertwined with serde defaults, default mode construction, sprite
+  manifest DTOs, and public API compatibility. Per coding principles, this is
+  not worth forcing as a single broad sweep.
 
 ## Priority 2: Normalize Action Execution
 
@@ -160,8 +188,10 @@ Commit lanes:
 1. `[visual] add internal Scene action outcome`
    - Introduce the type behind existing behavior.
    - Tests assert unchanged status strings and generation bumps.
+   - Do not rename existing actions or status text.
 2. `[visual] route Scene pending actions through action outcome`
    - Cover `OpenFile`, `RunCommand`, `Navigate`, story export/import.
+   - Existing `VisualActionRequest` shape remains compatible.
 3. `[visual] route Scene deterministic actions through transactions`
    - Preserve rollback behavior and action summaries.
 4. `[visual] unify Scene layer transition trigger path`
@@ -193,10 +223,15 @@ Target:
 Commit lanes:
 
 1. `[tools] NFC - extract Scene author jq filters`
+   - Move reusable jq snippets without changing command output.
 2. `[tools] NFC - table-drive Scene author help`
+   - Keep command names and examples stable.
 3. `[tools] normalize Scene author typed values`
+   - Behavior change only if tests prove existing examples still work.
 4. `[tools] cover Scene author mutation rollback`
+   - Add regression checks for failed mutations leaving files unchanged.
 5. `[docs] update Scene authoring examples if output changes`
+   - Docs only after any intentional output change.
 
 Acceptance:
 
@@ -222,9 +257,14 @@ Target:
 Commit lanes:
 
 1. `[docs] document Scene fixture scenario ownership`
+   - Map each fixture to the feature it proves and the focused tests that load
+     it.
 2. `[tools] NFC - table-drive Scene smoke scenarios`
+   - Keep existing scenario names valid.
 3. `[tools] add Scene verifier summary mode`
+   - Optional, only if verifier output becomes hard to scan.
 4. `[test] cover Scene smoke scenario registry`
+   - Add coverage only after the registry exists.
 
 Acceptance:
 
@@ -249,10 +289,15 @@ Target:
 Commit lanes:
 
 1. `[test] NFC - move Scene test helpers`
+   - Move helper constructors and fixture path helpers first.
 2. `[test] NFC - group Scene condition tests`
+   - Preserve test names where possible for searchability.
 3. `[test] NFC - group Scene action tests`
+   - Keep behavior assertions unchanged.
 4. `[test] add Scene runtime builders`
+   - Add builders only when they reduce repeated setup without hiding intent.
 5. `[test] NFC - group Scene fixture tests`
+   - Move fixture tests after helpers settle.
 
 Acceptance:
 
@@ -260,15 +305,68 @@ Acceptance:
 - Test names remain searchable by feature.
 - Refactor commits avoid changing product behavior.
 
+## Priority 6: Runtime Method Split
+
+Current pressure: `SceneRuntime` still owns lifecycle hooks, input dispatch,
+layer transitions, rendering entry points, selection, reload, and status helpers
+in one impl block.
+
+Principle fit: do this only after module helper moves are stable. Prefer small
+impl-block moves over introducing a new runtime abstraction.
+
+Target:
+
+- Keep `SceneRuntime` as the central runtime type.
+- Split method groups by concern without changing public behavior.
+- Avoid exposing runtime fields publicly only to make modules compile.
+
+Commit lanes:
+
+1. `[visual] NFC - group Scene runtime lifecycle methods`
+   - Move enter/update/exit hook methods or group them in a focused impl block.
+   - Focused check: `cargo test -p gameterm-visual mode_lifecycle`.
+2. `[visual] NFC - group Scene runtime input methods`
+   - Move mode/layer input helpers only if field access remains contained.
+   - Focused check: `cargo test -p gameterm-visual mode_ layered_input`.
+3. `[visual] NFC - group Scene runtime selection methods`
+   - Move entity/choice selection helpers.
+   - Focused check: `cargo test -p gameterm-visual selection mode_next mode_previous`.
+4. `[visual] NFC - group Scene runtime status helpers`
+   - Move mark/open/run-command/status helpers only if no behavior changes.
+   - Focused check: `cargo test -p gameterm-visual status_helpers open_file run_command`.
+
+Acceptance:
+
+- No public field exposure added solely for module access.
+- `SceneRuntime` constructor and public methods remain compatible.
+- Status strings and generation bumps remain unchanged.
+
+## Full Refactor Definition
+
+This refactor is considered complete for the first maintainable pass when:
+
+- High-coupling helpers are no longer embedded in the main runtime file.
+- Remaining code in `lib.rs` has an explicit reason to stay there for now:
+  schema/public API compatibility, the central runtime type, or tests awaiting a
+  test-layout pass.
+- Every completed move has a separate commit, focused test, broad visual test,
+  GUI check, and Scene verifier pass.
+- Deferred work is documented with a reason tied to the coding principles, not
+  just left vague.
+
+This refactor is not considered complete merely because `lib.rs` reaches an
+arbitrary line count. Line count is a signal, not the acceptance criterion.
+
 ## Suggested Order
 
-1. Split conditions first. It is the smallest useful `[visual] NFC` move.
-2. Split deterministic action helpers next, with focused `resolve_action` tests.
-3. Split story-state and patch helpers before validation/schema.
-4. Split validation and schema only after dependencies are clear.
-5. Normalize action execution after mechanical moves prove behavior is stable.
-6. Refactor authoring helper once runtime module names settle.
-7. Refactor smoke/fixtures last, because they are the safety net.
+1. Finish any remaining narrow schema slice only if it is low-churn.
+2. Normalize action execution after mechanical moves prove behavior is stable.
+3. Refactor authoring helper once runtime module names settle.
+4. Organize fixtures and smoke after runtime/helper behavior is stable.
+5. Split tests after helper modules are stable enough that test grouping will
+   not churn repeatedly.
+6. Split runtime method groups only where it improves reviewability without
+   exposing internals.
 
 Do not start second-pass product features until these refactors either land or
 are explicitly deferred.
