@@ -877,6 +877,26 @@ validate_scene() {
   cargo run -q -p gameterm-visual --example scene_validate -- "$1" >/dev/null
 }
 
+validate_generated_layout() {
+  local scene="$1"
+  jq -e '
+    .width as $width
+    | .height as $height
+    |
+    (.entities | map(select(.visible // true)) | length) as $visible_count
+    | (.entities
+      | map(select(.visible // true) | "\(.position.x),\(.position.y)")
+      | unique
+      | length) == $visible_count
+    and all(.entities[]; .position.x >= 0 and .position.x < $width and .position.y >= 0 and .position.y < $height)
+    and any(.entities[]; .id == "discovered-workspace" and .position.x <= 3 and .position.y <= 3)
+    and any(.entities[]; .id == "discovered-project" and .position.x <= 6 and .position.y <= 3)
+    and any(.entities[]; .id == "discovered-pane" and .position.x >= 10 and .position.y <= 3)
+    and any(.entities[]; .id == "discovered-process" and .position.x >= 10 and .position.y >= 4)
+    and all(.entities[] | select((.metadata // []) | any(.[0] == "entity_type" and .[1] == "file")); .position.y >= 6)
+  ' "${scene}" >/dev/null
+}
+
 write_output_file() {
   local source="$1"
   local target="$2"
@@ -926,6 +946,7 @@ run_discover() {
   fi
   scene_json >"${tmp}"
   validate_scene "${tmp}"
+  validate_generated_layout "${tmp}"
 
   if [[ -n "${scene_output}" ]]; then
     write_output_file "${tmp}" "${scene_output}"
