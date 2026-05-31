@@ -563,6 +563,18 @@ pub enum VisualProcessPhase {
     Failed,
 }
 
+impl VisualProcessPhase {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Queued => "queued",
+            Self::Running => "running",
+            Self::Blocked => "blocked",
+            Self::Succeeded => "succeeded",
+            Self::Failed => "failed",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VisualStoryState {
     pub story_state_version: u32,
@@ -2151,6 +2163,8 @@ impl SceneRuntime {
                     &transition.conditions,
                     &self.scene.variables,
                     &self.scene.rpg,
+                    self.selected_entity(),
+                    self.last_process_state.as_ref(),
                 ) {
                     self.last_layer_transition = Some(VisualLayerTransitionReport {
                         layer_id: layer_id.clone(),
@@ -2198,7 +2212,13 @@ impl SceneRuntime {
             if let Some(binding) = binding {
                 let layer_id = self.scene.layers[layer_index].layer_id.clone();
                 self.last_input_layer = Some(layer_id.clone());
-                if !conditions_match(&binding.conditions, &self.scene.variables, &self.scene.rpg) {
+                if !conditions_match(
+                    &binding.conditions,
+                    &self.scene.variables,
+                    &self.scene.rpg,
+                    self.selected_entity(),
+                    self.last_process_state.as_ref(),
+                ) {
                     self.status = format!(
                         "Layer input unavailable: {} {}",
                         layer_id,
@@ -2255,7 +2275,13 @@ impl SceneRuntime {
     pub fn activate_choice(&mut self) {
         self.pending_action = None;
         if let Some(choice) = self.scene.choices.get(self.selected_choice).cloned() {
-            if !conditions_match(&choice.conditions, &self.scene.variables, &self.scene.rpg) {
+            if !conditions_match(
+                &choice.conditions,
+                &self.scene.variables,
+                &self.scene.rpg,
+                self.selected_entity(),
+                self.last_process_state.as_ref(),
+            ) {
                 self.status = format!(
                     "Choice unavailable: {}",
                     condition_guard_detail(&choice.conditions)
@@ -2453,7 +2479,7 @@ impl SceneRuntime {
                             input: input.clone(),
                         });
                     };
-                    if !conditions_match(&transition.conditions, &variables, &rpg) {
+                    if !conditions_match(&transition.conditions, &variables, &rpg, None, None) {
                         return Err(VisualSceneError::LayerTransitionGuardFailed {
                             label: label.to_string(),
                             layer_id: layer_id.clone(),
@@ -2934,7 +2960,13 @@ impl SceneRuntime {
         let selected_choice = self.scene.choices.get(self.selected_choice);
         let selected_choice_enabled = selected_choice
             .map(|choice| {
-                conditions_match(&choice.conditions, &self.scene.variables, &self.scene.rpg)
+                conditions_match(
+                    &choice.conditions,
+                    &self.scene.variables,
+                    &self.scene.rpg,
+                    self.selected_entity(),
+                    self.last_process_state.as_ref(),
+                )
             })
             .unwrap_or(false);
         let pending_action = self.pending_action.as_ref();
@@ -3147,12 +3179,17 @@ impl SceneRuntime {
             } else {
                 " "
             };
-            let guard =
-                if conditions_match(&choice.conditions, &self.scene.variables, &self.scene.rpg) {
-                    ""
-                } else {
-                    " [locked]"
-                };
+            let guard = if conditions_match(
+                &choice.conditions,
+                &self.scene.variables,
+                &self.scene.rpg,
+                self.selected_entity(),
+                self.last_process_state.as_ref(),
+            ) {
+                ""
+            } else {
+                " [locked]"
+            };
             out.push_str(&format!("{marker} {}{}\r\n", choice.label, guard));
         }
         out.push_str(&format!("\r\nStatus: {}\r\n", self.status));
@@ -3562,9 +3599,11 @@ fn conditions_match(
     conditions: &[VisualCondition],
     variables: &[VisualStateEntry],
     rpg: &VisualRpgState,
+    selected_entity: Option<&VisualEntity>,
+    process_state: Option<&VisualProcessState>,
 ) -> bool {
     conditions.iter().all(|condition| {
-        condition_value(condition, variables, rpg)
+        condition_value(condition, variables, rpg, selected_entity, process_state)
             .map(|value| value == condition.equals)
             .unwrap_or(false)
     })
@@ -3574,6 +3613,8 @@ fn condition_value(
     condition: &VisualCondition,
     variables: &[VisualStateEntry],
     rpg: &VisualRpgState,
+    selected_entity: Option<&VisualEntity>,
+    process_state: Option<&VisualProcessState>,
 ) -> Option<VisualStateValue> {
     match condition.source.as_deref().unwrap_or("variable") {
         "variable" => variables
@@ -3612,6 +3653,33 @@ fn condition_value(
                 .find(|stat| stat.owner_id.as_deref() == owner_id && stat.key == key)
                 .map(|stat| stat.value.clone())
         }
+        "agent_phase" => variables
+            .iter()
+            .find(|entry| entry.key == "agent_phase")
+            .map(|entry| entry.value.clone()),
+        "process_phase" => process_state
+            .map(|state| VisualStateValue::Text(state.phase.as_str().to_string()))
+            .or_else(|| {
+                variables
+                    .iter()
+                    .find(|entry| entry.key == "agent_process_phase")
+                    .map(|entry| entry.value.clone())
+            }),
+        "selected_entity_flag" => selected_entity.map(|entity| {
+            VisualStateValue::Bool(
+                entity
+                    .state_flags
+                    .iter()
+                    .any(|flag| flag == &condition.variable),
+            )
+        }),
+        "selected_entity_metadata" => selected_entity.and_then(|entity| {
+            entity
+                .metadata
+                .iter()
+                .find(|(key, _)| key == &condition.variable)
+                .map(|(_, value)| VisualStateValue::Text(value.clone()))
+        }),
         _ => None,
     }
 }
@@ -3724,7 +3792,13 @@ impl VisualMode for SceneRuntime {
             .find(|binding| binding.input.trim() == input.binding_key())
             .cloned()
         {
-            if !conditions_match(&binding.conditions, &self.scene.variables, &self.scene.rpg) {
+            if !conditions_match(
+                &binding.conditions,
+                &self.scene.variables,
+                &self.scene.rpg,
+                self.selected_entity(),
+                self.last_process_state.as_ref(),
+            ) {
                 self.status = format!(
                     "Input unavailable: {}",
                     condition_guard_detail(&binding.conditions)
@@ -5249,8 +5323,39 @@ mod tests {
                 variable: "project-gameterm:focus".to_string(),
                 equals: VisualStateValue::Number(3),
             },
+            VisualCondition {
+                source: Some("agent_phase".to_string()),
+                variable: "ignored".to_string(),
+                equals: VisualStateValue::Text("running".to_string()),
+            },
+            VisualCondition {
+                source: Some("process_phase".to_string()),
+                variable: "ignored".to_string(),
+                equals: VisualStateValue::Text("succeeded".to_string()),
+            },
+            VisualCondition {
+                source: Some("selected_entity_flag".to_string()),
+                variable: "active".to_string(),
+                equals: VisualStateValue::Bool(true),
+            },
+            VisualCondition {
+                source: Some("selected_entity_metadata".to_string()),
+                variable: "mode".to_string(),
+                equals: VisualStateValue::Text("hard-fork".to_string()),
+            },
         ];
+        scene.variables.push(VisualStateEntry {
+            key: "agent_phase".to_string(),
+            value: VisualStateValue::Text("running".to_string()),
+        });
         let mut runtime = SceneRuntime::new(scene).unwrap();
+        runtime.last_process_state = Some(VisualProcessState {
+            phase: VisualProcessPhase::Succeeded,
+            entity_id: Some("agent-audit".to_string()),
+            command: Some("agent:completed".to_string()),
+            exit_code: Some(0),
+            message: Some("Done".to_string()),
+        });
 
         runtime.activate_choice();
 
@@ -5264,7 +5369,7 @@ mod tests {
 
         assert_eq!(
             runtime.render_snapshot().status,
-            "Choice unavailable: requires inventory_count:scene-token=2, quest_stage:verify-scene-runtime=1, quest_completed:verify-scene-runtime=false, stat:project-gameterm:focus=3"
+            "Choice unavailable: requires inventory_count:scene-token=2, quest_stage:verify-scene-runtime=1, quest_completed:verify-scene-runtime=false, stat:project-gameterm:focus=3, agent_phase:ignored=running, process_phase:ignored=succeeded, selected_entity_flag:active=true, selected_entity_metadata:mode=hard-fork"
         );
     }
 
