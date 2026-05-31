@@ -279,6 +279,25 @@ run_author_helper_check() {
     --state draft \
     --label Verify \
     "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
+  cp "${tmp_home}/gameterm/scenes/authored.json" \
+    "${tmp_home}/gameterm/scenes/authored-before-failed-mutation.json"
+  set +e
+  "${repo_root}/ci/gameterm-scene-author.sh" \
+    add-layer \
+    --layer-id verify \
+    --state duplicate \
+    "${tmp_home}/gameterm/scenes/authored.json" \
+    >/tmp/gameterm-scene-author-rollback.out \
+    2>/tmp/gameterm-scene-author-rollback.err
+  duplicate_layer_rc=$?
+  set -e
+  if [[ "${duplicate_layer_rc}" -eq 0 ]]; then
+    echo "expected duplicate layer mutation to fail" >&2
+    exit 1
+  fi
+  cmp \
+    "${tmp_home}/gameterm/scenes/authored-before-failed-mutation.json" \
+    "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
   "${repo_root}/ci/gameterm-scene-author.sh" \
     add-layer-transition \
     --layer-id verify \
