@@ -74,10 +74,11 @@ Options for update-choice:
   --target TARGET
 
 Fixtures:
-  basic, navigate, invalid, sprites, missing-sprite
+  basic, navigate, invalid, sprites, missing-sprite, vertical-slice
 
 Templates:
-  agent-workflow, project-dashboard, visual-novel, layered-mode, rpg-quest
+  agent-workflow, project-dashboard, visual-novel, layered-mode, rpg-quest,
+  vertical-slice
 EOF
 }
 
@@ -593,6 +594,162 @@ EOF
         ]
       }' | write_json "${target}"
       ;;
+    vertical-slice)
+      jq -n '{
+        title: "Scene Vertical Slice",
+        background: "workspace-map",
+        width: 16,
+        height: 9,
+        mode: {
+          mode_id: "workspace",
+          label: "Workspace",
+          description: "Playable Scene Mode vertical slice",
+          scene_profile: "scene",
+          allowed_actions: ["Inspect", "Resolve", "AdvanceDialogue"]
+        },
+        layers: [
+          {
+            layer_id: "ui",
+            state: "scene",
+            label: "UI",
+            input_map: [
+              { input: "other", action: "toggle_debug" }
+            ]
+          },
+          {
+            layer_id: "story",
+            state: "dialogue",
+            label: "Story"
+          },
+          {
+            layer_id: "process",
+            state: "idle",
+            label: "Process"
+          }
+        ],
+        variables: [
+          { key: "brief_accepted", value: { Bool: false } },
+          { key: "launch_ready", value: { Bool: false } },
+          { key: "agent_phase", value: { Text: "idle" } }
+        ],
+        rpg: {
+          inventory: [
+            { item_id: "scene-token", label: "Scene Token", count: 1 }
+          ],
+          stats: [
+            { owner_id: "player", key: "focus", value: { Number: 1 } }
+          ],
+          quests: [
+            {
+              quest_id: "ship-scene",
+              label: "Ship the Scene",
+              stage: 1,
+              completed: false,
+              journal: "Meet the guide and prepare the Scene Mode launch."
+            }
+          ],
+          relationships: [
+            {
+              source_id: "player",
+              target_id: "guide",
+              kind: "trust",
+              value: 1
+            }
+          ]
+        },
+        entities: [
+          {
+            id: "project-core",
+            kind: "Project",
+            label: "Scene Project",
+            position: { x: 2, y: 2 },
+            sprite: "project_core",
+            state_flags: ["active"],
+            metadata: [["goal", "ship vertical slice"]]
+          },
+          {
+            id: "guide",
+            kind: "Agent",
+            label: "Guide",
+            position: { x: 7, y: 3 },
+            sprite: "agent_idle",
+            state_flags: ["speaking"],
+            metadata: [["relationship", "trust"]]
+          },
+          {
+            id: "build-task",
+            kind: "Task",
+            label: "Launch Check",
+            position: { x: 12, y: 4 },
+            sprite: "task_tile",
+            state_flags: ["queued"],
+            metadata: [["process", "idle"]]
+          }
+        ],
+        dialogue_speaker: "Guide",
+        dialogue: "Accept the brief, prepare the launch kit, then run the task check.",
+        dialogue_lines: [
+          { speaker: "Guide", text: "Scene Mode needs one playable loop.", portrait: "agent_idle" },
+          { speaker: "Guide", text: "The launch kit is ready.", portrait: "agent_idle" },
+          { speaker: "Guide", text: "The scene is ready to ship.", portrait: "agent_idle" }
+        ],
+        choices: [
+          {
+            label: "Accept scene brief",
+            kind: {
+              Resolve: {
+                operations: [
+                  { SetVariable: { key: "brief_accepted", value: { Bool: true } } },
+                  { AddInventory: { item: { item_id: "scene-brief", label: "Scene Brief", count: 1 } } },
+                  { AdvanceQuest: { quest_id: "ship-scene", stage: 2 } },
+                  { AdjustRelationship: { source_id: "player", target_id: "guide", kind: "trust", amount: 1 } }
+                ]
+              }
+            },
+            conditions: [
+              { variable: "brief_accepted", equals: { Bool: false } }
+            ]
+          },
+          {
+            label: "Prepare launch kit",
+            kind: {
+              Resolve: {
+                operations: [
+                  { SetVariable: { key: "launch_ready", value: { Bool: true } } },
+                  { AddInventory: { item: { item_id: "launch-kit", label: "Launch Kit", count: 1 } } },
+                  { AdjustStat: { owner_id: "player", key: "focus", amount: 2 } },
+                  { AppendQuestJournal: { quest_id: "ship-scene", text: "Prepared the launch kit." } }
+                ]
+              }
+            },
+            conditions: [
+              { variable: "brief_accepted", equals: { Bool: true } }
+            ]
+          },
+          {
+            label: "Complete scene loop",
+            kind: {
+              Resolve: {
+                operations: [
+                  { CompleteQuest: { quest_id: "ship-scene" } },
+                  { SetVariable: { key: "agent_phase", value: { Text: "complete" } } }
+                ]
+              }
+            },
+            conditions: [
+              { variable: "launch_ready", equals: { Bool: true } }
+            ]
+          },
+          {
+            label: "Read ending",
+            kind: { AdvanceDialogue: { target: 2 } },
+            conditions: [
+              { variable: "agent_phase", equals: { Text: "complete" } }
+            ]
+          }
+        ]
+      }' | write_json "${target}"
+      ;;
     *)
       echo "unknown template: ${template_name}" >&2
       usage >&2
@@ -845,6 +1002,10 @@ install_fixture() {
       copy_file "${fixture_root}/default.json" "${scene_dir}/default.json"
       copy_file "${fixture_root}/sprites-missing.json" "${scene_dir}/sprites.json"
       ;;
+    vertical-slice)
+      copy_file "${fixture_root}/vertical-slice.json" "${scene_dir}/default.json"
+      copy_file "${fixture_root}/sprites.json" "${scene_dir}/sprites.json"
+      ;;
     *)
       echo "unknown fixture: ${fixture}" >&2
       usage >&2
@@ -946,14 +1107,14 @@ case "${command}" in
       usage >&2
       exit 2
     fi
-    printf '%s\n' basic navigate invalid sprites missing-sprite
+    printf '%s\n' basic navigate invalid sprites missing-sprite vertical-slice
     ;;
   list-templates)
     if [[ "${#positionals[@]}" -ne 0 ]]; then
       usage >&2
       exit 2
     fi
-    printf '%s\n' agent-workflow project-dashboard visual-novel layered-mode rpg-quest
+    printf '%s\n' agent-workflow project-dashboard visual-novel layered-mode rpg-quest vertical-slice
     ;;
   -h|--help)
     usage

@@ -11,8 +11,8 @@ fixtures. The script uses temporary config directories only.
 Options:
   --all                 Run all checks. This is the default.
   --fixture NAME        Run one fixture setup check: basic, navigate, invalid,
-                        sprites, missing-sprite, run-command-targets, or
-                        layered-mode.
+                        sprites, missing-sprite, run-command-targets,
+                        layered-mode, or vertical-slice.
   -h, --help            Show this help.
 EOF
 }
@@ -63,6 +63,9 @@ scene_file_for_fixture() {
       ;;
     layered-mode)
       printf '%s\n' "${fixture_root}/layered-mode.json"
+      ;;
+    vertical-slice)
+      printf '%s\n' "${fixture_root}/vertical-slice.json"
       ;;
     invalid)
       printf '%s\n' "${fixture_root}/invalid.json"
@@ -173,6 +176,7 @@ run_author_helper_check() {
   grep -qx visual-novel <<<"${templates}"
   grep -qx layered-mode <<<"${templates}"
   grep -qx rpg-quest <<<"${templates}"
+  grep -qx vertical-slice <<<"${templates}"
   "${repo_root}/ci/gameterm-scene-author.sh" \
     install-fixture \
     --config-home "${tmp_home}" \
@@ -193,7 +197,7 @@ run_author_helper_check() {
     "${tmp_home}/gameterm/scenes/template.json" >/dev/null
   "${repo_root}/ci/gameterm-scene-author.sh" \
     validate "${tmp_home}/gameterm/scenes/template.json" >/dev/null
-  for template in visual-novel layered-mode rpg-quest; do
+  for template in visual-novel layered-mode rpg-quest vertical-slice; do
     "${repo_root}/ci/gameterm-scene-author.sh" \
       new-template \
       --template "${template}" \
@@ -513,7 +517,7 @@ run_all() {
   run_patch_check
   run_story_state_check
   run_smoke_asset_check
-  for fixture in basic navigate invalid sprites missing-sprite run-command-targets layered-mode; do
+  for fixture in basic navigate invalid sprites missing-sprite run-command-targets layered-mode vertical-slice; do
     run_fixture_setup_check "${fixture}"
   done
   run_cargo_checks
@@ -525,7 +529,7 @@ case "${mode}" in
   all)
     run_all
     ;;
-  basic|navigate|invalid|sprites|missing-sprite|run-command-targets|layered-mode)
+  basic|navigate|invalid|sprites|missing-sprite|run-command-targets|layered-mode|vertical-slice)
     run_static_checks
     run_fixture_setup_check "${mode}"
     ;;

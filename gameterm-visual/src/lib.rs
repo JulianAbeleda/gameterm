@@ -3705,6 +3705,73 @@ mod tests {
     }
 
     #[test]
+    fn scene_fixture_vertical_slice_completes_product_loop() {
+        let scene = VisualScene::load_from_path(scene_fixture_path("vertical-slice.json")).unwrap();
+        let mut runtime = SceneRuntime::new(scene).unwrap();
+
+        assert_eq!(runtime.render_snapshot().title, "Scene Vertical Slice");
+        assert_eq!(runtime.render_snapshot().active_layers.len(), 3);
+
+        runtime.activate_choice();
+        runtime.select_next_choice();
+        runtime.activate_choice();
+        runtime.select_next_choice();
+        runtime.activate_choice();
+        runtime.select_next_choice();
+        runtime.activate_choice();
+
+        let state = runtime.export_story_state();
+        assert!(state.variables.iter().any(|entry| {
+            entry.key == "agent_phase"
+                && entry.value == VisualStateValue::Text("complete".to_string())
+        }));
+        assert!(state
+            .rpg
+            .inventory
+            .iter()
+            .any(|item| item.item_id == "launch-kit" && item.count == 1));
+        assert_eq!(state.rpg.stats[0].value, VisualStateValue::Number(3));
+        assert!(state.rpg.quests[0].completed);
+        assert!(state.rpg.quests[0]
+            .journal
+            .contains("Prepared the launch kit."));
+        assert_eq!(state.rpg.relationships[0].value, 2);
+        assert_eq!(state.dialogue_index, Some(2));
+
+        runtime
+            .apply_scene_patch(VisualScenePatch {
+                scene_patch_version: VisualScenePatch::VERSION,
+                updates: vec![VisualSceneEntityPatch {
+                    entity_id: "build-task".to_string(),
+                    label: Some("Launch Check Complete".to_string()),
+                    position: None,
+                    sprite: None,
+                    visible: None,
+                    state_flags: Some(vec!["succeeded".to_string()]),
+                    metadata: Some(vec![("process".to_string(), "complete".to_string())]),
+                }],
+                variables: vec![],
+                selected_entity_id: Some("build-task".to_string()),
+                process_state: Some(VisualProcessState {
+                    entity_id: Some("build-task".to_string()),
+                    phase: VisualProcessPhase::Succeeded,
+                    command: Some("true".to_string()),
+                    exit_code: Some(0),
+                    message: Some("Vertical slice process succeeded".to_string()),
+                }),
+                status: Some("Vertical slice complete".to_string()),
+            })
+            .unwrap();
+
+        let report = runtime.debug_report();
+        assert_eq!(report.selected_entity_id.as_deref(), Some("build-task"));
+        assert_eq!(
+            report.process_state.as_ref().map(|state| state.phase),
+            Some(VisualProcessPhase::Succeeded)
+        );
+    }
+
+    #[test]
     fn scene_fixture_invalid_is_rejected() {
         assert!(matches!(
             VisualScene::load_from_path(scene_fixture_path("invalid.json")),

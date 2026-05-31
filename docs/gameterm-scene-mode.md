@@ -83,6 +83,18 @@ ci/gameterm-scene-doctor.sh
 short summary of the scene dimensions, entity count, choices, and initial
 selection.
 
+Guided templates are available through the authoring helper:
+
+```sh
+ci/gameterm-scene-author.sh new-template \
+  --template vertical-slice \
+  ~/.config/gameterm/scenes/default.json
+```
+
+The `vertical-slice` template combines dialogue, guarded choices, deterministic
+story/RPG actions, layered state, and a process-state task entity into one
+playable Scene Mode loop.
+
 `doctor` checks the configured scene and sprite manifest together. It validates
 the scene, reports missing navigation and document targets, checks sprite
 manifest shape, checks sprite asset paths, verifies RunCommand targets and
