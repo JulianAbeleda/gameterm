@@ -133,7 +133,7 @@ Commit lanes:
    - Move only the text-frame debugger renderer if the extracted function can
      avoid broad runtime field exposure.
    - Focused check: `cargo test -p gameterm-visual debugger`.
-8. `[visual] NFC - move Scene mode/layer schema`
+8. `[visual] NFC - move Scene mode/layer schema` ✅ done
    - Optional schema slice. Move only mode/layer DTOs if serde defaults and
      default mode construction stay easy to review.
    - Focused check: `cargo test -p gameterm-visual mode_ layered_`.
@@ -160,11 +160,11 @@ Acceptance:
 Current status:
 
 - Completed the core high-value split: conditions, actions, story state, patch,
-  validation helpers, and debug report building.
-- Deferred full schema extraction for now. The remaining schema block is still
-  large and intertwined with serde defaults, default mode construction, sprite
-  manifest DTOs, and public API compatibility. Per coding principles, this is
-  not worth forcing as a single broad sweep.
+  validation helpers, debug report building, and mode/layer schema.
+- Deferred full schema extraction after the mode/layer slice. The remaining
+  schema block is still intertwined with public API compatibility, sprite
+  manifest DTOs, render DTOs, and central runtime construction. Per coding
+  principles, forcing that as a broad sweep would be higher churn than value.
 
 ## Priority 2: Normalize Action Execution
 
@@ -185,18 +185,18 @@ Target:
 
 Commit lanes:
 
-1. `[visual] add internal Scene action outcome`
+1. `[visual] add internal Scene action outcome` ✅ done
    - Introduce the type behind existing behavior.
    - Tests assert unchanged status strings and generation bumps.
    - Do not rename existing actions or status text.
-2. `[visual] route Scene pending actions through action outcome`
+2. `[visual] route Scene pending actions through action outcome` ✅ done
    - Cover `OpenFile`, `RunCommand`, `Navigate`, story export/import.
    - Existing `VisualActionRequest` shape remains compatible.
-3. `[visual] route Scene deterministic actions through transactions`
+3. `[visual] route Scene deterministic actions through transactions` ✅ done
    - Preserve rollback behavior and action summaries.
-4. `[visual] unify Scene layer transition trigger path`
+4. `[visual] unify Scene layer transition trigger path` ✅ done
    - Reuse transaction guard evaluation for trigger operations.
-5. `[test] cover Scene action status compatibility`
+5. `[test] cover Scene action status compatibility` ✅ done
    - Add status/generation compatibility tests if earlier commits expose gaps.
 
 Acceptance:
@@ -204,6 +204,15 @@ Acceptance:
 - Existing action statuses and debug history remain stable.
 - Failed operations still do not partially mutate state.
 - `ci/gameterm-scene-verify.sh --all` remains green.
+
+Current status:
+
+- Completed. The runtime now has a typed internal action outcome, a named
+  deterministic transaction boundary, a shared layer-transition application
+  helper, and explicit status compatibility coverage.
+- Deferred deeper input-map dispatch unification because the current shared
+  outcome path covers the high-risk pending/deterministic behavior without
+  forcing unrelated input refactors.
 
 ## Priority 3: Make Authoring Helper Data-Driven
 
@@ -228,7 +237,7 @@ Commit lanes:
    - Keep command names and examples stable.
 3. `[tools] normalize Scene author typed values`
    - Behavior change only if tests prove existing examples still work.
-4. `[tools] cover Scene author mutation rollback`
+4. `[tools] cover Scene author mutation rollback` ✅ done
    - Add regression checks for failed mutations leaving files unchanged.
 5. `[docs] update Scene authoring examples if output changes`
    - Docs only after any intentional output change.
@@ -238,6 +247,14 @@ Acceptance:
 - Existing docs examples still work.
 - Authoring verifier still covers every command.
 - Failed commands leave the original scene file unchanged.
+
+Current status:
+
+- Completed the guardrail slice: failed author mutations are now verified to
+  leave the scene file unchanged.
+- Deferred jq-filter extraction and table-driven help. The helper is large, but
+  behavior is stable and now better protected; extracting shell/jq snippets can
+  happen later behind the rollback test when it removes real duplication.
 
 ## Priority 4: Fixture And Smoke Organization
 
@@ -256,7 +273,7 @@ Target:
 
 Commit lanes:
 
-1. `[docs] document Scene fixture scenario ownership`
+1. `[docs] document Scene fixture scenario ownership` ✅ done
    - Map each fixture to the feature it proves and the focused tests that load
      it.
 2. `[tools] NFC - table-drive Scene smoke scenarios`
@@ -271,6 +288,13 @@ Acceptance:
 - All current scenario names remain valid.
 - Smoke output is quieter by default.
 - Failure diagnostics still include enough context to debug.
+
+Current status:
+
+- Completed fixture ownership documentation.
+- Deferred smoke scenario registry/table-drive work and verifier summary mode.
+  The current scenario names remain valid and the verifier output is still
+  acceptable for the first maintainable pass.
 
 ## Priority 5: Test Layout
 
@@ -288,7 +312,7 @@ Target:
 
 Commit lanes:
 
-1. `[test] NFC - move Scene test helpers`
+1. `[test] NFC - move Scene test helpers` ✅ partial
    - Move helper constructors and fixture path helpers first.
 2. `[test] NFC - group Scene condition tests`
    - Preserve test names where possible for searchability.
@@ -304,6 +328,13 @@ Acceptance:
 - No coverage loss.
 - Test names remain searchable by feature.
 - Refactor commits avoid changing product behavior.
+
+Current status:
+
+- Completed a narrow fixture-path helper move.
+- Deferred broad test grouping and runtime builders. The tests are still large,
+  but moving many test blocks now would create high review churn while the
+  runtime surface is still settling.
 
 ## Priority 6: Runtime Method Split
 
@@ -322,7 +353,7 @@ Target:
 
 Commit lanes:
 
-1. `[visual] NFC - group Scene runtime lifecycle methods`
+1. `[visual] NFC - group Scene runtime lifecycle methods` ✅ done
    - Move enter/update/exit hook methods or group them in a focused impl block.
    - Focused check: `cargo test -p gameterm-visual mode_lifecycle`.
 2. `[visual] NFC - group Scene runtime input methods`
@@ -340,6 +371,13 @@ Acceptance:
 - No public field exposure added solely for module access.
 - `SceneRuntime` constructor and public methods remain compatible.
 - Status strings and generation bumps remain unchanged.
+
+Current status:
+
+- Completed lifecycle method grouping.
+- Deferred input, selection, and status helper grouping. Those methods still
+  touch central runtime fields, and splitting them further should wait until it
+  clearly improves reviewability without exposing internals.
 
 ## Full Refactor Definition
 
@@ -370,6 +408,40 @@ arbitrary line count. Line count is a signal, not the acceptance criterion.
 
 Do not start second-pass product features until these refactors either land or
 are explicitly deferred.
+
+## First-Pass Closeout
+
+Status: first maintainable refactor pass complete.
+
+Completed commits:
+
+- `[visual] NFC - move Scene mode and layer schema`
+- `[visual] add internal Scene action outcome`
+- `[visual] route Scene story-state requests through action outcome`
+- `[visual] route Scene deterministic actions through transactions`
+- `[visual] unify Scene layer transition actions`
+- `[test] cover Scene action status compatibility`
+- `[tools] cover Scene author mutation rollback`
+- `[docs] document Scene fixture ownership`
+- `[test] NFC - move Scene fixture test helper`
+- `[visual] NFC - group Scene runtime lifecycle methods`
+
+Final verification:
+
+- `cargo test -p gameterm-visual`
+- `cargo check -p gameterm-gui`
+- `ci/gameterm-scene-verify.sh --all`
+- `ci/gameterm-scene-smoke.sh --launch --scenario vertical-slice --output /tmp/gameterm-scene-refactor-vertical-slice.png`
+
+Audit result:
+
+- Public Scene JSON shape remains stable.
+- Public `gameterm_visual` exports remain compatible.
+- Existing status strings and pending action request shapes are covered.
+- Failed deterministic actions and failed author-helper mutations preserve
+  rollback behavior.
+- Remaining work is deliberately deferred as polish rather than required for
+  the first maintainable pass.
 
 ## Stop Conditions
 
