@@ -547,6 +547,7 @@ write_json() {
   local tmp
   tmp="$(mktemp /tmp/gameterm-scene-author.XXXXXX)"
   cat >"${tmp}"
+  validate_scene_file "${tmp}" >/dev/null
   mv "${tmp}" "${target}"
 }
 
