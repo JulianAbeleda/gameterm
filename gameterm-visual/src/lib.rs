@@ -1701,24 +1701,29 @@ impl SceneRuntime {
                 entity.sprite,
                 entity.state_flags.join(", ")
             ));
+            let metadata = format_metadata_summary(&entity.metadata, 4);
+            if !metadata.is_empty() {
+                out.push_str(&format!("Details: {metadata}\r\n"));
+            }
         }
         out.push_str(&format!(
             "Mode: {} ({})\r\n",
             self.scene.mode.label, self.scene.mode.mode_id
         ));
+        if !self.scene.layers.is_empty() {
+            out.push_str(&format!("Layers: {}\r\n", format_layer_summary(&self.scene.layers)));
+        }
+        if let Some(process_state) = &self.last_process_state {
+            out.push_str(&format!(
+                "Process: {}\r\n",
+                format_process_summary(process_state)
+            ));
+        }
         if !self.scene.variables.is_empty() {
-            out.push_str("State: ");
-            for (idx, variable) in self.scene.variables.iter().enumerate() {
-                if idx > 0 {
-                    out.push_str(", ");
-                }
-                out.push_str(&format!(
-                    "{}={}",
-                    variable.key,
-                    variable.value.as_debug_string()
-                ));
-            }
-            out.push_str("\r\n");
+            out.push_str(&format!(
+                "State: {}\r\n",
+                format_state_summary(&self.scene.variables, 5)
+            ));
         }
         if !self.scene.rpg.is_empty() {
             out.push_str(&format!(
@@ -2119,6 +2124,73 @@ fn default_mode_input_action(input: VisualInput) -> &'static str {
         VisualInput::Previous => "select_previous",
         VisualInput::Other => "ignore",
     }
+}
+
+fn clip_summary_value(value: &str, max_chars: usize) -> String {
+    let mut chars = value.chars();
+    let clipped = chars.by_ref().take(max_chars).collect::<String>();
+    if chars.next().is_some() {
+        format!("{clipped}...")
+    } else {
+        clipped
+    }
+}
+
+fn format_state_summary(entries: &[VisualStateEntry], max_entries: usize) -> String {
+    let mut parts = entries
+        .iter()
+        .take(max_entries)
+        .map(|entry| {
+            format!(
+                "{}={}",
+                entry.key,
+                clip_summary_value(&entry.value.as_debug_string(), 32)
+            )
+        })
+        .collect::<Vec<_>>();
+    if entries.len() > max_entries {
+        parts.push(format!("+{} more", entries.len() - max_entries));
+    }
+    parts.join(", ")
+}
+
+fn format_metadata_summary(metadata: &[(String, String)], max_entries: usize) -> String {
+    let mut parts = metadata
+        .iter()
+        .take(max_entries)
+        .map(|(key, value)| format!("{key}={}", clip_summary_value(value, 36)))
+        .collect::<Vec<_>>();
+    if metadata.len() > max_entries {
+        parts.push(format!("+{} more", metadata.len() - max_entries));
+    }
+    parts.join(", ")
+}
+
+fn format_layer_summary(layers: &[VisualLayerState]) -> String {
+    layers
+        .iter()
+        .take(4)
+        .map(|layer| format!("{}={}", layer.layer_id, layer.state))
+        .chain((layers.len() > 4).then(|| format!("+{} more", layers.len() - 4)))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn format_process_summary(process_state: &VisualProcessState) -> String {
+    let mut parts = vec![process_state.phase.as_str().to_string()];
+    if let Some(entity_id) = &process_state.entity_id {
+        parts.push(format!("entity={entity_id}"));
+    }
+    if let Some(command) = &process_state.command {
+        parts.push(format!("cmd={}", clip_summary_value(command, 36)));
+    }
+    if let Some(exit_code) = process_state.exit_code {
+        parts.push(format!("exit={exit_code}"));
+    }
+    if let Some(message) = &process_state.message {
+        parts.push(clip_summary_value(message, 48));
+    }
+    parts.join(", ")
 }
 
 pub fn truncate_to_screen(text: String, cols: usize, rows: usize) -> String {
@@ -4489,6 +4561,58 @@ mod tests {
         let runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
         let frame = runtime.render_text_frame(200, 80);
         assert!(frame.contains("Selected: GameTerm"));
+    }
+
+    #[test]
+    fn scene_frame_contains_product_state_summary() {
+        let mut scene = VisualScene::demo();
+        scene.variables.extend([
+            VisualStateEntry {
+                key: "workspace_root".to_string(),
+                value: VisualStateValue::Text("/tmp/gameterm".to_string()),
+            },
+            VisualStateEntry {
+                key: "repo_status".to_string(),
+                value: VisualStateValue::Text("dirty".to_string()),
+            },
+            VisualStateEntry {
+                key: "active_pane_id".to_string(),
+                value: VisualStateValue::Number(231),
+            },
+            VisualStateEntry {
+                key: "process_phase".to_string(),
+                value: VisualStateValue::Text("running".to_string()),
+            },
+        ]);
+        scene.layers.push(VisualLayerState {
+            layer_id: "process".to_string(),
+            state: "running".to_string(),
+            label: Some("Process".to_string()),
+            transitions: Vec::new(),
+            input_map: Vec::new(),
+        });
+        scene.entities[0].metadata.extend([
+            ("entity_type".to_string(), "workspace".to_string()),
+            ("root".to_string(), "/tmp/gameterm".to_string()),
+        ]);
+        let mut runtime = SceneRuntime::new(scene).unwrap();
+        runtime.last_process_state = Some(VisualProcessState {
+            entity_id: Some("task-render".to_string()),
+            phase: VisualProcessPhase::Running,
+            command: Some("cargo test -p gameterm-visual".to_string()),
+            exit_code: None,
+            message: Some("Verification running".to_string()),
+        });
+
+        let frame = runtime.render_text_frame(120, 40);
+
+        assert!(frame.contains("Details: repo=JulianAbeleda/gameterm"));
+        assert!(frame.contains("entity_type=workspace"));
+        assert!(frame.contains("Layers: process=running"));
+        assert!(frame.contains("Process: running, entity=task-render"));
+        assert!(frame.contains("State: conversation_unlocked=true"));
+        assert!(frame.contains("workspace_root=/tmp/gameterm"));
+        assert!(frame.contains("Choices:"));
     }
 
     #[test]
