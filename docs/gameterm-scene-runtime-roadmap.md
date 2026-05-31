@@ -359,6 +359,231 @@ Commit-sized tasks:
 4. Add agent/process smoke once structured process state exists.
 5. Add documentation for when manual smoke is required.
 
+## Scene Mode Next Product Layer
+
+The product-loop roadmap established the state/runtime foundation. The next
+layer should prove that foundation through a real, repeatable GameTerm
+experience: smoke-verified GUI behavior, a playable scene, in-app authoring
+surfaces, richer state transitions, and live agent/process updates.
+
+Priority order:
+
+1. Live manual smoke pass.
+2. First playable vertical slice.
+3. GUI authoring/save UX.
+4. State transition polish.
+5. Agent integration.
+
+These priorities should remain separate commits where possible. The smoke pass
+should happen first because it validates the real overlay/mux/render path before
+new product behavior builds on it.
+
+### Next 1: Live Manual Smoke Pass
+
+Purpose: verify the real GUI path after the Scene Mode state roadmap: launch,
+overlay activation, keyboard handling, mux patches, process-state patches, and
+screen capture.
+
+Deliverables:
+
+1. Run every named smoke scenario from `ci/gameterm-scene-smoke.sh
+   --list-scenarios` that can run on the current machine.
+2. Capture output screenshots to timestamped Desktop paths or a configured
+   artifact directory.
+3. Record pass/fail status, command used, capture path, and manual observations
+   in this roadmap or a dedicated smoke report.
+4. Confirm `process-state` shows typed process state in the Tile Debugger.
+5. Confirm `guarded-input` keeps Scene Mode open when guards block input.
+
+Acceptance criteria:
+
+1. `renderer-rows`, `guarded-input`, `run-command-targets`, `patch-inbox`,
+   `mux-patch`, and `process-state` have recorded results.
+2. Any failed scenario has a clear failure class: build, launch, permission,
+   capture, patch transport, input handling, or visual/render issue.
+3. Successful scenarios include the capture path and the exact command used.
+4. Manual smoke does not leave stray GameTerm processes running.
+5. Follow-up defects are filed as separate roadmap items instead of mixed into
+   the smoke-report commit.
+
+Commit-sized tasks:
+
+1. Add smoke report template and artifact path convention.
+2. Run `renderer-rows`, `guarded-input`, and `run-command-targets`.
+3. Run `patch-inbox`, `mux-patch`, and `process-state`.
+4. Commit the smoke report.
+5. Open follow-up fixes for any failures.
+
+### Next 2: First Playable Vertical Slice
+
+Purpose: build one coherent Scene Mode experience that proves visual novel,
+RPG, layered state, deterministic actions, persistence, and process state can
+compose into something usable.
+
+Target slice:
+
+1. A workspace/project scene with a clear objective.
+2. Dialogue introduction and branching choices.
+3. One RPG quest with inventory/stat/relationship updates.
+4. Layered UI/story/process states visible in the Tile Debugger.
+5. A process-driven task that updates an entity from running to complete or
+   failed.
+6. Exportable story state after the slice is completed.
+
+Deliverables:
+
+1. Add a `vertical-slice` authoring template or fixture.
+2. Include deterministic choices that update quest, inventory, stats, and
+   relationship state.
+3. Include at least one guarded branch unlocked by previous state.
+4. Include one process-state path using the existing helper/patch schema.
+5. Add verification coverage that loads the scene, validates actions, applies
+   process patches, and exports story state.
+
+Acceptance criteria:
+
+1. The scene validates immediately and is included in
+   `ci/gameterm-scene-verify.sh --all`.
+2. A user can complete the core loop with keyboard input only.
+3. The final story export contains the expected quest, inventory/stat, dialogue,
+   and relationship state.
+4. The process task visibly updates an entity and debug report state.
+5. No default action in the slice runs arbitrary shell commands without an
+   explicit user choice.
+
+Commit-sized tasks:
+
+1. Add the scene/template skeleton.
+2. Add deterministic story/RPG action paths.
+3. Add process-state fixture path.
+4. Add export/verification coverage.
+5. Add docs explaining how to run the slice.
+
+### Next 3: GUI Authoring/Save UX
+
+Purpose: make Scene Mode state useful from inside GameTerm instead of relying
+only on shell helpers.
+
+Surfaces:
+
+1. Save/export current story state.
+2. Load/import story state.
+3. Export current runtime scene after applying patches.
+4. Show save/load status and errors in Scene Mode and the Tile Debugger.
+5. Optional authoring commands for adding/updating entities and choices later.
+
+Deliverables:
+
+1. Add `VisualActionRequest` variants for story-state export/import or reuse a
+   small persistence command request type.
+2. Wire GUI overlay dispatch for persistence requests.
+3. Define default state paths and user-visible status messages.
+4. Add key/input-map actions for save, load, export, and inspect where
+   appropriate.
+5. Add focused tests for request generation, dispatch status, invalid state,
+   and no-mutation failure.
+
+Acceptance criteria:
+
+1. A scene can trigger save/export without editing source scene JSON.
+2. Loading invalid or incompatible state reports a visible error and preserves
+   runtime state.
+3. Save/load actions are available through input maps or choices, not hardcoded
+   only to one fixture.
+4. The Tile Debugger shows the last persistence action and path.
+5. The helper and GUI paths share validation semantics.
+
+Commit-sized tasks:
+
+1. Add persistence action request schema.
+2. Wire runtime request generation.
+3. Wire GUI dispatch and status reporting.
+4. Add tests and fixture coverage.
+5. Document save/load workflows.
+
+### Next 4: State Transition Polish
+
+Purpose: make Scene Mode feel like structured game state, not only isolated
+actions.
+
+Polish targets:
+
+1. Layer transitions triggered by deterministic actions.
+2. Mode/layer transitions driven by process state.
+3. Quest-stage transitions that change dialogue, visible entities, and
+   available choices.
+4. Transition history in the debug report.
+5. Clear rollback behavior when a transition guard or operation fails.
+
+Deliverables:
+
+1. Add transition operations to deterministic action resolution.
+2. Add guard helpers for process phase, quest status, inventory, and
+   relationship state.
+3. Record last successful and failed transition in debug output.
+4. Add fixtures that demonstrate blocked, successful, and chained transitions.
+5. Keep transition behavior deterministic and in-memory unless explicitly
+   exported.
+
+Acceptance criteria:
+
+1. A quest action can move the story layer from dialogue to choice or complete.
+2. A process completion can unlock a guarded branch or update the process layer.
+3. Failed transitions do not partially mutate variables/RPG state/layers.
+4. Debug output explains why a guard blocked a transition.
+5. Tests cover success, failure, rollback, and debug reporting.
+
+Commit-sized tasks:
+
+1. Add transition operation schema.
+2. Add process/quest/inventory guard helpers.
+3. Add runtime application and rollback tests.
+4. Add fixtures and verifier coverage.
+5. Update Tile Debugger output.
+
+### Next 5: Agent Integration
+
+Purpose: connect real agent/task execution to Scene Mode as a structured,
+inspectable state surface.
+
+Initial integration shape:
+
+1. Agent/task runners emit typed Scene Mode patches.
+2. Raw logs stay in terminal panes.
+3. Scene Mode receives summaries, process phases, entity/task status, and
+   optional quest/task progress.
+4. Explicit pane ids or active overlay routing determine the target.
+5. User approval/blocking states are represented as process state, not hidden
+   shell state.
+
+Deliverables:
+
+1. Define a stable agent patch contract on top of `process_state`, variables,
+   entity metadata, and deterministic state operations.
+2. Add helper commands for `planning`, `running`, `blocked`, `complete`, and
+   `failed` agent phases.
+3. Add a sample agent workflow scene using those patches.
+4. Add mux/inbox transport examples for active-overlay and explicit-pane
+   routing.
+5. Add smoke and verifier coverage for one full agent task lifecycle.
+
+Acceptance criteria:
+
+1. An agent task can update a Scene Mode entity from planning to running to
+   complete.
+2. A blocked task visibly asks for user input or external state.
+3. Failed tasks report recoverable status without closing Scene Mode.
+4. Multiple overlays can still receive the intended patch target.
+5. The final state is exportable through story-state persistence.
+
+Commit-sized tasks:
+
+1. Add agent helper commands or extend `ci/gameterm-scene-process.sh`.
+2. Add sample agent workflow fixture/template.
+3. Add mux/inbox transport verification.
+4. Add live smoke scenario for the full lifecycle.
+5. Document the agent patch contract.
+
 ## Default Scene Reload
 
 Scene Mode currently loads the optional default scene from:
