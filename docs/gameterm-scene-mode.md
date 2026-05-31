@@ -151,6 +151,11 @@ writes a local task brief JSON file, adds a `task-brief` entity, and exposes an
 `Open task brief` action. The brief is inspectable local context only; it does
 not start an agent, submit a prompt, or run commands.
 
+Generated workspace scenes use fixed layout zones: workspace/project anchors
+near the top-left, pane/process context on the right, task/agent context in the
+middle, and files/briefs along lower rows. The helper validates that visible
+generated entities do not overlap before writing scene output.
+
 When caller code has active pane metadata, it can pass that context into the
 same helper:
 

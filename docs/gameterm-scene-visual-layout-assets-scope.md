@@ -87,6 +87,27 @@ Deterministic verification should cover:
 Live smoke should capture at least one generated workspace scene after layout
 rules change.
 
+## Implementation Status
+
+Implemented:
+
+- Workspace Discovery validates generated layout before writing scene output.
+- visible generated entities must have unique positions.
+- generated entity positions must be inside scene bounds.
+- verifier coverage for workspace/project/pane/process zones.
+- verifier coverage that generated file entities stay in lower rows.
+- existing bundled sprite ids remain the first-pass asset set:
+  `workspace-map`, `project_core`, `task_tile`, `agent_idle`, and
+  `memory_note`.
+
+Deferred:
+
+- new sprite assets
+- graph layout algorithms
+- terminal-size adaptive placement
+- live screenshot smoke refresh
+- drag/reposition UI
+
 ## Commit Lanes
 
 1. `[docs] scope Scene visual layout assets layer`
