@@ -1062,6 +1062,22 @@ run_workspace_session_check() {
   echo "workspace session: ok"
 }
 
+run_onboarding_check() {
+  local doc="${repo_root}/docs/gameterm-scene-onboarding.md"
+  test -f "${doc}"
+  grep -q 'ci/gameterm-scene-workspace.sh inspect --cwd .' "${doc}"
+  grep -q 'ci/gameterm-scene-workspace.sh discover' "${doc}"
+  grep -q 'ci/gameterm-scene-author.sh validate' "${doc}"
+  grep -q 'ci/gameterm-scene-doctor.sh' "${doc}"
+  grep -q 'ci/gameterm-scene-verify.sh --all' "${doc}"
+  grep -q 'ci/gameterm-scene-smoke.sh --launch --scenario workspace-discovery' "${doc}"
+  grep -q 'ci/gameterm-scene-author.sh install-fixture workspace-agent --force' "${doc}"
+  grep -q 'does not run commands, start agents, submit prompts, or overwrite' "${doc}"
+  grep -q 'gameterm-scene-onboarding.md' \
+    "${repo_root}/docs/gameterm-scene-mode.md"
+  echo "onboarding: ok"
+}
+
 run_smoke_asset_check() {
   local scenarios
   "${repo_root}/ci/gameterm-scene-smoke.sh" --check-assets >/dev/null
@@ -1119,6 +1135,7 @@ run_all() {
   run_workspace_discovery_check
   run_story_state_check
   run_workspace_session_check
+  run_onboarding_check
   run_smoke_asset_check
   for fixture in basic navigate invalid sprites missing-sprite run-command-targets layered-mode vertical-slice authoring-loop game-states chained-transitions workspace-agent multi-agent-coordination; do
     run_fixture_setup_check "${fixture}"
