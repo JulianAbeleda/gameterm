@@ -212,7 +212,8 @@ Why it matters:
 
 First-pass deliverables:
 
-- Scope workspace session state.
+- Scope workspace session state:
+  `docs/gameterm-scene-workspace-sessions-scope.md`.
 - Decide whether to reuse story-state export/import or add a workspace-session
   helper.
 - Add save/load status in normal view and debugger.
@@ -242,7 +243,8 @@ Why it matters:
 
 First-pass deliverables:
 
-- Scope relationship graph product slice.
+- Scope relationship graph product slice:
+  `docs/gameterm-scene-memory-relationships-scope.md`.
 - Define relationship entity/metadata conventions.
 - Add fixture and generated examples.
 - Keep search/recall out of first pass unless a local source exists.
@@ -271,7 +273,8 @@ Why it matters:
 
 First-pass deliverables:
 
-- Scope multi-agent product model.
+- Scope multi-agent product model:
+  `docs/gameterm-scene-multi-agent-coordination-scope.md`.
 - Extend helper conventions for agent ids and task ids.
 - Add fixture with two agents and two tasks.
 - Add guard examples for blocked/review states.
@@ -299,7 +302,8 @@ Why it matters:
 
 First-pass deliverables:
 
-- Scope task brief schema.
+- Scope task brief schema:
+  `docs/gameterm-scene-agent-task-bootstrap-scope.md`.
 - Generate task entity metadata from workspace discovery.
 - Add explicit action to export/copy/open task brief.
 - Do not start agents automatically.
@@ -330,7 +334,8 @@ Why it matters:
 
 First-pass deliverables:
 
-- Scope layout rules.
+- Scope layout rules:
+  `docs/gameterm-scene-visual-layout-assets-scope.md`.
 - Improve generated entity placement.
 - Add or refine sprite assets only where they clarify state.
 - Add screenshot smoke expectations.
@@ -358,7 +363,8 @@ Why it matters:
 
 First-pass deliverables:
 
-- Scope onboarding flow.
+- Scope onboarding flow:
+  `docs/gameterm-scene-packaging-onboarding-scope.md`.
 - Add concise docs for daily workflows.
 - Add `doctor` suggestions for discovery/session/policy issues.
 - Consider a single umbrella helper command after flows stabilize.

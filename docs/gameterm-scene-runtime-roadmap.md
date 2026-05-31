@@ -160,6 +160,36 @@ The policy product layer is scoped in
 That document defines the first command-policy diagnostics and the deferred
 origin/risk/allowlist boundary.
 
+The workspace-session product layer is scoped in
+[GameTerm Scene Mode Workspace Sessions Scope](gameterm-scene-workspace-sessions-scope.md).
+That document defines explicit save/restore for daily workspace state without
+mutating source scene JSON.
+
+The memory/relationship product layer is scoped in
+[GameTerm Scene Mode Memory And Relationship Graph Scope](gameterm-scene-memory-relationships-scope.md).
+That document defines local explicit relationships between workspace entities
+without background indexing.
+
+The multi-agent product layer is scoped in
+[GameTerm Scene Mode Multi-Agent Coordination Scope](gameterm-scene-multi-agent-coordination-scope.md).
+That document defines independent agent/task lifecycle state for more than one
+actor.
+
+The task-bootstrap product layer is scoped in
+[GameTerm Scene Mode Agent Task Bootstrap Scope](gameterm-scene-agent-task-bootstrap-scope.md).
+That document defines local inspectable task briefs generated from workspace
+context without automatic agent start.
+
+The generated layout and assets product layer is scoped in
+[GameTerm Scene Mode Visual Layout And Assets Scope](gameterm-scene-visual-layout-assets-scope.md).
+That document defines deterministic generated scene placement and sprite role
+boundaries.
+
+The packaging/onboarding product layer is scoped in
+[GameTerm Scene Mode Packaging And Onboarding Scope](gameterm-scene-packaging-onboarding-scope.md).
+That document defines the setup, generation, validation, smoke, and recovery
+workflow needed for the first complete product pass.
+
 Priority order:
 
 1. Layered state machines.
