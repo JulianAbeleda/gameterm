@@ -143,6 +143,30 @@ pub enum VisualStateOperation {
         layer_id: String,
         state: String,
     },
+    SelectEntity {
+        entity_id: String,
+    },
+    SetEntityFlags {
+        entity_id: String,
+        flags: Vec<String>,
+    },
+    SetEntityMetadata {
+        entity_id: String,
+        metadata: Vec<(String, String)>,
+    },
+    SetEntityVisibility {
+        entity_id: String,
+        visible: bool,
+    },
+    AdvanceDialogueAndSetLayer {
+        target: usize,
+        layer_id: String,
+        state: String,
+    },
+    TriggerLayerTransition {
+        layer_id: String,
+        input: String,
+    },
     IncrementVariable {
         key: String,
         amount: i64,
@@ -791,6 +815,8 @@ fn validate_rpg_state(state: &VisualRpgState) -> Result<(), VisualSceneError> {
 fn validate_state_operations(
     label: &str,
     operations: &[VisualStateOperation],
+    entities: &[VisualEntity],
+    dialogue_lines: &[VisualDialogueLine],
     layers: &[VisualLayerState],
     rpg: &VisualRpgState,
 ) -> Result<(), VisualSceneError> {
@@ -820,6 +846,98 @@ fn validate_state_operations(
                     return Err(VisualSceneError::UnknownLayer {
                         label: label.to_string(),
                         layer_id: layer_id.clone(),
+                    });
+                }
+            }
+            VisualStateOperation::SelectEntity { entity_id }
+            | VisualStateOperation::SetEntityVisibility { entity_id, .. } => {
+                if entity_id.trim().is_empty() {
+                    return Err(VisualSceneError::EmptyResolveOperationKey {
+                        label: label.to_string(),
+                    });
+                }
+                if !entities.iter().any(|entity| entity.id == *entity_id) {
+                    return Err(VisualSceneError::UnknownEntity {
+                        label: label.to_string(),
+                        entity_id: entity_id.clone(),
+                    });
+                }
+            }
+            VisualStateOperation::SetEntityFlags { entity_id, flags } => {
+                if entity_id.trim().is_empty() || flags.iter().any(|flag| flag.trim().is_empty()) {
+                    return Err(VisualSceneError::EmptyResolveOperationKey {
+                        label: label.to_string(),
+                    });
+                }
+                if !entities.iter().any(|entity| entity.id == *entity_id) {
+                    return Err(VisualSceneError::UnknownEntity {
+                        label: label.to_string(),
+                        entity_id: entity_id.clone(),
+                    });
+                }
+            }
+            VisualStateOperation::SetEntityMetadata {
+                entity_id,
+                metadata,
+            } => {
+                if entity_id.trim().is_empty()
+                    || metadata.iter().any(|(key, _)| key.trim().is_empty())
+                {
+                    return Err(VisualSceneError::EmptyResolveOperationKey {
+                        label: label.to_string(),
+                    });
+                }
+                if !entities.iter().any(|entity| entity.id == *entity_id) {
+                    return Err(VisualSceneError::UnknownEntity {
+                        label: label.to_string(),
+                        entity_id: entity_id.clone(),
+                    });
+                }
+            }
+            VisualStateOperation::AdvanceDialogueAndSetLayer {
+                target,
+                layer_id,
+                state,
+            } => {
+                if layer_id.trim().is_empty() || state.trim().is_empty() {
+                    return Err(VisualSceneError::EmptyResolveOperationKey {
+                        label: label.to_string(),
+                    });
+                }
+                if *target >= dialogue_lines.len() {
+                    return Err(VisualSceneError::DialogueTargetOutOfBounds {
+                        label: label.to_string(),
+                        target: *target,
+                    });
+                }
+                if !layers.iter().any(|layer| layer.layer_id == *layer_id) {
+                    return Err(VisualSceneError::UnknownLayer {
+                        label: label.to_string(),
+                        layer_id: layer_id.clone(),
+                    });
+                }
+            }
+            VisualStateOperation::TriggerLayerTransition { layer_id, input } => {
+                if layer_id.trim().is_empty() || input.trim().is_empty() {
+                    return Err(VisualSceneError::EmptyResolveOperationKey {
+                        label: label.to_string(),
+                    });
+                }
+                let Some(layer) = layers.iter().find(|layer| layer.layer_id == *layer_id) else {
+                    return Err(VisualSceneError::UnknownLayer {
+                        label: label.to_string(),
+                        layer_id: layer_id.clone(),
+                    });
+                };
+                if !layer
+                    .transitions
+                    .iter()
+                    .any(|transition| transition.input == *input)
+                {
+                    return Err(VisualSceneError::UnknownLayerTransition {
+                        label: label.to_string(),
+                        layer_id: layer_id.clone(),
+                        input: input.clone(),
                     });
                 }
             }
@@ -1074,6 +1192,20 @@ pub enum VisualSceneError {
     UnknownRelationship { label: String, relationship: String },
     #[error("Resolve action `{label}` references unknown layer `{layer_id}`")]
     UnknownLayer { label: String, layer_id: String },
+    #[error("Resolve action `{label}` references unknown entity `{entity_id}`")]
+    UnknownEntity { label: String, entity_id: String },
+    #[error("Resolve action `{label}` references unknown layer transition `{layer_id}:{input}`")]
+    UnknownLayerTransition {
+        label: String,
+        layer_id: String,
+        input: String,
+    },
+    #[error("Resolve action `{label}` blocked by layer transition guard `{layer_id}:{input}`")]
+    LayerTransitionGuardFailed {
+        label: String,
+        layer_id: String,
+        input: String,
+    },
     #[error("scene mode id must be non-empty")]
     EmptyModeId,
     #[error("scene mode label must be non-empty")]
@@ -1578,7 +1710,14 @@ impl VisualScene {
                 }
             }
             if let SceneActionKind::Resolve { operations } = &choice.kind {
-                validate_state_operations(&choice.label, operations, &self.layers, &self.rpg)?;
+                validate_state_operations(
+                    &choice.label,
+                    operations,
+                    &self.entities,
+                    &self.dialogue_lines,
+                    &self.layers,
+                    &self.rpg,
+                )?;
             }
         }
 
@@ -2175,9 +2314,17 @@ impl SceneRuntime {
                 SceneActionKind::Resolve { operations } => {
                     match self.apply_state_operations(&choice.label, operations) {
                         Ok(count) => {
+                            let summary = operations
+                                .iter()
+                                .map(visual_state_operation_summary)
+                                .collect::<Vec<_>>()
+                                .join(", ");
                             self.record_runtime_event(
                                 "state",
-                                format!("{} resolved {count} operation(s)", choice.label),
+                                format!(
+                                    "{} resolved {count} operation(s): {summary}",
+                                    choice.label
+                                ),
                             );
                             format!("Resolved {count} operation(s): {}", choice.label)
                         }
@@ -2201,10 +2348,21 @@ impl SceneRuntime {
         label: &str,
         operations: &[VisualStateOperation],
     ) -> Result<usize, VisualSceneError> {
-        validate_state_operations(label, operations, &self.scene.layers, &self.scene.rpg)?;
+        validate_state_operations(
+            label,
+            operations,
+            &self.scene.entities,
+            &self.scene.dialogue_lines,
+            &self.scene.layers,
+            &self.scene.rpg,
+        )?;
         let mut variables = self.scene.variables.clone();
         let mut layers = self.scene.layers.clone();
         let mut rpg = self.scene.rpg.clone();
+        let mut entities = self.scene.entities.clone();
+        let mut selected_entity = self.selected_entity;
+        let mut dialogue_index = self.dialogue_index;
+        let mut dialogue_history = self.dialogue_history.clone();
 
         for operation in operations {
             match operation {
@@ -2216,6 +2374,93 @@ impl SceneRuntime {
                     {
                         layer.state = state.trim().to_string();
                     }
+                }
+                VisualStateOperation::SelectEntity { entity_id } => {
+                    let Some(index) = entities.iter().position(|entity| entity.id == *entity_id)
+                    else {
+                        return Err(VisualSceneError::UnknownEntity {
+                            label: label.to_string(),
+                            entity_id: entity_id.clone(),
+                        });
+                    };
+                    selected_entity = index;
+                }
+                VisualStateOperation::SetEntityFlags { entity_id, flags } => {
+                    let Some(entity) = entities.iter_mut().find(|entity| entity.id == *entity_id)
+                    else {
+                        return Err(VisualSceneError::UnknownEntity {
+                            label: label.to_string(),
+                            entity_id: entity_id.clone(),
+                        });
+                    };
+                    entity.state_flags = flags.clone();
+                }
+                VisualStateOperation::SetEntityMetadata {
+                    entity_id,
+                    metadata,
+                } => {
+                    let Some(entity) = entities.iter_mut().find(|entity| entity.id == *entity_id)
+                    else {
+                        return Err(VisualSceneError::UnknownEntity {
+                            label: label.to_string(),
+                            entity_id: entity_id.clone(),
+                        });
+                    };
+                    entity.metadata = metadata.clone();
+                }
+                VisualStateOperation::SetEntityVisibility { entity_id, visible } => {
+                    let Some(entity) = entities.iter_mut().find(|entity| entity.id == *entity_id)
+                    else {
+                        return Err(VisualSceneError::UnknownEntity {
+                            label: label.to_string(),
+                            entity_id: entity_id.clone(),
+                        });
+                    };
+                    entity.visible = *visible;
+                }
+                VisualStateOperation::AdvanceDialogueAndSetLayer {
+                    target,
+                    layer_id,
+                    state,
+                } => {
+                    dialogue_index = *target;
+                    if let Some(line) = self.scene.dialogue_lines.get(*target).cloned() {
+                        dialogue_history.push(line);
+                    }
+                    if let Some(layer) = layers.iter_mut().find(|layer| layer.layer_id == *layer_id)
+                    {
+                        layer.state = state.trim().to_string();
+                    }
+                }
+                VisualStateOperation::TriggerLayerTransition { layer_id, input } => {
+                    let Some(layer_index) =
+                        layers.iter().position(|layer| layer.layer_id == *layer_id)
+                    else {
+                        return Err(VisualSceneError::UnknownLayer {
+                            label: label.to_string(),
+                            layer_id: layer_id.clone(),
+                        });
+                    };
+                    let Some(transition) = layers[layer_index]
+                        .transitions
+                        .iter()
+                        .find(|transition| transition.input == *input)
+                        .cloned()
+                    else {
+                        return Err(VisualSceneError::UnknownLayerTransition {
+                            label: label.to_string(),
+                            layer_id: layer_id.clone(),
+                            input: input.clone(),
+                        });
+                    };
+                    if !conditions_match(&transition.conditions, &variables, &rpg) {
+                        return Err(VisualSceneError::LayerTransitionGuardFailed {
+                            label: label.to_string(),
+                            layer_id: layer_id.clone(),
+                            input: input.clone(),
+                        });
+                    }
+                    layers[layer_index].state = transition.target_state.trim().to_string();
                 }
                 VisualStateOperation::IncrementVariable { key, amount } => {
                     increment_variable(&mut variables, key, *amount);
@@ -2363,6 +2608,10 @@ impl SceneRuntime {
         self.scene.variables = variables;
         self.scene.layers = layers;
         self.scene.rpg = rpg;
+        self.scene.entities = entities;
+        self.selected_entity = selected_entity;
+        self.dialogue_index = dialogue_index;
+        self.dialogue_history = dialogue_history;
         Ok(operations.len())
     }
 
@@ -3226,6 +3475,89 @@ fn action_request_detail(action: &VisualActionRequest) -> String {
     }
 }
 
+fn visual_state_operation_summary(operation: &VisualStateOperation) -> String {
+    match operation {
+        VisualStateOperation::SetVariable { key, value } => {
+            format!("set {key}={}", value.as_debug_string())
+        }
+        VisualStateOperation::SetLayerState { layer_id, state } => {
+            format!("layer {layer_id}->{state}")
+        }
+        VisualStateOperation::SelectEntity { entity_id } => format!("select {entity_id}"),
+        VisualStateOperation::SetEntityFlags { entity_id, flags } => {
+            format!("flags {entity_id}=[{}]", flags.join(","))
+        }
+        VisualStateOperation::SetEntityMetadata {
+            entity_id,
+            metadata,
+        } => {
+            format!("metadata {entity_id}={} pair(s)", metadata.len())
+        }
+        VisualStateOperation::SetEntityVisibility { entity_id, visible } => {
+            format!("visible {entity_id}={visible}")
+        }
+        VisualStateOperation::AdvanceDialogueAndSetLayer {
+            target,
+            layer_id,
+            state,
+        } => {
+            format!("dialogue {target} + layer {layer_id}->{state}")
+        }
+        VisualStateOperation::TriggerLayerTransition { layer_id, input } => {
+            format!("transition {layer_id}:{input}")
+        }
+        VisualStateOperation::IncrementVariable { key, amount } => {
+            format!("increment {key} by {amount}")
+        }
+        VisualStateOperation::ClearVariable { key } => format!("clear {key}"),
+        VisualStateOperation::AddInventory { item } => {
+            format!("add inventory {} x{}", item.item_id, item.count)
+        }
+        VisualStateOperation::RemoveInventory { item_id, count } => {
+            format!("remove inventory {item_id} x{count}")
+        }
+        VisualStateOperation::SetStat {
+            owner_id,
+            key,
+            value,
+        } => {
+            let prefix = owner_id
+                .as_ref()
+                .map(|owner_id| format!("{owner_id}:"))
+                .unwrap_or_default();
+            format!("set stat {prefix}{key}={}", value.as_debug_string())
+        }
+        VisualStateOperation::AdjustStat {
+            owner_id,
+            key,
+            amount,
+        } => {
+            let prefix = owner_id
+                .as_ref()
+                .map(|owner_id| format!("{owner_id}:"))
+                .unwrap_or_default();
+            format!("adjust stat {prefix}{key} by {amount}")
+        }
+        VisualStateOperation::AdvanceQuest { quest_id, stage } => {
+            format!("quest {quest_id} stage {stage}")
+        }
+        VisualStateOperation::CompleteQuest { quest_id } => {
+            format!("quest {quest_id} complete")
+        }
+        VisualStateOperation::AppendQuestJournal { quest_id, .. } => {
+            format!("quest {quest_id} journal")
+        }
+        VisualStateOperation::AdjustRelationship {
+            source_id,
+            target_id,
+            kind,
+            amount,
+        } => {
+            format!("relationship {source_id}:{target_id}:{kind} by {amount}")
+        }
+    }
+}
+
 fn conditions_match(
     conditions: &[VisualCondition],
     variables: &[VisualStateEntry],
@@ -3920,6 +4252,122 @@ mod tests {
         }));
         assert_eq!(snapshot.rpg.stats[0].value, VisualStateValue::Number(5));
         assert_eq!(snapshot.rpg.relationships[0].value, 3);
+    }
+
+    #[test]
+    fn resolve_action_updates_entity_and_dialogue_state() {
+        let mut scene = branching_dialogue_scene();
+        scene.layers = vec![VisualLayerState {
+            layer_id: "story".to_string(),
+            state: "dialogue".to_string(),
+            label: None,
+            input_map: Vec::new(),
+            transitions: Vec::new(),
+        }];
+        scene.choices.insert(
+            0,
+            SceneAction {
+                label: "Resolve entity state".to_string(),
+                kind: SceneActionKind::Resolve {
+                    operations: vec![
+                        VisualStateOperation::SelectEntity {
+                            entity_id: "task-render".to_string(),
+                        },
+                        VisualStateOperation::SetEntityFlags {
+                            entity_id: "task-render".to_string(),
+                            flags: vec!["focused".to_string(), "ready".to_string()],
+                        },
+                        VisualStateOperation::SetEntityMetadata {
+                            entity_id: "task-render".to_string(),
+                            metadata: vec![("mode".to_string(), "command".to_string())],
+                        },
+                        VisualStateOperation::SetEntityVisibility {
+                            entity_id: "task-render".to_string(),
+                            visible: false,
+                        },
+                        VisualStateOperation::AdvanceDialogueAndSetLayer {
+                            target: 1,
+                            layer_id: "story".to_string(),
+                            state: "exploration".to_string(),
+                        },
+                    ],
+                },
+                conditions: Vec::new(),
+            },
+        );
+        let mut runtime = SceneRuntime::new(scene).unwrap();
+
+        runtime.activate_choice();
+
+        let snapshot = runtime.render_snapshot();
+        let report = runtime.debug_report();
+        assert_eq!(snapshot.selected_entity_id.as_deref(), Some("task-render"));
+        assert!(!snapshot
+            .entities
+            .iter()
+            .any(|entity| entity.id == "task-render"));
+        assert_eq!(report.selected_entity_flags, ["focused", "ready"]);
+        assert_eq!(
+            report.selected_entity_metadata,
+            [("mode".to_string(), "command".to_string())]
+        );
+        assert_eq!(snapshot.dialogue_speaker, "Guide");
+        assert_eq!(snapshot.active_layers[0].state, "exploration");
+        assert!(report.transition_history.iter().any(|event| event
+            .detail
+            .contains("select task-render, flags task-render=[focused,ready]")));
+    }
+
+    #[test]
+    fn resolve_action_triggers_layer_transition_with_rollback_on_guard_failure() {
+        let mut scene = VisualScene::demo();
+        scene.layers = vec![VisualLayerState {
+            layer_id: "story".to_string(),
+            state: "dialogue".to_string(),
+            label: None,
+            input_map: Vec::new(),
+            transitions: vec![VisualLayerTransition {
+                input: "activate".to_string(),
+                target_state: "exploration".to_string(),
+                conditions: vec![VisualCondition {
+                    source: None,
+                    variable: "route_open".to_string(),
+                    equals: VisualStateValue::Bool(true),
+                }],
+            }],
+        }];
+        scene.choices.insert(
+            0,
+            SceneAction {
+                label: "Blocked transition".to_string(),
+                kind: SceneActionKind::Resolve {
+                    operations: vec![
+                        VisualStateOperation::SetVariable {
+                            key: "should_rollback".to_string(),
+                            value: VisualStateValue::Bool(true),
+                        },
+                        VisualStateOperation::TriggerLayerTransition {
+                            layer_id: "story".to_string(),
+                            input: "activate".to_string(),
+                        },
+                    ],
+                },
+                conditions: Vec::new(),
+            },
+        );
+        let mut runtime = SceneRuntime::new(scene).unwrap();
+
+        runtime.activate_choice();
+
+        let snapshot = runtime.render_snapshot();
+        assert!(snapshot.status.starts_with(
+            "Resolve failed: Resolve action `Blocked transition` blocked by layer transition guard"
+        ));
+        assert_eq!(snapshot.active_layers[0].state, "dialogue");
+        assert!(!snapshot
+            .variables
+            .iter()
+            .any(|entry| entry.key == "should_rollback"));
     }
 
     #[test]
