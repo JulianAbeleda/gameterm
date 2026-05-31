@@ -1327,52 +1327,54 @@ impl SceneRuntime {
                 .cloned();
             if let Some(transition) = transition {
                 let layer_id = self.scene.layers[layer_index].layer_id.clone();
-                let from_state = self.scene.layers[layer_index].state.clone();
-                let target_state = transition.target_state.trim().to_string();
+                let selected_entity = self.selected_entity().cloned();
+                let process_state = self.last_process_state.clone();
                 self.last_input_layer = Some(layer_id.clone());
-                if !conditions_match(
-                    &transition.conditions,
+                let transition_result = actions::apply_layer_transition_at(
+                    &mut self.scene.layers,
+                    layer_index,
+                    input_key,
                     &self.scene.variables,
                     &self.scene.rpg,
-                    self.selected_entity(),
-                    self.last_process_state.as_ref(),
-                ) {
-                    self.last_layer_transition = Some(VisualLayerTransitionReport {
-                        layer_id: layer_id.clone(),
-                        input: input_key.to_string(),
-                        from_state: from_state.clone(),
-                        target_state: target_state.clone(),
-                        result: "guard_failed".to_string(),
-                    });
-                    self.status = format!(
-                        "Layer transition unavailable: {} {}",
-                        layer_id,
-                        condition_guard_detail(&transition.conditions)
-                            .unwrap_or_else(|| "guard condition not met".to_string())
-                    );
-                    self.record_runtime_event(
-                        "transition",
-                        format!("{layer_id} {from_state} -> {target_state} blocked"),
-                    );
-                    self.bump_generation();
-                    return Some(VisualModeOutcome::Continue);
+                    selected_entity.as_ref(),
+                    process_state.as_ref(),
+                )
+                .expect("transition was found before applying it");
+                match transition_result {
+                    Err(report) => {
+                        let layer_id = report.layer_id.clone();
+                        let from_state = report.from_state.clone();
+                        let target_state = report.target_state.clone();
+                        self.last_layer_transition = Some(report);
+                        self.status = format!(
+                            "Layer transition unavailable: {} {}",
+                            layer_id,
+                            condition_guard_detail(&transition.conditions)
+                                .unwrap_or_else(|| "guard condition not met".to_string())
+                        );
+                        self.record_runtime_event(
+                            "transition",
+                            format!("{layer_id} {from_state} -> {target_state} blocked"),
+                        );
+                        self.bump_generation();
+                        return Some(VisualModeOutcome::Continue);
+                    }
+                    Ok(report) => {
+                        let layer_id = report.layer_id.clone();
+                        let from_state = report.from_state.clone();
+                        let target_state = report.target_state.clone();
+                        self.last_layer_transition = Some(report);
+                        self.status = format!(
+                            "Layer {layer_id} transitioned: {from_state} -> {target_state}"
+                        );
+                        self.record_runtime_event(
+                            "transition",
+                            format!("{layer_id} {from_state} -> {target_state}"),
+                        );
+                        self.bump_generation();
+                        return Some(VisualModeOutcome::Continue);
+                    }
                 }
-                self.scene.layers[layer_index].state = target_state.clone();
-                self.last_layer_transition = Some(VisualLayerTransitionReport {
-                    layer_id: layer_id.clone(),
-                    input: input_key.to_string(),
-                    from_state: from_state.clone(),
-                    target_state: target_state.clone(),
-                    result: "transitioned".to_string(),
-                });
-                self.status =
-                    format!("Layer {layer_id} transitioned: {from_state} -> {target_state}");
-                self.record_runtime_event(
-                    "transition",
-                    format!("{layer_id} {from_state} -> {target_state}"),
-                );
-                self.bump_generation();
-                return Some(VisualModeOutcome::Continue);
             }
 
             let binding = self.scene.layers[layer_index]

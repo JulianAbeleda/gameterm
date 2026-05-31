@@ -4,9 +4,9 @@ use crate::conditions::conditions_match;
 use crate::{
     relationship_key, validate_layers, validate_rpg_state, validate_state_entries,
     validate_state_operations, SceneAction, SceneActionKind, SceneRuntime, VisualActionRequest,
-    VisualDialogueLine, VisualEntity, VisualLayerState, VisualRpgState, VisualRuntimeEvent,
-    VisualSceneError, VisualStat, VisualStateEntry, VisualStateEntryError, VisualStateOperation,
-    VisualStateValue,
+    VisualDialogueLine, VisualEntity, VisualLayerState, VisualLayerTransitionReport,
+    VisualProcessState, VisualRpgState, VisualRuntimeEvent, VisualSceneError, VisualStat,
+    VisualStateEntry, VisualStateEntryError, VisualStateOperation, VisualStateValue,
 };
 
 pub(crate) fn action_kind_name(kind: &SceneActionKind) -> String {
@@ -319,6 +319,50 @@ pub(crate) fn scene_action_outcome(
     }
 }
 
+pub(crate) fn apply_layer_transition_at(
+    layers: &mut [VisualLayerState],
+    layer_index: usize,
+    input: &str,
+    variables: &[VisualStateEntry],
+    rpg: &VisualRpgState,
+    selected_entity: Option<&VisualEntity>,
+    process_state: Option<&VisualProcessState>,
+) -> Option<Result<VisualLayerTransitionReport, VisualLayerTransitionReport>> {
+    let layer_id = layers.get(layer_index)?.layer_id.clone();
+    let from_state = layers.get(layer_index)?.state.clone();
+    let transition = layers
+        .get(layer_index)?
+        .transitions
+        .iter()
+        .find(|transition| transition.input.trim() == input)
+        .cloned()?;
+    let target_state = transition.target_state.trim().to_string();
+    if !conditions_match(
+        &transition.conditions,
+        variables,
+        rpg,
+        selected_entity,
+        process_state,
+    ) {
+        return Some(Err(VisualLayerTransitionReport {
+            layer_id,
+            input: input.to_string(),
+            from_state,
+            target_state,
+            result: "guard_failed".to_string(),
+        }));
+    }
+
+    layers[layer_index].state = target_state.clone();
+    Some(Ok(VisualLayerTransitionReport {
+        layer_id,
+        input: input.to_string(),
+        from_state,
+        target_state,
+        result: "transitioned".to_string(),
+    }))
+}
+
 pub(crate) fn apply_state_operations(
     runtime: &mut SceneRuntime,
     label: &str,
@@ -414,26 +458,31 @@ pub(crate) fn apply_state_operations(
                         layer_id: layer_id.clone(),
                     });
                 };
-                let Some(transition) = layers[layer_index]
-                    .transitions
-                    .iter()
-                    .find(|transition| transition.input == *input)
-                    .cloned()
-                else {
-                    return Err(VisualSceneError::UnknownLayerTransition {
-                        label: label.to_string(),
-                        layer_id: layer_id.clone(),
-                        input: input.clone(),
-                    });
-                };
-                if !conditions_match(&transition.conditions, &variables, &rpg, None, None) {
-                    return Err(VisualSceneError::LayerTransitionGuardFailed {
-                        label: label.to_string(),
-                        layer_id: layer_id.clone(),
-                        input: input.clone(),
-                    });
+                match apply_layer_transition_at(
+                    layers,
+                    layer_index,
+                    input,
+                    variables,
+                    rpg,
+                    None,
+                    None,
+                ) {
+                    Some(Ok(_)) => {}
+                    Some(Err(_)) => {
+                        return Err(VisualSceneError::LayerTransitionGuardFailed {
+                            label: label.to_string(),
+                            layer_id: layer_id.clone(),
+                            input: input.clone(),
+                        });
+                    }
+                    None => {
+                        return Err(VisualSceneError::UnknownLayerTransition {
+                            label: label.to_string(),
+                            layer_id: layer_id.clone(),
+                            input: input.clone(),
+                        });
+                    }
                 }
-                layers[layer_index].state = transition.target_state.trim().to_string();
             }
             VisualStateOperation::IncrementVariable { key, amount } => {
                 increment_variable(variables, key, *amount);
