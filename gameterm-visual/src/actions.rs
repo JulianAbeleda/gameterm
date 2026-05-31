@@ -1,9 +1,9 @@
 use crate::conditions::conditions_match;
 use crate::{
     relationship_key, validate_layers, validate_rpg_state, validate_state_entries,
-    validate_state_operations, SceneActionKind, SceneRuntime, VisualActionRequest,
-    VisualSceneError, VisualStat, VisualStateEntry, VisualStateEntryError, VisualStateOperation,
-    VisualStateValue,
+    validate_state_operations, SceneAction, SceneActionKind, SceneRuntime, VisualActionRequest,
+    VisualRuntimeEvent, VisualSceneError, VisualStat, VisualStateEntry, VisualStateEntryError,
+    VisualStateOperation, VisualStateValue,
 };
 
 pub(crate) fn action_kind_name(kind: &SceneActionKind) -> String {
@@ -147,6 +147,120 @@ pub(crate) fn visual_state_operation_summary(operation: &VisualStateOperation) -
             amount,
         } => {
             format!("relationship {source_id}:{target_id}:{kind} by {amount}")
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SceneActionOutcome {
+    pub(crate) status: String,
+    pub(crate) pending_action: Option<VisualActionRequest>,
+    pub(crate) events: Vec<VisualRuntimeEvent>,
+}
+
+impl SceneActionOutcome {
+    fn status(status: impl Into<String>) -> Self {
+        Self {
+            status: status.into(),
+            pending_action: None,
+            events: Vec::new(),
+        }
+    }
+
+    fn pending(status: impl Into<String>, pending_action: VisualActionRequest) -> Self {
+        Self {
+            status: status.into(),
+            pending_action: Some(pending_action),
+            events: Vec::new(),
+        }
+    }
+
+    fn with_event(mut self, kind: impl Into<String>, detail: impl Into<String>) -> Self {
+        self.events.push(VisualRuntimeEvent {
+            kind: kind.into(),
+            detail: detail.into(),
+        });
+        self
+    }
+}
+
+pub(crate) fn scene_action_outcome(
+    runtime: &mut SceneRuntime,
+    choice: &SceneAction,
+) -> SceneActionOutcome {
+    match &choice.kind {
+        SceneActionKind::Inspect => runtime
+            .selected_entity()
+            .map(|entity| {
+                SceneActionOutcome::status(format!("Inspecting {} ({})", entity.label, entity.id))
+            })
+            .unwrap_or_else(|| SceneActionOutcome::status("No entity selected")),
+        SceneActionKind::OpenFile { path } => {
+            let (status, pending_action) = runtime.open_file_action_status(path);
+            SceneActionOutcome {
+                status,
+                pending_action,
+                events: Vec::new(),
+            }
+        }
+        SceneActionKind::RunCommand { argv, cwd, target } => SceneActionOutcome::pending(
+            format!("RunCommand ready ({}): {}", target.as_str(), argv.join(" ")),
+            VisualActionRequest::RunCommand {
+                argv: argv.clone(),
+                cwd: cwd.as_ref().map(std::path::PathBuf::from),
+                target: *target,
+            },
+        ),
+        SceneActionKind::Navigate { target } => SceneActionOutcome::pending(
+            format!("Navigate ready: {target}"),
+            VisualActionRequest::Navigate {
+                target: target.clone(),
+            },
+        ),
+        SceneActionKind::ExportStoryState { path } => {
+            let path = runtime.resolve_action_path(path);
+            SceneActionOutcome::pending(
+                format!("ExportStoryState ready: {}", path.display()),
+                VisualActionRequest::ExportStoryState { path },
+            )
+        }
+        SceneActionKind::ImportStoryState { path } => {
+            let path = runtime.resolve_action_path(path);
+            SceneActionOutcome::pending(
+                format!("ImportStoryState ready: {}", path.display()),
+                VisualActionRequest::ImportStoryState { path },
+            )
+        }
+        SceneActionKind::AdvanceDialogue { target } => {
+            runtime.dialogue_index = *target;
+            if let Some(line) = runtime.scene.dialogue_lines.get(*target).cloned() {
+                runtime.dialogue_history.push(line.clone());
+                SceneActionOutcome::status(format!("Dialogue advanced: {}", line.speaker))
+                    .with_event("dialogue", format!("advanced to line {target}"))
+            } else {
+                SceneActionOutcome::status(format!("Dialogue target missing: {target}"))
+            }
+        }
+        SceneActionKind::Resolve { operations } => {
+            match runtime.apply_state_operations(&choice.label, operations) {
+                Ok(count) => {
+                    let summary = operations
+                        .iter()
+                        .map(visual_state_operation_summary)
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    SceneActionOutcome::status(format!(
+                        "Resolved {count} operation(s): {}",
+                        choice.label
+                    ))
+                    .with_event(
+                        "state",
+                        format!("{} resolved {count} operation(s): {summary}", choice.label),
+                    )
+                }
+                Err(err) => SceneActionOutcome::status(format!("Resolve failed: {err}"))
+                    .with_event("state", format!("{} failed: {err}", choice.label)),
+            }
         }
     }
 }

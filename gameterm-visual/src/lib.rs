@@ -11,7 +11,6 @@ mod schema;
 mod story_state;
 mod validation;
 
-use actions::visual_state_operation_summary;
 use conditions::{condition_guard_detail, conditions_match};
 pub use debug::VisualSceneDebugReport;
 pub use patch::{VisualSceneEntityPatch, VisualScenePatch, VisualScenePatchError};
@@ -1462,81 +1461,12 @@ impl SceneRuntime {
                 self.bump_generation();
                 return;
             }
-            let mut pending_action = None;
-            self.status = match &choice.kind {
-                SceneActionKind::Inspect => self
-                    .selected_entity()
-                    .map(|entity| format!("Inspecting {} ({})", entity.label, entity.id))
-                    .unwrap_or_else(|| "No entity selected".to_string()),
-                SceneActionKind::OpenFile { path } => {
-                    let (status, action) = self.open_file_action_status(path);
-                    pending_action = action;
-                    status
-                }
-                SceneActionKind::RunCommand { argv, cwd, target } => {
-                    pending_action = Some(VisualActionRequest::RunCommand {
-                        argv: argv.clone(),
-                        cwd: cwd.as_ref().map(PathBuf::from),
-                        target: *target,
-                    });
-                    format!("RunCommand ready ({}): {}", target.as_str(), argv.join(" "))
-                }
-                SceneActionKind::Navigate { target } => {
-                    pending_action = Some(VisualActionRequest::Navigate {
-                        target: target.clone(),
-                    });
-                    format!("Navigate ready: {target}")
-                }
-                SceneActionKind::ExportStoryState { path } => {
-                    let path = self.resolve_action_path(path);
-                    pending_action =
-                        Some(VisualActionRequest::ExportStoryState { path: path.clone() });
-                    format!("ExportStoryState ready: {}", path.display())
-                }
-                SceneActionKind::ImportStoryState { path } => {
-                    let path = self.resolve_action_path(path);
-                    pending_action =
-                        Some(VisualActionRequest::ImportStoryState { path: path.clone() });
-                    format!("ImportStoryState ready: {}", path.display())
-                }
-                SceneActionKind::AdvanceDialogue { target } => {
-                    self.dialogue_index = *target;
-                    if let Some(line) = self.scene.dialogue_lines.get(*target).cloned() {
-                        self.dialogue_history.push(line.clone());
-                        self.record_runtime_event("dialogue", format!("advanced to line {target}"));
-                        format!("Dialogue advanced: {}", line.speaker)
-                    } else {
-                        format!("Dialogue target missing: {target}")
-                    }
-                }
-                SceneActionKind::Resolve { operations } => {
-                    match self.apply_state_operations(&choice.label, operations) {
-                        Ok(count) => {
-                            let summary = operations
-                                .iter()
-                                .map(visual_state_operation_summary)
-                                .collect::<Vec<_>>()
-                                .join(", ");
-                            self.record_runtime_event(
-                                "state",
-                                format!(
-                                    "{} resolved {count} operation(s): {summary}",
-                                    choice.label
-                                ),
-                            );
-                            format!("Resolved {count} operation(s): {}", choice.label)
-                        }
-                        Err(err) => {
-                            self.record_runtime_event(
-                                "state",
-                                format!("{} failed: {err}", choice.label),
-                            );
-                            format!("Resolve failed: {err}")
-                        }
-                    }
-                }
-            };
-            self.pending_action = pending_action;
+            let outcome = actions::scene_action_outcome(self, &choice);
+            self.status = outcome.status;
+            self.pending_action = outcome.pending_action;
+            for event in outcome.events {
+                self.record_runtime_event(event.kind, event.detail);
+            }
             self.bump_generation();
         }
     }
