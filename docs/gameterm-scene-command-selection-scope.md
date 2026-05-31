@@ -14,7 +14,9 @@ choices. No command should run from grouping, filtering, or display alone.
 
 ## Product End State
 
-The first complete layer is done when:
+Status: complete for the first grouped-choice pass.
+
+The first complete layer is done because:
 
 1. Existing choices still work.
 2. Normal view groups choices by action kind.
@@ -25,8 +27,8 @@ The first complete layer is done when:
 
 ## First-Pass Runtime Shape
 
-The first pass does not add a new schema field. It groups the existing choice
-list by action kind at render time:
+The implemented first pass does not add a new schema field. It groups the
+existing choice list by action kind at render time:
 
 - `Inspect`
 - `OpenFile`
@@ -39,6 +41,40 @@ list by action kind at render time:
 
 This keeps authored and generated scene JSON compatible while improving the
 normal view immediately.
+
+## Implemented Evidence
+
+Runtime behavior:
+
+- normal view emits action-kind headings such as `Inspect`, `OpenFile`, and
+  `RunCommand`
+- selected choice markers stay attached to the original choice index
+- activation still uses the existing selected-choice flow
+- command execution remains explicit and user-activated
+
+Focused tests:
+
+- `scene_frame_groups_choices_by_action_kind`
+
+Verification:
+
+- `cargo test -p gameterm-visual scene_frame`
+- `ci/gameterm-scene-verify.sh --all`
+
+## Second-Pass Scope
+
+The next command-selection pass is real product work, not a small rendering
+cleanup.
+
+Candidate goals:
+
+- add a modal command-selection mode or overlay
+- support text filtering/search
+- support selected-entity scoped action filtering
+- add explicit action group/origin metadata if policy needs it
+- display policy/risk badges once the policy layer defines them
+- preserve existing choice activation and schema compatibility unless a
+  migration is explicitly scoped
 
 ## Deferred Work
 
@@ -78,3 +114,7 @@ Deferred:
 - modal command palette
 - filtering
 - group metadata
+
+Recommendation: treat Product Layer 3 as complete for the current first pass.
+The next meaningful work is a combined command-selection and policy second pass
+that defines action origin, risk display, and filtering together.

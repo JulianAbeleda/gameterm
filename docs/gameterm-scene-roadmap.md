@@ -51,6 +51,7 @@ implementation details.
 | Live pane/process context | [Pane And Process Discovery Scope](gameterm-scene-pane-process-discovery-scope.md) | Implemented through explicit metadata |
 | Agent/Workspace authored model | [Agent And Workspace Scope](gameterm-scene-agent-workspace-scope.md) | First-pass implemented |
 | Workspace Discovery | [Workspace Discovery Scope](gameterm-scene-workspace-discovery-scope.md) | First-pass implemented |
+| Generated layout and assets | [Visual Layout And Assets Scope](gameterm-scene-visual-layout-assets-scope.md) | First-pass implemented |
 | Stabilization/refactor pass | [Stabilization Refactor Scope](gameterm-scene-stabilization-refactor-scope.md) | First pass complete |
 | Refactor backlog | [Refactor Plan](gameterm-scene-refactor-plan.md) | Active backlog, do only scoped lanes |
 | Smoke checklist | [Product Smoke Checklist](gameterm-scene-product-smoke.md) | Current smoke procedure |
@@ -153,77 +154,110 @@ Deferred:
 
 ### Priority 3: Command Selection Surface
 
-Status: next.
+Status: complete for the first grouped-choice pass; modal/filtering work is
+deferred.
 
 Goal: avoid turning generated workspaces into long flat choice lists.
 
-Why next: Workspace Discovery can produce many files and actions; repeated use
-needs grouped, explicit action selection.
+Why it mattered: Workspace Discovery can produce many files and actions;
+repeated use needed grouped, explicit action selection.
 
 Scope owner:
 
 - [Command Selection Scope](gameterm-scene-command-selection-scope.md)
 
-First slice:
+Completed first slice:
 
 - group actions by selected entity, file, project, or process
 - preserve existing choices and explicit activation semantics
 - ensure `RunCommand` and `OpenFile` remain visibly different
 
-Commit shape:
+Verified behavior:
 
-- `[docs] scope Scene command selection`
-- `[visual] add Scene command grouping`
-- `[test] verify Scene command selection`
+- normal view groups choices by action kind
+- selected choice markers remain attached to the original choices
+- `RunCommand` and `OpenFile` remain explicit, user-activated actions
+- focused tests cover grouped choice rendering
+
+Deferred:
+
+- modal command palette
+- text filtering/search
+- selected-entity scoped action filtering
+- explicit action group metadata
+- policy/risk badges
 
 ### Priority 4: Policy And Permission Boundaries
+
+Status: complete for the first doctor-diagnostics pass; schema-level policy
+metadata is deferred.
 
 Goal: make generated and future agent-proposed actions auditable before they
 can run.
 
-Why next: command grouping increases action surface area; policy keeps that
-surface explicit and safe.
+Why it mattered: command grouping increases action surface area; policy keeps
+that surface explicit and safe.
 
 Scope owner:
 
 - [Policy Boundaries Scope](gameterm-scene-policy-boundaries-scope.md)
 
-First slice:
+Completed first slice:
 
-- tag generated actions with origin and policy metadata
-- show policy/source in normal view or debug view
+- require explicit command shape through validation and doctor diagnostics
+- warn when reusable or generated `RunCommand` choices omit cwd
+- keep generated workspace `RunCommand` choices cwd-explicit
 - preserve explicit activation for all command execution
 
-Commit shape:
+Verified behavior:
 
-- `[docs] scope Scene policy boundaries`
-- `[visual] add Scene action policy metadata`
-- `[test] verify Scene policy boundaries`
+- `RunCommand` requires explicit argv and target
+- doctor validates targets and warns about missing cwd
+- verifier covers target diagnostics and missing-cwd policy warnings
+- discovery docs state that generated workflows do not run commands or start
+  agents automatically
+
+Deferred:
+
+- schema-level action origin
+- risk metadata or badges
+- allowlist enforcement
+- policy-aware command palette filtering
 
 ### Priority 5: Persisted Workspace Sessions
 
+Status: complete for helper-driven first pass; GUI session browser and default
+state-directory wiring are deferred.
+
 Goal: restore useful workspace state across repeated Scene Mode use.
 
-Why later: session persistence is more valuable after live context and normal
-view shape are stable.
+Why it mattered: session persistence lets users preserve useful workspace state
+without treating generated scene JSON as the only durable storage.
 
 Scope owner:
 
 - [Workspace Sessions Scope](gameterm-scene-workspace-sessions-scope.md)
 
-First slice:
+Completed first slice:
 
 - define what session state is worth saving
 - avoid tracked or repo-local churn
 - keep generated scenes reproducible from explicit inputs
+- save, restore, validate, and inspect workspace session JSON through
+  `ci/gameterm-scene-session.sh`
+- document workspace-session commands in the Scene Mode docs
+- verify overwrite protection and non-mutating restore
 
 ### Priority 6: Memory, Relationships, And Multi-Agent State
+
+Status: complete for local explicit relationship and multi-agent fixture
+passes; live concurrent agent orchestration is deferred.
 
 Goal: make memory and multi-agent state useful as product behavior, not only
 as model data.
 
-Why later: the schema can already represent this state. The missing piece is
-how it appears in the live workspace surface.
+Why it mattered: the schema could represent this state; the first product pass
+needed it visible and verifiable in generated/local scenes.
 
 Scope owners:
 
@@ -231,28 +265,35 @@ Scope owners:
 - [Multi-Agent Coordination Scope](gameterm-scene-multi-agent-coordination-scope.md)
 - [Agent Task Bootstrap Scope](gameterm-scene-agent-task-bootstrap-scope.md)
 
-First slice:
+Completed first slice:
 
 - show relationship/memory state in the polished normal view
 - connect multiple agent/process updates to live pane/process context
 - keep task bootstrap explicit and user-confirmed
+- generate and validate local workspace relationships
+- support two-agent/two-task coordination fixture and scoped agent patches
+- generate local task briefs without starting agents
 
 ### Priority 7: Packaging And Onboarding
 
+Status: complete for command-first onboarding; app-bundle onboarding is
+deferred.
+
 Goal: make Scene Mode easy to use repeatedly without tribal knowledge.
 
-Why later: onboarding should describe the settled product path, not every
+Why it mattered: onboarding should describe the settled product path, not every
 intermediate helper detail.
 
 Scope owner:
 
 - [Packaging Onboarding Scope](gameterm-scene-packaging-onboarding-scope.md)
 
-First slice:
+Completed first slice:
 
-- update onboarding after priorities 1-4 land
+- command-first onboarding workflow
 - keep quickstart commands current
-- record a fresh live smoke pass for the documented path
+- document dry-run, validation, doctor, install, launch, smoke, and recovery
+- verify onboarding docs reference real helper commands
 
 ## Refactor Backlog
 
@@ -276,24 +317,29 @@ Avoid:
 
 ## Next Recommended Work
 
-Do Priority 3 next: command selection surface.
+Do the command-selection and policy second pass next.
 
 Reasoning:
 
 - Priority 1 is already complete for the explicit metadata path.
 - Priority 2 is already complete for the first product-summary pass.
-- Generated workspaces can still produce too many flat choices for repeated
-  daily use.
-- Command selection clarifies the action model before policy, sessions, memory,
-  and multi-agent layers add more commands.
+- Priority 3 is complete for grouped choices, but not for modal filtering or
+  selected-entity scoped command search.
+- Priority 4 is complete for doctor diagnostics, but not for schema-level
+  action origin, risk metadata, or policy-aware display.
+- Those two deferred areas should be designed together so command filtering and
+  safety labels describe the same action model.
 
 Concrete next checklist:
 
 1. Re-read [Command Selection Scope](gameterm-scene-command-selection-scope.md).
-2. Update that scope if it is stale against current grouped choices.
-3. Decide whether the first pass needs only richer choice metadata or a distinct
-   command-selection mode.
-4. Preserve existing choice activation behavior.
-5. Add focused render/runtime tests for grouped or filtered commands.
-6. Run `cargo test -p gameterm-visual`.
-7. Run `ci/gameterm-scene-verify.sh --all`.
+2. Re-read [Policy Boundaries Scope](gameterm-scene-policy-boundaries-scope.md).
+3. Scope a second-pass action model: origin, policy/risk metadata, filtering,
+   and selected-entity command visibility.
+4. Decide whether the UI is a modal command-selection mode, an overlay, or a
+   tighter normal-view command section.
+5. Preserve existing choice activation behavior unless a migration is scoped.
+6. Add focused render/runtime tests for policy-aware grouped or filtered
+   commands.
+7. Run `cargo test -p gameterm-visual`.
+8. Run `ci/gameterm-scene-verify.sh --all`.
