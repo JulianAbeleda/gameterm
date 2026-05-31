@@ -82,6 +82,13 @@ ci/gameterm-scene-author.sh add-layer ~/.config/gameterm/scenes/experiment.json 
 ci/gameterm-scene-author.sh add-layer-transition ~/.config/gameterm/scenes/experiment.json \
   --layer-id story --input activate --target-state exploration \
   --condition-variable intro_complete --condition-bool true
+ci/gameterm-scene-author.sh add-inventory ~/.config/gameterm/scenes/experiment.json \
+  --item-id field-map --label "Field Map" --count 1
+ci/gameterm-scene-author.sh set-stat ~/.config/gameterm/scenes/experiment.json \
+  --owner-id player --key focus --value-number 1
+ci/gameterm-scene-author.sh add-quest ~/.config/gameterm/scenes/experiment.json \
+  --quest-id first-route --label "First Route" --stage 1 \
+  --journal "Find the first route."
 ci/gameterm-scene-author.sh format ~/.config/gameterm/scenes/experiment.json
 ci/gameterm-scene-doctor.sh
 ```

@@ -302,6 +302,64 @@ run_author_helper_check() {
           and .equals == {"Bool": true})))))
   ' "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
   "${repo_root}/ci/gameterm-scene-author.sh" \
+    add-inventory \
+    --item-id verify-token \
+    --label "Verify Token" \
+    --count 2 \
+    "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
+  "${repo_root}/ci/gameterm-scene-author.sh" \
+    set-stat \
+    --owner-id author \
+    --key focus \
+    --value-number 3 \
+    "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
+  "${repo_root}/ci/gameterm-scene-author.sh" \
+    adjust-stat \
+    --owner-id author \
+    --key focus \
+    --amount 2 \
+    "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
+  "${repo_root}/ci/gameterm-scene-author.sh" \
+    add-quest \
+    --quest-id verify-quest \
+    --label "Verify Quest" \
+    --stage 1 \
+    --journal "Started verification." \
+    "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
+  "${repo_root}/ci/gameterm-scene-author.sh" \
+    advance-quest \
+    --quest-id verify-quest \
+    --stage 2 \
+    "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
+  "${repo_root}/ci/gameterm-scene-author.sh" \
+    append-quest-journal \
+    --quest-id verify-quest \
+    --journal "Advanced verification." \
+    "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
+  "${repo_root}/ci/gameterm-scene-author.sh" \
+    complete-quest \
+    --quest-id verify-quest \
+    "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
+  jq -e '
+    any(.rpg.inventory[]; .item_id == "verify-token"
+      and .label == "Verify Token"
+      and .count == 2)
+    and any(.rpg.stats[]; .owner_id == "author"
+      and .key == "focus"
+      and .value == {"Number": 5})
+    and any(.rpg.quests[]; .quest_id == "verify-quest"
+      and .stage == 2
+      and .completed == true
+      and (.journal | contains("Started verification."))
+      and (.journal | contains("Advanced verification.")))
+  ' "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
+  "${repo_root}/ci/gameterm-scene-author.sh" \
+    remove-inventory \
+    --item-id verify-token \
+    "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
+  jq -e 'all(.rpg.inventory[]?; .item_id != "verify-token")' \
+    "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
+  "${repo_root}/ci/gameterm-scene-author.sh" \
     format "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
   "${repo_root}/ci/gameterm-scene-author.sh" \
     remove-entity \

@@ -23,6 +23,14 @@ Commands:
   add-layer PATH                Add a Scene Mode layer.
   set-layer PATH                Update a layer state.
   add-layer-transition PATH     Add a guarded layer transition.
+  add-inventory PATH            Add or replace an RPG inventory item.
+  remove-inventory PATH         Remove an RPG inventory item.
+  set-stat PATH                 Add or replace an RPG stat.
+  adjust-stat PATH              Adjust a numeric RPG stat.
+  add-quest PATH                Add or replace an RPG quest.
+  advance-quest PATH            Set an RPG quest stage.
+  complete-quest PATH           Mark an RPG quest complete.
+  append-quest-journal PATH     Append RPG quest journal text.
   format PATH                   Rewrite a scene file with stable JSON format.
   install-fixture NAME          Install a fixture into the Scene Mode config dir.
   list-fixtures                 List available authoring fixtures.
@@ -72,6 +80,34 @@ Options for add-layer-transition:
   --layer-id ID --input INPUT --target-state STATE
   --condition-variable KEY      Optional guard variable.
   --condition-bool true|false | --condition-number N | --condition-text TEXT
+
+Options for add-inventory:
+  --item-id ID --label TEXT --count N
+
+Options for remove-inventory:
+  --item-id ID
+
+Options for set-stat:
+  --key KEY
+  --owner-id ID                 Optional stat owner.
+  --value-bool true|false | --value-number N | --value-text TEXT
+
+Options for adjust-stat:
+  --key KEY --amount N
+  --owner-id ID                 Optional stat owner.
+
+Options for add-quest:
+  --quest-id ID --label TEXT --stage N
+  --journal TEXT                Optional quest journal.
+
+Options for advance-quest:
+  --quest-id ID --stage N
+
+Options for complete-quest:
+  --quest-id ID
+
+Options for append-quest-journal:
+  --quest-id ID --journal TEXT
 
 Options for add-choice:
   --label TEXT
@@ -151,6 +187,14 @@ condition_variable=""
 condition_bool=""
 condition_number=""
 condition_text=""
+rpg_label=""
+item_id=""
+item_count=""
+owner_id=""
+amount=""
+quest_id=""
+quest_stage=""
+quest_journal=""
 flags=()
 metadata=()
 
@@ -189,6 +233,8 @@ while [[ $# -gt 0 ]]; do
         entity_label="$2"
       elif [[ "${command}" == "add-layer" ]]; then
         layer_label="$2"
+      elif [[ "${command}" == "add-inventory" || "${command}" == "add-quest" ]]; then
+        rpg_label="$2"
       else
         choice_label="$2"
       fi
@@ -264,6 +310,34 @@ while [[ $# -gt 0 ]]; do
       ;;
     --condition-text)
       condition_text="$2"
+      shift 2
+      ;;
+    --item-id)
+      item_id="$2"
+      shift 2
+      ;;
+    --count)
+      item_count="$2"
+      shift 2
+      ;;
+    --owner-id)
+      owner_id="$2"
+      shift 2
+      ;;
+    --amount)
+      amount="$2"
+      shift 2
+      ;;
+    --quest-id)
+      quest_id="$2"
+      shift 2
+      ;;
+    --stage)
+      quest_stage="$2"
+      shift 2
+      ;;
+    --journal)
+      quest_journal="$2"
       shift 2
       ;;
     --flag)
@@ -1227,6 +1301,174 @@ add_layer_transition() {
   echo "Added layer transition ${layer_id}:${transition_input} to ${target}"
 }
 
+add_inventory() {
+  local target="$1"
+  require_value "--item-id" "${item_id}"
+  require_value "--label" "${rpg_label}"
+  require_value "--count" "${item_count}"
+  if [[ ! "${item_count}" =~ ^[0-9]+$ ]]; then
+    echo "--count must be a non-negative integer" >&2
+    exit 2
+  fi
+
+  jq \
+    --arg item_id "${item_id}" \
+    --arg label "${rpg_label}" \
+    --argjson count "${item_count}" '
+    .rpg = (.rpg // {})
+    | .rpg.inventory = (((.rpg.inventory // []) | map(select(.item_id != $item_id)))
+      + [{ item_id: $item_id, label: $label, count: $count }])
+  ' "${target}" | write_json "${target}"
+  validate_scene_file "${target}" >/dev/null
+  echo "Added inventory item ${item_id} to ${target}"
+}
+
+remove_inventory() {
+  local target="$1"
+  require_value "--item-id" "${item_id}"
+
+  jq --arg item_id "${item_id}" '
+    .rpg = (.rpg // {})
+    | .rpg.inventory = ((.rpg.inventory // []) | map(select(.item_id != $item_id)))
+  ' "${target}" | write_json "${target}"
+  validate_scene_file "${target}" >/dev/null
+  echo "Removed inventory item ${item_id} from ${target}"
+}
+
+set_stat() {
+  local target="$1"
+  local value_json
+  require_value "--key" "${state_key}"
+  value_json="$(state_value_json "${value_bool}" "${value_number}" "${value_text}")"
+
+  jq \
+    --arg owner_id "${owner_id}" \
+    --arg key "${state_key}" \
+    --argjson value "${value_json}" '
+    .rpg = (.rpg // {})
+    | .rpg.stats = (((.rpg.stats // [])
+      | map(select(.key != $key or ((.owner_id // "") != $owner_id))))
+      + [{
+        owner_id: (if $owner_id == "" then null else $owner_id end),
+        key: $key,
+        value: $value
+      } | with_entries(select(.value != null))])
+  ' "${target}" | write_json "${target}"
+  validate_scene_file "${target}" >/dev/null
+  echo "Set stat ${state_key} in ${target}"
+}
+
+adjust_stat() {
+  local target="$1"
+  require_value "--key" "${state_key}"
+  require_value "--amount" "${amount}"
+  if [[ ! "${amount}" =~ ^-?[0-9]+$ ]]; then
+    echo "--amount must be an integer" >&2
+    exit 2
+  fi
+
+  jq \
+    --arg owner_id "${owner_id}" \
+    --arg key "${state_key}" \
+    --argjson amount "${amount}" '
+    if any((.rpg.stats // [])[]; .key == $key and ((.owner_id // "") == $owner_id)) then
+      .rpg.stats |= map(if .key == $key and ((.owner_id // "") == $owner_id) then
+        if (.value | has("Number")) then
+          .value.Number += $amount
+        else
+          error("stat is not numeric: " + $key)
+        end
+      else . end)
+    else
+      error("stat key not found: " + $key)
+    end
+  ' "${target}" | write_json "${target}"
+  validate_scene_file "${target}" >/dev/null
+  echo "Adjusted stat ${state_key} in ${target}"
+}
+
+add_quest() {
+  local target="$1"
+  require_value "--quest-id" "${quest_id}"
+  require_value "--label" "${rpg_label}"
+  require_value "--stage" "${quest_stage}"
+  if [[ ! "${quest_stage}" =~ ^-?[0-9]+$ ]]; then
+    echo "--stage must be an integer" >&2
+    exit 2
+  fi
+
+  jq \
+    --arg quest_id "${quest_id}" \
+    --arg label "${rpg_label}" \
+    --argjson stage "${quest_stage}" \
+    --arg journal "${quest_journal}" '
+    .rpg = (.rpg // {})
+    | .rpg.quests = (((.rpg.quests // []) | map(select(.quest_id != $quest_id)))
+      + [{
+        quest_id: $quest_id,
+        label: $label,
+        stage: $stage,
+        completed: false,
+        journal: $journal
+      }])
+  ' "${target}" | write_json "${target}"
+  validate_scene_file "${target}" >/dev/null
+  echo "Added quest ${quest_id} to ${target}"
+}
+
+advance_quest() {
+  local target="$1"
+  require_value "--quest-id" "${quest_id}"
+  require_value "--stage" "${quest_stage}"
+  if [[ ! "${quest_stage}" =~ ^-?[0-9]+$ ]]; then
+    echo "--stage must be an integer" >&2
+    exit 2
+  fi
+
+  jq --arg quest_id "${quest_id}" --argjson stage "${quest_stage}" '
+    if any((.rpg.quests // [])[]; .quest_id == $quest_id) then
+      .rpg.quests |= map(if .quest_id == $quest_id then .stage = $stage else . end)
+    else
+      error("quest id not found: " + $quest_id)
+    end
+  ' "${target}" | write_json "${target}"
+  validate_scene_file "${target}" >/dev/null
+  echo "Advanced quest ${quest_id} in ${target}"
+}
+
+complete_quest() {
+  local target="$1"
+  require_value "--quest-id" "${quest_id}"
+
+  jq --arg quest_id "${quest_id}" '
+    if any((.rpg.quests // [])[]; .quest_id == $quest_id) then
+      .rpg.quests |= map(if .quest_id == $quest_id then .completed = true else . end)
+    else
+      error("quest id not found: " + $quest_id)
+    end
+  ' "${target}" | write_json "${target}"
+  validate_scene_file "${target}" >/dev/null
+  echo "Completed quest ${quest_id} in ${target}"
+}
+
+append_quest_journal() {
+  local target="$1"
+  require_value "--quest-id" "${quest_id}"
+  require_value "--journal" "${quest_journal}"
+
+  jq --arg quest_id "${quest_id}" --arg journal "${quest_journal}" '
+    if any((.rpg.quests // [])[]; .quest_id == $quest_id) then
+      .rpg.quests |= map(if .quest_id == $quest_id then
+        .journal = (if (.journal // "") == "" then $journal else (.journal + "\n" + $journal) end)
+      else . end)
+    else
+      error("quest id not found: " + $quest_id)
+    end
+  ' "${target}" | write_json "${target}"
+  validate_scene_file "${target}" >/dev/null
+  echo "Appended quest journal ${quest_id} in ${target}"
+}
+
 format_scene() {
   local target="$1"
   jq '.' "${target}" | write_json "${target}"
@@ -1386,6 +1628,62 @@ case "${command}" in
       exit 2
     fi
     add_layer_transition "${positionals[0]}"
+    ;;
+  add-inventory)
+    if [[ "${#positionals[@]}" -ne 1 ]]; then
+      usage >&2
+      exit 2
+    fi
+    add_inventory "${positionals[0]}"
+    ;;
+  remove-inventory)
+    if [[ "${#positionals[@]}" -ne 1 ]]; then
+      usage >&2
+      exit 2
+    fi
+    remove_inventory "${positionals[0]}"
+    ;;
+  set-stat)
+    if [[ "${#positionals[@]}" -ne 1 ]]; then
+      usage >&2
+      exit 2
+    fi
+    set_stat "${positionals[0]}"
+    ;;
+  adjust-stat)
+    if [[ "${#positionals[@]}" -ne 1 ]]; then
+      usage >&2
+      exit 2
+    fi
+    adjust_stat "${positionals[0]}"
+    ;;
+  add-quest)
+    if [[ "${#positionals[@]}" -ne 1 ]]; then
+      usage >&2
+      exit 2
+    fi
+    add_quest "${positionals[0]}"
+    ;;
+  advance-quest)
+    if [[ "${#positionals[@]}" -ne 1 ]]; then
+      usage >&2
+      exit 2
+    fi
+    advance_quest "${positionals[0]}"
+    ;;
+  complete-quest)
+    if [[ "${#positionals[@]}" -ne 1 ]]; then
+      usage >&2
+      exit 2
+    fi
+    complete_quest "${positionals[0]}"
+    ;;
+  append-quest-journal)
+    if [[ "${#positionals[@]}" -ne 1 ]]; then
+      usage >&2
+      exit 2
+    fi
+    append_quest_journal "${positionals[0]}"
     ;;
   format)
     if [[ "${#positionals[@]}" -ne 1 ]]; then
