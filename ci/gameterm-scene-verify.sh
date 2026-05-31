@@ -23,6 +23,29 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fixture_root="${repo_root}/ci/fixtures/gameterm-scene"
 mode="all"
 tmp_paths=()
+scene_scripts=(
+  gameterm-scene-agent.sh
+  gameterm-scene-author.sh
+  gameterm-scene-doctor.sh
+  gameterm-scene-init.sh
+  gameterm-scene-patch.sh
+  gameterm-scene-process.sh
+  gameterm-scene-session.sh
+  gameterm-scene-smoke.sh
+  gameterm-scene-story.sh
+  gameterm-scene-verify.sh
+  gameterm-scene-workspace.sh
+)
+onboarding_required_patterns=(
+  'ci/gameterm-scene-workspace.sh inspect --cwd .'
+  'ci/gameterm-scene-workspace.sh discover'
+  'ci/gameterm-scene-author.sh validate'
+  'ci/gameterm-scene-doctor.sh'
+  'ci/gameterm-scene-verify.sh --all'
+  'ci/gameterm-scene-smoke.sh --launch --scenario workspace-discovery'
+  'ci/gameterm-scene-author.sh install-fixture workspace-agent --force'
+  'does not run commands, start agents, submit prompts, or overwrite'
+)
 
 cleanup() {
   for path in "${tmp_paths[@]}"; do
@@ -136,20 +159,9 @@ run_fixture_setup_check() {
 }
 
 run_static_checks() {
-  for script in \
-    "${repo_root}/ci/gameterm-scene-agent.sh" \
-    "${repo_root}/ci/gameterm-scene-author.sh" \
-    "${repo_root}/ci/gameterm-scene-doctor.sh" \
-    "${repo_root}/ci/gameterm-scene-init.sh" \
-    "${repo_root}/ci/gameterm-scene-patch.sh" \
-    "${repo_root}/ci/gameterm-scene-process.sh" \
-    "${repo_root}/ci/gameterm-scene-session.sh" \
-    "${repo_root}/ci/gameterm-scene-smoke.sh" \
-    "${repo_root}/ci/gameterm-scene-story.sh" \
-    "${repo_root}/ci/gameterm-scene-verify.sh" \
-    "${repo_root}/ci/gameterm-scene-workspace.sh"
-  do
-    bash -n "${script}"
+  local script
+  for script in "${scene_scripts[@]}"; do
+    bash -n "${repo_root}/ci/${script}"
   done
   jq empty "${fixture_root}"/*.json
   git -C "${repo_root}" diff --check
@@ -1064,15 +1076,11 @@ run_workspace_session_check() {
 
 run_onboarding_check() {
   local doc="${repo_root}/docs/gameterm-scene-onboarding.md"
+  local pattern
   test -f "${doc}"
-  grep -q 'ci/gameterm-scene-workspace.sh inspect --cwd .' "${doc}"
-  grep -q 'ci/gameterm-scene-workspace.sh discover' "${doc}"
-  grep -q 'ci/gameterm-scene-author.sh validate' "${doc}"
-  grep -q 'ci/gameterm-scene-doctor.sh' "${doc}"
-  grep -q 'ci/gameterm-scene-verify.sh --all' "${doc}"
-  grep -q 'ci/gameterm-scene-smoke.sh --launch --scenario workspace-discovery' "${doc}"
-  grep -q 'ci/gameterm-scene-author.sh install-fixture workspace-agent --force' "${doc}"
-  grep -q 'does not run commands, start agents, submit prompts, or overwrite' "${doc}"
+  for pattern in "${onboarding_required_patterns[@]}"; do
+    grep -q "${pattern}" "${doc}"
+  done
   grep -q 'gameterm-scene-onboarding.md' \
     "${repo_root}/docs/gameterm-scene-mode.md"
   echo "onboarding: ok"
