@@ -89,6 +89,8 @@ Current status:
 - [x] Add a vertical-slice template and fixture that combines dialogue,
   guarded choices, deterministic RPG/story state, layers, process state, and
   story export coverage.
+- [x] Add GUI-dispatched story-state export/import actions, input-map
+  shortcuts, visible status/debug reporting, and overlay dispatch tests.
 
 ## Scene Mode Product Loop Roadmap
 

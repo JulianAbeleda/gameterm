@@ -7,6 +7,7 @@ use gameterm_visual::{
     truncate_to_screen, RunCommandTarget, SceneRuntime, VisualActionRequest, VisualInput,
     VisualMode, VisualModeOutcome, VisualResolvedSprite, VisualScene, VisualSceneLoadStatus,
     VisualScenePatch, VisualSceneSource, VisualSpriteManifest, VisualSpriteManifestStatus,
+    VisualStoryState,
 };
 use mux::domain::SplitSource;
 use mux::tab::{SplitDirection, SplitRequest, SplitSize};
@@ -394,9 +395,9 @@ fn apply_scene_patch_file(
     sprite_manifest: &VisualSpriteManifestStatus,
     path: &Path,
 ) -> anyhow::Result<()> {
-    match VisualScenePatch::load_from_path(path)
-        .and_then(|patch| runtime.apply_scene_patch_with_source(patch, Some("file".to_string()), None))
-    {
+    match VisualScenePatch::load_from_path(path).and_then(|patch| {
+        runtime.apply_scene_patch_with_source(patch, Some("file".to_string()), None)
+    }) {
         Ok(()) => {}
         Err(err) => {
             runtime.mark_scene_patch_failed(format!("file {}", path.display()), None, err);
@@ -414,8 +415,7 @@ fn apply_scene_patch_json(
 ) -> anyhow::Result<()> {
     match VisualScenePatch::from_json(patch_json).and_then(|patch| {
         runtime.apply_scene_patch_with_source(patch, Some("mux".to_string()), source_pane_id)
-    })
-    {
+    }) {
         Ok(()) => {}
         Err(err) => {
             runtime.mark_scene_patch_failed("mux", source_pane_id, err);
@@ -479,7 +479,31 @@ fn dispatch_pending_action(
                 }
             }
         }
+        VisualActionRequest::ExportStoryState { path } => match runtime.story_state_json_pretty() {
+            Ok(json) => match write_story_state_file(&path, &json) {
+                Ok(()) => runtime.mark_story_state_exported(&path),
+                Err(err) => runtime.mark_story_state_failed("export", &path, err),
+            },
+            Err(err) => runtime.mark_story_state_failed("export", &path, err),
+        },
+        VisualActionRequest::ImportStoryState { path } => {
+            match VisualStoryState::load_from_path(&path) {
+                Ok(state) => match runtime.import_story_state(state) {
+                    Ok(()) => runtime.mark_story_state_imported(&path),
+                    Err(err) => runtime.mark_story_state_failed("import", &path, err),
+                },
+                Err(err) => runtime.mark_story_state_failed("import", &path, err),
+            }
+        }
     }
+    Ok(())
+}
+
+fn write_story_state_file(path: &Path, json: &str) -> anyhow::Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(path, format!("{json}\n"))?;
     Ok(())
 }
 
@@ -1010,6 +1034,119 @@ mod tests {
             snapshot.scene_source.scene_path,
             active_path.display().to_string()
         );
+    }
+
+    #[test]
+    fn dispatch_export_story_state_writes_state_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_path = dir.path().join("story/state.json");
+        let mut scene = VisualScene::demo();
+        scene.choices = vec![gameterm_visual::SceneAction {
+            label: "Export story".to_string(),
+            kind: gameterm_visual::SceneActionKind::ExportStoryState {
+                path: "story/state.json".to_string(),
+            },
+            conditions: vec![],
+        }];
+        let mut runtime = SceneRuntime::new_with_source_and_action_base_dir(
+            scene,
+            VisualSceneSource::new(
+                dir.path().join("default.json").display().to_string(),
+                VisualSceneLoadStatus::Loaded,
+                1,
+            ),
+            dir.path(),
+        )
+        .unwrap();
+        let mut active_path = dir.path().join("default.json");
+        let mut reload_count = 1;
+        let (command_tx, _command_rx) = mpsc::channel();
+
+        runtime.activate_choice();
+        dispatch_pending_action(
+            &mut runtime,
+            &mut active_path,
+            &mut reload_count,
+            RunCommandDispatch {
+                window_id: 0,
+                pane_id: None,
+                terminal_size: TerminalSize::default(),
+                command_tx,
+            },
+        )
+        .unwrap();
+
+        assert!(state_path.is_file());
+        assert_eq!(
+            runtime.debug_report().last_story_state_action.as_deref(),
+            Some("export")
+        );
+        assert!(runtime
+            .render_snapshot()
+            .status
+            .starts_with("Story state exported: "));
+    }
+
+    #[test]
+    fn dispatch_import_story_state_restores_state_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_path = dir.path().join("story/state.json");
+        let state = gameterm_visual::VisualStoryState {
+            story_state_version: gameterm_visual::VisualStoryState::VERSION,
+            variables: vec![gameterm_visual::VisualStateEntry {
+                key: "loaded_from_gui".to_string(),
+                value: gameterm_visual::VisualStateValue::Bool(true),
+            }],
+            rpg: gameterm_visual::VisualRpgState::default(),
+            dialogue_index: None,
+            dialogue_history: vec![],
+        };
+        write_story_state_file(&state_path, &serde_json::to_string_pretty(&state).unwrap())
+            .unwrap();
+        let mut scene = VisualScene::demo();
+        scene.choices = vec![gameterm_visual::SceneAction {
+            label: "Import story".to_string(),
+            kind: gameterm_visual::SceneActionKind::ImportStoryState {
+                path: "story/state.json".to_string(),
+            },
+            conditions: vec![],
+        }];
+        let mut runtime = SceneRuntime::new_with_source_and_action_base_dir(
+            scene,
+            VisualSceneSource::new(
+                dir.path().join("default.json").display().to_string(),
+                VisualSceneLoadStatus::Loaded,
+                1,
+            ),
+            dir.path(),
+        )
+        .unwrap();
+        let mut active_path = dir.path().join("default.json");
+        let mut reload_count = 1;
+        let (command_tx, _command_rx) = mpsc::channel();
+
+        runtime.activate_choice();
+        dispatch_pending_action(
+            &mut runtime,
+            &mut active_path,
+            &mut reload_count,
+            RunCommandDispatch {
+                window_id: 0,
+                pane_id: None,
+                terminal_size: TerminalSize::default(),
+                command_tx,
+            },
+        )
+        .unwrap();
+
+        let report = runtime.debug_report();
+        assert_eq!(report.last_story_state_action.as_deref(), Some("import"));
+        assert!(report
+            .variables
+            .contains(&gameterm_visual::VisualStateEntry {
+                key: "loaded_from_gui".to_string(),
+                value: gameterm_visual::VisualStateValue::Bool(true),
+            }));
     }
 
     #[test]

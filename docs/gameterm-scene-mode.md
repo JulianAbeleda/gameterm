@@ -169,6 +169,20 @@ successful navigation, `r` reloads the active scene rather than returning to
 `default.json`. If navigation fails, Scene Mode keeps the current scene visible
 and reports the error in the scene status.
 
+`ExportStoryState` and `ImportStoryState` choices save and load runtime story
+state without rewriting the source scene JSON:
+
+```json
+{
+  "label": "Save story",
+  "kind": { "ExportStoryState": { "path": "saves/default.story.json" } }
+}
+```
+
+Relative paths resolve against GameTerm's current working directory. Input maps
+can also use `export_story_state` or `import_story_state`; those use a default
+path next to the active scene such as `default.story.json`.
+
 ## State patches
 
 Scene Mode now has a versioned in-memory patch schema in `gameterm-visual`.

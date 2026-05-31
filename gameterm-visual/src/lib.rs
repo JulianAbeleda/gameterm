@@ -51,6 +51,12 @@ pub enum SceneActionKind {
     Navigate {
         target: String,
     },
+    ExportStoryState {
+        path: String,
+    },
+    ImportStoryState {
+        path: String,
+    },
     AdvanceDialogue {
         target: usize,
     },
@@ -475,6 +481,8 @@ pub struct VisualSceneDebugReport {
     pub pending_action_kind: Option<String>,
     pub pending_action_detail: Option<String>,
     pub process_state: Option<VisualProcessState>,
+    pub last_story_state_action: Option<String>,
+    pub last_story_state_path: Option<String>,
     pub last_patch_transport: Option<String>,
     pub last_patch_source_pane_id: Option<usize>,
     pub status: String,
@@ -969,6 +977,8 @@ fn is_supported_mode_input_action(action: &str) -> bool {
             | "select_previous"
             | "run_update_hooks"
             | "run_exit_hooks"
+            | "export_story_state"
+            | "import_story_state"
             | "ignore"
     )
 }
@@ -992,6 +1002,12 @@ pub enum VisualActionRequest {
     Navigate {
         target: String,
     },
+    ExportStoryState {
+        path: PathBuf,
+    },
+    ImportStoryState {
+        path: PathBuf,
+    },
 }
 
 pub trait VisualMode {
@@ -1013,6 +1029,8 @@ pub enum VisualSceneError {
     EmptyRunCommand { label: String },
     #[error("RunCommand action `{label}` has an empty cwd")]
     EmptyRunCommandCwd { label: String },
+    #[error("StoryState action `{label}` must provide a non-empty path")]
+    EmptyStoryStatePath { label: String },
     #[error("Resolve action `{label}` must include at least one operation")]
     EmptyResolveOperations { label: String },
     #[error("Resolve action `{label}` has an empty operation key")]
@@ -1513,6 +1531,15 @@ impl VisualScene {
                     });
                 }
             }
+            if let SceneActionKind::ExportStoryState { path }
+            | SceneActionKind::ImportStoryState { path } = &choice.kind
+            {
+                if path.trim().is_empty() {
+                    return Err(VisualSceneError::EmptyStoryStatePath {
+                        label: choice.label.clone(),
+                    });
+                }
+            }
             if let SceneActionKind::AdvanceDialogue { target } = &choice.kind {
                 if *target >= self.dialogue_lines.len() {
                     return Err(VisualSceneError::DialogueTargetOutOfBounds {
@@ -1545,6 +1572,8 @@ impl VisualScene {
                     "OpenFile".to_string(),
                     "RunCommand".to_string(),
                     "Navigate".to_string(),
+                    "ExportStoryState".to_string(),
+                    "ImportStoryState".to_string(),
                 ],
                 default_transition: None,
                 lifecycle: VisualModeLifecycle::default(),
@@ -1685,6 +1714,8 @@ pub struct SceneRuntime {
     generation: u64,
     pending_action: Option<VisualActionRequest>,
     last_process_state: Option<VisualProcessState>,
+    last_story_state_action: Option<String>,
+    last_story_state_path: Option<PathBuf>,
     last_patch_transport: Option<String>,
     last_patch_source_pane_id: Option<usize>,
     last_input_layer: Option<String>,
@@ -1727,6 +1758,8 @@ impl SceneRuntime {
             generation: 0,
             pending_action: None,
             last_process_state: None,
+            last_story_state_action: None,
+            last_story_state_path: None,
             last_patch_transport: None,
             last_patch_source_pane_id: None,
             last_input_layer: None,
@@ -1914,6 +1947,16 @@ impl SceneRuntime {
                 self.run_mode_exit_hooks();
                 VisualModeOutcome::Continue
             }
+            "export_story_state" => {
+                let path = self.default_story_state_path();
+                self.request_story_state_export(path);
+                VisualModeOutcome::Continue
+            }
+            "import_story_state" => {
+                let path = self.default_story_state_path();
+                self.request_story_state_import(path);
+                VisualModeOutcome::Continue
+            }
             _ => VisualModeOutcome::Continue,
         }
     }
@@ -2058,6 +2101,18 @@ impl SceneRuntime {
                         target: target.clone(),
                     });
                     format!("Navigate ready: {target}")
+                }
+                SceneActionKind::ExportStoryState { path } => {
+                    let path = self.resolve_action_path(path);
+                    pending_action =
+                        Some(VisualActionRequest::ExportStoryState { path: path.clone() });
+                    format!("ExportStoryState ready: {}", path.display())
+                }
+                SceneActionKind::ImportStoryState { path } => {
+                    let path = self.resolve_action_path(path);
+                    pending_action =
+                        Some(VisualActionRequest::ImportStoryState { path: path.clone() });
+                    format!("ImportStoryState ready: {}", path.display())
                 }
                 SceneActionKind::AdvanceDialogue { target } => {
                     self.dialogue_index = *target;
@@ -2246,6 +2301,63 @@ impl SceneRuntime {
         self.bump_generation();
     }
 
+    fn resolve_action_path(&self, path: &str) -> PathBuf {
+        let raw_path = PathBuf::from(path);
+        if raw_path.is_absolute() {
+            raw_path
+        } else {
+            self.action_base_dir.join(raw_path)
+        }
+    }
+
+    fn default_story_state_path(&self) -> PathBuf {
+        let scene_path = PathBuf::from(&self.scene_source.scene_path);
+        if scene_path.file_name().is_some() {
+            scene_path.with_extension("story.json")
+        } else {
+            self.action_base_dir.join("gameterm-scene.story.json")
+        }
+    }
+
+    fn request_story_state_export(&mut self, path: PathBuf) {
+        self.pending_action = Some(VisualActionRequest::ExportStoryState { path: path.clone() });
+        self.status = format!("ExportStoryState ready: {}", path.display());
+        self.bump_generation();
+    }
+
+    fn request_story_state_import(&mut self, path: PathBuf) {
+        self.pending_action = Some(VisualActionRequest::ImportStoryState { path: path.clone() });
+        self.status = format!("ImportStoryState ready: {}", path.display());
+        self.bump_generation();
+    }
+
+    pub fn mark_story_state_exported(&mut self, path: &Path) {
+        self.last_story_state_action = Some("export".to_string());
+        self.last_story_state_path = Some(path.to_path_buf());
+        self.status = format!("Story state exported: {}", path.display());
+        self.bump_generation();
+    }
+
+    pub fn mark_story_state_imported(&mut self, path: &Path) {
+        self.last_story_state_action = Some("import".to_string());
+        self.last_story_state_path = Some(path.to_path_buf());
+        self.status = format!("Story state imported: {}", path.display());
+        self.bump_generation();
+    }
+
+    pub fn mark_story_state_failed(
+        &mut self,
+        action: impl Into<String>,
+        path: &Path,
+        error: impl std::fmt::Display,
+    ) {
+        let action = action.into();
+        self.last_story_state_action = Some(action.clone());
+        self.last_story_state_path = Some(path.to_path_buf());
+        self.status = format!("Story state {action} failed: {}: {error}", path.display());
+        self.bump_generation();
+    }
+
     pub fn apply_scene_patch(
         &mut self,
         patch: VisualScenePatch,
@@ -2430,12 +2542,7 @@ impl SceneRuntime {
     }
 
     fn open_file_action_status(&self, path: &str) -> (String, Option<VisualActionRequest>) {
-        let raw_path = PathBuf::from(path);
-        let resolved = if raw_path.is_absolute() {
-            raw_path
-        } else {
-            self.action_base_dir.join(raw_path)
-        };
+        let resolved = self.resolve_action_path(path);
         let display_path = resolved.display();
         match std::fs::metadata(&resolved) {
             Ok(metadata) if metadata.is_file() => (
@@ -2548,6 +2655,11 @@ impl SceneRuntime {
             pending_action_kind: pending_action.map(action_request_name),
             pending_action_detail: pending_action.map(action_request_detail),
             process_state: self.last_process_state.clone(),
+            last_story_state_action: self.last_story_state_action.clone(),
+            last_story_state_path: self
+                .last_story_state_path
+                .as_ref()
+                .map(|path| path.display().to_string()),
             last_patch_transport: self.last_patch_transport.clone(),
             last_patch_source_pane_id: self.last_patch_source_pane_id,
             status: self.status.clone(),
@@ -2839,6 +2951,18 @@ impl SceneRuntime {
             }
         }
         match (
+            &report.last_story_state_action,
+            &report.last_story_state_path,
+        ) {
+            (Some(action), Some(path)) => {
+                out.push_str(&format!("  Last story state: {action} {path}\r\n"));
+            }
+            (Some(action), None) => {
+                out.push_str(&format!("  Last story state: {action}\r\n"));
+            }
+            _ => out.push_str("  Last story state: none\r\n"),
+        }
+        match (
             &report.last_patch_transport,
             report.last_patch_source_pane_id,
         ) {
@@ -2930,6 +3054,8 @@ fn action_kind_name(kind: &SceneActionKind) -> String {
         SceneActionKind::OpenFile { .. } => "OpenFile",
         SceneActionKind::RunCommand { .. } => "RunCommand",
         SceneActionKind::Navigate { .. } => "Navigate",
+        SceneActionKind::ExportStoryState { .. } => "ExportStoryState",
+        SceneActionKind::ImportStoryState { .. } => "ImportStoryState",
         SceneActionKind::AdvanceDialogue { .. } => "AdvanceDialogue",
         SceneActionKind::Resolve { .. } => "Resolve",
     }
@@ -2949,6 +3075,8 @@ fn action_kind_detail(kind: &SceneActionKind) -> String {
             detail
         }
         SceneActionKind::Navigate { target } => format!("target={target}"),
+        SceneActionKind::ExportStoryState { path } => format!("path={path}"),
+        SceneActionKind::ImportStoryState { path } => format!("path={path}"),
         SceneActionKind::AdvanceDialogue { target } => format!("target={target}"),
         SceneActionKind::Resolve { operations } => format!("operations={}", operations.len()),
     }
@@ -2959,6 +3087,8 @@ fn action_request_name(action: &VisualActionRequest) -> String {
         VisualActionRequest::OpenFile { .. } => "OpenFile",
         VisualActionRequest::RunCommand { .. } => "RunCommand",
         VisualActionRequest::Navigate { .. } => "Navigate",
+        VisualActionRequest::ExportStoryState { .. } => "ExportStoryState",
+        VisualActionRequest::ImportStoryState { .. } => "ImportStoryState",
     }
     .to_string()
 }
@@ -2975,6 +3105,8 @@ fn action_request_detail(action: &VisualActionRequest) -> String {
             detail
         }
         VisualActionRequest::Navigate { target } => format!("target={target}"),
+        VisualActionRequest::ExportStoryState { path } => format!("path={}", path.display()),
+        VisualActionRequest::ImportStoryState { path } => format!("path={}", path.display()),
     }
 }
 
@@ -4511,6 +4643,120 @@ mod tests {
 
         assert!(snapshot.status.starts_with("OpenFile opening: "));
         assert!(runtime.generation() > generation_before);
+    }
+
+    #[test]
+    fn story_state_actions_emit_pending_requests() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut scene = VisualScene::demo();
+        scene.choices = vec![
+            SceneAction {
+                label: "Export story".to_string(),
+                kind: SceneActionKind::ExportStoryState {
+                    path: "state/story.json".to_string(),
+                },
+                conditions: vec![],
+            },
+            SceneAction {
+                label: "Import story".to_string(),
+                kind: SceneActionKind::ImportStoryState {
+                    path: "state/story.json".to_string(),
+                },
+                conditions: vec![],
+            },
+        ];
+        let mut runtime = SceneRuntime::new_with_source_and_action_base_dir(
+            scene,
+            VisualSceneSource::new("/tmp/default.json", VisualSceneLoadStatus::Loaded, 1),
+            dir.path(),
+        )
+        .unwrap();
+        let state_path = dir.path().join("state/story.json");
+
+        runtime.activate_choice();
+        assert_eq!(
+            runtime.take_pending_action(),
+            Some(VisualActionRequest::ExportStoryState {
+                path: state_path.clone()
+            })
+        );
+        assert!(runtime
+            .render_snapshot()
+            .status
+            .starts_with("ExportStoryState ready: "));
+
+        runtime.select_next_choice();
+        runtime.activate_choice();
+        assert_eq!(
+            runtime.take_pending_action(),
+            Some(VisualActionRequest::ImportStoryState { path: state_path })
+        );
+    }
+
+    #[test]
+    fn story_state_input_map_uses_default_scene_state_path() {
+        let mut scene = VisualScene::demo();
+        scene.mode.input_map = vec![VisualInputBinding {
+            input: "other".to_string(),
+            action: "export_story_state".to_string(),
+            conditions: vec![],
+        }];
+        let mut runtime = SceneRuntime::new_with_source(
+            scene,
+            VisualSceneSource::new(
+                "/tmp/gameterm/scenes/default.json",
+                VisualSceneLoadStatus::Loaded,
+                1,
+            ),
+        )
+        .unwrap();
+
+        runtime.handle_input(VisualInput::Other);
+
+        assert_eq!(
+            runtime.take_pending_action(),
+            Some(VisualActionRequest::ExportStoryState {
+                path: PathBuf::from("/tmp/gameterm/scenes/default.story.json")
+            })
+        );
+    }
+
+    #[test]
+    fn story_state_status_helpers_update_debug_report() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("story.json");
+        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+
+        runtime.mark_story_state_exported(&path);
+        let report = runtime.debug_report();
+        assert_eq!(report.last_story_state_action.as_deref(), Some("export"));
+        assert_eq!(
+            report.last_story_state_path,
+            Some(path.display().to_string())
+        );
+
+        runtime.toggle_debugger();
+        let frame = runtime.render_text_frame(120, 40);
+        assert!(frame.contains("Last story state: export"));
+    }
+
+    #[test]
+    fn scene_rejects_empty_story_state_action_path() {
+        let mut scene = VisualScene::demo();
+        scene.choices = vec![SceneAction {
+            label: "Export story".to_string(),
+            kind: SceneActionKind::ExportStoryState {
+                path: " ".to_string(),
+            },
+            conditions: vec![],
+        }];
+
+        assert_eq!(
+            scene.validate(),
+            Err(VisualSceneError::EmptyStoryStatePath {
+                label: "Export story".to_string()
+            })
+        );
     }
 
     #[test]
