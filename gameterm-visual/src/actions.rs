@@ -4,8 +4,9 @@ use crate::conditions::conditions_match;
 use crate::{
     relationship_key, validate_layers, validate_rpg_state, validate_state_entries,
     validate_state_operations, SceneAction, SceneActionKind, SceneRuntime, VisualActionRequest,
-    VisualRuntimeEvent, VisualSceneError, VisualStat, VisualStateEntry, VisualStateEntryError,
-    VisualStateOperation, VisualStateValue,
+    VisualDialogueLine, VisualEntity, VisualLayerState, VisualRpgState, VisualRuntimeEvent,
+    VisualSceneError, VisualStat, VisualStateEntry, VisualStateEntryError, VisualStateOperation,
+    VisualStateValue,
 };
 
 pub(crate) fn action_kind_name(kind: &SceneActionKind) -> String {
@@ -200,6 +201,49 @@ pub(crate) fn story_state_import_outcome(path: PathBuf) -> SceneActionOutcome {
     )
 }
 
+struct StateOperationTransaction {
+    variables: Vec<VisualStateEntry>,
+    layers: Vec<VisualLayerState>,
+    rpg: VisualRpgState,
+    entities: Vec<VisualEntity>,
+    selected_entity: usize,
+    dialogue_index: usize,
+    dialogue_history: Vec<VisualDialogueLine>,
+}
+
+impl StateOperationTransaction {
+    fn from_runtime(runtime: &SceneRuntime) -> Self {
+        Self {
+            variables: runtime.scene.variables.clone(),
+            layers: runtime.scene.layers.clone(),
+            rpg: runtime.scene.rpg.clone(),
+            entities: runtime.scene.entities.clone(),
+            selected_entity: runtime.selected_entity,
+            dialogue_index: runtime.dialogue_index,
+            dialogue_history: runtime.dialogue_history.clone(),
+        }
+    }
+
+    fn validate(&self) -> Result<(), VisualSceneError> {
+        validate_state_entries(&self.variables).map_err(|err| match err {
+            VisualStateEntryError::EmptyKey => VisualSceneError::EmptyVariableKey,
+            VisualStateEntryError::DuplicateKey(key) => VisualSceneError::DuplicateVariableKey(key),
+        })?;
+        validate_layers(&self.layers)?;
+        validate_rpg_state(&self.rpg)
+    }
+
+    fn commit(self, runtime: &mut SceneRuntime) {
+        runtime.scene.variables = self.variables;
+        runtime.scene.layers = self.layers;
+        runtime.scene.rpg = self.rpg;
+        runtime.scene.entities = self.entities;
+        runtime.selected_entity = self.selected_entity;
+        runtime.dialogue_index = self.dialogue_index;
+        runtime.dialogue_history = self.dialogue_history;
+    }
+}
+
 pub(crate) fn scene_action_outcome(
     runtime: &mut SceneRuntime,
     choice: &SceneAction,
@@ -288,18 +332,19 @@ pub(crate) fn apply_state_operations(
         &runtime.scene.layers,
         &runtime.scene.rpg,
     )?;
-    let mut variables = runtime.scene.variables.clone();
-    let mut layers = runtime.scene.layers.clone();
-    let mut rpg = runtime.scene.rpg.clone();
-    let mut entities = runtime.scene.entities.clone();
-    let mut selected_entity = runtime.selected_entity;
-    let mut dialogue_index = runtime.dialogue_index;
-    let mut dialogue_history = runtime.dialogue_history.clone();
+    let mut transaction = StateOperationTransaction::from_runtime(runtime);
+    let variables = &mut transaction.variables;
+    let layers = &mut transaction.layers;
+    let rpg = &mut transaction.rpg;
+    let entities = &mut transaction.entities;
+    let selected_entity = &mut transaction.selected_entity;
+    let dialogue_index = &mut transaction.dialogue_index;
+    let dialogue_history = &mut transaction.dialogue_history;
 
     for operation in operations {
         match operation {
             VisualStateOperation::SetVariable { key, value } => {
-                set_variable(&mut variables, key, value.clone());
+                set_variable(variables, key, value.clone());
             }
             VisualStateOperation::SetLayerState { layer_id, state } => {
                 if let Some(layer) = layers.iter_mut().find(|layer| layer.layer_id == *layer_id) {
@@ -313,7 +358,7 @@ pub(crate) fn apply_state_operations(
                         entity_id: entity_id.clone(),
                     });
                 };
-                selected_entity = index;
+                *selected_entity = index;
             }
             VisualStateOperation::SetEntityFlags { entity_id, flags } => {
                 let Some(entity) = entities.iter_mut().find(|entity| entity.id == *entity_id)
@@ -353,7 +398,7 @@ pub(crate) fn apply_state_operations(
                 layer_id,
                 state,
             } => {
-                dialogue_index = *target;
+                *dialogue_index = *target;
                 if let Some(line) = runtime.scene.dialogue_lines.get(*target).cloned() {
                     dialogue_history.push(line);
                 }
@@ -391,7 +436,7 @@ pub(crate) fn apply_state_operations(
                 layers[layer_index].state = transition.target_state.trim().to_string();
             }
             VisualStateOperation::IncrementVariable { key, amount } => {
-                increment_variable(&mut variables, key, *amount);
+                increment_variable(variables, key, *amount);
             }
             VisualStateOperation::ClearVariable { key } => {
                 variables.retain(|entry| entry.key != *key);
@@ -524,20 +569,8 @@ pub(crate) fn apply_state_operations(
         }
     }
 
-    validate_state_entries(&variables).map_err(|err| match err {
-        VisualStateEntryError::EmptyKey => VisualSceneError::EmptyVariableKey,
-        VisualStateEntryError::DuplicateKey(key) => VisualSceneError::DuplicateVariableKey(key),
-    })?;
-    validate_layers(&layers)?;
-    validate_rpg_state(&rpg)?;
-
-    runtime.scene.variables = variables;
-    runtime.scene.layers = layers;
-    runtime.scene.rpg = rpg;
-    runtime.scene.entities = entities;
-    runtime.selected_entity = selected_entity;
-    runtime.dialogue_index = dialogue_index;
-    runtime.dialogue_history = dialogue_history;
+    transaction.validate()?;
+    transaction.commit(runtime);
     Ok(operations.len())
 }
 
