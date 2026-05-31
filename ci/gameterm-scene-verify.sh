@@ -806,6 +806,17 @@ run_workspace_discovery_check() {
     exit 1
   fi
   jq -e '
+    (.entities | map(select(.visible // true)) | length) as $visible_count
+    | (.entities
+      | map(select(.visible // true) | "\(.position.x),\(.position.y)")
+      | unique
+      | length) == $visible_count
+    and any(.entities[]; .id == "discovered-workspace" and .position == {"x": 2, "y": 2})
+    and any(.entities[]; .id == "discovered-project" and .position == {"x": 5, "y": 2})
+    and any(.entities[]; .id == "discovered-pane" and .position == {"x": 11, "y": 2})
+    and any(.entities[]; .id == "discovered-process" and .position == {"x": 12, "y": 5})
+    and all(.entities[] | select((.metadata // []) | any(.[0] == "entity_type" and .[1] == "file")); .position.y >= 6)
+    and
     .mode.mode_id == "workspace"
     and any(.entities[]; .id == "discovered-workspace"
       and .kind == "Project"
