@@ -18,6 +18,14 @@ Common options:
   --task TEXT                   Active task label/objective.
   --verify-argv JSON_ARRAY      Explicit verification argv.
   --open PATH                   Add an important file. May be repeated.
+  --pane-id ID                  Active GameTerm pane id, when known.
+  --mux-window-id ID            Active GameTerm mux window id, when known.
+  --pane-cwd PATH               Active pane working directory, when known.
+  --foreground-process-name TEXT
+                                Active pane foreground process name.
+  --foreground-process-path PATH
+                                Active pane foreground process executable path.
+  --pane-progress TEXT          Active pane progress state, when known.
   --max-files N                 Maximum file entities. Default: 5.
   --strict                      Fail when a user-provided --open file is missing.
 
@@ -60,6 +68,7 @@ fi
 shift
 
 cwd="."
+cwd_provided=0
 title_override=""
 task_text=""
 verify_argv=""
@@ -73,11 +82,18 @@ install=0
 force=0
 config_home="${XDG_CONFIG_HOME:-${HOME}/.config}"
 open_paths=()
+pane_id=""
+mux_window_id=""
+pane_cwd=""
+foreground_process_name=""
+foreground_process_path=""
+pane_progress=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --cwd)
       cwd="$2"
+      cwd_provided=1
       shift 2
       ;;
     --title)
@@ -94,6 +110,30 @@ while [[ $# -gt 0 ]]; do
       ;;
     --open)
       open_paths+=("$2")
+      shift 2
+      ;;
+    --pane-id)
+      pane_id="$2"
+      shift 2
+      ;;
+    --mux-window-id)
+      mux_window_id="$2"
+      shift 2
+      ;;
+    --pane-cwd)
+      pane_cwd="$2"
+      shift 2
+      ;;
+    --foreground-process-name)
+      foreground_process_name="$2"
+      shift 2
+      ;;
+    --foreground-process-path)
+      foreground_process_path="$2"
+      shift 2
+      ;;
+    --pane-progress)
+      pane_progress="$2"
       shift 2
       ;;
     --max-files)
@@ -148,6 +188,14 @@ if [[ ! "${max_files}" =~ ^[0-9]+$ || "${max_files}" -eq 0 ]]; then
   echo "--max-files must be a positive integer" >&2
   exit 2
 fi
+if [[ -n "${pane_id}" && ! "${pane_id}" =~ ^[0-9]+$ ]]; then
+  echo "--pane-id must be a non-negative integer" >&2
+  exit 2
+fi
+if [[ -n "${mux_window_id}" && ! "${mux_window_id}" =~ ^[0-9]+$ ]]; then
+  echo "--mux-window-id must be a non-negative integer" >&2
+  exit 2
+fi
 if [[ -n "${verify_argv}" ]]; then
   if ! jq -e 'type == "array" and length > 0 and all(.[]; type == "string" and length > 0)' \
     <<<"${verify_argv}" >/dev/null; then
@@ -165,6 +213,9 @@ resolve_dir() {
   (cd "${path}" && pwd -P)
 }
 
+if [[ "${cwd_provided}" -eq 0 && -n "${pane_cwd}" ]]; then
+  cwd="${pane_cwd}"
+fi
 workspace_dir="$(resolve_dir "${cwd}")"
 
 git_value() {
@@ -225,6 +276,37 @@ if [[ -z "${verify_argv}" ]]; then
       "${root_dir}/package.json" >/dev/null 2>&1; then
     verify_argv='["npm","test"]'
   fi
+fi
+
+pane_context="absent"
+if [[ -n "${pane_id}${mux_window_id}${pane_cwd}${foreground_process_name}${foreground_process_path}${pane_progress}" ]]; then
+  pane_context="provided"
+fi
+discovery_source="cwd"
+if [[ "${cwd_provided}" -eq 0 && -n "${pane_cwd}" ]]; then
+  discovery_source="pane_cwd"
+elif [[ "${pane_context}" == "provided" ]]; then
+  discovery_source="cwd_with_pane_metadata"
+fi
+active_process_label="No foreground process"
+active_process_phase="none"
+active_process_command=""
+active_process_message="No active pane process metadata"
+if [[ -n "${foreground_process_name}" ]]; then
+  active_process_label="$(basename "${foreground_process_name}")"
+  active_process_command="${foreground_process_name}"
+  active_process_phase="running"
+  active_process_message="Foreground process detected"
+elif [[ -n "${foreground_process_path}" ]]; then
+  active_process_label="$(basename "${foreground_process_path}")"
+  active_process_command="${foreground_process_path}"
+  active_process_phase="running"
+  active_process_message="Foreground process detected"
+fi
+if [[ -n "${pane_progress}" && "${active_process_phase}" == "none" ]]; then
+  active_process_label="Pane progress"
+  active_process_phase="running"
+  active_process_message="Pane progress reported"
 fi
 
 relative_path() {
@@ -347,6 +429,18 @@ scene_json() {
     --arg manifest "${manifest}" \
     --arg task "${task_label}" \
     --arg verify_label "${verify_label}" \
+    --arg pane_context "${pane_context}" \
+    --arg pane_id "${pane_id}" \
+    --arg mux_window_id "${mux_window_id}" \
+    --arg pane_cwd "${pane_cwd}" \
+    --arg foreground_process_name "${foreground_process_name}" \
+    --arg foreground_process_path "${foreground_process_path}" \
+    --arg pane_progress "${pane_progress}" \
+    --arg discovery_source "${discovery_source}" \
+    --arg active_process_label "${active_process_label}" \
+    --arg active_process_phase "${active_process_phase}" \
+    --arg active_process_command "${active_process_command}" \
+    --arg active_process_message "${active_process_message}" \
     --argjson files "${files_json}" \
     --argjson verify "${verify_json}" \
     '{
@@ -372,17 +466,19 @@ scene_json() {
           input_map: [{ input: "other", action: "toggle_debug" }]
         }
       ],
-      variables: [
+      variables: ([
         { key: "workspace_mode", value: { Text: "overview" } },
         { key: "workspace_root", value: { Text: $root } },
         { key: "repo_branch", value: { Text: $branch } },
         { key: "repo_status", value: { Text: $status } },
         { key: "active_task_id", value: { Text: "discovered-task" } },
-        { key: "process_phase", value: { Text: "none" } },
+        { key: "process_phase", value: { Text: $active_process_phase } },
         { key: "verification_status", value: { Text: "not_run" } },
-        { key: "discovery_source", value: { Text: "cwd" } },
+        { key: "discovery_source", value: { Text: $discovery_source } },
+        { key: "pane_context", value: { Text: $pane_context } },
         { key: "discovered_file_count", value: { Number: ($files | length) } }
-      ],
+      ] + (if $pane_id == "" then [] else [{ key: "active_pane_id", value: { Number: ($pane_id | tonumber) } }] end)
+        + (if $mux_window_id == "" then [] else [{ key: "active_mux_window_id", value: { Number: ($mux_window_id | tonumber) } }] end)),
       entities: ([
         {
           id: "discovered-workspace",
@@ -391,15 +487,18 @@ scene_json() {
           position: { x: 2, y: 2 },
           sprite: "workspace-map",
           state_flags: (["workspace", "active"] + if $status == "clean" then ["git_clean"] elif $status == "dirty" then ["git_dirty"] else [] end),
-          metadata: [
+          metadata: ([
             ["entity_type", "workspace"],
             ["root", $root],
             ["cwd", $workspace],
             ["repo_branch", $branch],
             ["repo_revision", $revision],
             ["repo_status", $status],
-            ["changed_files", $changed]
-          ]
+            ["changed_files", $changed],
+            ["discovery_source", $discovery_source]
+          ] + (if $pane_id == "" then [] else [["active_pane_id", $pane_id]] end)
+            + (if $mux_window_id == "" then [] else [["active_mux_window_id", $mux_window_id]] end)
+            + (if $pane_cwd == "" then [] else [["pane_cwd", $pane_cwd]] end))
         },
         {
           id: "discovered-project",
@@ -415,6 +514,21 @@ scene_json() {
             ["manifest", $manifest],
             ["verification", $verify_label]
           ]
+        },
+        {
+          id: "discovered-pane",
+          kind: "Task",
+          label: (if $pane_id == "" then "Active Pane" else ("Pane " + $pane_id) end),
+          position: { x: 11, y: 2 },
+          sprite: "task_tile",
+          state_flags: (["pane"] + (if $pane_context == "provided" then ["active"] else ["unknown"] end)),
+          metadata: ([
+            ["entity_type", "pane"],
+            ["context", $pane_context]
+          ] + (if $pane_id == "" then [] else [["pane_id", $pane_id]] end)
+            + (if $mux_window_id == "" then [] else [["mux_window_id", $mux_window_id]] end)
+            + (if $pane_cwd == "" then [] else [["cwd", $pane_cwd]] end)
+            + (if $pane_progress == "" then [] else [["progress", $pane_progress]] end))
         },
         {
           id: "discovered-task",
@@ -434,16 +548,19 @@ scene_json() {
         {
           id: "discovered-process",
           kind: "Task",
-          label: "Verification",
+          label: $active_process_label,
           position: { x: 12, y: 5 },
           sprite: "task_tile",
-          state_flags: ["process", "idle"],
-          metadata: [
+          state_flags: ["process", $active_process_phase],
+          metadata: ([
             ["entity_type", "process"],
-            ["command", $verify_label],
+            ["command", $active_process_command],
             ["cwd", $root],
-            ["phase", "none"]
-          ]
+            ["phase", $active_process_phase],
+            ["message", $active_process_message]
+          ] + (if $foreground_process_name == "" then [] else [["foreground_process_name", $foreground_process_name]] end)
+            + (if $foreground_process_path == "" then [] else [["foreground_process_path", $foreground_process_path]] end)
+            + (if $pane_progress == "" then [] else [["pane_progress", $pane_progress]] end))
         }
       ] + ($files | to_entries | map({
         id: ("file-" + (.key | tostring)),
@@ -499,32 +616,51 @@ patch_json() {
     --arg manifest "${manifest}" \
     --arg task "${task_label}" \
     --arg verify_label "${verify_label}" \
+    --arg pane_context "${pane_context}" \
+    --arg pane_id "${pane_id}" \
+    --arg mux_window_id "${mux_window_id}" \
+    --arg pane_cwd "${pane_cwd}" \
+    --arg foreground_process_name "${foreground_process_name}" \
+    --arg foreground_process_path "${foreground_process_path}" \
+    --arg pane_progress "${pane_progress}" \
+    --arg discovery_source "${discovery_source}" \
+    --arg active_process_label "${active_process_label}" \
+    --arg active_process_phase "${active_process_phase}" \
+    --arg active_process_command "${active_process_command}" \
+    --arg active_process_message "${active_process_message}" \
     --argjson files "${files_json}" \
     '{
       scene_patch_version: 1,
       status: ("Workspace discovered: " + $project_label + " (" + $status + ")"),
       selected_entity_id: "workspace-gameterm",
-      variables: [
+      variables: ([
         { key: "workspace_mode", value: { Text: "overview" } },
         { key: "workspace_root", value: { Text: $root } },
         { key: "repo_branch", value: { Text: $branch } },
         { key: "repo_status", value: { Text: $status } },
+        { key: "discovery_source", value: { Text: $discovery_source } },
+        { key: "pane_context", value: { Text: $pane_context } },
+        { key: "process_phase", value: { Text: $active_process_phase } },
         { key: "discovered_file_count", value: { Number: ($files | length) } }
-      ],
+      ] + (if $pane_id == "" then [] else [{ key: "active_pane_id", value: { Number: ($pane_id | tonumber) } }] end)
+        + (if $mux_window_id == "" then [] else [{ key: "active_mux_window_id", value: { Number: ($mux_window_id | tonumber) } }] end)),
       updates: [
         {
           entity_id: "workspace-gameterm",
           label: ($project_label + " Workspace"),
           state_flags: (["workspace", "active"] + if $status == "clean" then ["git_clean"] elif $status == "dirty" then ["git_dirty"] else [] end),
-          metadata: [
+          metadata: ([
             ["entity_type", "workspace"],
             ["root", $root],
             ["cwd", $workspace],
             ["repo_branch", $branch],
             ["repo_revision", $revision],
             ["repo_status", $status],
-            ["changed_files", $changed]
-          ]
+            ["changed_files", $changed],
+            ["discovery_source", $discovery_source]
+          ] + (if $pane_id == "" then [] else [["active_pane_id", $pane_id]] end)
+            + (if $mux_window_id == "" then [] else [["active_mux_window_id", $mux_window_id]] end)
+            + (if $pane_cwd == "" then [] else [["pane_cwd", $pane_cwd]] end))
         },
         {
           entity_id: "project-scene-mode",
@@ -551,14 +687,17 @@ patch_json() {
         },
         {
           entity_id: "scene-verify-process",
-          label: "Verification",
-          state_flags: ["process", "idle"],
-          metadata: [
+          label: $active_process_label,
+          state_flags: ["process", $active_process_phase],
+          metadata: ([
             ["entity_type", "process"],
-            ["command", $verify_label],
+            ["command", $active_process_command],
             ["cwd", $root],
-            ["phase", "none"]
-          ]
+            ["phase", $active_process_phase],
+            ["message", $active_process_message]
+          ] + (if $foreground_process_name == "" then [] else [["foreground_process_name", $foreground_process_name]] end)
+            + (if $foreground_process_path == "" then [] else [["foreground_process_path", $foreground_process_path]] end)
+            + (if $pane_progress == "" then [] else [["pane_progress", $pane_progress]] end))
         },
         {
           entity_id: "scope-doc",
@@ -578,7 +717,13 @@ patch_json() {
             ["role", (if ($files | length) > 1 then $files[1].role else "file" end)]
           ]
         }
-      ]
+      ],
+      process_state: (if $active_process_phase == "none" then null else {
+        entity_id: "scene-verify-process",
+        phase: $active_process_phase,
+        command: (if $active_process_command == "" then null else $active_process_command end),
+        message: $active_process_message
+      } end)
     }'
 }
 
@@ -615,6 +760,15 @@ language=${language}
 manifest=${manifest}
 file_count=$(jq 'length' <<<"${files_json}")
 verify_argv=${verify_argv:-}
+discovery_source=${discovery_source}
+pane_context=${pane_context}
+pane_id=${pane_id}
+mux_window_id=${mux_window_id}
+pane_cwd=${pane_cwd}
+foreground_process_name=${foreground_process_name}
+foreground_process_path=${foreground_process_path}
+pane_progress=${pane_progress}
+active_process_phase=${active_process_phase}
 EOF
 }
 
