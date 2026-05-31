@@ -54,6 +54,9 @@ pub enum SceneActionKind {
     AdvanceDialogue {
         target: usize,
     },
+    Resolve {
+        operations: Vec<VisualStateOperation>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -120,6 +123,57 @@ pub struct VisualDialogueLine {
 pub struct VisualCondition {
     pub variable: String,
     pub equals: VisualStateValue,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum VisualStateOperation {
+    SetVariable {
+        key: String,
+        value: VisualStateValue,
+    },
+    IncrementVariable {
+        key: String,
+        amount: i64,
+    },
+    ClearVariable {
+        key: String,
+    },
+    AddInventory {
+        item: VisualInventoryItem,
+    },
+    RemoveInventory {
+        item_id: String,
+        count: u32,
+    },
+    SetStat {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        owner_id: Option<String>,
+        key: String,
+        value: VisualStateValue,
+    },
+    AdjustStat {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        owner_id: Option<String>,
+        key: String,
+        amount: i64,
+    },
+    AdvanceQuest {
+        quest_id: String,
+        stage: i64,
+    },
+    CompleteQuest {
+        quest_id: String,
+    },
+    AppendQuestJournal {
+        quest_id: String,
+        text: String,
+    },
+    AdjustRelationship {
+        source_id: String,
+        target_id: String,
+        kind: String,
+        amount: i64,
+    },
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -687,6 +741,105 @@ fn validate_rpg_state(state: &VisualRpgState) -> Result<(), VisualSceneError> {
     Ok(())
 }
 
+fn validate_state_operations(
+    label: &str,
+    operations: &[VisualStateOperation],
+    rpg: &VisualRpgState,
+) -> Result<(), VisualSceneError> {
+    if operations.is_empty() {
+        return Err(VisualSceneError::EmptyResolveOperations {
+            label: label.to_string(),
+        });
+    }
+    for operation in operations {
+        match operation {
+            VisualStateOperation::SetVariable { key, .. }
+            | VisualStateOperation::IncrementVariable { key, .. }
+            | VisualStateOperation::ClearVariable { key } => {
+                if key.trim().is_empty() {
+                    return Err(VisualSceneError::EmptyResolveOperationKey {
+                        label: label.to_string(),
+                    });
+                }
+            }
+            VisualStateOperation::AddInventory { item } => {
+                validate_rpg_state(&VisualRpgState {
+                    inventory: vec![item.clone()],
+                    stats: Vec::new(),
+                    quests: Vec::new(),
+                    relationships: Vec::new(),
+                })?;
+            }
+            VisualStateOperation::RemoveInventory { item_id, .. } => {
+                if item_id.trim().is_empty() {
+                    return Err(VisualSceneError::EmptyResolveOperationKey {
+                        label: label.to_string(),
+                    });
+                }
+                if !rpg.inventory.iter().any(|item| item.item_id == *item_id) {
+                    return Err(VisualSceneError::UnknownInventoryItem {
+                        label: label.to_string(),
+                        item_id: item_id.clone(),
+                    });
+                }
+            }
+            VisualStateOperation::SetStat { key, .. }
+            | VisualStateOperation::AdjustStat { key, .. } => {
+                if key.trim().is_empty() {
+                    return Err(VisualSceneError::EmptyResolveOperationKey {
+                        label: label.to_string(),
+                    });
+                }
+            }
+            VisualStateOperation::AdvanceQuest { quest_id, .. }
+            | VisualStateOperation::CompleteQuest { quest_id }
+            | VisualStateOperation::AppendQuestJournal { quest_id, .. } => {
+                if quest_id.trim().is_empty() {
+                    return Err(VisualSceneError::EmptyResolveOperationKey {
+                        label: label.to_string(),
+                    });
+                }
+                if !rpg.quests.iter().any(|quest| quest.quest_id == *quest_id) {
+                    return Err(VisualSceneError::UnknownQuest {
+                        label: label.to_string(),
+                        quest_id: quest_id.clone(),
+                    });
+                }
+            }
+            VisualStateOperation::AdjustRelationship {
+                source_id,
+                target_id,
+                kind,
+                ..
+            } => {
+                if source_id.trim().is_empty()
+                    || target_id.trim().is_empty()
+                    || kind.trim().is_empty()
+                {
+                    return Err(VisualSceneError::EmptyResolveOperationKey {
+                        label: label.to_string(),
+                    });
+                }
+                if !rpg.relationships.iter().any(|relationship| {
+                    relationship.source_id == *source_id
+                        && relationship.target_id == *target_id
+                        && relationship.kind == *kind
+                }) {
+                    return Err(VisualSceneError::UnknownRelationship {
+                        label: label.to_string(),
+                        relationship: relationship_key(source_id, target_id, kind),
+                    });
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn relationship_key(source_id: &str, target_id: &str, kind: &str) -> String {
+    format!("{source_id}:{target_id}:{kind}")
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum VisualSceneLoadStatus {
     Bundled,
@@ -834,6 +987,20 @@ pub enum VisualSceneError {
     EmptyRunCommand { label: String },
     #[error("RunCommand action `{label}` has an empty cwd")]
     EmptyRunCommandCwd { label: String },
+    #[error("Resolve action `{label}` must include at least one operation")]
+    EmptyResolveOperations { label: String },
+    #[error("Resolve action `{label}` has an empty operation key")]
+    EmptyResolveOperationKey { label: String },
+    #[error("Resolve action `{label}` references unknown inventory item `{item_id}`")]
+    UnknownInventoryItem { label: String, item_id: String },
+    #[error("Resolve action `{label}` references unknown stat `{key}`")]
+    UnknownStat { label: String, key: String },
+    #[error("Resolve action `{label}` references non-numeric stat `{key}`")]
+    NonNumericStat { label: String, key: String },
+    #[error("Resolve action `{label}` references unknown quest `{quest_id}`")]
+    UnknownQuest { label: String, quest_id: String },
+    #[error("Resolve action `{label}` references unknown relationship `{relationship}`")]
+    UnknownRelationship { label: String, relationship: String },
     #[error("scene mode id must be non-empty")]
     EmptyModeId,
     #[error("scene mode label must be non-empty")]
@@ -1302,6 +1469,9 @@ impl VisualScene {
                         target: *target,
                     });
                 }
+            }
+            if let SceneActionKind::Resolve { operations } = &choice.kind {
+                validate_state_operations(&choice.label, operations, &self.rpg)?;
             }
         }
 
@@ -1845,10 +2015,177 @@ impl SceneRuntime {
                         format!("Dialogue target missing: {target}")
                     }
                 }
+                SceneActionKind::Resolve { operations } => {
+                    match self.apply_state_operations(&choice.label, operations) {
+                        Ok(count) => format!("Resolved {count} operation(s): {}", choice.label),
+                        Err(err) => format!("Resolve failed: {err}"),
+                    }
+                }
             };
             self.pending_action = pending_action;
             self.bump_generation();
         }
+    }
+
+    fn apply_state_operations(
+        &mut self,
+        label: &str,
+        operations: &[VisualStateOperation],
+    ) -> Result<usize, VisualSceneError> {
+        validate_state_operations(label, operations, &self.scene.rpg)?;
+        let mut variables = self.scene.variables.clone();
+        let mut rpg = self.scene.rpg.clone();
+
+        for operation in operations {
+            match operation {
+                VisualStateOperation::SetVariable { key, value } => {
+                    set_variable(&mut variables, key, value.clone());
+                }
+                VisualStateOperation::IncrementVariable { key, amount } => {
+                    increment_variable(&mut variables, key, *amount);
+                }
+                VisualStateOperation::ClearVariable { key } => {
+                    variables.retain(|entry| entry.key != *key);
+                }
+                VisualStateOperation::AddInventory { item } => {
+                    match rpg
+                        .inventory
+                        .iter_mut()
+                        .find(|existing| existing.item_id == item.item_id)
+                    {
+                        Some(existing) => {
+                            existing.count = existing.count.saturating_add(item.count)
+                        }
+                        None => rpg.inventory.push(item.clone()),
+                    }
+                }
+                VisualStateOperation::RemoveInventory { item_id, count } => {
+                    let Some(item) = rpg
+                        .inventory
+                        .iter_mut()
+                        .find(|existing| existing.item_id == *item_id)
+                    else {
+                        return Err(VisualSceneError::UnknownInventoryItem {
+                            label: label.to_string(),
+                            item_id: item_id.clone(),
+                        });
+                    };
+                    item.count = item.count.saturating_sub(*count);
+                    rpg.inventory.retain(|item| item.count > 0);
+                }
+                VisualStateOperation::SetStat {
+                    owner_id,
+                    key,
+                    value,
+                } => match rpg
+                    .stats
+                    .iter_mut()
+                    .find(|stat| stat.owner_id == *owner_id && stat.key == *key)
+                {
+                    Some(stat) => stat.value = value.clone(),
+                    None => rpg.stats.push(VisualStat {
+                        owner_id: owner_id.clone(),
+                        key: key.clone(),
+                        value: value.clone(),
+                    }),
+                },
+                VisualStateOperation::AdjustStat {
+                    owner_id,
+                    key,
+                    amount,
+                } => {
+                    let Some(stat) = rpg
+                        .stats
+                        .iter_mut()
+                        .find(|stat| stat.owner_id == *owner_id && stat.key == *key)
+                    else {
+                        return Err(VisualSceneError::UnknownStat {
+                            label: label.to_string(),
+                            key: key.clone(),
+                        });
+                    };
+                    match &mut stat.value {
+                        VisualStateValue::Number(value) => *value += amount,
+                        _ => {
+                            return Err(VisualSceneError::NonNumericStat {
+                                label: label.to_string(),
+                                key: key.clone(),
+                            });
+                        }
+                    }
+                }
+                VisualStateOperation::AdvanceQuest { quest_id, stage } => {
+                    let Some(quest) = rpg
+                        .quests
+                        .iter_mut()
+                        .find(|quest| quest.quest_id == *quest_id)
+                    else {
+                        return Err(VisualSceneError::UnknownQuest {
+                            label: label.to_string(),
+                            quest_id: quest_id.clone(),
+                        });
+                    };
+                    quest.stage = *stage;
+                }
+                VisualStateOperation::CompleteQuest { quest_id } => {
+                    let Some(quest) = rpg
+                        .quests
+                        .iter_mut()
+                        .find(|quest| quest.quest_id == *quest_id)
+                    else {
+                        return Err(VisualSceneError::UnknownQuest {
+                            label: label.to_string(),
+                            quest_id: quest_id.clone(),
+                        });
+                    };
+                    quest.completed = true;
+                }
+                VisualStateOperation::AppendQuestJournal { quest_id, text } => {
+                    let Some(quest) = rpg
+                        .quests
+                        .iter_mut()
+                        .find(|quest| quest.quest_id == *quest_id)
+                    else {
+                        return Err(VisualSceneError::UnknownQuest {
+                            label: label.to_string(),
+                            quest_id: quest_id.clone(),
+                        });
+                    };
+                    if !quest.journal.is_empty() {
+                        quest.journal.push('\n');
+                    }
+                    quest.journal.push_str(text);
+                }
+                VisualStateOperation::AdjustRelationship {
+                    source_id,
+                    target_id,
+                    kind,
+                    amount,
+                } => {
+                    let Some(relationship) = rpg.relationships.iter_mut().find(|relationship| {
+                        relationship.source_id == *source_id
+                            && relationship.target_id == *target_id
+                            && relationship.kind == *kind
+                    }) else {
+                        return Err(VisualSceneError::UnknownRelationship {
+                            label: label.to_string(),
+                            relationship: relationship_key(source_id, target_id, kind),
+                        });
+                    };
+                    relationship.value += amount;
+                }
+            }
+        }
+
+        validate_state_entries(&variables).map_err(|err| match err {
+            VisualStateEntryError::EmptyKey => VisualSceneError::EmptyVariableKey,
+            VisualStateEntryError::DuplicateKey(key) => VisualSceneError::DuplicateVariableKey(key),
+        })?;
+        validate_rpg_state(&rpg)?;
+
+        self.scene.variables = variables;
+        self.scene.rpg = rpg;
+        Ok(operations.len())
     }
 
     pub fn mark_action_status(&mut self, status: impl Into<String>) {
@@ -2507,6 +2844,7 @@ fn action_kind_name(kind: &SceneActionKind) -> String {
         SceneActionKind::RunCommand { .. } => "RunCommand",
         SceneActionKind::Navigate { .. } => "Navigate",
         SceneActionKind::AdvanceDialogue { .. } => "AdvanceDialogue",
+        SceneActionKind::Resolve { .. } => "Resolve",
     }
     .to_string()
 }
@@ -2525,6 +2863,7 @@ fn action_kind_detail(kind: &SceneActionKind) -> String {
         }
         SceneActionKind::Navigate { target } => format!("target={target}"),
         SceneActionKind::AdvanceDialogue { target } => format!("target={target}"),
+        SceneActionKind::Resolve { operations } => format!("operations={}", operations.len()),
     }
 }
 
@@ -2560,6 +2899,29 @@ fn conditions_match(conditions: &[VisualCondition], variables: &[VisualStateEntr
             .map(|entry| entry.value == condition.equals)
             .unwrap_or(false)
     })
+}
+
+fn set_variable(variables: &mut Vec<VisualStateEntry>, key: &str, value: VisualStateValue) {
+    match variables.iter_mut().find(|entry| entry.key == key) {
+        Some(entry) => entry.value = value,
+        None => variables.push(VisualStateEntry {
+            key: key.to_string(),
+            value,
+        }),
+    }
+}
+
+fn increment_variable(variables: &mut Vec<VisualStateEntry>, key: &str, amount: i64) {
+    match variables.iter_mut().find(|entry| entry.key == key) {
+        Some(entry) => match &mut entry.value {
+            VisualStateValue::Number(value) => *value += amount,
+            _ => entry.value = VisualStateValue::Number(amount),
+        },
+        None => variables.push(VisualStateEntry {
+            key: key.to_string(),
+            value: VisualStateValue::Number(amount),
+        }),
+    }
 }
 
 fn condition_guard_detail(conditions: &[VisualCondition]) -> Option<String> {
@@ -2923,6 +3285,154 @@ mod tests {
         assert!(frame.contains("RPG:"));
         assert!(frame.contains("Inventory items: 1"));
         assert!(frame.contains("Relationships: 1"));
+    }
+
+    #[test]
+    fn resolve_action_updates_story_and_rpg_state_atomically() {
+        let mut scene = VisualScene::demo();
+        scene.choices.insert(
+            0,
+            SceneAction {
+                label: "Resolve quest reward".to_string(),
+                kind: SceneActionKind::Resolve {
+                    operations: vec![
+                        VisualStateOperation::SetVariable {
+                            key: "quest_reward_claimed".to_string(),
+                            value: VisualStateValue::Bool(true),
+                        },
+                        VisualStateOperation::AddInventory {
+                            item: VisualInventoryItem {
+                                item_id: "memory-key".to_string(),
+                                label: "Memory Key".to_string(),
+                                count: 1,
+                                metadata: Vec::new(),
+                            },
+                        },
+                        VisualStateOperation::AdvanceQuest {
+                            quest_id: "verify-scene-runtime".to_string(),
+                            stage: 2,
+                        },
+                    ],
+                },
+                conditions: Vec::new(),
+            },
+        );
+        let mut runtime = SceneRuntime::new(scene).unwrap();
+
+        runtime.activate_choice();
+
+        let snapshot = runtime.render_snapshot();
+        assert_eq!(
+            snapshot.status,
+            "Resolved 3 operation(s): Resolve quest reward"
+        );
+        assert!(snapshot.variables.iter().any(|entry| {
+            entry.key == "quest_reward_claimed" && entry.value == VisualStateValue::Bool(true)
+        }));
+        assert!(snapshot
+            .rpg
+            .inventory
+            .iter()
+            .any(|item| item.item_id == "memory-key" && item.count == 1));
+        assert_eq!(snapshot.rpg.quests[0].stage, 2);
+    }
+
+    #[test]
+    fn resolve_action_failure_does_not_partially_mutate_state() {
+        let mut scene = VisualScene::demo();
+        scene.choices.insert(
+            0,
+            SceneAction {
+                label: "Broken reward".to_string(),
+                kind: SceneActionKind::Resolve {
+                    operations: vec![VisualStateOperation::SetVariable {
+                        key: "should_not_apply".to_string(),
+                        value: VisualStateValue::Bool(true),
+                    }],
+                },
+                conditions: Vec::new(),
+            },
+        );
+        let mut runtime = SceneRuntime::new(scene).unwrap();
+        runtime.scene.choices[0].kind = SceneActionKind::Resolve {
+            operations: vec![
+                VisualStateOperation::SetVariable {
+                    key: "should_not_apply".to_string(),
+                    value: VisualStateValue::Bool(true),
+                },
+                VisualStateOperation::AdvanceQuest {
+                    quest_id: "missing-quest".to_string(),
+                    stage: 9,
+                },
+            ],
+        };
+
+        runtime.activate_choice();
+
+        let snapshot = runtime.render_snapshot();
+        assert!(snapshot.status.starts_with(
+            "Resolve failed: Resolve action `Broken reward` references unknown quest"
+        ));
+        assert!(!snapshot
+            .variables
+            .iter()
+            .any(|entry| entry.key == "should_not_apply"));
+    }
+
+    #[test]
+    fn resolve_action_updates_existing_numeric_values() {
+        let mut scene = VisualScene::demo();
+        scene.choices.insert(
+            0,
+            SceneAction {
+                label: "Resolve counters".to_string(),
+                kind: SceneActionKind::Resolve {
+                    operations: vec![
+                        VisualStateOperation::IncrementVariable {
+                            key: "workspace_level".to_string(),
+                            amount: 3,
+                        },
+                        VisualStateOperation::AdjustStat {
+                            owner_id: Some("project-gameterm".to_string()),
+                            key: "focus".to_string(),
+                            amount: 2,
+                        },
+                        VisualStateOperation::AdjustRelationship {
+                            source_id: "agent-audit".to_string(),
+                            target_id: "task-render".to_string(),
+                            kind: "monitors".to_string(),
+                            amount: 1,
+                        },
+                    ],
+                },
+                conditions: Vec::new(),
+            },
+        );
+        let mut runtime = SceneRuntime::new(scene).unwrap();
+
+        runtime.activate_choice();
+
+        let snapshot = runtime.render_snapshot();
+        assert!(snapshot.variables.iter().any(|entry| {
+            entry.key == "workspace_level" && entry.value == VisualStateValue::Number(4)
+        }));
+        assert_eq!(snapshot.rpg.stats[0].value, VisualStateValue::Number(5));
+        assert_eq!(snapshot.rpg.relationships[0].value, 3);
+    }
+
+    #[test]
+    fn scene_rejects_empty_resolve_action() {
+        let mut scene = VisualScene::demo();
+        scene.choices[0].kind = SceneActionKind::Resolve {
+            operations: Vec::new(),
+        };
+
+        assert_eq!(
+            scene.validate(),
+            Err(VisualSceneError::EmptyResolveOperations {
+                label: "Inspect selected entity".to_string()
+            })
+        );
     }
 
     #[test]

@@ -74,6 +74,8 @@ Current status:
   live smoke discipline.
 - [x] Add layered state machine model, guarded layer transitions, layer input
   ownership, debug visibility, and a layered fixture.
+- [x] Add deterministic state action resolution for variables, inventory,
+  stats, quests, and relationships.
 
 ## Scene Mode Product Loop Roadmap
 
