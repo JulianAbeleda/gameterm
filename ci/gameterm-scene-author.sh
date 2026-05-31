@@ -443,6 +443,13 @@ copy_file() {
   local source="$1"
   local target="$2"
 
+  require_overwrite_allowed "${target}" || return 1
+  cp "${source}" "${target}"
+  echo "Wrote ${target}"
+}
+
+require_overwrite_allowed() {
+  local target="$1"
   if [[ -e "${target}" && "${force}" -ne 1 ]]; then
     cat >&2 <<EOF
 ${target} already exists.
@@ -451,9 +458,6 @@ Rerun with --force to overwrite it.
 EOF
     return 1
   fi
-
-  cp "${source}" "${target}"
-  echo "Wrote ${target}"
 }
 
 require_value() {
@@ -554,14 +558,7 @@ write_json() {
 
 create_scene() {
   local target="$1"
-  if [[ -e "${target}" && "${force}" -ne 1 ]]; then
-    cat >&2 <<EOF
-${target} already exists.
-
-Rerun with --force to overwrite it.
-EOF
-    return 1
-  fi
+  require_overwrite_allowed "${target}" || return 1
 
   mkdir -p "$(dirname "${target}")"
   jq -n \
@@ -584,14 +581,7 @@ EOF
 
 create_template() {
   local target="$1"
-  if [[ -e "${target}" && "${force}" -ne 1 ]]; then
-    cat >&2 <<EOF
-${target} already exists.
-
-Rerun with --force to overwrite it.
-EOF
-    return 1
-  fi
+  require_overwrite_allowed "${target}" || return 1
 
   mkdir -p "$(dirname "${target}")"
 

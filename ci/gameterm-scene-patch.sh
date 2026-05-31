@@ -224,6 +224,18 @@ require_value() {
   fi
 }
 
+require_overwrite_allowed() {
+  local target="$1"
+  if [[ -e "${target}" && "${force}" -ne 1 ]]; then
+    cat >&2 <<EOF
+${target} already exists.
+
+Rerun with --force to overwrite it.
+EOF
+    exit 1
+  fi
+}
+
 write_json() {
   local target="$1"
   local tmp
@@ -282,14 +294,7 @@ export_scene() {
   require_value "--scene" "${scene_path}"
   require_value "--patch" "${patch_path}"
   require_value "--output" "${output_path}"
-  if [[ -e "${output_path}" && "${force}" -ne 1 ]]; then
-    cat >&2 <<EOF
-${output_path} already exists.
-
-Rerun with --force to overwrite it.
-EOF
-    exit 1
-  fi
+  require_overwrite_allowed "${output_path}"
   cargo run -q -p gameterm-visual --example scene_patch_export -- \
     "${scene_path}" \
     "${patch_path}" \
@@ -301,14 +306,7 @@ create_entity_patch() {
   require_value "--entity-id" "${entity_id}"
   require_value "--status" "${status_text}"
 
-  if [[ -e "${output_path}" && "${force}" -ne 1 ]]; then
-    cat >&2 <<EOF
-${output_path} already exists.
-
-Rerun with --force to overwrite it.
-EOF
-    exit 1
-  fi
+  require_overwrite_allowed "${output_path}"
 
   local flags_json metadata_json process_state_json
   if ((${#flags[@]} == 0)); then
