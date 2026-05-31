@@ -3012,6 +3012,86 @@ mod tests {
     }
 
     #[test]
+    fn scene_fixture_workspace_agent_completes_product_loop() {
+        let scene = VisualScene::load_from_path(scene_fixture_path("workspace-agent.json")).unwrap();
+        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf();
+        let mut runtime = SceneRuntime::new_with_source_and_action_base_dir(
+            scene,
+            VisualSceneSource::new("workspace-agent.json", VisualSceneLoadStatus::Loaded, 0),
+            &repo_root,
+        )
+        .unwrap();
+
+        let snapshot = runtime.render_snapshot();
+        assert_eq!(snapshot.title, "Scene Agent Workspace");
+        assert_eq!(snapshot.active_layers.len(), 4);
+        assert_eq!(snapshot.status, "Workspace overview ready");
+        assert!(snapshot
+            .entities
+            .iter()
+            .any(|entity| entity.id == "scene-agent"
+                && entity.state_flags.iter().any(|flag| flag == "agent_idle")));
+
+        runtime.select_next_choice();
+        runtime.select_next_choice();
+        runtime.activate_choice();
+        runtime.select_next_choice();
+        runtime.activate_choice();
+        runtime.select_next_choice();
+        runtime.activate_choice();
+        runtime.select_next_choice();
+        runtime.activate_choice();
+
+        let snapshot = runtime.render_snapshot();
+        assert_eq!(
+            snapshot.selected_entity_id.as_deref(),
+            Some("scene-agent-workspace-task")
+        );
+        assert!(snapshot.variables.iter().any(|entry| {
+            entry.key == "agent_phase"
+                && entry.value == VisualStateValue::Text("completed".to_string())
+        }));
+        assert!(snapshot.variables.iter().any(|entry| {
+            entry.key == "agent_process_phase"
+                && entry.value == VisualStateValue::Text("succeeded".to_string())
+        }));
+        assert!(snapshot.variables.iter().any(|entry| {
+            entry.key == "review_ready" && entry.value == VisualStateValue::Bool(true)
+        }));
+        assert!(snapshot
+            .active_layers
+            .iter()
+            .any(|layer| layer.layer_id == "workspace" && layer.state == "review"));
+        assert!(snapshot
+            .active_layers
+            .iter()
+            .any(|layer| layer.layer_id == "agent" && layer.state == "complete"));
+        assert!(snapshot
+            .active_layers
+            .iter()
+            .any(|layer| layer.layer_id == "process" && layer.state == "succeeded"));
+
+        runtime.select_next_choice();
+        runtime.activate_choice();
+        assert!(runtime.render_snapshot().status.starts_with("OpenFile ready: "));
+
+        runtime.select_next_choice();
+        runtime.activate_choice();
+        assert_eq!(
+            runtime.take_pending_action(),
+            Some(VisualActionRequest::RunCommand {
+                argv: vec![
+                    "ci/gameterm-scene-verify.sh".to_string(),
+                    "--fixture".to_string(),
+                    "workspace-agent".to_string(),
+                ],
+                cwd: Some(PathBuf::from(".")),
+                target: RunCommandTarget::SplitDown,
+            })
+        );
+    }
+
+    #[test]
     fn scene_fixture_game_states_covers_common_modes() {
         let scene = VisualScene::load_from_path(scene_fixture_path("game-states.json")).unwrap();
         let mut runtime = SceneRuntime::new(scene).unwrap();

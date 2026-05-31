@@ -1,0 +1,830 @@
+{
+  "title": "Scene Agent Workspace",
+  "background": "workspace-map",
+  "width": 16,
+  "height": 9,
+  "mode": {
+    "mode_id": "workspace",
+    "label": "Workspace",
+    "description": "Agent and workspace product slice",
+    "scene_profile": "scene",
+    "allowed_actions": [
+      "Inspect",
+      "OpenFile",
+      "RunCommand",
+      "Resolve"
+    ],
+    "lifecycle": {
+      "enter_status": "Workspace overview ready",
+      "update_status": "Workspace state refreshed",
+      "exit_status": "Workspace overlay closed"
+    }
+  },
+  "layers": [
+    {
+      "layer_id": "workspace",
+      "state": "overview",
+      "label": "Workspace"
+    },
+    {
+      "layer_id": "agent",
+      "state": "idle",
+      "label": "Agent"
+    },
+    {
+      "layer_id": "process",
+      "state": "none",
+      "label": "Process"
+    },
+    {
+      "layer_id": "ui",
+      "state": "scene",
+      "label": "UI",
+      "input_map": [
+        {
+          "input": "other",
+          "action": "toggle_debug"
+        }
+      ]
+    }
+  ],
+  "variables": [
+    {
+      "key": "workspace_mode",
+      "value": {
+        "Text": "overview"
+      }
+    },
+    {
+      "key": "selected_workspace_entity",
+      "value": {
+        "Text": "workspace-gameterm"
+      }
+    },
+    {
+      "key": "active_task_id",
+      "value": {
+        "Text": "scene-agent-workspace-task"
+      }
+    },
+    {
+      "key": "active_agent_id",
+      "value": {
+        "Text": "scene-agent"
+      }
+    },
+    {
+      "key": "agent_phase",
+      "value": {
+        "Text": "idle"
+      }
+    },
+    {
+      "key": "agent_process_phase",
+      "value": {
+        "Text": "none"
+      }
+    },
+    {
+      "key": "process_phase",
+      "value": {
+        "Text": "none"
+      }
+    },
+    {
+      "key": "review_ready",
+      "value": {
+        "Bool": false
+      }
+    },
+    {
+      "key": "verification_status",
+      "value": {
+        "Text": "not_run"
+      }
+    },
+    {
+      "key": "blocker_present",
+      "value": {
+        "Bool": false
+      }
+    }
+  ],
+  "entities": [
+    {
+      "id": "workspace-gameterm",
+      "kind": "Project",
+      "label": "GameTerm Workspace",
+      "position": {
+        "x": 2,
+        "y": 2
+      },
+      "sprite": "workspace-map",
+      "state_flags": [
+        "workspace",
+        "active"
+      ],
+      "metadata": [
+        [
+          "entity_type",
+          "workspace"
+        ],
+        [
+          "root",
+          "."
+        ],
+        [
+          "mode",
+          "overview"
+        ],
+        [
+          "status",
+          "ready"
+        ]
+      ]
+    },
+    {
+      "id": "project-scene-mode",
+      "kind": "Project",
+      "label": "Scene Mode Project",
+      "position": {
+        "x": 5,
+        "y": 2
+      },
+      "sprite": "project_core",
+      "state_flags": [
+        "project",
+        "active"
+      ],
+      "metadata": [
+        [
+          "entity_type",
+          "project"
+        ],
+        [
+          "root",
+          "."
+        ],
+        [
+          "scope",
+          "agent-workspace"
+        ],
+        [
+          "verification",
+          "ci/gameterm-scene-verify.sh --fixture workspace-agent"
+        ]
+      ]
+    },
+    {
+      "id": "scene-agent-workspace-task",
+      "kind": "Task",
+      "label": "Agent Workspace Slice",
+      "position": {
+        "x": 8,
+        "y": 4
+      },
+      "sprite": "task_tile",
+      "state_flags": [
+        "task",
+        "queued"
+      ],
+      "metadata": [
+        [
+          "entity_type",
+          "task"
+        ],
+        [
+          "owner",
+          "scene-agent"
+        ],
+        [
+          "objective",
+          "Prove workspace and agent state as a product loop"
+        ],
+        [
+          "phase",
+          "queued"
+        ],
+        [
+          "related_files",
+          "docs/gameterm-scene-agent-workspace-scope.md,ci/fixtures/gameterm-scene/workspace-agent.json"
+        ]
+      ]
+    },
+    {
+      "id": "scene-agent",
+      "kind": "Agent",
+      "label": "Scene Agent",
+      "position": {
+        "x": 11,
+        "y": 3
+      },
+      "sprite": "agent_idle",
+      "state_flags": [
+        "agent",
+        "agent_idle"
+      ],
+      "metadata": [
+        [
+          "entity_type",
+          "agent"
+        ],
+        [
+          "phase",
+          "idle"
+        ],
+        [
+          "objective",
+          "Coordinate the workspace slice"
+        ],
+        [
+          "current_step",
+          "waiting to plan"
+        ]
+      ]
+    },
+    {
+      "id": "scene-verify-process",
+      "kind": "Task",
+      "label": "Verify Process",
+      "position": {
+        "x": 12,
+        "y": 6
+      },
+      "sprite": "task_tile",
+      "state_flags": [
+        "process",
+        "idle"
+      ],
+      "metadata": [
+        [
+          "entity_type",
+          "process"
+        ],
+        [
+          "command",
+          "ci/gameterm-scene-verify.sh --fixture workspace-agent"
+        ],
+        [
+          "phase",
+          "none"
+        ]
+      ]
+    },
+    {
+      "id": "scope-doc",
+      "kind": "Memory",
+      "label": "Scope Document",
+      "position": {
+        "x": 4,
+        "y": 6
+      },
+      "sprite": "memory_note",
+      "state_flags": [
+        "file",
+        "scope"
+      ],
+      "metadata": [
+        [
+          "entity_type",
+          "file"
+        ],
+        [
+          "path",
+          "docs/gameterm-scene-agent-workspace-scope.md"
+        ],
+        [
+          "role",
+          "scope"
+        ]
+      ]
+    },
+    {
+      "id": "fixture-file",
+      "kind": "Principle",
+      "label": "Workspace Fixture",
+      "position": {
+        "x": 6,
+        "y": 7
+      },
+      "sprite": "memory_note",
+      "state_flags": [
+        "file",
+        "fixture"
+      ],
+      "metadata": [
+        [
+          "entity_type",
+          "file"
+        ],
+        [
+          "path",
+          "ci/fixtures/gameterm-scene/workspace-agent.json"
+        ],
+        [
+          "role",
+          "fixture"
+        ]
+      ]
+    }
+  ],
+  "dialogue_speaker": "Workspace",
+  "dialogue": "Agent and workspace state are active. Plan the task, move it through lifecycle states, then verify the slice.",
+  "dialogue_lines": [
+    {
+      "speaker": "Workspace",
+      "text": "The workspace overview is ready.",
+      "portrait": "project_core"
+    },
+    {
+      "speaker": "Scene Agent",
+      "text": "Planning is complete. The task is running.",
+      "portrait": "agent_idle"
+    },
+    {
+      "speaker": "Scene Agent",
+      "text": "A blocker is visible and recoverable.",
+      "portrait": "agent_idle"
+    },
+    {
+      "speaker": "Workspace",
+      "text": "The slice is ready for review and verification.",
+      "portrait": "project_core"
+    }
+  ],
+  "choices": [
+    {
+      "label": "Inspect workspace",
+      "kind": "Inspect"
+    },
+    {
+      "label": "Open scope",
+      "kind": {
+        "OpenFile": {
+          "path": "docs/gameterm-scene-agent-workspace-scope.md"
+        }
+      }
+    },
+    {
+      "label": "Plan agent task",
+      "kind": {
+        "Resolve": {
+          "operations": [
+            {
+              "SetVariable": {
+                "key": "workspace_mode",
+                "value": {
+                  "Text": "task"
+                }
+              }
+            },
+            {
+              "SetVariable": {
+                "key": "agent_phase",
+                "value": {
+                  "Text": "planning"
+                }
+              }
+            },
+            {
+              "SetVariable": {
+                "key": "agent_process_phase",
+                "value": {
+                  "Text": "queued"
+                }
+              }
+            },
+            {
+              "SetVariable": {
+                "key": "process_phase",
+                "value": {
+                  "Text": "queued"
+                }
+              }
+            },
+            {
+              "SetLayerState": {
+                "layer_id": "workspace",
+                "state": "task"
+              }
+            },
+            {
+              "SetLayerState": {
+                "layer_id": "agent",
+                "state": "planning"
+              }
+            },
+            {
+              "SetLayerState": {
+                "layer_id": "process",
+                "state": "queued"
+              }
+            },
+            {
+              "SetEntityFlags": {
+                "entity_id": "scene-agent",
+                "flags": [
+                  "agent",
+                  "agent_planning"
+                ]
+              }
+            },
+            {
+              "SetEntityMetadata": {
+                "entity_id": "scene-agent",
+                "metadata": [
+                  [
+                    "entity_type",
+                    "agent"
+                  ],
+                  [
+                    "phase",
+                    "planning"
+                  ],
+                  [
+                    "objective",
+                    "Coordinate the workspace slice"
+                  ],
+                  [
+                    "current_step",
+                    "checking scoped deliverables"
+                  ]
+                ]
+              }
+            },
+            {
+              "SelectEntity": {
+                "entity_id": "scene-agent"
+              }
+            },
+            {
+              "AdvanceDialogueAndSetLayer": {
+                "target": 1,
+                "layer_id": "ui",
+                "state": "scene"
+              }
+            }
+          ]
+        }
+      },
+      "conditions": [
+        {
+          "source": "agent_phase",
+          "variable": "ignored",
+          "equals": {
+            "Text": "idle"
+          }
+        }
+      ]
+    },
+    {
+      "label": "Mark task running",
+      "kind": {
+        "Resolve": {
+          "operations": [
+            {
+              "SetVariable": {
+                "key": "agent_phase",
+                "value": {
+                  "Text": "running"
+                }
+              }
+            },
+            {
+              "SetVariable": {
+                "key": "agent_process_phase",
+                "value": {
+                  "Text": "running"
+                }
+              }
+            },
+            {
+              "SetVariable": {
+                "key": "process_phase",
+                "value": {
+                  "Text": "running"
+                }
+              }
+            },
+            {
+              "SetLayerState": {
+                "layer_id": "agent",
+                "state": "running"
+              }
+            },
+            {
+              "SetLayerState": {
+                "layer_id": "process",
+                "state": "running"
+              }
+            },
+            {
+              "SetEntityFlags": {
+                "entity_id": "scene-agent-workspace-task",
+                "flags": [
+                  "task",
+                  "running"
+                ]
+              }
+            },
+            {
+              "SetEntityFlags": {
+                "entity_id": "scene-verify-process",
+                "flags": [
+                  "process",
+                  "running"
+                ]
+              }
+            },
+            {
+              "SetEntityMetadata": {
+                "entity_id": "scene-verify-process",
+                "metadata": [
+                  [
+                    "entity_type",
+                    "process"
+                  ],
+                  [
+                    "command",
+                    "ci/gameterm-scene-verify.sh --fixture workspace-agent"
+                  ],
+                  [
+                    "phase",
+                    "running"
+                  ]
+                ]
+              }
+            },
+            {
+              "SelectEntity": {
+                "entity_id": "scene-agent-workspace-task"
+              }
+            }
+          ]
+        }
+      },
+      "conditions": [
+        {
+          "source": "agent_phase",
+          "variable": "ignored",
+          "equals": {
+            "Text": "planning"
+          }
+        }
+      ]
+    },
+    {
+      "label": "Report blocker",
+      "kind": {
+        "Resolve": {
+          "operations": [
+            {
+              "SetVariable": {
+                "key": "agent_phase",
+                "value": {
+                  "Text": "blocked"
+                }
+              }
+            },
+            {
+              "SetVariable": {
+                "key": "agent_process_phase",
+                "value": {
+                  "Text": "blocked"
+                }
+              }
+            },
+            {
+              "SetVariable": {
+                "key": "process_phase",
+                "value": {
+                  "Text": "blocked"
+                }
+              }
+            },
+            {
+              "SetVariable": {
+                "key": "blocker_present",
+                "value": {
+                  "Bool": true
+                }
+              }
+            },
+            {
+              "SetLayerState": {
+                "layer_id": "agent",
+                "state": "blocked"
+              }
+            },
+            {
+              "SetLayerState": {
+                "layer_id": "process",
+                "state": "blocked"
+              }
+            },
+            {
+              "SetEntityFlags": {
+                "entity_id": "scene-agent",
+                "flags": [
+                  "agent",
+                  "agent_blocked"
+                ]
+              }
+            },
+            {
+              "SetEntityMetadata": {
+                "entity_id": "scene-agent",
+                "metadata": [
+                  [
+                    "entity_type",
+                    "agent"
+                  ],
+                  [
+                    "phase",
+                    "blocked"
+                  ],
+                  [
+                    "blocker",
+                    "needs review before verification"
+                  ],
+                  [
+                    "current_step",
+                    "waiting for user decision"
+                  ]
+                ]
+              }
+            },
+            {
+              "AdvanceDialogueAndSetLayer": {
+                "target": 2,
+                "layer_id": "ui",
+                "state": "scene"
+              }
+            }
+          ]
+        }
+      },
+      "conditions": [
+        {
+          "source": "agent_phase",
+          "variable": "ignored",
+          "equals": {
+            "Text": "running"
+          }
+        }
+      ]
+    },
+    {
+      "label": "Resolve blocker",
+      "kind": {
+        "Resolve": {
+          "operations": [
+            {
+              "SetVariable": {
+                "key": "agent_phase",
+                "value": {
+                  "Text": "completed"
+                }
+              }
+            },
+            {
+              "SetVariable": {
+                "key": "agent_process_phase",
+                "value": {
+                  "Text": "succeeded"
+                }
+              }
+            },
+            {
+              "SetVariable": {
+                "key": "process_phase",
+                "value": {
+                  "Text": "succeeded"
+                }
+              }
+            },
+            {
+              "SetVariable": {
+                "key": "review_ready",
+                "value": {
+                  "Bool": true
+                }
+              }
+            },
+            {
+              "SetVariable": {
+                "key": "verification_status",
+                "value": {
+                  "Text": "ready"
+                }
+              }
+            },
+            {
+              "SetVariable": {
+                "key": "blocker_present",
+                "value": {
+                  "Bool": false
+                }
+              }
+            },
+            {
+              "SetLayerState": {
+                "layer_id": "workspace",
+                "state": "review"
+              }
+            },
+            {
+              "SetLayerState": {
+                "layer_id": "agent",
+                "state": "complete"
+              }
+            },
+            {
+              "SetLayerState": {
+                "layer_id": "process",
+                "state": "succeeded"
+              }
+            },
+            {
+              "SetEntityFlags": {
+                "entity_id": "scene-agent-workspace-task",
+                "flags": [
+                  "task",
+                  "review_ready"
+                ]
+              }
+            },
+            {
+              "SetEntityFlags": {
+                "entity_id": "scene-verify-process",
+                "flags": [
+                  "process",
+                  "succeeded"
+                ]
+              }
+            },
+            {
+              "SelectEntity": {
+                "entity_id": "scene-agent-workspace-task"
+              }
+            },
+            {
+              "AdvanceDialogueAndSetLayer": {
+                "target": 3,
+                "layer_id": "ui",
+                "state": "scene"
+              }
+            }
+          ]
+        }
+      },
+      "conditions": [
+        {
+          "source": "agent_phase",
+          "variable": "ignored",
+          "equals": {
+            "Text": "blocked"
+          }
+        }
+      ]
+    },
+    {
+      "label": "Open fixture",
+      "kind": {
+        "OpenFile": {
+          "path": "ci/fixtures/gameterm-scene/workspace-agent.json"
+        }
+      },
+      "conditions": [
+        {
+          "variable": "review_ready",
+          "equals": {
+            "Bool": true
+          }
+        }
+      ]
+    },
+    {
+      "label": "Run workspace verification",
+      "kind": {
+        "RunCommand": {
+          "argv": [
+            "ci/gameterm-scene-verify.sh",
+            "--fixture",
+            "workspace-agent"
+          ],
+          "cwd": ".",
+          "target": "split_down"
+        }
+      },
+      "conditions": [
+        {
+          "variable": "review_ready",
+          "equals": {
+            "Bool": true
+          }
+        }
+      ]
+    }
+  ]
+}
