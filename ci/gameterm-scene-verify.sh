@@ -140,6 +140,7 @@ run_static_checks() {
     "${repo_root}/ci/gameterm-scene-init.sh" \
     "${repo_root}/ci/gameterm-scene-patch.sh" \
     "${repo_root}/ci/gameterm-scene-process.sh" \
+    "${repo_root}/ci/gameterm-scene-session.sh" \
     "${repo_root}/ci/gameterm-scene-smoke.sh" \
     "${repo_root}/ci/gameterm-scene-story.sh" \
     "${repo_root}/ci/gameterm-scene-verify.sh" \
@@ -924,6 +925,64 @@ run_story_state_check() {
   echo "story state: ok"
 }
 
+run_workspace_session_check() {
+  local tmp_home scene_path session_path restored_path before_path
+  tmp_home="$(mktemp -d /tmp/gameterm-scene-session-verify.XXXXXX)"
+  tmp_paths+=("${tmp_home}")
+  scene_path="${tmp_home}/rpg-quest.json"
+  session_path="${tmp_home}/workspace.session.json"
+  restored_path="${tmp_home}/restored.story.json"
+  before_path="${tmp_home}/scene-before.json"
+
+  "${repo_root}/ci/gameterm-scene-author.sh" \
+    new-template \
+    --template rpg-quest \
+    "${scene_path}" >/dev/null
+  cp "${scene_path}" "${before_path}"
+
+  "${repo_root}/ci/gameterm-scene-session.sh" \
+    save \
+    --scene "${scene_path}" \
+    --workspace-root "${repo_root}" \
+    --output "${session_path}" >/dev/null
+  jq -e '
+    .workspace_session_version == 1
+    and .workspace_root == "'"${repo_root}"'"
+    and .story_state.story_state_version == 1
+    and (.story_state.rpg.quests | length) == 1
+  ' "${session_path}" >/dev/null
+  "${repo_root}/ci/gameterm-scene-session.sh" validate \
+    --session "${session_path}" >/dev/null
+  "${repo_root}/ci/gameterm-scene-session.sh" inspect \
+    --session "${session_path}" | grep -qx "quests=1"
+
+  "${repo_root}/ci/gameterm-scene-session.sh" \
+    restore \
+    --scene "${scene_path}" \
+    --session "${session_path}" \
+    --output "${restored_path}" >/dev/null
+  jq -e '.story_state_version == 1 and (.rpg.quests | length) == 1' \
+    "${restored_path}" >/dev/null
+  cmp "${scene_path}" "${before_path}" >/dev/null
+
+  set +e
+  "${repo_root}/ci/gameterm-scene-session.sh" \
+    save \
+    --scene "${scene_path}" \
+    --workspace-root "${repo_root}" \
+    --output "${session_path}" \
+    >/tmp/gameterm-scene-session-overwrite.out \
+    2>/tmp/gameterm-scene-session-overwrite.err
+  overwrite_rc=$?
+  set -e
+  if [[ "${overwrite_rc}" -eq 0 ]]; then
+    echo "expected workspace session overwrite protection to fail" >&2
+    exit 1
+  fi
+
+  echo "workspace session: ok"
+}
+
 run_smoke_asset_check() {
   local scenarios
   "${repo_root}/ci/gameterm-scene-smoke.sh" --check-assets >/dev/null
@@ -980,6 +1039,7 @@ run_all() {
   run_agent_check
   run_workspace_discovery_check
   run_story_state_check
+  run_workspace_session_check
   run_smoke_asset_check
   for fixture in basic navigate invalid sprites missing-sprite run-command-targets layered-mode vertical-slice authoring-loop game-states chained-transitions workspace-agent; do
     run_fixture_setup_check "${fixture}"
