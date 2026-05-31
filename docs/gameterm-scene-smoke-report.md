@@ -59,6 +59,49 @@ Validated named scenarios:
 
 ## Live Results
 
+### first-pass-live-pass-20260531-1259
+
+Command:
+
+```sh
+ci/gameterm-scene-smoke.sh --launch --scenario vertical-slice \
+  --output /tmp/gameterm-scene-smoke-vertical-slice.png
+
+for scenario in guarded-input run-command-targets overlay-cleanup authoring-loop \
+  agent-lifecycle patch-inbox mux-patch process-state; do
+  ci/gameterm-scene-smoke.sh --launch --scenario "${scenario}" \
+    --output "/tmp/gameterm-scene-smoke-${scenario}.png"
+done
+
+ci/gameterm-scene-smoke.sh --launch --scenario renderer-rows \
+  --output /tmp/gameterm-scene-smoke-renderer-rows.png
+```
+
+Result: PASS for all ten named live scenarios after the first-pass completion
+work.
+
+Captures:
+
+```text
+/tmp/gameterm-scene-smoke-vertical-slice.png
+/tmp/gameterm-scene-smoke-guarded-input.png
+/tmp/gameterm-scene-smoke-run-command-targets.png
+/tmp/gameterm-scene-smoke-overlay-cleanup.png
+/tmp/gameterm-scene-smoke-authoring-loop.png
+/tmp/gameterm-scene-smoke-agent-lifecycle.png
+/tmp/gameterm-scene-smoke-patch-inbox.png
+/tmp/gameterm-scene-smoke-mux-patch.png
+/tmp/gameterm-scene-smoke-process-state.png
+/tmp/gameterm-scene-smoke-renderer-rows.png
+```
+
+Observation: every scenario reported `gameterm-gui` as the frontmost process
+before capture and produced a non-empty 1920x1080 PNG. The mux-patch scenario
+discovered target pane `0` and submitted through the CLI mux path. The
+agent-lifecycle, patch-inbox, and process-state scenarios wrote structured
+patches before capture. The smoke helper still logs AVFoundation device-listing
+error code 251 before capture; capture itself succeeds.
+
 ### full-suite-pass-20260531
 
 Command:
