@@ -17,6 +17,7 @@ These fixtures exercise Scene Mode without touching user config.
 - `renpy-demo-source.rpy`: GameTerm-owned Ren'Py-shaped source fixture for importer verification; not copied from Ren'Py.
 - `renpy-demo.json`: generated Scene Mode import of the Ren'Py-shaped fixture source.
 - `renpy-demo-attribution.json`: attribution/provenance manifest generated beside the imported demo scene.
+- `renpy-demo-open-assets.json`: curated open-license VN asset source policy for DDLC-adjacent demo art.
 - `sprites.json`: sprite manifest that points at bundled test assets.
 - `sprites-missing.json`: sprite manifest with one intentionally missing sprite path.
 
@@ -37,5 +38,6 @@ These fixtures exercise Scene Mode without touching user config.
 | `workspace-agent.json` | Agent/Workspace product loop across workspace, project, task, agent, process, and file entities. | `scene_fixture_workspace_agent_completes_product_loop`, smoke scenario `workspace-agent`, fixture `workspace-agent` |
 | `multi-agent-coordination.json` | Multi-agent coordination across two agents, two tasks, relationship ownership, waiting, blocking, and completion state. | `scene_fixture_multi_agent_coordination_updates_independently`, fixture `multi-agent-coordination` |
 | `renpy-demo.json` | Ren'Py-shaped import path for labels, dialogue, menu choices, guards, policy metadata, and attribution. | `scene_fixture_renpy_demo_import_loads_story_choices`, importer check, fixture `renpy-demo` |
+| `renpy-demo-open-assets.json` | Open-license asset source policy for optional VN demo art, including repo-safe and local-only boundaries. | importer check |
 | `sprites.json` | Sprite manifest resolution against bundled assets. | `scene_fixture_sprite_manifest_resolves_relative_paths`, fixture `sprites` |
 | `sprites-missing.json` | Missing sprite paths are reported without dropping valid sprite entries. | `scene_fixture_missing_sprite_manifest_keeps_valid_entries`, fixture `missing-sprite` |

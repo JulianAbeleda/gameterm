@@ -196,6 +196,18 @@ from Ren'Py. To try this with a local Ren'Py demo/tutorial install, pass that
 local `.rpy` file as `--source` and keep the generated attribution manifest
 beside the generated scene.
 
+For DDLC-adjacent open-license art, use the curated source catalog at
+`ci/fixtures/gameterm-scene/renpy-demo-open-assets.json`. The current preferred
+public demo sources are:
+
+- Tainara-P's `Female Character Sprite Creator`, listed as CC0 and non-AI.
+- 4cher's `[FREE-TO-USE] Visual Novel Sprites`, listed as CC BY 4.0 and non-AI.
+
+The catalog also records school-background candidates and marks which ones are
+not suitable for vendoring as raw images. Do not commit downloaded itch.io
+archives or extracted assets unless the catalog entry allows repo inclusion and
+the attribution manifest is updated.
+
 First-pass support is intentionally small: `label`, dialogue/say lines,
 `menu`, `jump`, simple literal assignments, and simple variable guards. The
 helper does not execute Python, copy assets, emulate Ren'Py screens, or import

@@ -1,0 +1,83 @@
+{
+  "asset_catalog_version": 1,
+  "purpose": "Open-license visual novel asset sources for the GameTerm Ren'Py demo path.",
+  "policy": {
+    "default": "Do not commit downloaded asset archives unless the source entry allows redistribution and attribution/provenance is preserved.",
+    "preferred_repo_assets": [
+      "cc0",
+      "cc_by_4_0"
+    ],
+    "local_only_when": [
+      "redistribution of raw or modified images is restricted",
+      "license terms are unclear",
+      "asset page requires payment-gated files"
+    ]
+  },
+  "sources": [
+    {
+      "id": "tainara_p_female_character_creator",
+      "role": "character_sprite_parts",
+      "title": "Female Character Sprite Creator - Descontinued!",
+      "author": "Tainara-P",
+      "source_url": "https://tainara-p.itch.io/female-character-sprite-creator",
+      "download_name": "Female Character Sprite Creator.zip",
+      "license": "CC0-1.0",
+      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "ai_disclosure": "No generative AI was used",
+      "repo_policy": "allowed_with_provenance",
+      "notes": [
+        "Best first character source for checked-in derived demo sprites because the page lists CC0.",
+        "Source parts still need to be composed into concrete sprites before Scene Mode can render them."
+      ]
+    },
+    {
+      "id": "4cher_set4_vn_sprites",
+      "role": "character_sprite",
+      "title": "[FREE-TO-USE] Visual Novel Sprites",
+      "author": "4cher",
+      "source_url": "https://4cher.itch.io/set4-vnsprites",
+      "download_name": "BLOND GIRL - SET 4.zip",
+      "license": "CC-BY-4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "ai_disclosure": "No generative AI was used",
+      "repo_policy": "allowed_with_attribution",
+      "attribution": "4cher - https://4cher.itch.io/set4-vnsprites",
+      "notes": [
+        "Good DDLC-adjacent VN character style.",
+        "Attribution should be preserved in the demo attribution manifest and user docs."
+      ]
+    },
+    {
+      "id": "tainara_p_school_backgrounds",
+      "role": "school_background",
+      "title": "School Visual Novel Backgrounds Free",
+      "author": "Tainara-P",
+      "source_url": "https://tainara-p.itch.io/school-visual-novel-backgrounds-free",
+      "download_name": "Renamed In English",
+      "license": "free_personal_commercial_no_credit_required",
+      "license_url": "https://tainara-p.itch.io/school-visual-novel-backgrounds-free",
+      "ai_disclosure": "AI Assisted Graphics",
+      "repo_policy": "allowed_only_if_ai_assisted_assets_are_accepted",
+      "notes": [
+        "Strong school VN fit, but the page discloses AI-assisted graphics.",
+        "Use only if the project accepts AI-assisted art in demo fixtures."
+      ]
+    },
+    {
+      "id": "potat0master_school_mini_pack_1",
+      "role": "school_background",
+      "title": "Free Visual Novel Backgrounds (School Mini Pack 1)",
+      "author": "Potat0Master",
+      "source_url": "https://potat0master.itch.io/free-visual-novel-backgrounds-school-mini-pack-1",
+      "download_name": "SchoolMiniPack_1080p_WEBP.zip",
+      "license": "royalty_free_use_no_raw_redistribution",
+      "license_url": "https://potat0master.itch.io/free-visual-novel-backgrounds-school-mini-pack-1",
+      "ai_disclosure": "No generative AI was used",
+      "repo_policy": "local_only_do_not_vendor_raw_images",
+      "notes": [
+        "Excellent DDLC-adjacent school background fit.",
+        "The page allows use in games but says not to resell or distribute the images in downloaded or modified form, so do not commit raw images to this repo."
+      ]
+    }
+  ]
+}
