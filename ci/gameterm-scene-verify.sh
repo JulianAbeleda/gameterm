@@ -571,12 +571,26 @@ run_smoke_asset_check() {
   local scenarios
   "${repo_root}/ci/gameterm-scene-smoke.sh" --check-assets >/dev/null
   scenarios="$("${repo_root}/ci/gameterm-scene-smoke.sh" --list-scenarios)"
-  grep -qx renderer-rows <<<"${scenarios}"
-  grep -qx guarded-input <<<"${scenarios}"
-  grep -qx run-command-targets <<<"${scenarios}"
-  grep -qx patch-inbox <<<"${scenarios}"
-  grep -qx mux-patch <<<"${scenarios}"
-  grep -qx process-state <<<"${scenarios}"
+  for scenario in \
+    renderer-rows \
+    guarded-input \
+    run-command-targets \
+    overlay-cleanup \
+    vertical-slice \
+    agent-lifecycle \
+    authoring-loop \
+    patch-inbox \
+    mux-patch \
+    process-state
+  do
+    grep -qx "${scenario}" <<<"${scenarios}"
+    "${repo_root}/ci/gameterm-scene-smoke.sh" \
+      --describe-scenario "${scenario}" | grep -q "Expected status:"
+  done
+  "${repo_root}/ci/gameterm-scene-smoke.sh" \
+    --describe-scenario guarded-input | grep -q "Layer story transitioned"
+  "${repo_root}/ci/gameterm-scene-smoke.sh" \
+    --describe-scenario authoring-loop | grep -q "Story state imported"
   "${repo_root}/ci/gameterm-scene-smoke.sh" \
     --describe-scenario process-state | grep -q "typed process state"
   echo "smoke assets: ok"

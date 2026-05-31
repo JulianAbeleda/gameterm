@@ -212,6 +212,7 @@ Scenario: renderer-rows
 Fixture: renderer-rows
 Setup: launch Scene Mode renderer row fixture.
 Checks: rows remain visually aligned; sprite/entity layers do not shift.
+Expected status: Ready.
 EOF
       ;;
     guarded-input)
@@ -220,6 +221,7 @@ Scenario: guarded-input
 Fixture: layered-mode
 Setup: launch layered state fixture.
 Checks: automated input exercises a layer-owned update and guarded transition without closing Scene Mode.
+Expected status: Layer story transitioned: dialogue -> choice.
 EOF
       ;;
     run-command-targets)
@@ -228,6 +230,7 @@ Scenario: run-command-targets
 Fixture: run-command-targets
 Setup: launch RunCommand target fixture.
 Checks: automated input activates tab, split_right, and split_down RunCommand choices.
+Expected status: RunCommand opened split_down pane.
 EOF
       ;;
     overlay-cleanup)
@@ -236,6 +239,7 @@ Scenario: overlay-cleanup
 Fixture: basic
 Setup: launch Scene Mode and send Escape before capture.
 Checks: overlay cleanup returns to the underlying terminal without crashing the GUI.
+Expected status: Scene Mode overlay closed.
 EOF
       ;;
     vertical-slice)
@@ -244,6 +248,7 @@ Scenario: vertical-slice
 Fixture: vertical-slice
 Setup: launch playable vertical slice fixture.
 Checks: automated input accepts the brief, prepares the launch kit, completes the scene loop, and keeps Scene Mode open.
+Expected status: Dialogue advanced: Guide.
 EOF
       ;;
     agent-lifecycle)
@@ -252,6 +257,7 @@ Scenario: agent-lifecycle
 Fixture: basic
 Setup: launch with auto patch inbox and emit planning, blocked, and complete agent phases.
 Checks: Scene Mode receives structured agent lifecycle patches and renders the final completed agent state.
+Expected status: Agent complete: Finished visual slice.
 EOF
       ;;
     authoring-loop)
@@ -260,6 +266,7 @@ Scenario: authoring-loop
 Fixture: authoring-loop
 Setup: launch story-state authoring fixture.
 Checks: automated input saves story state, mutates draft state, reloads the saved state, and keeps Scene Mode open.
+Expected status: Story state imported: /tmp/gameterm-scene-authoring-loop.story.json.
 EOF
       ;;
     patch-inbox)
@@ -268,6 +275,7 @@ Scenario: patch-inbox
 Fixture: basic
 Setup: launch with GAMETERM_SCENE_PATCH_FILE auto-inbox.
 Checks: write-inbox patch updates visible entity state and keeps Scene Mode open.
+Expected status: Fixture patch applied.
 EOF
       ;;
     mux-patch)
@@ -276,6 +284,7 @@ Scenario: mux-patch
 Fixture: basic
 Setup: launch, open Scene Mode, submit ci/fixtures/gameterm-scene/patch-status.json through mux.
 Checks: mux patch updates visible entity state and reports patch source.
+Expected status: Fixture patch applied.
 EOF
       ;;
     process-state)
@@ -284,6 +293,7 @@ Scenario: process-state
 Fixture: basic
 Setup: launch with auto patch inbox, then run the process helper before capture.
 Checks: entity transitions running -> succeeded/failed and Tile Debugger shows typed process state.
+Expected status: Process succeeded: true.
 EOF
       ;;
     *)
