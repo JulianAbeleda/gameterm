@@ -461,6 +461,8 @@ run_doctor_check() {
     /tmp/gameterm-scene-doctor-verify-ok.out
   grep -q "OK: RunCommand target is valid: Run visual check -> tab" \
     /tmp/gameterm-scene-doctor-verify-ok.out
+  grep -q "Doctor summary: 0 error(s), 0 warning(s)" \
+    /tmp/gameterm-scene-doctor-verify-ok.out
 
   "${repo_root}/ci/gameterm-scene-doctor.sh" \
     --scene "${fixture_root}/run-command-targets.json" \
@@ -473,6 +475,8 @@ run_doctor_check() {
   grep -q "OK: RunCommand target is valid: Run in down split -> split_down" \
     /tmp/gameterm-scene-doctor-verify-targets.out
   grep -q "WARN: RunCommand cwd is missing: Run in tab" \
+    /tmp/gameterm-scene-doctor-verify-targets.out
+  grep -q "WARN: choice policy origin is missing: Run in tab" \
     /tmp/gameterm-scene-doctor-verify-targets.out
 
   "${repo_root}/ci/gameterm-scene-doctor.sh" \

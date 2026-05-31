@@ -208,6 +208,65 @@ check_run_command_actions() {
   )
 }
 
+check_action_policy() {
+  if [[ "${scene_valid}" -ne 1 ]]; then
+    return
+  fi
+
+  while IFS=$'\t' read -r label kind origin risk scope summary; do
+    [[ -z "${label}" && -z "${kind}" ]] && continue
+    if [[ "${kind}" == "RunCommand" && "${origin}" == "__GAMETERM_EMPTY__" ]]; then
+      warn "choice policy origin is missing: ${label}"
+      suggest "add policy.origin so generated and authored actions are auditable"
+    fi
+    if [[ "${kind}" == "RunCommand" && "${risk}" == "__GAMETERM_EMPTY__" ]]; then
+      warn "choice policy risk is missing: ${label}"
+      suggest "add policy.risk to describe the effect of activating ${label}"
+    fi
+    if [[ "${kind}" == "RunCommand" && "${scope}" == "__GAMETERM_EMPTY__" ]]; then
+      warn "choice policy scope is missing: ${label}"
+      suggest "add policy.scope to describe where ${label} applies"
+    fi
+
+    if [[ "${kind}" == "RunCommand" && "${risk}" != "__GAMETERM_EMPTY__" && "${risk}" != "command" ]]; then
+      warn "RunCommand policy risk should be command: ${label} -> ${risk}"
+      suggest "set policy.risk to command for ${label}"
+    fi
+    if [[ "${kind}" == "OpenFile" && "${risk}" != "__GAMETERM_EMPTY__" && "${risk}" != "open_file" ]]; then
+      warn "OpenFile policy risk should be open_file: ${label} -> ${risk}"
+      suggest "set policy.risk to open_file for ${label}"
+    fi
+    if [[ "${risk}" == "agent_proposal" && "${summary}" == "__GAMETERM_EMPTY__" ]]; then
+      warn "agent proposal policy summary is missing: ${label}"
+      suggest "add policy.summary before presenting agent-proposed work"
+    fi
+  done < <(
+    jq -r '
+      def kind_name:
+        if .kind.Inspect? then "Inspect"
+        elif .kind.OpenFile? then "OpenFile"
+        elif .kind.RunCommand? then "RunCommand"
+        elif .kind.Navigate? then "Navigate"
+        elif .kind.ExportStoryState? then "ExportStoryState"
+        elif .kind.ImportStoryState? then "ImportStoryState"
+        elif .kind.AdvanceDialogue? then "AdvanceDialogue"
+        elif .kind.Resolve? then "Resolve"
+        else "Unknown"
+        end;
+      .choices[]?
+      | [
+          .label,
+          kind_name,
+          (.policy.origin // "__GAMETERM_EMPTY__"),
+          (.policy.risk // "__GAMETERM_EMPTY__"),
+          (.policy.scope // "__GAMETERM_EMPTY__"),
+          (.policy.summary // "__GAMETERM_EMPTY__")
+        ]
+      | @tsv
+    ' "${scene_path}"
+  )
+}
+
 validate_sprite_manifest() {
   if [[ ! -f "${sprites_path}" ]]; then
     warn "sprite manifest missing at ${sprites_path}; Scene Mode will use bundled sprites and placeholders"
@@ -292,6 +351,7 @@ validate_scene
 check_navigate_targets
 check_open_file_targets
 check_run_command_actions
+check_action_policy
 validate_sprite_manifest
 check_scene_sprite_coverage
 

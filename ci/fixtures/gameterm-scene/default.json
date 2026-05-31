@@ -51,6 +51,13 @@
           "argv": ["cargo", "check", "-p", "gameterm-visual"],
           "cwd": "."
         }
+      },
+      "policy": {
+        "origin": "fixture",
+        "risk": "command",
+        "scope": "workspace",
+        "requires_confirmation": true,
+        "summary": "Runs the visual crate check for the fixture workspace"
       }
     }
   ]
