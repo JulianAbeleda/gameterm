@@ -68,6 +68,22 @@ Launch GameTerm and open Scene Mode with the configured keybinding:
 - When live smoke is available, run
   `ci/gameterm-scene-smoke.sh --launch --scenario workspace-agent`.
 
+## Workspace Discovery
+
+- Run `ci/gameterm-scene-workspace.sh inspect --cwd .` and confirm cwd, root,
+  git status, language, file count, and verification argv are reported.
+- Generate a scene with
+  `ci/gameterm-scene-workspace.sh discover --cwd . --scene-output /tmp/gameterm-workspace.json`.
+- Validate the generated scene with
+  `ci/gameterm-scene-author.sh validate /tmp/gameterm-workspace.json`.
+- Confirm the generated scene includes workspace, project, task, process, and
+  file entities.
+- Confirm generated command choices are explicit and are not run during
+  discovery.
+- Run `ci/gameterm-scene-smoke.sh --describe-scenario workspace-discovery`.
+- When live smoke is available, run
+  `ci/gameterm-scene-smoke.sh --launch --scenario workspace-discovery`.
+
 ## Asset And Scene Failure Recovery
 
 - Invalid scene JSON on launch shows an error frame instead of crashing.

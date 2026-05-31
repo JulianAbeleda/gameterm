@@ -126,6 +126,27 @@ ci/gameterm-scene-author.sh new-template \
   ~/.config/gameterm/scenes/default.json
 ```
 
+To generate a Scene Mode workspace view from the current repo, use the
+workspace discovery helper:
+
+```sh
+ci/gameterm-scene-workspace.sh inspect --cwd .
+ci/gameterm-scene-workspace.sh discover \
+  --cwd . \
+  --scene-output /tmp/gameterm-workspace.json
+ci/gameterm-scene-author.sh validate /tmp/gameterm-workspace.json
+```
+
+To install the generated scene after validation:
+
+```sh
+ci/gameterm-scene-workspace.sh discover --cwd . --install --force
+```
+
+Discovery reads local cwd, git metadata, important files, and explicit command
+hints. It does not run verification commands; generated commands appear as
+explicit Scene Mode choices.
+
 For final app-level verification, use the product smoke checklist in
 [`docs/gameterm-scene-product-smoke.md`](gameterm-scene-product-smoke.md).
 
@@ -507,6 +528,15 @@ ci/gameterm-scene-smoke.sh --launch --scenario workspace-agent
 The scenario launches the `workspace-agent` fixture, runs a real `true` command
 through the process helper, emits planning/running/blocked/complete agent
 patches, and captures the final workspace state.
+
+To live-audit generated workspace discovery, use:
+
+```sh
+ci/gameterm-scene-smoke.sh --launch --scenario workspace-discovery
+```
+
+The scenario generates a scene from the current repository, launches it, and
+captures the generated workspace view.
 
 To live-audit mux submission, let the smoke script launch GameTerm, open Scene
 Mode before the wait timer expires, and have the script submit a patch before

@@ -797,3 +797,32 @@ Then validate and install or launch the generated scene without hand-editing.
 At that point, Scene Mode has moved from authored Agent/Workspace demos toward
 a GameTerm-native workspace surface that can later support richer agent,
 memory, and process-aware workflows.
+
+## First-Pass Implementation Status
+
+Implemented first-pass items:
+
+- `ci/gameterm-scene-workspace.sh` with `inspect`, `discover`, and `patch`
+  commands.
+- cwd, git root, branch, revision, dirty/clean/not-git status, language, and
+  important-file discovery.
+- generated complete Scene Mode scenes with workspace, project, task, process,
+  and file entities.
+- generated patch output for the existing `workspace-agent` base fixture.
+- validation before scene writes, patch writes, inbox writes, and install.
+- overwrite protection for output and install paths.
+- strict missing-file handling for user-provided `--open` paths.
+- non-git workspace support.
+- `ci/gameterm-scene-verify.sh --all` coverage for git, non-git, patch,
+  install, overwrite, and strict-missing-file behavior.
+- `workspace-discovery` smoke scenario that launches a scene generated from the
+  current repository.
+- user-facing Scene Mode docs and product smoke checklist entries.
+
+Remaining deferred items:
+
+- live pane cwd discovery through mux APIs
+- foreground process discovery
+- persistent workspace sessions
+- richer configurable discovery profiles
+- generated relationship graphs

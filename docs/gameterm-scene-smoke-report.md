@@ -52,6 +52,7 @@ Validated named scenarios:
 - `overlay-cleanup`
 - `vertical-slice`
 - `workspace-agent`
+- `workspace-discovery`
 - `agent-lifecycle`
 - `authoring-loop`
 - `patch-inbox`
@@ -86,6 +87,30 @@ agent lifecycle patches, and the capture showed the selected `Scene Agent`
 entity with `agent_completed` state. The final status line is below the visible
 area in the captured small window, but the entity state and unlocked/locked
 choice state confirm that patch delivery reached the scene.
+
+### workspace-discovery-live-pass-20260531-1652
+
+Command:
+
+```sh
+ci/gameterm-scene-smoke.sh --launch --scenario workspace-discovery \
+  --output /Users/julianabeleda/Desktop/gameterm-scene-smoke-workspace-discovery-20260531-165200.png
+```
+
+Result: PASS.
+
+Capture:
+
+```text
+/Users/julianabeleda/Desktop/gameterm-scene-smoke-workspace-discovery-20260531-165200.png
+```
+
+Observation: the smoke helper generated a Scene Mode scene from
+`/Users/julianabeleda/env/gameterm`, launched GameTerm with that generated
+scene, foregrounded `gameterm-gui`, and captured a non-empty 1920x1080 PNG. The
+capture shows the generated `gameterm Workspace` project entity, repo path
+state, and file choices for discovered docs such as `README.md` and the Scene
+Mode roadmap/scope files.
 
 ### first-pass-live-pass-20260531-1259
 
