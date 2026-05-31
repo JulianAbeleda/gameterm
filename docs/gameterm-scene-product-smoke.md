@@ -78,6 +78,10 @@ Launch GameTerm and open Scene Mode with the configured keybinding:
   `ci/gameterm-scene-author.sh validate /tmp/gameterm-workspace.json`.
 - Confirm the generated scene includes workspace, project, task, process, and
   file entities.
+- Generate a scene with explicit pane metadata, for example
+  `ci/gameterm-scene-workspace.sh discover --pane-cwd . --pane-id 231 --mux-window-id 7 --foreground-process-name zsh --scene-output /tmp/gameterm-workspace-pane.json`.
+- Confirm the generated scene includes `pane_context`, `active_pane_id`, a pane
+  entity, and process metadata.
 - Confirm generated command choices are explicit and are not run during
   discovery.
 - Run `ci/gameterm-scene-smoke.sh --describe-scenario workspace-discovery`.

@@ -147,6 +147,22 @@ Discovery reads local cwd, git metadata, important files, and explicit command
 hints. It does not run verification commands; generated commands appear as
 explicit Scene Mode choices.
 
+When caller code has active pane metadata, it can pass that context into the
+same helper:
+
+```sh
+ci/gameterm-scene-workspace.sh discover \
+  --pane-cwd . \
+  --pane-id 231 \
+  --mux-window-id 7 \
+  --foreground-process-name zsh \
+  --scene-output /tmp/gameterm-workspace.json
+```
+
+If `--cwd` is omitted, `--pane-cwd` becomes the discovery cwd. Pane and process
+metadata is rendered as scene variables, entity metadata, and patch process
+state when available.
+
 For final app-level verification, use the product smoke checklist in
 [`docs/gameterm-scene-product-smoke.md`](gameterm-scene-product-smoke.md).
 
