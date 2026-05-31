@@ -22,6 +22,15 @@ record the absolute path in the scenario result.
 - ffmpeg: `/opt/homebrew/bin/ffmpeg`, version 8.1.1
 - GUI binary: `target/debug/gameterm-gui`
 
+Updated live smoke automation pass:
+
+- Date recorded: 2026-05-31
+- Foreground automation: `osascript` activates the launched `gameterm-gui`
+  process, sends `Ctrl+Shift+G`, and prints the frontmost process before
+  capture.
+- Sprite fixtures: copied smoke fixtures rewrite sprite paths to absolute repo
+  asset paths before launch.
+
 ## Deterministic Checks
 
 Command:
@@ -59,61 +68,141 @@ ci/gameterm-scene-smoke.sh \
   --output /Users/julianabeleda/Desktop/gameterm-scene-smoke-renderer-rows-20260530-223150.png
 ```
 
-Result: FAIL.
+Result: PASS after foreground/open-scene automation.
 
 Capture:
 
 ```text
-/Users/julianabeleda/Desktop/gameterm-scene-smoke-renderer-rows-20260530-223150.png
+/Users/julianabeleda/Desktop/gameterm-scene-smoke-renderer-rows-20260531-103019.png
 ```
 
-Failure class: launch/focus/input automation.
-
-Observation: ffmpeg captured a valid 1920x1080 PNG, but the capture shows the
-browser/workspace rather than the GameTerm Scene window. The automated
-AppleScript shortcut path did not foreground GameTerm Scene for capture. This
-does not indicate a Scene Mode runtime failure; it means the live smoke harness
-still needs a reliable foreground/open-scene step or a manual run.
+Observation: capture shows the GameTerm Scene window with the renderer row
+fixture. The smoke log reported `Frontmost process before capture:
+gameterm-gui`.
 
 ### guarded-input
 
-Result: NOT RUN LIVE.
+Command:
 
-Reason: blocked by the same foreground/open-scene issue observed in
-`renderer-rows`.
+```sh
+ci/gameterm-scene-smoke.sh \
+  --launch \
+  --scenario guarded-input \
+  --wait-before-capture 2 \
+  --capture-timeout 12 \
+  --output /Users/julianabeleda/Desktop/gameterm-scene-smoke-guarded-input-20260531-103430.png
+```
+
+Result: PASS for launch, foreground, Scene Mode open, sprite path resolution,
+and capture.
+
+Capture:
+
+```text
+/Users/julianabeleda/Desktop/gameterm-scene-smoke-guarded-input-20260531-103430.png
+```
+
+Observation: capture shows the layered-mode Scene window. Manual transition
+interaction is still a human audit step.
 
 ### run-command-targets
 
-Result: NOT RUN LIVE.
+Command:
 
-Reason: blocked by the same foreground/open-scene issue observed in
-`renderer-rows`.
+```sh
+ci/gameterm-scene-smoke.sh \
+  --launch \
+  --scenario run-command-targets \
+  --wait-before-capture 2 \
+  --capture-timeout 12 \
+  --output /Users/julianabeleda/Desktop/gameterm-scene-smoke-run-command-targets-20260531-103151.png
+```
+
+Result: PASS for launch, foreground, Scene Mode open, and capture.
+
+Capture:
+
+```text
+/Users/julianabeleda/Desktop/gameterm-scene-smoke-run-command-targets-20260531-103151.png
+```
+
+Observation: pane-target key interaction remains a manual audit step.
 
 ### patch-inbox
 
-Result: NOT RUN LIVE.
+Command:
 
-Reason: blocked by the same foreground/open-scene issue observed in
-`renderer-rows`.
+```sh
+ci/gameterm-scene-smoke.sh \
+  --launch \
+  --scenario patch-inbox \
+  --wait-before-capture 2 \
+  --capture-timeout 12 \
+  --output /Users/julianabeleda/Desktop/gameterm-scene-smoke-patch-inbox-20260531-103207.png
+```
+
+Result: PASS.
+
+Capture:
+
+```text
+/Users/julianabeleda/Desktop/gameterm-scene-smoke-patch-inbox-20260531-103207.png
+```
+
+Observation: the smoke script wrote `patch-status.json` into the temporary
+inbox before capture and kept Scene Mode open.
 
 ### mux-patch
 
-Result: NOT RUN LIVE.
+Command:
 
-Reason: blocked by the same foreground/open-scene issue observed in
-`renderer-rows`.
+```sh
+ci/gameterm-scene-smoke.sh \
+  --launch \
+  --scenario mux-patch \
+  --wait-before-capture 2 \
+  --capture-timeout 12 \
+  --output /Users/julianabeleda/Desktop/gameterm-scene-smoke-mux-patch-20260531-103307.png
+```
+
+Result: FAIL.
+
+Failure class: patch transport/routing.
+
+Observation: foreground/open-scene automation succeeded, but `submit-mux`
+returned `no active GameTerm Scene Mode overlay` until the retry timeout. This
+is no longer a screen-focus failure; it is a mux routing issue for the launched
+`--always-new-process` smoke GUI and the default CLI submission path.
 
 ### process-state
 
-Result: NOT RUN LIVE.
+Command:
 
-Reason: blocked by the same foreground/open-scene issue observed in
-`renderer-rows`.
+```sh
+ci/gameterm-scene-smoke.sh \
+  --launch \
+  --scenario process-state \
+  --wait-before-capture 2 \
+  --capture-timeout 12 \
+  --output /Users/julianabeleda/Desktop/gameterm-scene-smoke-process-state-20260531-103332.png
+```
+
+Result: PASS.
+
+Capture:
+
+```text
+/Users/julianabeleda/Desktop/gameterm-scene-smoke-process-state-20260531-103332.png
+```
+
+Observation: the smoke script wrote a typed process-state patch through the
+temporary inbox before capture and kept Scene Mode open.
 
 ## Follow-Up
 
-1. Add a reliable smoke foreground/open-scene mechanism for macOS.
-2. Rerun all six named scenarios after the harness can reliably foreground the
-   GameTerm Scene window.
+1. Fix mux patch smoke routing for `--always-new-process` launches or require
+   an explicit target pane id in the smoke command.
+2. Add optional key-sequence automation for guarded input and RunCommand target
+   interaction.
 3. Keep deterministic smoke registry and asset checks in
    `ci/gameterm-scene-verify.sh --all`.

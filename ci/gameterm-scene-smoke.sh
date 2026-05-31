@@ -31,6 +31,10 @@ Options:
                            Target pane id for --submit-mux-patch. Optional.
   --wait-before-capture N  Seconds to wait after launch before capture.
                            Use this time to press Ctrl+Shift+G. Default: 10.
+  --no-auto-open-scene     Do not use macOS automation to foreground GameTerm
+                           and press Ctrl+Shift+G after launch.
+  --focus-timeout N        Seconds to wait for the launched GUI process to
+                           become visible to macOS automation. Default: 10.
   --device DEVICE          AVFoundation device string. Default: 0:none.
   --output PATH            Capture output path. Default:
                            /tmp/gameterm-scene-smoke.png.
@@ -56,6 +60,8 @@ scenario=""
 describe_scenario=""
 list_scenarios=0
 wait_before_capture=10
+auto_open_scene=1
+focus_timeout=10
 ffmpeg_bin="${FFMPEG:-}"
 gui_pid=""
 tmp_home=""
@@ -104,6 +110,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --wait-before-capture)
       wait_before_capture="$2"
+      shift 2
+      ;;
+    --no-auto-open-scene)
+      auto_open_scene=0
+      shift
+      ;;
+    --focus-timeout)
+      focus_timeout="$2"
       shift 2
       ;;
     --device)
@@ -312,7 +326,7 @@ install_scene_fixture() {
       ;;
     sprites)
       cp "${fixture_root}/default.json" "${scene_dir}/default.json"
-      cp "${fixture_root}/sprites.json" "${scene_dir}/sprites.json"
+      install_sprite_manifest "${scene_dir}/sprites.json"
       ;;
     missing-sprite)
       cp "${fixture_root}/default.json" "${scene_dir}/default.json"
@@ -320,11 +334,11 @@ install_scene_fixture() {
       ;;
     run-command-targets)
       cp "${fixture_root}/run-command-targets.json" "${scene_dir}/default.json"
-      cp "${fixture_root}/sprites.json" "${scene_dir}/sprites.json"
+      install_sprite_manifest "${scene_dir}/sprites.json"
       ;;
     layered-mode)
       cp "${fixture_root}/layered-mode.json" "${scene_dir}/default.json"
-      cp "${fixture_root}/sprites.json" "${scene_dir}/sprites.json"
+      install_sprite_manifest "${scene_dir}/sprites.json"
       ;;
     *)
       echo "unknown fixture: ${fixture}" >&2
@@ -332,6 +346,13 @@ install_scene_fixture() {
       exit 2
       ;;
   esac
+}
+
+install_sprite_manifest() {
+  local target="$1"
+  jq --arg asset_root "${repo_root}/assets/gameterm-scene" '
+    .sprites |= map(.path = ($asset_root + "/" + (.path | split("/") | last)))
+  ' "${fixture_root}/sprites.json" >"${target}"
 }
 
 check_bundled_assets() {
@@ -362,6 +383,128 @@ check_bundled_assets() {
     --strict >/tmp/gameterm-scene-smoke-doctor.out
 
   echo "Bundled Scene Mode asset check succeeded."
+}
+
+frontmost_process() {
+  osascript <<'EOF' 2>/dev/null
+tell application "System Events"
+  set frontProcess to first application process whose frontmost is true
+  set frontName to name of frontProcess
+  set frontPid to unix id of frontProcess
+  return frontName & " " & frontPid
+end tell
+EOF
+}
+
+foreground_gui_and_open_scene() {
+  local pid="$1"
+  local timeout="$2"
+
+  if [[ "$(uname -s)" != "Darwin" ]]; then
+    echo "Automatic Scene Mode opening is only supported on macOS; open Scene Mode manually." >&2
+    return 0
+  fi
+  if ! command -v osascript >/dev/null 2>&1; then
+    echo "osascript is unavailable; open Scene Mode manually." >&2
+    return 0
+  fi
+
+  echo "Foregrounding GameTerm pid ${pid} and opening Scene Mode..."
+  if ! osascript - "${pid}" "${timeout}" <<'EOF'
+on run argv
+  set targetPid to (item 1 of argv) as integer
+  set timeoutSeconds to (item 2 of argv) as integer
+  set deadline to (current date) + timeoutSeconds
+
+  tell application "System Events"
+    repeat while (current date) is less than deadline
+      if exists (first application process whose unix id is targetPid) then
+        set targetProcess to first application process whose unix id is targetPid
+        set frontmost of targetProcess to true
+        delay 0.5
+        keystroke "g" using {control down, shift down}
+        delay 0.5
+        return
+      end if
+      delay 0.2
+    end repeat
+  end tell
+
+  error "GameTerm GUI process was not visible to System Events before timeout"
+end run
+EOF
+  then
+    cat >&2 <<'EOF'
+Failed to foreground GameTerm or send Ctrl+Shift+G through macOS automation.
+
+Most likely causes:
+  - Accessibility permission is not granted to the terminal/host app running
+    this script.
+  - GameTerm did not create a GUI application process before the focus timeout.
+
+Fix:
+  1. Open System Settings -> Privacy & Security -> Accessibility.
+  2. Enable the terminal/host app that runs this script.
+  3. Fully quit and reopen that app.
+  4. Rerun this script, or use --no-auto-open-scene and open Scene Mode manually.
+EOF
+    exit 7
+  fi
+}
+
+assert_gui_foreground() {
+  local pid="$1"
+  local front
+
+  front="$(frontmost_process || true)"
+  if [[ -z "${front}" ]]; then
+    echo "Could not determine frontmost macOS process before capture." >&2
+    return
+  fi
+  echo "Frontmost process before capture: ${front}"
+  if [[ "${front}" != *" ${pid}" ]]; then
+    cat >&2 <<EOF
+Warning: GameTerm pid ${pid} is not the frontmost macOS process before capture.
+The capture may show another app instead of Scene Mode.
+EOF
+  fi
+}
+
+submit_mux_patch_with_retry() {
+  local patch="$1"
+  local timeout="$2"
+  local deadline=$((SECONDS + timeout))
+  local rc=1
+  local submit_args
+  submit_args=(submit-mux --patch "${patch}")
+  if [[ -n "${submit_target_pane_id}" ]]; then
+    submit_args+=(--target-pane-id "${submit_target_pane_id}")
+  fi
+
+  while ((SECONDS <= deadline)); do
+    set +e
+    "${repo_root}/ci/gameterm-scene-patch.sh" "${submit_args[@]}" \
+      >/tmp/gameterm-scene-smoke-submit.out \
+      2>/tmp/gameterm-scene-smoke-submit.err
+    rc=$?
+    set -e
+    if [[ "${rc}" -eq 0 ]]; then
+      cat /tmp/gameterm-scene-smoke-submit.out
+      return 0
+    fi
+    if ! grep -q "no active GameTerm Scene Mode overlay" \
+      /tmp/gameterm-scene-smoke-submit.err; then
+      cat /tmp/gameterm-scene-smoke-submit.out >&2 || true
+      cat /tmp/gameterm-scene-smoke-submit.err >&2 || true
+      return "${rc}"
+    fi
+    sleep 1
+  done
+
+  cat /tmp/gameterm-scene-smoke-submit.out >&2 || true
+  cat /tmp/gameterm-scene-smoke-submit.err >&2 || true
+  echo "Timed out waiting for active GameTerm Scene Mode overlay before mux patch submission." >&2
+  return "${rc}"
 }
 
 if [[ "${check_assets}" -eq 1 ]]; then
@@ -433,7 +576,11 @@ EOF
   fi
   gui_pid=$!
   echo "GameTerm pid: ${gui_pid}"
-  echo "Press Ctrl+Shift+G in the GameTerm window to open Scene Mode."
+  if [[ "${auto_open_scene}" -eq 1 ]]; then
+    foreground_gui_and_open_scene "${gui_pid}" "${focus_timeout}"
+  else
+    echo "Press Ctrl+Shift+G in the GameTerm window to open Scene Mode."
+  fi
   if [[ "${fixture}" == "run-command-targets" ]]; then
     echo "RunCommand audit: press Enter for tab, Next then Enter for split_right, Next then Enter for split_down."
   fi
@@ -441,8 +588,7 @@ EOF
     echo "Guarded input audit: use the fixture controls and confirm layer state/status changes without closing Scene Mode."
   fi
   if [[ -n "${patch_inbox}" ]]; then
-    echo "Patch audit: after opening Scene Mode, run:"
-    echo "  ci/gameterm-scene-patch.sh write-inbox --inbox '${patch_inbox}' --patch ci/fixtures/gameterm-scene/patch-status.json"
+    echo "Patch audit: inbox transport is enabled at ${patch_inbox}"
   fi
   if [[ "${scenario}" == "process-state" ]]; then
     echo "Process-state audit: the script will run a true command through ci/gameterm-scene-process.sh before capture."
@@ -455,11 +601,15 @@ EOF
   sleep "${wait_before_capture}"
 
   if [[ -n "${submit_mux_patch}" ]]; then
-    submit_args=(submit-mux --patch "${submit_mux_patch}")
-    if [[ -n "${submit_target_pane_id}" ]]; then
-      submit_args+=(--target-pane-id "${submit_target_pane_id}")
-    fi
-    "${repo_root}/ci/gameterm-scene-patch.sh" "${submit_args[@]}"
+    submit_mux_patch_with_retry "${submit_mux_patch}" "${focus_timeout}"
+    sleep 1
+  fi
+  if [[ "${scenario}" == "patch-inbox" ]]; then
+    "${repo_root}/ci/gameterm-scene-patch.sh" \
+      write-inbox \
+      --inbox "${patch_inbox}" \
+      --patch "${fixture_root}/patch-status.json" >/dev/null
+    echo "Wrote patch-inbox smoke patch: ${fixture_root}/patch-status.json"
     sleep 1
   fi
   if [[ "${scenario}" == "process-state" ]]; then
@@ -474,6 +624,7 @@ EOF
     echo "Wrote process-state smoke patch: ${process_patch}"
     sleep 1
   fi
+  assert_gui_foreground "${gui_pid}"
 fi
 
 rm -f "${output}" "${log_file}"

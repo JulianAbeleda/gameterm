@@ -401,8 +401,8 @@ To live-audit the patch inbox, launch with an inbox path:
 ci/gameterm-scene-smoke.sh --launch --scenario patch-inbox
 ```
 
-After Scene Mode opens, write a patch with `ci/gameterm-scene-patch.sh
-write-inbox` using the inbox path printed by the smoke script.
+The smoke script writes the fixture patch into the printed inbox path before
+capture.
 
 To live-audit mux submission, let the smoke script launch GameTerm, open Scene
 Mode before the wait timer expires, and have the script submit a patch before
@@ -415,10 +415,15 @@ ci/gameterm-scene-smoke.sh --launch --scenario mux-patch
 Use `--min-bytes N` to make capture output checks stricter for local visual
 regression runs.
 
-After GameTerm opens, press `Ctrl+Shift+G` before the capture timer expires.
+On macOS, `--launch` now foregrounds the launched GameTerm process and sends
+`Ctrl+Shift+G` before capture. Use `--no-auto-open-scene` to disable that
+automation and open Scene Mode manually. The script prints the frontmost macOS
+process before capture so missed-focus captures are obvious in the smoke log.
 
 macOS requires Screen Recording permission for the terminal or host app that
 runs the script. Enable it in System Settings -> Privacy & Security -> Screen
 Recording, then fully quit and reopen that app before rerunning the smoke test.
+The automatic Scene Mode shortcut also requires Accessibility permission for
+the same terminal or host app.
 
 For the next native bitmap rendering step, see [GameTerm Renderer Path](gameterm-renderer-path.md).

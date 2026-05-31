@@ -86,6 +86,8 @@ Current status:
 - [x] Add next-layer smoke report and artifact convention; first live attempt
   captured the workspace instead of Scene Mode, so foreground/open-scene
   automation remains a follow-up.
+- [x] Add macOS smoke foreground/open-scene automation and frontmost-process
+  diagnostics before capture.
 - [x] Add a vertical-slice template and fixture that combines dialogue,
   guarded choices, deterministic RPG/story state, layers, process state, and
   story export coverage.
