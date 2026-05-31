@@ -4135,6 +4135,119 @@ mod tests {
     }
 
     #[test]
+    fn action_status_compatibility_covers_pending_requests() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("scene.md");
+        std::fs::write(&file_path, "scene docs").unwrap();
+        let mut scene = VisualScene::demo();
+        scene.choices = vec![
+            SceneAction {
+                label: "Open docs".to_string(),
+                kind: SceneActionKind::OpenFile {
+                    path: "scene.md".to_string(),
+                },
+                conditions: vec![],
+            },
+            SceneAction {
+                label: "Run true".to_string(),
+                kind: SceneActionKind::RunCommand {
+                    argv: vec!["true".to_string()],
+                    cwd: Some("/tmp".to_string()),
+                    target: RunCommandTarget::SplitRight,
+                },
+                conditions: vec![],
+            },
+            SceneAction {
+                label: "Navigate".to_string(),
+                kind: SceneActionKind::Navigate {
+                    target: "memory.json".to_string(),
+                },
+                conditions: vec![],
+            },
+            SceneAction {
+                label: "Export".to_string(),
+                kind: SceneActionKind::ExportStoryState {
+                    path: "story.json".to_string(),
+                },
+                conditions: vec![],
+            },
+            SceneAction {
+                label: "Import".to_string(),
+                kind: SceneActionKind::ImportStoryState {
+                    path: "story.json".to_string(),
+                },
+                conditions: vec![],
+            },
+        ];
+        let mut runtime = SceneRuntime::new_with_source_and_action_base_dir(
+            scene,
+            VisualSceneSource::new("/tmp/default.json", VisualSceneLoadStatus::Loaded, 1),
+            dir.path(),
+        )
+        .unwrap();
+
+        runtime.activate_choice();
+        assert_eq!(
+            runtime.render_snapshot().status,
+            format!("OpenFile ready: {}", file_path.display())
+        );
+        assert_eq!(
+            runtime.take_pending_action(),
+            Some(VisualActionRequest::OpenFile {
+                path: file_path.clone()
+            })
+        );
+
+        runtime.select_next_choice();
+        runtime.activate_choice();
+        assert_eq!(
+            runtime.render_snapshot().status,
+            "RunCommand ready (split_right): true"
+        );
+        assert_eq!(
+            runtime.take_pending_action(),
+            Some(VisualActionRequest::RunCommand {
+                argv: vec!["true".to_string()],
+                cwd: Some(PathBuf::from("/tmp")),
+                target: RunCommandTarget::SplitRight,
+            })
+        );
+
+        runtime.select_next_choice();
+        runtime.activate_choice();
+        assert_eq!(
+            runtime.render_snapshot().status,
+            "Navigate ready: memory.json"
+        );
+        assert_eq!(
+            runtime.take_pending_action(),
+            Some(VisualActionRequest::Navigate {
+                target: "memory.json".to_string()
+            })
+        );
+
+        runtime.select_next_choice();
+        runtime.activate_choice();
+        assert_eq!(
+            runtime.render_snapshot().status,
+            format!(
+                "ExportStoryState ready: {}",
+                dir.path().join("story.json").display()
+            )
+        );
+
+        runtime.select_next_choice();
+        runtime.activate_choice();
+        assert_eq!(
+            runtime.render_snapshot().status,
+            format!(
+                "ImportStoryState ready: {}",
+                dir.path().join("story.json").display()
+            )
+        );
+    }
+
+    #[test]
     fn run_command_action_requires_explicit_argv() {
         let mut scene = VisualScene::demo();
         scene.choices = vec![SceneAction {
