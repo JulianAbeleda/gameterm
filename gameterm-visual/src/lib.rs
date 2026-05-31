@@ -11,6 +11,7 @@ mod schema;
 mod story_state;
 mod validation;
 
+use actions::action_kind_name;
 use conditions::{condition_guard_detail, conditions_match};
 pub use debug::VisualSceneDebugReport;
 pub use patch::{VisualSceneEntityPatch, VisualScenePatch, VisualScenePatchError};
@@ -1754,7 +1755,13 @@ impl SceneRuntime {
         ));
 
         out.push_str("Choices:\r\n");
+        let mut last_choice_group: Option<String> = None;
         for (idx, choice) in self.scene.choices.iter().enumerate() {
+            let choice_group = action_kind_name(&choice.kind);
+            if last_choice_group.as_deref() != Some(choice_group.as_str()) {
+                out.push_str(&format!("[{choice_group}]\r\n"));
+                last_choice_group = Some(choice_group);
+            }
             let marker = if idx == self.selected_choice {
                 ">"
             } else {
@@ -4613,6 +4620,16 @@ mod tests {
         assert!(frame.contains("State: conversation_unlocked=true"));
         assert!(frame.contains("workspace_root=/tmp/gameterm"));
         assert!(frame.contains("Choices:"));
+    }
+
+    #[test]
+    fn scene_frame_groups_choices_by_action_kind() {
+        let runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        let frame = runtime.render_text_frame(120, 40);
+
+        assert!(frame.contains("Choices:\r\n[Inspect]\r\n> Inspect selected entity"));
+        assert!(frame.contains("[OpenFile]\r\n  Open MIGRATION.md"));
+        assert!(frame.contains("[RunCommand]\r\n  Run cargo check -p gameterm-visual"));
     }
 
     #[test]
