@@ -38,6 +38,11 @@ Options:
                            Use this time to press Ctrl+Shift+G. Default: 10.
   --no-auto-open-scene     Do not use macOS automation to foreground GameTerm
                            and press Ctrl+Shift+G after launch.
+  --allow-background-capture
+                           Warn instead of failing when the launched GameTerm
+                           process is not frontmost before capture.
+  --post-action-wait N     Seconds to wait after scripted patches or key
+                           sequences before capture. Default: 1.
   --focus-timeout N        Seconds to wait for the launched GUI process to
                            become visible to macOS automation. Default: 10.
   --device DEVICE          AVFoundation device string. Default: 0:none.
@@ -66,6 +71,8 @@ describe_scenario=""
 list_scenarios=0
 wait_before_capture=10
 auto_open_scene=1
+require_frontmost=1
+post_action_wait=1
 focus_timeout=10
 ffmpeg_bin="${FFMPEG:-}"
 gui_pid=""
@@ -126,6 +133,14 @@ while [[ $# -gt 0 ]]; do
     --no-auto-open-scene)
       auto_open_scene=0
       shift
+      ;;
+    --allow-background-capture)
+      require_frontmost=0
+      shift
+      ;;
+    --post-action-wait)
+      post_action_wait="$2"
+      shift 2
       ;;
     --focus-timeout)
       focus_timeout="$2"
@@ -631,11 +646,26 @@ assert_gui_foreground() {
 
   front="$(frontmost_process || true)"
   if [[ -z "${front}" ]]; then
+    if [[ "${require_frontmost}" -eq 1 ]]; then
+      echo "Could not determine frontmost macOS process before capture." >&2
+      exit 9
+    fi
     echo "Could not determine frontmost macOS process before capture." >&2
     return
   fi
   echo "Frontmost process before capture: ${front}"
   if [[ "${front}" != *" ${pid}" ]]; then
+    if [[ "${require_frontmost}" -eq 1 ]]; then
+      cat >&2 <<EOF
+GameTerm pid ${pid} is not the frontmost macOS process before capture.
+Frontmost process: ${front}
+
+This would likely capture another app instead of Scene Mode. Rerun after
+closing/defocusing the conflicting app, or pass --allow-background-capture if
+you intentionally want a best-effort capture.
+EOF
+      exit 9
+    fi
     cat >&2 <<EOF
 Warning: GameTerm pid ${pid} is not the frontmost macOS process before capture.
 The capture may show another app instead of Scene Mode.
@@ -855,7 +885,7 @@ EOF
       echo "Discovered Scene Mode target pane: ${submit_target_pane_id}"
     fi
     submit_mux_patch_with_retry "${submit_mux_patch}" "${focus_timeout}"
-    sleep 1
+    sleep "${post_action_wait}"
   fi
   if [[ "${scenario}" == "patch-inbox" ]]; then
     "${repo_root}/ci/gameterm-scene-patch.sh" \
@@ -863,7 +893,7 @@ EOF
       --inbox "${patch_inbox}" \
       --patch "${fixture_root}/patch-status.json" >/dev/null
     echo "Wrote patch-inbox smoke patch: ${fixture_root}/patch-status.json"
-    sleep 1
+    sleep "${post_action_wait}"
   fi
   if [[ "${scenario}" == "process-state" ]]; then
     process_patch="${tmp_home}/gameterm/scenes/process-state.json"
@@ -875,7 +905,7 @@ EOF
       -- \
       true >/dev/null
     echo "Wrote process-state smoke patch: ${process_patch}"
-    sleep 1
+    sleep "${post_action_wait}"
   fi
   if [[ "${scenario}" == "agent-lifecycle" ]]; then
     agent_patch_dir="${tmp_home}/gameterm/scenes/agent-lifecycle"
@@ -889,7 +919,7 @@ EOF
       --patch "${agent_patch_dir}/planning.json" \
       --inbox "${patch_inbox}" \
       --select >/dev/null
-    sleep 1
+    sleep "${post_action_wait}"
     "${repo_root}/ci/gameterm-scene-agent.sh" \
       status \
       --entity-id project-harness \
@@ -899,7 +929,7 @@ EOF
       --patch "${agent_patch_dir}/blocked.json" \
       --inbox "${patch_inbox}" \
       --select >/dev/null
-    sleep 1
+    sleep "${post_action_wait}"
     "${repo_root}/ci/gameterm-scene-agent.sh" \
       status \
       --entity-id project-harness \
@@ -910,11 +940,11 @@ EOF
       --inbox "${patch_inbox}" \
       --select >/dev/null
     echo "Wrote agent-lifecycle smoke patches: ${agent_patch_dir}"
-    sleep 1
+    sleep "${post_action_wait}"
   fi
   if [[ -n "${key_sequence}" ]]; then
     send_key_sequence "${gui_pid}" "${key_sequence}"
-    sleep 1
+    sleep "${post_action_wait}"
   fi
   assert_gui_foreground "${gui_pid}"
 fi

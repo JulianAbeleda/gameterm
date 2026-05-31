@@ -456,9 +456,14 @@ regression runs.
 On macOS, `--launch` now foregrounds the launched GameTerm process and sends
 `Ctrl+Shift+G` before capture. Use `--no-auto-open-scene` to disable that
 automation and open Scene Mode manually. The script prints the frontmost macOS
-process before capture so missed-focus captures are obvious in the smoke log.
+process before capture and fails if the launched GameTerm process is not
+frontmost, so missed-focus captures do not silently pass. Use
+`--allow-background-capture` only when intentionally collecting a best-effort
+capture.
 Use `--key-sequence` with comma-separated keys such as `space,enter` or
 `delay:1,escape` to automate post-launch Scene Mode interaction.
+Use `--post-action-wait N` to give patch writes or key sequences more time to
+render before capture on slower machines.
 
 macOS requires Screen Recording permission for the terminal or host app that
 runs the script. Enable it in System Settings -> Privacy & Security -> Screen
