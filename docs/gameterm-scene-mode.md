@@ -213,9 +213,12 @@ ci/gameterm-scene-agent.sh status \
   --patch /tmp/gameterm-agent.json
 ```
 
-Supported phases are `planning`, `running`, `blocked`, `complete`, and
-`failed`. The helper maps those phases onto typed process state so Scene Mode
-can render agent work as queued, running, blocked, succeeded, or failed.
+Supported phases are `idle`, `planning`, `running`, `waiting`, `blocked`,
+`complete`/`completed`, `failed`, and `cancelled`. The helper maps those phases
+onto typed process state so Scene Mode can render agent work as queued,
+running, blocked, succeeded, or failed. It also writes `agent_phase` and
+`agent_process_phase` variables into the patch, so scenes can drive guards or
+layer transitions from the agent lifecycle without parsing entity metadata.
 
 ## State patches
 
@@ -449,7 +452,8 @@ ci/gameterm-scene-smoke.sh --launch --scenario agent-lifecycle
 ```
 
 The scenario emits `planning`, `blocked`, and `complete` patches through the
-auto-created inbox and captures the final completed agent state.
+auto-created inbox and captures the final completed agent state. The
+deterministic verifier also covers `waiting` and `cancelled` phase patches.
 
 To live-audit mux submission, let the smoke script launch GameTerm, open Scene
 Mode before the wait timer expires, and have the script submit a patch before

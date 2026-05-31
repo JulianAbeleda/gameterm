@@ -459,12 +459,14 @@ run_patch_check() {
 }
 
 run_agent_check() {
-  local tmp_home planning_patch blocked_patch complete_patch inbox
+  local tmp_home planning_patch blocked_patch complete_patch waiting_patch cancelled_patch inbox
   tmp_home="$(mktemp -d /tmp/gameterm-scene-agent-verify.XXXXXX)"
   tmp_paths+=("${tmp_home}")
   planning_patch="${tmp_home}/patches/agent-planning.json"
   blocked_patch="${tmp_home}/patches/agent-blocked.json"
   complete_patch="${tmp_home}/patches/agent-complete.json"
+  waiting_patch="${tmp_home}/patches/agent-waiting.json"
+  cancelled_patch="${tmp_home}/patches/agent-cancelled.json"
   inbox="${tmp_home}/inbox/scene-patch.json"
 
   "${repo_root}/ci/gameterm-scene-agent.sh" \
@@ -488,6 +490,7 @@ run_agent_check() {
       "command": "plan visual slice",
       "message": "Planning visual slice"
     }
+    and (.variables | any(.key == "agent_phase" and .value == {"Text": "planning"}))
     and any(.updates[]; .entity_id == "project-harness"
       and (.state_flags == ["agent", "agent_planning"])
       and (.metadata | any(.[0] == "agent_phase" and .[1] == "planning")))
@@ -504,7 +507,21 @@ run_agent_check() {
   jq -e '
     .process_state.phase == "blocked"
     and .process_state.message == "Waiting on credentials"
+    and (.variables | any(.key == "agent_process_phase" and .value == {"Text": "blocked"}))
   ' "${blocked_patch}" >/dev/null
+
+  "${repo_root}/ci/gameterm-scene-agent.sh" \
+    status \
+    --entity-id project-harness \
+    --phase waiting \
+    --message "Waiting on user input" \
+    --patch "${waiting_patch}" >/dev/null
+  jq -e '
+    .process_state.phase == "blocked"
+    and (.variables | any(.key == "agent_phase" and .value == {"Text": "waiting"}))
+    and any(.updates[]; .entity_id == "project-harness"
+      and (.state_flags == ["agent", "agent_waiting"]))
+  ' "${waiting_patch}" >/dev/null
 
   "${repo_root}/ci/gameterm-scene-agent.sh" \
     status \
@@ -515,9 +532,22 @@ run_agent_check() {
   jq -e '
     .process_state.phase == "succeeded"
     and .process_state.exit_code == 0
+    and (.variables | any(.key == "agent_phase" and .value == {"Text": "completed"}))
     and any(.updates[]; .entity_id == "project-harness"
-      and (.state_flags == ["agent", "agent_complete"]))
+      and (.state_flags == ["agent", "agent_completed"]))
   ' "${complete_patch}" >/dev/null
+
+  "${repo_root}/ci/gameterm-scene-agent.sh" \
+    status \
+    --entity-id project-harness \
+    --phase cancelled \
+    --message "Cancelled by user" \
+    --patch "${cancelled_patch}" >/dev/null
+  jq -e '
+    .process_state.phase == "failed"
+    and .process_state.exit_code == 130
+    and (.variables | any(.key == "agent_phase" and .value == {"Text": "cancelled"}))
+  ' "${cancelled_patch}" >/dev/null
 
   set +e
   "${repo_root}/ci/gameterm-scene-agent.sh" \
@@ -533,7 +563,7 @@ run_agent_check() {
     echo "expected agent helper to reject unknown phase" >&2
     exit 1
   fi
-  grep -q -- '--phase must be planning, running, blocked, complete, or failed' \
+  grep -q -- '--phase must be idle, planning, running, waiting, blocked, complete, completed, failed, or cancelled' \
     /tmp/gameterm-scene-agent-bad.err
 
   echo "agent helper: ok"

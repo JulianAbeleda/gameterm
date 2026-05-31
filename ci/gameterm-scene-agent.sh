@@ -9,7 +9,9 @@ Emit a Scene Mode patch for an agent lifecycle phase.
 
 Options:
   --entity-id ID                Entity id to update. Required.
-  --phase PHASE                 planning, running, blocked, complete, or failed. Required.
+  --phase PHASE                 idle, planning, running, waiting, blocked,
+                                complete/completed, failed, or cancelled.
+                                Required.
   --message TEXT                Agent status message.
   --command TEXT                Agent command/task label.
   --patch PATH                  Patch output path. Required unless --inbox is set.
@@ -137,26 +139,38 @@ fi
 
 process_phase=""
 exit_code_args=()
+agent_phase_flag="${agent_phase}"
 case "${agent_phase}" in
+  idle)
+    process_phase="queued"
+    ;;
   planning)
     process_phase="queued"
     ;;
   running)
     process_phase="running"
     ;;
+  waiting)
+    process_phase="blocked"
+    ;;
   blocked)
     process_phase="blocked"
     ;;
-  complete)
+  complete|completed)
     process_phase="succeeded"
+    agent_phase_flag="completed"
     exit_code_args=(--process-exit-code 0)
     ;;
   failed)
     process_phase="failed"
     exit_code_args=(--process-exit-code 1)
     ;;
+  cancelled)
+    process_phase="failed"
+    exit_code_args=(--process-exit-code 130)
+    ;;
   *)
-    echo "--phase must be planning, running, blocked, complete, or failed" >&2
+    echo "--phase must be idle, planning, running, waiting, blocked, complete, completed, failed, or cancelled" >&2
     exit 2
     ;;
 esac
@@ -174,8 +188,8 @@ args=(
   --entity-id "${entity_id}"
   --status "${status_text}"
   --flag agent
-  --flag "agent_${agent_phase}"
-  --metadata "agent_phase=${agent_phase}"
+  --flag "agent_${agent_phase_flag}"
+  --metadata "agent_phase=${agent_phase_flag}"
   --metadata "agent_command=${command_text}"
   --process-phase "${process_phase}"
   --process-command "${command_text}"
@@ -196,6 +210,17 @@ if [[ "${select_entity}" -eq 1 ]]; then
 fi
 
 "${repo_root}/ci/gameterm-scene-patch.sh" "${args[@]}" >/dev/null
+
+tmp_patch="$(mktemp /tmp/gameterm-scene-agent-state.XXXXXX.json)"
+jq \
+  --arg phase "${agent_phase_flag}" \
+  --arg process_phase "${process_phase}" \
+  '.variables += [
+    {key: "agent_phase", value: {Text: $phase}},
+    {key: "agent_process_phase", value: {Text: $process_phase}}
+  ]' \
+  "${patch_path}" >"${tmp_patch}"
+mv "${tmp_patch}" "${patch_path}"
 
 if [[ -n "${inbox_path}" ]]; then
   "${repo_root}/ci/gameterm-scene-patch.sh" write-inbox \

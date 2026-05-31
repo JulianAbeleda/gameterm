@@ -101,8 +101,9 @@ Current status:
   save, mutate, and reload workflow.
 - [x] Add deterministic `SetLayerState` resolve operations with validation and
   rollback coverage for variables, RPG state, and layers.
-- [x] Add an agent lifecycle patch helper for planning, running, blocked,
-  complete, and failed phases with verifier coverage.
+- [x] Add an agent lifecycle patch helper for idle, planning, running, waiting,
+  blocked, completed, failed, and cancelled phases with verifier coverage and
+  patch variables for scene guards.
 - [x] Add a live macOS smoke scenario for agent lifecycle patches through the
   Scene Mode inbox transport.
 
