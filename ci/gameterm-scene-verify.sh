@@ -252,6 +252,56 @@ run_author_helper_check() {
     --text "Updated by verifier." \
     "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
   "${repo_root}/ci/gameterm-scene-author.sh" \
+    set-variable \
+    --key verifier_ready \
+    --value-bool true \
+    "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
+  "${repo_root}/ci/gameterm-scene-author.sh" \
+    set-variable \
+    --key verifier_count \
+    --value-number 2 \
+    "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
+  "${repo_root}/ci/gameterm-scene-author.sh" \
+    set-variable \
+    --key verifier_track \
+    --value-text authoring \
+    "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
+  "${repo_root}/ci/gameterm-scene-author.sh" \
+    clear-variable \
+    --key verifier_count \
+    "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
+  "${repo_root}/ci/gameterm-scene-author.sh" \
+    add-layer \
+    --layer-id verify \
+    --state draft \
+    --label Verify \
+    "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
+  "${repo_root}/ci/gameterm-scene-author.sh" \
+    add-layer-transition \
+    --layer-id verify \
+    --input activate \
+    --target-state complete \
+    --condition-variable verifier_ready \
+    --condition-bool true \
+    "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
+  "${repo_root}/ci/gameterm-scene-author.sh" \
+    set-layer \
+    --layer-id verify \
+    --state ready \
+    "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
+  jq -e '
+    any(.variables[]; .key == "verifier_ready" and .value == {"Bool": true})
+    and any(.variables[]; .key == "verifier_track" and .value == {"Text": "authoring"})
+    and (all(.variables[]; .key != "verifier_count"))
+    and any(.layers[]; .layer_id == "verify"
+      and .state == "ready"
+      and .label == "Verify"
+      and (.transitions | any(.input == "activate"
+        and .target_state == "complete"
+        and (.conditions | any(.variable == "verifier_ready"
+          and .equals == {"Bool": true})))))
+  ' "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
+  "${repo_root}/ci/gameterm-scene-author.sh" \
     format "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
   "${repo_root}/ci/gameterm-scene-author.sh" \
     remove-entity \

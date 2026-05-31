@@ -18,6 +18,11 @@ Commands:
   remove-entity PATH            Remove an entity by id.
   move-entity PATH              Move an entity by id.
   set-dialogue PATH             Set dialogue speaker and text.
+  set-variable PATH             Set or add a typed variable.
+  clear-variable PATH           Remove a variable by key.
+  add-layer PATH                Add a Scene Mode layer.
+  set-layer PATH                Update a layer state.
+  add-layer-transition PATH     Add a guarded layer transition.
   format PATH                   Rewrite a scene file with stable JSON format.
   install-fixture NAME          Install a fixture into the Scene Mode config dir.
   list-fixtures                 List available authoring fixtures.
@@ -48,6 +53,25 @@ Options for move-entity:
 
 Options for set-dialogue:
   --speaker TEXT --text TEXT
+
+Options for set-variable:
+  --key KEY
+  --value-bool true|false | --value-number N | --value-text TEXT
+
+Options for clear-variable:
+  --key KEY
+
+Options for add-layer:
+  --layer-id ID --state STATE
+  --label TEXT                  Optional layer label.
+
+Options for set-layer:
+  --layer-id ID --state STATE
+
+Options for add-layer-transition:
+  --layer-id ID --input INPUT --target-state STATE
+  --condition-variable KEY      Optional guard variable.
+  --condition-bool true|false | --condition-number N | --condition-text TEXT
 
 Options for add-choice:
   --label TEXT
@@ -114,6 +138,19 @@ choice_cwd=""
 choice_target="tab"
 choice_index=""
 template_name="agent-workflow"
+state_key=""
+value_bool=""
+value_number=""
+value_text=""
+layer_id=""
+layer_state=""
+layer_label=""
+transition_input=""
+transition_target_state=""
+condition_variable=""
+condition_bool=""
+condition_number=""
+condition_text=""
 flags=()
 metadata=()
 
@@ -150,6 +187,8 @@ while [[ $# -gt 0 ]]; do
     --label)
       if [[ "${command}" == "add-entity" ]]; then
         entity_label="$2"
+      elif [[ "${command}" == "add-layer" ]]; then
+        layer_label="$2"
       else
         choice_label="$2"
       fi
@@ -172,7 +211,59 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --text)
-      dialogue_text="$2"
+      if [[ "${command}" == "set-variable" || "${command}" == "add-layer-transition" ]]; then
+        value_text="$2"
+      else
+        dialogue_text="$2"
+      fi
+      shift 2
+      ;;
+    --key)
+      state_key="$2"
+      shift 2
+      ;;
+    --value-bool)
+      value_bool="$2"
+      shift 2
+      ;;
+    --value-number)
+      value_number="$2"
+      shift 2
+      ;;
+    --value-text)
+      value_text="$2"
+      shift 2
+      ;;
+    --layer-id)
+      layer_id="$2"
+      shift 2
+      ;;
+    --state)
+      layer_state="$2"
+      shift 2
+      ;;
+    --input)
+      transition_input="$2"
+      shift 2
+      ;;
+    --target-state)
+      transition_target_state="$2"
+      shift 2
+      ;;
+    --condition-variable)
+      condition_variable="$2"
+      shift 2
+      ;;
+    --condition-bool)
+      condition_bool="$2"
+      shift 2
+      ;;
+    --condition-number)
+      condition_number="$2"
+      shift 2
+      ;;
+    --condition-text)
+      condition_text="$2"
       shift 2
       ;;
     --flag)
@@ -258,6 +349,65 @@ require_value() {
     echo "missing required ${name}" >&2
     usage >&2
     exit 2
+  fi
+}
+
+state_value_json() {
+  local bool_value="$1"
+  local number_value="$2"
+  local text_value="$3"
+  local count=0
+  [[ -n "${bool_value}" ]] && count=$((count + 1))
+  [[ -n "${number_value}" ]] && count=$((count + 1))
+  [[ -n "${text_value}" ]] && count=$((count + 1))
+  if [[ "${count}" -ne 1 ]]; then
+    echo "provide exactly one of --value-bool, --value-number, or --value-text" >&2
+    exit 2
+  fi
+  if [[ -n "${bool_value}" ]]; then
+    case "${bool_value}" in
+      true|false) jq -n --argjson value "${bool_value}" '{Bool: $value}' ;;
+      *)
+        echo "--value-bool must be true or false" >&2
+        exit 2
+        ;;
+    esac
+  elif [[ -n "${number_value}" ]]; then
+    if [[ ! "${number_value}" =~ ^-?[0-9]+$ ]]; then
+      echo "--value-number must be an integer" >&2
+      exit 2
+    fi
+    jq -n --argjson value "${number_value}" '{Number: $value}'
+  else
+    jq -n --arg value "${text_value}" '{Text: $value}'
+  fi
+}
+
+condition_value_json() {
+  local count=0
+  [[ -n "${condition_bool}" ]] && count=$((count + 1))
+  [[ -n "${condition_number}" ]] && count=$((count + 1))
+  [[ -n "${condition_text}" ]] && count=$((count + 1))
+  if [[ "${count}" -ne 1 ]]; then
+    echo "condition requires exactly one of --condition-bool, --condition-number, or --condition-text" >&2
+    exit 2
+  fi
+  if [[ -n "${condition_bool}" ]]; then
+    case "${condition_bool}" in
+      true|false) jq -n --argjson value "${condition_bool}" '{Bool: $value}' ;;
+      *)
+        echo "--condition-bool must be true or false" >&2
+        exit 2
+        ;;
+    esac
+  elif [[ -n "${condition_number}" ]]; then
+    if [[ ! "${condition_number}" =~ ^-?[0-9]+$ ]]; then
+      echo "--condition-number must be an integer" >&2
+      exit 2
+    fi
+    jq -n --argjson value "${condition_number}" '{Number: $value}'
+  else
+    jq -n --arg value "${condition_text}" '{Text: $value}'
   fi
 }
 
@@ -972,6 +1122,111 @@ set_dialogue() {
   echo "Updated dialogue in ${target}"
 }
 
+set_variable() {
+  local target="$1"
+  local value_json
+  require_value "--key" "${state_key}"
+  value_json="$(state_value_json "${value_bool}" "${value_number}" "${value_text}")"
+
+  jq --arg key "${state_key}" --argjson value "${value_json}" '
+    .variables = (((.variables // []) | map(select(.key != $key)))
+      + [{ key: $key, value: $value }])
+  ' "${target}" | write_json "${target}"
+  validate_scene_file "${target}" >/dev/null
+  echo "Set variable ${state_key} in ${target}"
+}
+
+clear_variable() {
+  local target="$1"
+  require_value "--key" "${state_key}"
+
+  jq --arg key "${state_key}" '
+    .variables = ((.variables // []) | map(select(.key != $key)))
+  ' "${target}" | write_json "${target}"
+  validate_scene_file "${target}" >/dev/null
+  echo "Cleared variable ${state_key} in ${target}"
+}
+
+add_layer() {
+  local target="$1"
+  require_value "--layer-id" "${layer_id}"
+  require_value "--state" "${layer_state}"
+
+  jq \
+    --arg layer_id "${layer_id}" \
+    --arg state "${layer_state}" \
+    --arg label "${layer_label}" '
+    if any((.layers // [])[]; .layer_id == $layer_id) then
+      error("layer id already exists: " + $layer_id)
+    else
+      .layers = ((.layers // []) + [{
+        layer_id: $layer_id,
+        state: $state,
+        label: (if $label == "" then null else $label end),
+        input_map: [],
+        transitions: []
+      } | with_entries(select(.value != null))])
+    end
+  ' "${target}" | write_json "${target}"
+  validate_scene_file "${target}" >/dev/null
+  echo "Added layer ${layer_id} to ${target}"
+}
+
+set_layer() {
+  local target="$1"
+  require_value "--layer-id" "${layer_id}"
+  require_value "--state" "${layer_state}"
+
+  jq --arg layer_id "${layer_id}" --arg state "${layer_state}" '
+    if any((.layers // [])[]; .layer_id == $layer_id) then
+      .layers |= map(if .layer_id == $layer_id then .state = $state else . end)
+    else
+      error("layer id not found: " + $layer_id)
+    end
+  ' "${target}" | write_json "${target}"
+  validate_scene_file "${target}" >/dev/null
+  echo "Set layer ${layer_id} state in ${target}"
+}
+
+add_layer_transition() {
+  local target="$1"
+  local conditions_json
+  require_value "--layer-id" "${layer_id}"
+  require_value "--input" "${transition_input}"
+  require_value "--target-state" "${transition_target_state}"
+
+  if [[ -n "${condition_variable}" ]]; then
+    local condition_value
+    condition_value="$(condition_value_json)"
+    conditions_json="$(jq -n \
+      --arg variable "${condition_variable}" \
+      --argjson equals "${condition_value}" \
+      '[{ variable: $variable, equals: $equals }]')"
+  else
+    conditions_json="[]"
+  fi
+
+  jq \
+    --arg layer_id "${layer_id}" \
+    --arg input "${transition_input}" \
+    --arg target_state "${transition_target_state}" \
+    --argjson conditions "${conditions_json}" '
+    if any((.layers // [])[]; .layer_id == $layer_id) then
+      .layers |= map(if .layer_id == $layer_id then
+        .transitions = ((.transitions // []) + [{
+          input: $input,
+          target_state: $target_state,
+          conditions: $conditions
+        }])
+      else . end)
+    else
+      error("layer id not found: " + $layer_id)
+    end
+  ' "${target}" | write_json "${target}"
+  validate_scene_file "${target}" >/dev/null
+  echo "Added layer transition ${layer_id}:${transition_input} to ${target}"
+}
+
 format_scene() {
   local target="$1"
   jq '.' "${target}" | write_json "${target}"
@@ -1096,6 +1351,41 @@ case "${command}" in
       exit 2
     fi
     set_dialogue "${positionals[0]}"
+    ;;
+  set-variable)
+    if [[ "${#positionals[@]}" -ne 1 ]]; then
+      usage >&2
+      exit 2
+    fi
+    set_variable "${positionals[0]}"
+    ;;
+  clear-variable)
+    if [[ "${#positionals[@]}" -ne 1 ]]; then
+      usage >&2
+      exit 2
+    fi
+    clear_variable "${positionals[0]}"
+    ;;
+  add-layer)
+    if [[ "${#positionals[@]}" -ne 1 ]]; then
+      usage >&2
+      exit 2
+    fi
+    add_layer "${positionals[0]}"
+    ;;
+  set-layer)
+    if [[ "${#positionals[@]}" -ne 1 ]]; then
+      usage >&2
+      exit 2
+    fi
+    set_layer "${positionals[0]}"
+    ;;
+  add-layer-transition)
+    if [[ "${#positionals[@]}" -ne 1 ]]; then
+      usage >&2
+      exit 2
+    fi
+    add_layer_transition "${positionals[0]}"
     ;;
   format)
     if [[ "${#positionals[@]}" -ne 1 ]]; then

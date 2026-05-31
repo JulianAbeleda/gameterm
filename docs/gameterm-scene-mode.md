@@ -75,6 +75,13 @@ ci/gameterm-scene-author.sh move-entity ~/.config/gameterm/scenes/experiment.jso
   --id task-demo --x 3 --y 2
 ci/gameterm-scene-author.sh set-dialogue ~/.config/gameterm/scenes/experiment.json \
   --speaker "Author" --text "Updated locally."
+ci/gameterm-scene-author.sh set-variable ~/.config/gameterm/scenes/experiment.json \
+  --key intro_complete --value-bool false
+ci/gameterm-scene-author.sh add-layer ~/.config/gameterm/scenes/experiment.json \
+  --layer-id story --state dialogue --label Story
+ci/gameterm-scene-author.sh add-layer-transition ~/.config/gameterm/scenes/experiment.json \
+  --layer-id story --input activate --target-state exploration \
+  --condition-variable intro_complete --condition-bool true
 ci/gameterm-scene-author.sh format ~/.config/gameterm/scenes/experiment.json
 ci/gameterm-scene-doctor.sh
 ```
