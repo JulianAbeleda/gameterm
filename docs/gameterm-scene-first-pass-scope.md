@@ -5,6 +5,28 @@ The goal is not to finish every future visual novel, RPG, or agent feature. The
 goal is to make Scene Mode stable, authorable, inspectable, and usable enough
 for internal daily use.
 
+## Completion Status
+
+Status: COMPLETE for the first shippable Scene Mode pass.
+
+Final verification:
+
+- `ci/gameterm-scene-verify.sh --all`: PASS.
+- `cargo test -p gameterm-visual`: PASS, 127 tests.
+- `cargo check -p gameterm-gui`: PASS.
+- Live smoke: PASS for all ten named scenarios, recorded in
+  [GameTerm Scene Mode Smoke Report](gameterm-scene-smoke-report.md).
+- Repo-local artifact churn: none required by the final smoke helper path.
+
+Known non-blocking warning noise:
+
+- Existing macOS `objc` macro `unexpected cfg` warnings.
+- Existing `gameterm-toast-notification` unnecessary `unsafe` warnings.
+- Existing `screen_line.rs` unused assignment warning.
+
+These warnings are outside Scene Mode first-pass scope and did not block
+verification.
+
 ## Definition Of Done
 
 Scene Mode first pass is complete when a user can:
@@ -36,7 +58,7 @@ Current coverage:
 - Mux window/pane patch targeting.
 - Full ten-scenario live smoke pass.
 
-Remaining scope:
+Completed scope:
 
 - Add a manual product smoke checklist for app-launch-to-close flows.
 - Re-run live smoke after every first-pass lane that touches runtime, overlay,
@@ -73,7 +95,7 @@ Current coverage:
 - Patch validation.
 - Doctor checks for scene/sprite/action issues.
 
-Remaining scope:
+Completed scope:
 
 - Improve validation messages for common authoring mistakes:
   - unknown sprite id
@@ -112,7 +134,7 @@ Current coverage:
   quest, command/combat-like, and agent/task layers.
 - Transition history.
 
-Remaining scope:
+Completed scope:
 
 - Add guard helper coverage for:
   - quest stage/completed
@@ -159,7 +181,7 @@ Current coverage:
   - set layer state
 - Atomic validation and rollback.
 
-Remaining scope:
+Completed scope:
 
 - Add deterministic operations for:
   - select entity by id
@@ -198,7 +220,7 @@ Current coverage:
 - Format and validate.
 - Doctor diagnostics.
 
-Remaining scope:
+Completed scope:
 
 - Add authoring commands for:
   - add/set/clear variable
@@ -241,7 +263,7 @@ Current coverage:
 - Debugger story-state status.
 - Authoring-loop smoke fixture.
 
-Remaining scope:
+Completed scope:
 
 - Add authoring helper commands for story-state export/import/inspect examples.
 - Add manual smoke for close/reopen/load state.
