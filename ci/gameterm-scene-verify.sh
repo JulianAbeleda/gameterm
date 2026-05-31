@@ -13,7 +13,8 @@ Options:
   --fixture NAME        Run one fixture setup check: basic, navigate, invalid,
                         sprites, missing-sprite, run-command-targets,
                         layered-mode, vertical-slice, authoring-loop,
-                        game-states, or chained-transitions.
+                        game-states, chained-transitions, or
+                        workspace-agent.
   -h, --help            Show this help.
 EOF
 }
@@ -76,6 +77,9 @@ scene_file_for_fixture() {
       ;;
     chained-transitions)
       printf '%s\n' "${fixture_root}/chained-transitions.json"
+      ;;
+    workspace-agent)
+      printf '%s\n' "${fixture_root}/workspace-agent.json"
       ;;
     invalid)
       printf '%s\n' "${fixture_root}/invalid.json"
@@ -188,6 +192,7 @@ run_author_helper_check() {
   grep -qx layered-mode <<<"${templates}"
   grep -qx rpg-quest <<<"${templates}"
   grep -qx vertical-slice <<<"${templates}"
+  grep -qx workspace-agent <<<"${templates}"
   "${repo_root}/ci/gameterm-scene-author.sh" \
     install-fixture \
     --config-home "${tmp_home}" \
@@ -208,7 +213,7 @@ run_author_helper_check() {
     "${tmp_home}/gameterm/scenes/template.json" >/dev/null
   "${repo_root}/ci/gameterm-scene-author.sh" \
     validate "${tmp_home}/gameterm/scenes/template.json" >/dev/null
-  for template in visual-novel layered-mode rpg-quest vertical-slice; do
+  for template in visual-novel layered-mode rpg-quest vertical-slice workspace-agent; do
     "${repo_root}/ci/gameterm-scene-author.sh" \
       new-template \
       --template "${template}" \
@@ -763,6 +768,7 @@ run_smoke_asset_check() {
     run-command-targets \
     overlay-cleanup \
     vertical-slice \
+    workspace-agent \
     agent-lifecycle \
     authoring-loop \
     patch-inbox \
@@ -779,6 +785,8 @@ run_smoke_asset_check() {
     --describe-scenario authoring-loop | grep -q "Story state imported"
   "${repo_root}/ci/gameterm-scene-smoke.sh" \
     --describe-scenario process-state | grep -q "typed process state"
+  "${repo_root}/ci/gameterm-scene-smoke.sh" \
+    --describe-scenario workspace-agent | grep -q "Agent/Workspace"
   echo "smoke assets: ok"
 }
 
@@ -803,7 +811,7 @@ run_all() {
   run_agent_check
   run_story_state_check
   run_smoke_asset_check
-  for fixture in basic navigate invalid sprites missing-sprite run-command-targets layered-mode vertical-slice authoring-loop game-states chained-transitions; do
+  for fixture in basic navigate invalid sprites missing-sprite run-command-targets layered-mode vertical-slice authoring-loop game-states chained-transitions workspace-agent; do
     run_fixture_setup_check "${fixture}"
   done
   run_cargo_checks
@@ -815,7 +823,7 @@ case "${mode}" in
   all)
     run_all
     ;;
-  basic|navigate|invalid|sprites|missing-sprite|run-command-targets|layered-mode|vertical-slice|authoring-loop|game-states|chained-transitions)
+  basic|navigate|invalid|sprites|missing-sprite|run-command-targets|layered-mode|vertical-slice|authoring-loop|game-states|chained-transitions|workspace-agent)
     run_static_checks
     run_fixture_setup_check "${mode}"
     ;;

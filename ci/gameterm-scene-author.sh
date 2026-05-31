@@ -149,11 +149,11 @@ Options for update-choice:
 
 Fixtures:
   basic, navigate, invalid, sprites, missing-sprite, vertical-slice,
-  authoring-loop, game-states, chained-transitions
+  authoring-loop, game-states, chained-transitions, workspace-agent
 
 Templates:
   agent-workflow, project-dashboard, visual-novel, layered-mode, rpg-quest,
-  vertical-slice
+  vertical-slice, workspace-agent
 EOF
 }
 
@@ -1029,6 +1029,9 @@ EOF
         ]
       }' | write_json "${target}"
       ;;
+    workspace-agent)
+      jq '.' "${fixture_root}/workspace-agent.json" | write_json "${target}"
+      ;;
     *)
       echo "unknown template: ${template_name}" >&2
       usage >&2
@@ -1625,6 +1628,10 @@ install_fixture() {
       copy_file "${fixture_root}/chained-transitions.json" "${scene_dir}/default.json"
       copy_file "${fixture_root}/sprites.json" "${scene_dir}/sprites.json"
       ;;
+    workspace-agent)
+      copy_file "${fixture_root}/workspace-agent.json" "${scene_dir}/default.json"
+      copy_file "${fixture_root}/sprites.json" "${scene_dir}/sprites.json"
+      ;;
     *)
       echo "unknown fixture: ${fixture}" >&2
       usage >&2
@@ -1831,14 +1838,14 @@ case "${command}" in
       usage >&2
       exit 2
     fi
-    printf '%s\n' basic navigate invalid sprites missing-sprite vertical-slice authoring-loop game-states chained-transitions
+    printf '%s\n' basic navigate invalid sprites missing-sprite vertical-slice authoring-loop game-states chained-transitions workspace-agent
     ;;
   list-templates)
     if [[ "${#positionals[@]}" -ne 0 ]]; then
       usage >&2
       exit 2
     fi
-    printf '%s\n' agent-workflow project-dashboard visual-novel layered-mode rpg-quest vertical-slice
+    printf '%s\n' agent-workflow project-dashboard visual-novel layered-mode rpg-quest vertical-slice workspace-agent
     ;;
   -h|--help)
     usage

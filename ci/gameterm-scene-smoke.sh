@@ -21,7 +21,7 @@ Options:
   --fixture NAME           Fixture to install when --launch is used: basic,
                            navigate, invalid, sprites, missing-sprite,
                            run-command-targets, layered-mode, vertical-slice,
-                           authoring-loop, or renderer-rows. Default:
+                           workspace-agent, authoring-loop, or renderer-rows. Default:
                            renderer-rows.
   --patch-inbox PATH       Set GAMETERM_SCENE_PATCH_FILE to PATH when
                            launching. Use "auto" to create a temporary inbox.
@@ -201,6 +201,7 @@ guarded-input
 run-command-targets
 overlay-cleanup
 vertical-slice
+workspace-agent
 agent-lifecycle
 authoring-loop
 patch-inbox
@@ -254,6 +255,15 @@ Fixture: vertical-slice
 Setup: launch playable vertical slice fixture.
 Checks: automated input accepts the brief, prepares the launch kit, completes the scene loop, and keeps Scene Mode open.
 Expected status: Dialogue advanced: Guide.
+EOF
+      ;;
+    workspace-agent)
+      cat <<'EOF'
+Scenario: workspace-agent
+Fixture: workspace-agent
+Setup: launch Agent/Workspace fixture with auto patch inbox, then emit real process and agent lifecycle patches.
+Checks: Scene Mode renders workspace, project, task, agent, process, and file entities while external helpers drive lifecycle state.
+Expected status: Agent complete: Workspace slice ready.
 EOF
       ;;
     agent-lifecycle)
@@ -338,6 +348,12 @@ apply_smoke_scenario_defaults() {
       fixture="vertical-slice"
       if [[ -z "${key_sequence}" ]]; then
         key_sequence="enter,j,enter,j,enter,j,enter"
+      fi
+      ;;
+    workspace-agent)
+      fixture="workspace-agent"
+      if [[ -z "${patch_inbox}" ]]; then
+        patch_inbox="auto"
       fi
       ;;
     agent-lifecycle)
@@ -450,6 +466,10 @@ install_scene_fixture() {
       ;;
     vertical-slice)
       cp "${fixture_root}/vertical-slice.json" "${scene_dir}/default.json"
+      install_sprite_manifest "${scene_dir}/sprites.json"
+      ;;
+    workspace-agent)
+      cp "${fixture_root}/workspace-agent.json" "${scene_dir}/default.json"
       install_sprite_manifest "${scene_dir}/sprites.json"
       ;;
     authoring-loop)
@@ -900,6 +920,9 @@ EOF
   if [[ "${scenario}" == "vertical-slice" ]]; then
     echo "Vertical slice audit: complete the playable brief, launch kit, loop, and ending path."
   fi
+  if [[ "${scenario}" == "workspace-agent" ]]; then
+    echo "Agent/Workspace audit: emit process and agent lifecycle patches into the workspace fixture."
+  fi
   if [[ -n "${patch_inbox}" ]]; then
     echo "Patch audit: inbox transport is enabled at ${patch_inbox}"
   fi
@@ -945,6 +968,59 @@ EOF
       -- \
       true >/dev/null
     echo "Wrote process-state smoke patch: ${process_patch}"
+    sleep "${post_action_wait}"
+  fi
+  if [[ "${scenario}" == "workspace-agent" ]]; then
+    workspace_patch_dir="${tmp_home}/gameterm/scenes/workspace-agent"
+    mkdir -p "${workspace_patch_dir}"
+    "${repo_root}/ci/gameterm-scene-process.sh" \
+      --entity-id scene-verify-process \
+      --patch "${workspace_patch_dir}/process.json" \
+      --inbox "${patch_inbox}" \
+      --select \
+      -- \
+      true >/dev/null
+    sleep "${post_action_wait}"
+    "${repo_root}/ci/gameterm-scene-agent.sh" \
+      status \
+      --entity-id scene-agent \
+      --phase planning \
+      --command "build workspace slice" \
+      --message "Planning workspace slice" \
+      --patch "${workspace_patch_dir}/planning.json" \
+      --inbox "${patch_inbox}" \
+      --select >/dev/null
+    sleep "${post_action_wait}"
+    "${repo_root}/ci/gameterm-scene-agent.sh" \
+      status \
+      --entity-id scene-agent \
+      --phase running \
+      --command "build workspace slice" \
+      --message "Running workspace slice" \
+      --patch "${workspace_patch_dir}/running.json" \
+      --inbox "${patch_inbox}" \
+      --select >/dev/null
+    sleep "${post_action_wait}"
+    "${repo_root}/ci/gameterm-scene-agent.sh" \
+      status \
+      --entity-id scene-agent \
+      --phase blocked \
+      --command "build workspace slice" \
+      --message "Review needed before verification" \
+      --patch "${workspace_patch_dir}/blocked.json" \
+      --inbox "${patch_inbox}" \
+      --select >/dev/null
+    sleep "${post_action_wait}"
+    "${repo_root}/ci/gameterm-scene-agent.sh" \
+      status \
+      --entity-id scene-agent \
+      --phase complete \
+      --command "build workspace slice" \
+      --message "Workspace slice ready" \
+      --patch "${workspace_patch_dir}/complete.json" \
+      --inbox "${patch_inbox}" \
+      --select >/dev/null
+    echo "Wrote workspace-agent smoke patches: ${workspace_patch_dir}"
     sleep "${post_action_wait}"
   fi
   if [[ "${scenario}" == "agent-lifecycle" ]]; then
