@@ -11,6 +11,7 @@ Commands:
   inspect                       Print discovered workspace summary.
   discover                      Generate a complete Scene Mode scene.
   patch                         Generate a patch for the workspace-agent scene.
+  brief                         Generate a local task brief JSON file.
 
 Common options:
   --cwd PATH                    Workspace directory. Default: current directory.
@@ -28,6 +29,7 @@ Common options:
   --pane-progress TEXT          Active pane progress state, when known.
   --max-files N                 Maximum file entities. Default: 5.
   --strict                      Fail when a user-provided --open file is missing.
+  --brief-output PATH           Task brief path to write or link from a scene.
 
 Options for discover:
   --scene-output PATH           Write generated scene to PATH.
@@ -54,6 +56,10 @@ Examples:
   ci/gameterm-scene-workspace.sh patch \
     --cwd . \
     --patch-output /tmp/gameterm-workspace.patch.json
+
+  ci/gameterm-scene-workspace.sh brief \
+    --cwd . \
+    --brief-output /tmp/gameterm-task-brief.json
 EOF
 }
 
@@ -76,6 +82,7 @@ max_files=5
 strict=0
 scene_output=""
 patch_output=""
+brief_output=""
 base_scene="${fixture_root}/workspace-agent.json"
 inbox_path=""
 install=0
@@ -150,6 +157,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --patch-output)
       patch_output="$2"
+      shift 2
+      ;;
+    --brief-output|--output)
+      brief_output="$2"
       shift 2
       ;;
     --base)
@@ -441,6 +452,7 @@ scene_json() {
     --arg active_process_phase "${active_process_phase}" \
     --arg active_process_command "${active_process_command}" \
     --arg active_process_message "${active_process_message}" \
+    --arg brief_output "${brief_output}" \
     --argjson files "${files_json}" \
     --argjson verify "${verify_json}" \
     '{
@@ -522,7 +534,14 @@ scene_json() {
             kind: "references",
             value: 1,
             metadata: [["source", "workspace-discovery"], ["reason", "task related_files metadata"], ["path", .value.path]]
-          })))
+          }))
+          + (if $brief_output == "" then [] else [{
+            source_id: "discovered-task",
+            target_id: "task-brief",
+            kind: "described_by",
+            value: 1,
+            metadata: [["source", "task-bootstrap"], ["path", $brief_output]]
+          }] end))
       },
       entities: ([
         {
@@ -620,7 +639,21 @@ scene_json() {
           ["role", .value.role],
           ["status", "present"]
         ]
-      }))),
+      }))
+        + (if $brief_output == "" then [] else [{
+          id: "task-brief",
+          kind: "Task",
+          label: "Task Brief",
+          position: { x: 14, y: 7 },
+          sprite: "memory_note",
+          state_flags: ["brief", "inspectable"],
+          metadata: [
+            ["entity_type", "task_brief"],
+            ["path", $brief_output],
+            ["source", "workspace-discovery"],
+            ["status", "generated"]
+          ]
+        }] end)),
       dialogue_speaker: "Workspace",
       dialogue: ("Discovered " + $project_label + " from " + $root + "."),
       dialogue_lines: [
@@ -632,7 +665,11 @@ scene_json() {
       ],
       choices: ([
         { label: "Inspect workspace", kind: "Inspect" }
-      ] + ($files | map({
+      ] + (if $brief_output == "" then [] else [{
+        label: "Open task brief",
+        kind: { OpenFile: { path: $brief_output } }
+      }] end)
+      + ($files | map({
         label: ("Open " + .label),
         kind: { OpenFile: { path: .path } }
       })) + (if $verify == null then [] else [{
@@ -772,6 +809,70 @@ patch_json() {
     }'
 }
 
+brief_json() {
+  jq -n \
+    --arg project_label "${project_label}" \
+    --arg root "${root_dir}" \
+    --arg workspace "${workspace_dir}" \
+    --arg branch "${repo_branch}" \
+    --arg revision "${repo_revision}" \
+    --arg status "${repo_status}" \
+    --arg changed "${changed_files}" \
+    --arg language "${language}" \
+    --arg manifest "${manifest}" \
+    --arg objective "${task_label}" \
+    --arg verify_label "${verify_label}" \
+    --arg pane_context "${pane_context}" \
+    --arg pane_id "${pane_id}" \
+    --arg pane_cwd "${pane_cwd}" \
+    --arg foreground_process_name "${foreground_process_name}" \
+    --arg foreground_process_path "${foreground_process_path}" \
+    --arg pane_progress "${pane_progress}" \
+    --arg active_process_phase "${active_process_phase}" \
+    --arg active_process_command "${active_process_command}" \
+    --arg generated_at "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+    --argjson files "${files_json}" \
+    --argjson verify "${verify_json}" \
+    '{
+      brief_version: 1,
+      generated_at: $generated_at,
+      workspace_root: $root,
+      workspace_cwd: $workspace,
+      project_label: $project_label,
+      objective: $objective,
+      repo: {
+        branch: $branch,
+        revision: $revision,
+        status: $status,
+        changed_files: ($changed | tonumber)
+      },
+      project: {
+        language: $language,
+        manifest: $manifest
+      },
+      context_files: ($files | map(.path)),
+      verification: $verify,
+      verification_label: $verify_label,
+      pane_context: {
+        status: $pane_context,
+        pane_id: (if $pane_id == "" then null else ($pane_id | tonumber) end),
+        cwd: (if $pane_cwd == "" then null else $pane_cwd end),
+        foreground_process_name: (if $foreground_process_name == "" then null else $foreground_process_name end),
+        foreground_process_path: (if $foreground_process_path == "" then null else $foreground_process_path end),
+        progress: (if $pane_progress == "" then null else $pane_progress end)
+      },
+      active_process: {
+        phase: $active_process_phase,
+        command: $active_process_command
+      },
+      constraints: [
+        "do not run commands automatically",
+        "do not start agents automatically",
+        "inspect this brief before handoff"
+      ]
+    }'
+}
+
 validate_scene() {
   cargo run -q -p gameterm-visual --example scene_validate -- "$1" >/dev/null
 }
@@ -820,6 +921,9 @@ EOF
 run_discover() {
   local tmp install_target
   tmp="$(mktemp /tmp/gameterm-scene-workspace.XXXXXX)"
+  if [[ -n "${brief_output}" ]]; then
+    run_brief >/dev/null
+  fi
   scene_json >"${tmp}"
   validate_scene "${tmp}"
 
@@ -859,6 +963,26 @@ run_patch() {
   rm -f "${tmp}"
 }
 
+run_brief() {
+  if [[ -z "${brief_output}" ]]; then
+    echo "missing required --brief-output" >&2
+    usage >&2
+    exit 2
+  fi
+  local tmp
+  tmp="$(mktemp /tmp/gameterm-scene-task-brief.XXXXXX)"
+  brief_json >"${tmp}"
+  jq -e '
+    .brief_version == 1
+    and (.workspace_root | type == "string" and length > 0)
+    and (.objective | type == "string" and length > 0)
+    and (.context_files | type == "array")
+    and (.constraints | index("do not start agents automatically"))
+  ' "${tmp}" >/dev/null
+  write_output_file "${tmp}" "${brief_output}"
+  rm -f "${tmp}"
+}
+
 case "${command}" in
   inspect)
     run_inspect
@@ -868,6 +992,9 @@ case "${command}" in
     ;;
   patch)
     run_patch
+    ;;
+  brief)
+    run_brief
     ;;
   -h|--help)
     usage
