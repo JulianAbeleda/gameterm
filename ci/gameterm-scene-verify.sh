@@ -567,6 +567,61 @@ run_renpy_import_check() {
   echo "renpy import: ok"
 }
 
+run_vn_asset_intake_check() {
+  local tmp_dir
+  local output_root
+  local sprite_manifest
+  local attribution
+  local bindings
+  tmp_dir="$(mktemp -d /tmp/gameterm-scene-vn-assets-verify.XXXXXX)"
+  tmp_paths+=("${tmp_dir}")
+  output_root="${tmp_dir}/assets/vn-demo"
+  sprite_manifest="${tmp_dir}/sprites.json"
+  attribution="${tmp_dir}/vn-demo-attribution.json"
+  bindings="${tmp_dir}/vn-demo-bindings.json"
+
+  cargo run -q -p gameterm-visual --example scene_vn_asset_intake -- \
+    --catalog "${fixture_root}/renpy-demo-open-assets.json" \
+    --source-root "${fixture_root}/vn-asset-source" \
+    --output-root "${output_root}" \
+    --sprite-manifest "${sprite_manifest}" \
+    --attribution "${attribution}" \
+    --bindings "${bindings}" \
+    --base-manifest "${fixture_root}/sprites.json" \
+    >/tmp/gameterm-scene-vn-assets-verify.out \
+    2>/tmp/gameterm-scene-vn-assets-verify.err
+
+  jq -e '
+    any(.sprites[]; .id == "workspace-map")
+    and any(.sprites[]; .id == "vn.character.guide.neutral"
+      and (.path | endswith("assets/vn-demo/characters/guide-neutral.png")))
+    and any(.sprites[]; .id == "vn.character.guide.happy"
+      and (.path | endswith("assets/vn-demo/characters/guide-happy.png")))
+  ' "${sprite_manifest}" >/dev/null
+  jq -e '
+    .characters.guide.expressions.neutral == "vn.character.guide.neutral"
+    and .characters.guide.expressions.happy == "vn.character.guide.happy"
+  ' "${bindings}" >/dev/null
+  jq -e '
+    .generated_by == "scene_vn_asset_intake"
+    and any(.sources[]; .id == "4cher_set4_vn_sprites"
+      and .repo_policy == "allowed_with_attribution"
+      and (.used_assets | length) == 2)
+    and any(.warnings[]; contains("requires sprite composition"))
+    and any(.warnings[]; contains("AI-assisted source skipped"))
+  ' "${attribution}" >/dev/null
+  test -f "${output_root}/characters/guide-neutral.png"
+  test -f "${output_root}/characters/guide-happy.png"
+  grep -q "AI-assisted source skipped" /tmp/gameterm-scene-vn-assets-verify.err
+
+  "${repo_root}/ci/gameterm-scene-doctor.sh" \
+    --scene "${fixture_root}/renpy-demo.json" \
+    --sprites "${sprite_manifest}" >/tmp/gameterm-scene-vn-assets-doctor.out
+  grep -q "Doctor summary: 0 error(s)" /tmp/gameterm-scene-vn-assets-doctor.out
+
+  echo "vn asset intake: ok"
+}
+
 run_patch_check() {
   local tmp_home authored_patch inbox
   local exported_scene hidden_patch
@@ -1214,6 +1269,7 @@ run_all() {
   run_author_helper_check
   run_doctor_check
   run_renpy_import_check
+  run_vn_asset_intake_check
   run_patch_check
   run_agent_check
   run_workspace_discovery_check
