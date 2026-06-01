@@ -177,17 +177,19 @@ If `--cwd` is omitted, `--pane-cwd` becomes the discovery cwd. Pane and process
 metadata is rendered as scene variables, entity metadata, and patch process
 state when available.
 
-## Ren'Py demo import
+## VN script import
 
-Scene Mode can import a conservative Ren'Py-shaped demo subset into native
-Scene JSON:
+Scene Mode can import a conservative visual-novel script subset into native
+Scene JSON. The first supported dialect is `.rpy`:
 
 ```sh
-ci/gameterm-scene-renpy-import.py \
+cargo run -p gameterm-visual --example scene_vn_script_import -- \
   --source ci/fixtures/gameterm-scene/renpy-demo-source.rpy \
   --output /tmp/gameterm-renpy-demo.json \
   --attribution /tmp/gameterm-renpy-demo-attribution.json \
-  --source-title "GameTerm Ren'Py Demo Fixture"
+  --source-dialect rpy \
+  --source-title "GameTerm Ren'Py Demo Fixture" \
+  --source-version fixture
 ci/gameterm-scene-author.sh validate /tmp/gameterm-renpy-demo.json
 ```
 
@@ -232,8 +234,8 @@ First-pass support is intentionally small: `label`, dialogue/say lines,
 `menu`, `jump`, simple literal assignments, and simple variable guards. The
 script import helper does not execute Python, copy assets, emulate Ren'Py
 screens, or import third-party games automatically. Unsupported statements are
-reported as warnings. Imported choices use `policy.origin=renpy_import` so they
-remain auditable in Scene Mode.
+reported as warnings. Imported choices use `policy.origin=vn_script_import` so
+they remain auditable in Scene Mode.
 
 For final app-level verification, use the product smoke checklist in
 [`docs/gameterm-scene-product-smoke.md`](gameterm-scene-product-smoke.md).

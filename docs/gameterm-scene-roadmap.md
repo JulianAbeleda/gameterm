@@ -7,8 +7,7 @@ status and next priorities.
 ## Current Status
 
 Status: first shippable Scene Mode pass complete; command policy second pass
-complete; VN asset intake first pass complete; VN script import remains the
-next scoped interoperability layer.
+complete; VN asset intake and VN script import first passes complete.
 
 Scene Mode currently has:
 
@@ -54,7 +53,7 @@ implementation details.
 | Broad product completion stack | [Product Completion Scope](gameterm-scene-product-completion-scope.md) | Active planning source |
 | Command policy second pass | [Command Policy Second-Pass Scope](gameterm-scene-command-policy-second-pass-scope.md) | Complete |
 | Ren'Py demo import | [Ren'Py Demo Scope](gameterm-scene-renpy-demo-scope.md) | Prototype implemented |
-| VN script importer | [VN Script Import Scope](gameterm-scene-vn-script-import-scope.md) | Scoped next |
+| VN script importer | [VN Script Import Scope](gameterm-scene-vn-script-import-scope.md) | First-pass implemented |
 | VN asset intake | [VN Asset Intake Scope](gameterm-scene-vn-asset-intake-scope.md) | First-pass implemented |
 | Live pane/process context | [Pane And Process Discovery Scope](gameterm-scene-pane-process-discovery-scope.md) | Implemented through explicit metadata |
 | Agent/Workspace authored model | [Agent And Workspace Scope](gameterm-scene-agent-workspace-scope.md) | First-pass implemented |
@@ -87,8 +86,8 @@ It is a stateful visual layer over them.
 
 ### Priority 0: VN Script Import
 
-Status: scoped next. Python `.rpy` prototype exists; Rust-native,
-engine-agnostic importer is the next implementation target.
+Status: first-pass implemented. The canonical `.rpy` subset importer is now
+Rust-native and engine-agnostic at the product layer.
 
 Goal: prove Scene Mode can host a real visual-novel-shaped demo by importing a
 conservative visual-novel script subset into a valid Scene Mode fixture.
@@ -103,7 +102,7 @@ Scope owners:
 - [Ren'Py Demo Scope](gameterm-scene-renpy-demo-scope.md)
 - [VN Script Import Scope](gameterm-scene-vn-script-import-scope.md)
 
-Completed prototype:
+Completed first slice:
 
 - import a small GameTerm-authored Ren'Py-shaped fixture source
 - preserve source/license attribution
@@ -111,14 +110,19 @@ Completed prototype:
 - generate a valid Scene Mode fixture
 - verify import, doctor, and runtime traversal in CI
 - record open-license VN asset source policy
-
-Next slice:
-
 - move the importer from Python to Rust
 - name the product layer around VN scripts, not a single source engine
 - construct `VisualScene` directly in `gameterm-visual`
 - expose a Rust example/CLI for fixture generation
-- remove or reduce the Python helper so there is only one canonical importer
+- remove the Python helper so there is only one canonical importer
+
+Verified behavior:
+
+- `scene_vn_script_import` reads the GameTerm-owned `.rpy` fixture source.
+- Generated choices use `policy.origin=vn_script_import`.
+- `ci/gameterm-scene-verify.sh --all` covers Rust import, attribution, doctor
+  validation, and runtime traversal.
+- Legacy `renpy_import` remains accepted by validation for older scenes.
 
 Deferred:
 

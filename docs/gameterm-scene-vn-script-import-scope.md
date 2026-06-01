@@ -1,7 +1,8 @@
 # GameTerm Scene Mode VN Script Import Scope
 
-This document scopes replacing the current Python visual-novel script prototype
-with a Rust-native importer owned by `gameterm-visual`.
+This document scoped replacing the Python visual-novel script prototype with a
+Rust-native importer owned by `gameterm-visual`. The first pass is now
+implemented.
 
 The current `.rpy` fixture remains an external authoring/source format. Ren'Py
 is not a runtime dependency and should not name the product layer. Scene Mode
@@ -10,9 +11,9 @@ native `VisualScene` data.
 
 ## Goal
 
-Move the visual-novel script import path from an auxiliary Python prototype to
-Rust so the import path is part of the same typed model, validation path, and
-test discipline as the rest of Scene Mode.
+Move the visual-novel script import path from an auxiliary prototype to Rust so
+the import path is part of the same typed model, validation path, and test
+discipline as the rest of Scene Mode.
 
 The user should be able to run:
 
@@ -25,7 +26,7 @@ cargo run -p gameterm-visual --example scene_vn_script_import -- \
   --source-title "GameTerm Ren'Py Demo Fixture"
 ```
 
-and get the same class of output the Python helper currently produces.
+and get a native Scene Mode file plus attribution output.
 
 ## Why Rust
 
@@ -51,7 +52,7 @@ The Rust import pass is complete when:
    - `VisualScene`
    - attribution/provenance data
    - structured warnings
-4. The first supported dialect matches the current `.rpy` Python prototype:
+4. The first supported dialect matches the current `.rpy` subset:
    - `label`
    - dialogue/say statements
    - narrator lines
@@ -66,8 +67,7 @@ The Rust import pass is complete when:
 7. Legacy `renpy_import` metadata remains accepted for existing fixtures.
 8. The open asset catalog remains separate from imported scene data.
 9. CI no longer depends on Python for visual-novel script import verification.
-10. The old Python helper is deleted or reduced to a compatibility wrapper that
-   calls the Rust example.
+10. The old Python helper is deleted.
 
 ## Non-Goals
 
@@ -259,8 +259,7 @@ git diff --check
 
 Update `ci/gameterm-scene-verify.sh`:
 
-- remove Python syntax checking for `gameterm-scene-renpy-import.py` if the
-  Python file is deleted
+- remove Python syntax checking for the old importer
 - call the Rust example in `run_vn_script_import_check`
 - compare or validate generated scene/attribution
 - keep the open asset catalog jq checks
@@ -269,17 +268,8 @@ If a compatibility shell wrapper is kept, verify it with `bash -n`.
 
 ## Deletion Strategy
 
-Preferred:
-
 - delete `ci/gameterm-scene-renpy-import.py`
 - replace docs references with the Rust example command
-
-Acceptable transitional option:
-
-- replace the Python file with a tiny shell script named
-  `ci/gameterm-scene-vn-script-import.sh`
-- the shell script calls `cargo run -p gameterm-visual --example
-  scene_vn_script_import -- "$@"`
 
 Do not keep two independent import implementations.
 
