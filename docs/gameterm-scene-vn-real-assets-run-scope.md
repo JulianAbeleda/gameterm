@@ -1,13 +1,16 @@
 # GameTerm Scene Mode VN Real Assets Run Scope
 
+Status: COMPLETE.
+
 This scope turns the current VN demo from a wiring/provenance pass into a
 runnable visual asset pass.
 
 The current VN path works end to end for script import, asset intake metadata,
 manifest generation, install safety, and doctor validation. The gap is that the
-repo fixture "PNG" files are placeholder text fixtures. This pass makes the
-next result honest: real local image files render in Scene Mode, and fake image
-placeholders fail validation when the caller asks for image validation.
+repo fixture "PNG" files were placeholder text fixtures. This pass made the
+result honest: fixture assets are real PNG files, real local image files render
+in Scene Mode, and fake image placeholders fail validation when the caller asks
+for image validation.
 
 ## Goal
 
@@ -49,13 +52,14 @@ Already implemented:
 - attribution files.
 - verifier coverage using repo-safe placeholder assets.
 
-Observed limitation:
+Closed limitation:
 
-- `ci/fixtures/gameterm-scene/vn-asset-source/.../*.png` are ASCII placeholder
-  files, not real PNG images.
-- `ci/gameterm-scene-doctor.sh` currently checks that sprite files exist, but
-  does not prove they decode as images.
-- `ci/gameterm-scene-smoke.sh` has no `vn-demo` scenario.
+- `ci/fixtures/gameterm-scene/vn-asset-source/.../*.png` are now real
+  GameTerm-owned PNG fixture images.
+- `ci/gameterm-scene-doctor.sh --strict-images` proves manifest assets are PNG
+  image data.
+- `ci/gameterm-scene-smoke.sh --scenario vn-demo` generates, strict-validates,
+  opens, drives, and captures the VN demo.
 
 ## 1. Real Local VN Assets
 

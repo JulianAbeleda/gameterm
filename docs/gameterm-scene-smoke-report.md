@@ -608,6 +608,32 @@ sent `CTRL|ALT|SHIFT+g`. The capture shows the native active-pane generated
 Scene overlay open with source/status text for the generated workspace scene.
 No configured `default.json` scene file was written by the transient GUI path.
 
+### vn-demo
+
+Command:
+
+```sh
+ci/gameterm-scene-smoke.sh \
+  --launch \
+  --scenario vn-demo \
+  --wait-before-capture 3 \
+  --capture-timeout 8 \
+  --output /tmp/gameterm-scene-vn-demo.png
+```
+
+Result: PASS.
+
+Capture:
+
+```text
+/tmp/gameterm-scene-vn-demo.png
+```
+
+Observation: the smoke harness generated the VN demo into a temporary Scene
+config, strict-validated sprite files as PNG image data, opened Scene Mode,
+sent the scripted VN key sequence, and captured the imported VN scene. The
+capture shows `VN Script Demo` with `sprite=vn.character.guide.neutral`.
+
 ## Follow-Up
 
 1. Keep deterministic smoke registry and asset checks in

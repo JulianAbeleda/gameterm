@@ -64,7 +64,7 @@ implementation details.
 | VN script importer | [VN Script Import Scope](gameterm-scene-vn-script-import-scope.md) | First-pass implemented |
 | VN asset intake | [VN Asset Intake Scope](gameterm-scene-vn-asset-intake-scope.md) | First-pass implemented |
 | VN demo install | [VN Demo Install Scope](gameterm-scene-vn-demo-install-scope.md) | First-pass implemented |
-| VN real asset run | [VN Real Assets Run Scope](gameterm-scene-vn-real-assets-run-scope.md) | Scoped next |
+| VN real asset run | [VN Real Assets Run Scope](gameterm-scene-vn-real-assets-run-scope.md) | Complete |
 | Live pane/process context | [Pane And Process Discovery Scope](gameterm-scene-pane-process-discovery-scope.md) | Implemented through explicit metadata |
 | Agent/Workspace authored model | [Agent And Workspace Scope](gameterm-scene-agent-workspace-scope.md) | First-pass implemented |
 | Workspace Discovery | [Workspace Discovery Scope](gameterm-scene-workspace-discovery-scope.md) | First-pass implemented |
@@ -218,7 +218,7 @@ Deferred:
 
 ### Priority 0.8: VN Real Asset Run
 
-Status: scoped next.
+Status: complete.
 
 Goal: make the VN demo run with real local PNG assets, make doctor catch fake
 image placeholders in strict mode, and add a repeatable `vn-demo` smoke
@@ -233,12 +233,13 @@ Scope owner:
 
 - [VN Real Assets Run Scope](gameterm-scene-vn-real-assets-run-scope.md)
 
-Planned slice:
+Completed slice:
 
-- use approved local PNG assets through `--asset-source-root`
-- add opt-in strict image validation to doctor
-- add `vn-demo` smoke scenario
-- record live smoke with fixture mode and, when available, real local art mode
+- repo-safe VN fixture assets are real PNG files
+- approved local PNG assets can flow through `--asset-source-root`
+- opt-in strict image validation is available through doctor
+- `vn-demo` smoke scenario opens and captures the generated VN demo
+- live smoke is recorded with fixture-mode real PNG assets
 
 Non-goals:
 
