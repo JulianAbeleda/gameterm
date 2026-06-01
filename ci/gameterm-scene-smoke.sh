@@ -204,6 +204,7 @@ overlay-cleanup
 vertical-slice
 workspace-agent
 workspace-discovery
+live-mux-discovery
 agent-lifecycle
 authoring-loop
 patch-inbox
@@ -275,6 +276,15 @@ Fixture: generated workspace scene
 Setup: generate a Scene Mode scene from the current repository with ci/gameterm-scene-workspace.sh, then launch it.
 Checks: Scene Mode renders generated workspace, project, task, process, and file entities from cwd/git state.
 Expected status: Discovered workspace scene is visible.
+EOF
+      ;;
+    live-mux-discovery)
+      cat <<'EOF'
+Scenario: live-mux-discovery
+Fixture: generated live mux workspace scene
+Setup: generate a Scene Mode scene from the active mux pane with ci/gameterm-scene-mux-context.sh, then launch it.
+Checks: Scene Mode renders generated workspace, pane, and process entities from active mux context, or falls back to cwd discovery when mux context is unavailable.
+Expected status: Discovered live mux workspace scene is visible.
 EOF
       ;;
     agent-lifecycle)
@@ -369,6 +379,9 @@ apply_smoke_scenario_defaults() {
       ;;
     workspace-discovery)
       fixture="workspace-discovery"
+      ;;
+    live-mux-discovery)
+      fixture="live-mux-discovery"
       ;;
     agent-lifecycle)
       fixture="basic"
@@ -490,6 +503,14 @@ install_scene_fixture() {
       "${repo_root}/ci/gameterm-scene-workspace.sh" \
         discover \
         --cwd "${repo_root}" \
+        --scene-output "${scene_dir}/default.json" \
+        --force >/dev/null
+      install_sprite_manifest "${scene_dir}/sprites.json"
+      ;;
+    live-mux-discovery)
+      "${repo_root}/ci/gameterm-scene-mux-context.sh" \
+        discover \
+        --allow-missing \
         --scene-output "${scene_dir}/default.json" \
         --force >/dev/null
       install_sprite_manifest "${scene_dir}/sprites.json"
@@ -973,6 +994,10 @@ EOF
   fi
   if [[ "${scenario}" == "workspace-discovery" ]]; then
     echo "Workspace discovery audit: launch a scene generated from ${repo_root}."
+  fi
+  if [[ "${scenario}" == "live-mux-discovery" ]]; then
+    echo "Live mux discovery audit: launch a scene generated from active mux context."
+    "${repo_root}/ci/gameterm-scene-mux-context.sh" collect --allow-missing || true
   fi
   if [[ -n "${patch_inbox}" ]]; then
     echo "Patch audit: inbox transport is enabled at ${patch_inbox}"
