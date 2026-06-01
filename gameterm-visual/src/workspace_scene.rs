@@ -13,6 +13,7 @@ pub struct ScenePaneContext {
     pub mux_window_id: usize,
     pub cwd: Option<PathBuf>,
     pub foreground_process_name: Option<String>,
+    pub foreground_process_path: Option<PathBuf>,
     pub progress: Option<String>,
 }
 
@@ -48,7 +49,7 @@ pub fn generate_workspace_scene(
     let file_count = files.len();
     let mut entities = vec![
         VisualEntity {
-            id: "workspace-root".to_string(),
+            id: "discovered-workspace".to_string(),
             kind: VisualEntityKind::Project,
             label: workspace_root
                 .file_name()
@@ -68,8 +69,8 @@ pub fn generate_workspace_scene(
             ],
         },
         VisualEntity {
-            id: "active-pane".to_string(),
-            kind: VisualEntityKind::Agent,
+            id: "discovered-pane".to_string(),
+            kind: VisualEntityKind::Task,
             label: active_pane_label(context.pane.as_ref()),
             position: VisualPosition { x: 8, y: 3 },
             sprite: "agent_idle".to_string(),
@@ -78,7 +79,7 @@ pub fn generate_workspace_scene(
             metadata: pane_metadata(context.pane.as_ref(), active_cwd),
         },
         VisualEntity {
-            id: "workspace-files".to_string(),
+            id: "discovered-files".to_string(),
             kind: VisualEntityKind::Memory,
             label: format!("{} files", file_count),
             position: VisualPosition { x: 14, y: 2 },
@@ -92,6 +93,17 @@ pub fn generate_workspace_scene(
                 .collect(),
         },
     ];
+
+    entities.push(VisualEntity {
+        id: "discovered-process".to_string(),
+        kind: VisualEntityKind::Task,
+        label: process_label(context.pane.as_ref()),
+        position: VisualPosition { x: 12, y: 5 },
+        sprite: "task_tile".to_string(),
+        visible: true,
+        state_flags: vec!["process".to_string(), process_phase(context.pane.as_ref())],
+        metadata: process_metadata(context.pane.as_ref(), &workspace_root),
+    });
 
     for (index, path) in files.iter().take(4).enumerate() {
         entities.push(VisualEntity {
@@ -145,12 +157,12 @@ pub fn generate_workspace_scene(
             text_var("workspace_mode", "active_pane"),
             text_var("workspace_root", workspace_root.display().to_string()),
             text_var("active_cwd", active_cwd.display().to_string()),
-            text_var("discovery_source", "rust-workspace-generator"),
+            text_var("discovery_source", discovery_source(context.pane.as_ref())),
             VisualStateEntry {
                 key: "discovered_file_count".to_string(),
                 value: VisualStateValue::Number(file_count as i64),
             },
-            text_var("pane_context", pane_context_value(context.pane.as_ref())),
+            text_var("pane_context", pane_context_status(context.pane.as_ref())),
         ],
         rpg: VisualRpgState::default(),
         entities,
@@ -163,6 +175,18 @@ pub fn generate_workspace_scene(
         choices: workspace_choices(&workspace_root, files.first()),
     };
 
+    let mut scene = scene;
+    if let Some(pane) = context.pane.as_ref() {
+        scene.variables.push(VisualStateEntry {
+            key: "active_pane_id".to_string(),
+            value: VisualStateValue::Number(pane.pane_id as i64),
+        });
+        scene.variables.push(VisualStateEntry {
+            key: "active_mux_window_id".to_string(),
+            value: VisualStateValue::Number(pane.mux_window_id as i64),
+        });
+    }
+
     (
         scene,
         WorkspaceSceneReport {
@@ -171,6 +195,62 @@ pub fn generate_workspace_scene(
             used_pane_cwd,
         },
     )
+}
+
+pub fn generate_workspace_context_error_scene(
+    message: impl Into<String>,
+    cwd: PathBuf,
+) -> VisualScene {
+    let message = message.into();
+    VisualScene {
+        title: "Active Pane Scene Unavailable".to_string(),
+        background: "workspace-map".to_string(),
+        width: 18,
+        height: 9,
+        mode: VisualModeDescriptor {
+            mode_id: "active_pane_workspace_error".to_string(),
+            label: "Active Pane Workspace Error".to_string(),
+            description: "Recoverable active-pane Scene context error".to_string(),
+            scene_profile: Some("workspace".to_string()),
+            allowed_actions: vec!["Inspect".to_string()],
+            default_transition: None,
+            lifecycle: VisualModeLifecycle {
+                enter_status: Some(message.clone()),
+                update_status: Some(message.clone()),
+                exit_status: Some("Closed active pane context error".to_string()),
+            },
+            input_map: Vec::new(),
+        },
+        layers: Vec::new(),
+        variables: vec![
+            text_var("workspace_mode", "active_pane_error"),
+            text_var("workspace_root", cwd.display().to_string()),
+            text_var("active_cwd", cwd.display().to_string()),
+            text_var("discovery_source", "context_error"),
+            text_var("pane_context", "absent"),
+            text_var("context_error", message.clone()),
+        ],
+        rpg: VisualRpgState::default(),
+        entities: vec![VisualEntity {
+            id: "active-pane-context-error".to_string(),
+            kind: VisualEntityKind::Task,
+            label: "Scene unavailable".to_string(),
+            position: VisualPosition { x: 8, y: 4 },
+            sprite: "task_tile".to_string(),
+            visible: true,
+            state_flags: vec!["blocked".to_string()],
+            metadata: vec![("error".to_string(), message.clone())],
+        }],
+        dialogue_speaker: "GameTerm".to_string(),
+        dialogue: message,
+        dialogue_lines: Vec::new(),
+        choices: vec![SceneAction {
+            label: "Inspect context error".to_string(),
+            kind: SceneActionKind::Inspect,
+            policy: None,
+            conditions: Vec::new(),
+        }],
+    }
 }
 
 fn workspace_choices(root: &Path, first_file: Option<&PathBuf>) -> Vec<SceneAction> {
@@ -222,21 +302,33 @@ fn text_var(key: impl Into<String>, value: impl Into<String>) -> VisualStateEntr
 }
 
 fn active_pane_label(pane: Option<&ScenePaneContext>) -> String {
-    pane.and_then(|pane| pane.foreground_process_name.as_ref())
-        .filter(|name| !name.trim().is_empty())
-        .cloned()
-        .unwrap_or_else(|| "Active Pane".to_string())
+    match pane {
+        Some(pane) => format!("Pane {}", pane.pane_id),
+        None => "Active Pane".to_string(),
+    }
 }
 
-fn pane_context_value(pane: Option<&ScenePaneContext>) -> String {
+fn pane_context_status(pane: Option<&ScenePaneContext>) -> &'static str {
     match pane {
-        Some(pane) => format!("pane:{} window:{}", pane.pane_id, pane.mux_window_id),
-        None => "none".to_string(),
+        Some(_) => "provided",
+        None => "absent",
+    }
+}
+
+fn discovery_source(pane: Option<&ScenePaneContext>) -> &'static str {
+    match pane.and_then(|pane| pane.cwd.as_ref()) {
+        Some(_) => "pane_cwd",
+        None if pane.is_some() => "cwd_with_pane_metadata",
+        None => "cwd",
     }
 }
 
 fn pane_metadata(pane: Option<&ScenePaneContext>, active_cwd: &Path) -> Vec<(String, String)> {
-    let mut metadata = vec![("cwd".to_string(), active_cwd.display().to_string())];
+    let mut metadata = vec![
+        ("entity_type".to_string(), "pane".to_string()),
+        ("context".to_string(), pane_context_status(pane).to_string()),
+        ("cwd".to_string(), active_cwd.display().to_string()),
+    ];
     if let Some(pane) = pane {
         metadata.push(("pane_id".to_string(), pane.pane_id.to_string()));
         metadata.push(("mux_window_id".to_string(), pane.mux_window_id.to_string()));
@@ -245,6 +337,50 @@ fn pane_metadata(pane: Option<&ScenePaneContext>, active_cwd: &Path) -> Vec<(Str
         }
         if let Some(progress) = pane.progress.as_ref() {
             metadata.push(("progress".to_string(), progress.clone()));
+        }
+    }
+    metadata
+}
+
+fn process_label(pane: Option<&ScenePaneContext>) -> String {
+    if let Some(process) = pane.and_then(|pane| pane.foreground_process_name.as_ref()) {
+        if !process.trim().is_empty() {
+            return process.clone();
+        }
+    }
+    pane.and_then(|pane| pane.foreground_process_path.as_ref())
+        .and_then(|path| path.file_name())
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.trim().is_empty())
+        .map(ToString::to_string)
+        .unwrap_or_else(|| "No process context".to_string())
+}
+
+fn process_phase(pane: Option<&ScenePaneContext>) -> String {
+    match pane.and_then(|pane| pane.foreground_process_name.as_ref()) {
+        Some(_) => "running".to_string(),
+        None => "unknown".to_string(),
+    }
+}
+
+fn process_metadata(pane: Option<&ScenePaneContext>, root: &Path) -> Vec<(String, String)> {
+    let mut metadata = vec![
+        ("entity_type".to_string(), "process".to_string()),
+        ("cwd".to_string(), root.display().to_string()),
+        ("phase".to_string(), process_phase(pane)),
+    ];
+    if let Some(pane) = pane {
+        if let Some(process) = pane.foreground_process_name.as_ref() {
+            metadata.push(("foreground_process_name".to_string(), process.clone()));
+        }
+        if let Some(path) = pane.foreground_process_path.as_ref() {
+            metadata.push((
+                "foreground_process_path".to_string(),
+                path.display().to_string(),
+            ));
+        }
+        if let Some(progress) = pane.progress.as_ref() {
+            metadata.push(("pane_progress".to_string(), progress.clone()));
         }
     }
     metadata
@@ -332,6 +468,7 @@ mod tests {
                 mux_window_id: 3,
                 cwd: Some(dir.path().to_path_buf()),
                 foreground_process_name: Some("zsh".to_string()),
+                foreground_process_path: Some(PathBuf::from("/bin/zsh")),
                 progress: Some("0.42".to_string()),
             }),
             max_files: 8,
@@ -345,11 +482,20 @@ mod tests {
             .variables
             .iter()
             .any(|entry| entry.key == "pane_context"
-                && entry.value == VisualStateValue::Text("pane:7 window:3".to_string())));
+                && entry.value == VisualStateValue::Text("provided".to_string())));
+        assert!(scene
+            .variables
+            .iter()
+            .any(|entry| entry.key == "active_pane_id"
+                && entry.value == VisualStateValue::Number(7)));
         assert!(scene
             .entities
             .iter()
-            .any(|entity| entity.id == "active-pane" && entity.label == "zsh"));
+            .any(|entity| entity.id == "discovered-pane" && entity.label == "Pane 7"));
+        assert!(scene.entities.iter().any(|entity| entity.id == "discovered-process"
+            && entity
+                .metadata
+                .contains(&("foreground_process_path".to_string(), "/bin/zsh".to_string()))));
     }
 
     #[test]
@@ -371,6 +517,24 @@ mod tests {
             .variables
             .iter()
             .any(|entry| entry.key == "pane_context"
-                && entry.value == VisualStateValue::Text("none".to_string())));
+                && entry.value == VisualStateValue::Text("absent".to_string())));
+    }
+
+    #[test]
+    fn context_error_scene_validates_and_explains_failure() {
+        let scene = generate_workspace_context_error_scene(
+            "active pane Scene requires an active pane",
+            PathBuf::from("/tmp"),
+        );
+
+        scene.validate().unwrap();
+        assert!(scene
+            .variables
+            .iter()
+            .any(|entry| entry.key == "context_error"
+                && entry.value
+                    == VisualStateValue::Text(
+                        "active pane Scene requires an active pane".to_string()
+                    )));
     }
 }

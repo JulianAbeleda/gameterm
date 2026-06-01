@@ -46,7 +46,8 @@ pub use vn_script_import::{
     VnScriptImportWarningKind,
 };
 pub use workspace_scene::{
-    generate_workspace_scene, ScenePaneContext, SceneWorkspaceContext, WorkspaceSceneReport,
+    generate_workspace_context_error_scene, generate_workspace_scene, ScenePaneContext,
+    SceneWorkspaceContext, WorkspaceSceneReport,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
