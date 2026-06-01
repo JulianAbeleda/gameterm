@@ -635,6 +635,40 @@ GameTerm window to fill the visible desktop, opened Scene Mode, sent the
 scripted VN key sequence, and captured the imported VN scene. The capture shows
 `VN Script Demo` with `sprite=vn.character.guide.neutral`.
 
+### vn-demo downloaded PSD
+
+Command:
+
+```sh
+ci/gameterm-scene-vn-image-export.sh \
+  --source .cache/gameterm-scene/vn-assets/raw/visual_novel_asset/'visual novel asset.psd' \
+  --output-source-root .cache/gameterm-scene/vn-assets \
+  --force
+
+ci/gameterm-scene-smoke.sh \
+  --launch \
+  --scenario vn-demo \
+  --vn-asset-source-root .cache/gameterm-scene/vn-assets \
+  --allow-ai-assisted-vn-assets \
+  --wait-before-capture 3 \
+  --capture-timeout 8 \
+  --output /tmp/gameterm-scene-vn-demo-downloaded-psd-fullscreen.png
+```
+
+Result: PASS.
+
+Capture:
+
+```text
+/tmp/gameterm-scene-vn-demo-downloaded-psd-fullscreen.png
+```
+
+Observation: the local downloaded PSD was flattened through the VN image export
+helper into the existing source-root layout, then the VN smoke path generated a
+strict-validated demo with local school backgrounds and captured the fullscreen
+terminal render. The downloaded source files remain under ignored `.cache`
+paths and are not committed.
+
 ## Follow-Up
 
 1. Keep deterministic smoke registry and asset checks in
