@@ -488,19 +488,21 @@ The broader Scene Mode product pass is complete when:
 The next scope document should be:
 
 ```text
-docs/gameterm-scene-pane-process-discovery-scope.md
+docs/gameterm-scene-live-mux-discovery-scope.md
 ```
 
-Status: implemented as the explicit-metadata first pass. Live mux
-auto-discovery remains deferred until the caller/API path is stable.
+Status: scoped next. The explicit-metadata pane/process first pass is already
+implemented; the remaining product gap is collecting that metadata from the
+active mux session without manual flags.
 
 That scope should answer:
 
-- which pane/process data is available now
-- how to pass it into workspace discovery
-- what should be metadata vs variables vs typed process state
-- what can be verified deterministically
-- what requires live mux smoke
+- how live mux context is normalized
+- how fixture mux context keeps CI deterministic
+- how collected metadata is forwarded into workspace discovery
+- what remains non-fatal when no mux session is available
+- what requires live GUI/mux smoke
 
 This is the next product dependency because it connects generated workspace
-state to the actual active GameTerm session.
+state to the actual active GameTerm session while reusing the existing
+pane/process metadata contract.

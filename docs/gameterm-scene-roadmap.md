@@ -53,6 +53,7 @@ implementation details.
 | Runtime history and lower-level feature roadmap | [Runtime Roadmap](gameterm-scene-runtime-roadmap.md) | Mostly historical; keep for design context |
 | Broad product completion stack | [Product Completion Scope](gameterm-scene-product-completion-scope.md) | Active planning source |
 | Command policy second pass | [Command Policy Second-Pass Scope](gameterm-scene-command-policy-second-pass-scope.md) | Complete |
+| Live mux discovery | [Live Mux Discovery Scope](gameterm-scene-live-mux-discovery-scope.md) | Scoped next |
 | Ren'Py demo import | [Ren'Py Demo Scope](gameterm-scene-renpy-demo-scope.md) | Prototype implemented |
 | VN script importer | [VN Script Import Scope](gameterm-scene-vn-script-import-scope.md) | First-pass implemented |
 | VN asset intake | [VN Asset Intake Scope](gameterm-scene-vn-asset-intake-scope.md) | First-pass implemented |
@@ -210,8 +211,8 @@ Deferred:
 
 ### Priority 1: Live Pane And Process Context
 
-Status: complete for explicit metadata input; live mux auto-discovery remains
-deferred.
+Status: complete for explicit metadata input; live mux auto-discovery is scoped
+next.
 
 Goal: connect Workspace Discovery to the active GameTerm session.
 
@@ -221,6 +222,7 @@ current pane/process to feel like a live operational surface.
 Scope owner:
 
 - [Pane And Process Discovery Scope](gameterm-scene-pane-process-discovery-scope.md)
+- [Live Mux Discovery Scope](gameterm-scene-live-mux-discovery-scope.md)
 
 Completed first slice:
 
@@ -244,7 +246,6 @@ Verified behavior:
 
 Deferred:
 
-- automatic live mux discovery
 - multi-pane process maps
 - progress polling
 
@@ -457,23 +458,28 @@ Avoid:
 
 ## Next Recommended Work
 
-Use the product completion scope to choose the next product lane.
+Implement live mux discovery next.
 
 Reasoning:
 
 - Priority 3 and Priority 4 are now complete through the scoped command policy
   second pass.
-- The next choice should come from
-  [Product Completion Scope](gameterm-scene-product-completion-scope.md) and
-  should be scoped before implementation.
+- The broad product completion scope names direct live GameTerm context as the
+  remaining gap that keeps Scene Mode from feeling like a daily operational
+  surface.
+- The explicit pane/process metadata path is already implemented, so live mux
+  discovery can stay narrow: collect active mux metadata and forward it through
+  the existing workspace helper contract.
 - Refactor work should stay subordinate to the next product lane unless it
   directly reduces implementation risk.
 
 Concrete next checklist:
 
-1. Re-read [Product Completion Scope](gameterm-scene-product-completion-scope.md).
-2. Compare remaining deferred work against current smoke evidence.
-3. Pick one next lane and write or update its scope.
-4. Keep commits separated by docs, visual/runtime, helper, verifier, and smoke.
-5. Run `cargo test -p gameterm-visual`.
-6. Run `ci/gameterm-scene-verify.sh --all`.
+1. Use [Live Mux Discovery Scope](gameterm-scene-live-mux-discovery-scope.md).
+2. Add fixture mux-context JSON before live integration.
+3. Add `ci/gameterm-scene-mux-context.sh` with fixture-backed `collect`,
+   `discover`, `patch`, and `doctor`.
+4. Add verifier coverage for active, missing, invalid, cwd override, and patch
+   output cases.
+5. Add live mux collection only behind the same normalized metadata contract.
+6. Record live smoke once a real GUI/mux caller path is available.
