@@ -1209,7 +1209,7 @@ run_workspace_discovery_check() {
 }
 
 run_mux_context_check() {
-  local tmp_home active_scene explicit_scene fallback_scene live_smoke_scene patch_path
+  local tmp_home active_scene explicit_scene fallback_scene live_smoke_scene patch_path install_home fallback_install_home invalid_install_home
   tmp_home="$(mktemp -d /tmp/gameterm-scene-mux-context-verify.XXXXXX)"
   tmp_paths+=("${tmp_home}")
   active_scene="${tmp_home}/active-mux-workspace.json"
@@ -1217,6 +1217,9 @@ run_mux_context_check() {
   fallback_scene="${tmp_home}/fallback-workspace.json"
   live_smoke_scene="${tmp_home}/live-mux-smoke/default.json"
   patch_path="${tmp_home}/active-mux-workspace.patch.json"
+  install_home="${tmp_home}/active-pane-config"
+  fallback_install_home="${tmp_home}/fallback-pane-config"
+  invalid_install_home="${tmp_home}/invalid-pane-config"
 
   "${repo_root}/ci/gameterm-scene-mux-context.sh" \
     collect \
@@ -1337,6 +1340,78 @@ run_mux_context_check() {
     any(.variables[]; .key == "pane_context" and .value == {"Text": "absent"})
     and any(.variables[]; .key == "discovery_source" and .value == {"Text": "cwd"})
   ' "${fallback_scene}" >/dev/null
+
+  "${repo_root}/ci/gameterm-scene-mux-context.sh" \
+    discover \
+    --fixture-context "${fixture_root}/mux-context-active.json" \
+    --install \
+    --config-home "${install_home}" \
+    --force >/dev/null
+  "${repo_root}/ci/gameterm-scene-author.sh" \
+    validate "${install_home}/gameterm/scenes/default.json" >/dev/null
+  jq -e '
+    any(.variables[]; .key == "pane_context" and .value == {"Text": "provided"})
+    and any(.variables[]; .key == "discovery_source" and .value == {"Text": "pane_cwd"})
+    and any(.variables[]; .key == "active_pane_id" and .value == {"Number": 231})
+    and any(.variables[]; .key == "active_mux_window_id" and .value == {"Number": 7})
+  ' "${install_home}/gameterm/scenes/default.json" >/dev/null
+  cp "${install_home}/gameterm/scenes/default.json" \
+    "${tmp_home}/installed-active-pane-before-overwrite.json"
+
+  set +e
+  "${repo_root}/ci/gameterm-scene-mux-context.sh" \
+    discover \
+    --fixture-context "${fixture_root}/mux-context-active.json" \
+    --install \
+    --config-home "${install_home}" \
+    >/tmp/gameterm-scene-mux-install-overwrite.out \
+    2>/tmp/gameterm-scene-mux-install-overwrite.err
+  install_overwrite_rc=$?
+  set -e
+  if [[ "${install_overwrite_rc}" -eq 0 ]]; then
+    echo "expected active pane install overwrite protection to fail" >&2
+    exit 1
+  fi
+  cmp \
+    "${tmp_home}/installed-active-pane-before-overwrite.json" \
+    "${install_home}/gameterm/scenes/default.json" >/dev/null
+
+  "${repo_root}/ci/gameterm-scene-mux-context.sh" \
+    discover \
+    --fixture-context "${fixture_root}/mux-context-missing.json" \
+    --allow-missing \
+    --cwd "${repo_root}" \
+    --install \
+    --config-home "${fallback_install_home}" \
+    --force >/dev/null
+  "${repo_root}/ci/gameterm-scene-author.sh" \
+    validate "${fallback_install_home}/gameterm/scenes/default.json" >/dev/null
+  jq -e '
+    any(.variables[]; .key == "pane_context" and .value == {"Text": "absent"})
+    and any(.variables[]; .key == "discovery_source" and .value == {"Text": "cwd"})
+  ' "${fallback_install_home}/gameterm/scenes/default.json" >/dev/null
+
+  set +e
+  "${repo_root}/ci/gameterm-scene-mux-context.sh" \
+    discover \
+    --fixture-context "${fixture_root}/mux-context-invalid-cwd.json" \
+    --install \
+    --config-home "${invalid_install_home}" \
+    --force \
+    >/tmp/gameterm-scene-mux-invalid-install.out \
+    2>/tmp/gameterm-scene-mux-invalid-install.err
+  invalid_install_rc=$?
+  set -e
+  if [[ "${invalid_install_rc}" -eq 0 ]]; then
+    echo "expected active pane install with invalid cwd to fail" >&2
+    exit 1
+  fi
+  if [[ -e "${invalid_install_home}/gameterm/scenes/default.json" ]]; then
+    echo "invalid active pane cwd should not install a default scene" >&2
+    exit 1
+  fi
+  grep -q "pane cwd does not exist or is not a directory" \
+    /tmp/gameterm-scene-mux-invalid-install.err
 
   "${repo_root}/ci/gameterm-scene-mux-context.sh" \
     doctor \
