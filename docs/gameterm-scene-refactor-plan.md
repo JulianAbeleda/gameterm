@@ -86,6 +86,44 @@ ci/gameterm-scene-smoke.sh --launch --scenario vertical-slice \
   --output /tmp/gameterm-scene-refactor-vertical-slice.png
 ```
 
+## Priority 0: First Refactor Gate
+
+Do not start broad cleanup until the active-pane GUI closure pass is either
+green or has a concrete product defect scoped separately.
+
+Entry checks:
+
+```sh
+cargo test -p gameterm-visual workspace_scene --lib
+cargo test -p gameterm-gui commands::tests::active_pane_scene --bin gameterm-gui
+cargo check -p gameterm-gui
+ci/gameterm-scene-smoke.sh --launch --scenario active-pane-gui \
+  --output /tmp/gameterm-scene-active-pane-gui.png
+```
+
+Principle alignment:
+
+- product fixes land before NFC refactors
+- shell/Rust generator ownership stays explicit unless a dedicated migration
+  lane routes helpers through Rust
+- warning cleanup outside touched Scene paths remains out of scope
+- each refactor lane has one owner prefix and one focused verification command
+
+First behavior-preserving lanes after closure:
+
+1. `[test] NFC - table-drive Scene smoke scenario metadata`
+   - Reason: smoke scenario branching is now the highest-churn helper surface.
+   - Check: `bash -n ci/gameterm-scene-smoke.sh` and scenario list/describe
+     commands.
+2. `[visual] NFC - extract workspace scene contract helpers`
+   - Reason: active-pane parity fields should be centralized before more
+     workspace entities are added.
+   - Check: `cargo test -p gameterm-visual workspace_scene --lib`.
+3. `[docs] clarify Scene generator ownership`
+   - Reason: prevent future feature lanes from re-opening shell-vs-Rust
+     direction without a migration plan.
+   - Check: `rg -n "install/persistence|transient GUI|active-pane" docs`.
+
 ## Priority 1: Split Visual Runtime Modules
 
 Current pressure: `gameterm-visual/src/lib.rs` owns schema, validation, runtime,
