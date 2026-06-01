@@ -2833,10 +2833,8 @@ impl TermWindow {
                     max_files: 24,
                 });
                 let action_base_dir = report.root.clone();
-                let source_label = format!(
-                    "generated active pane scene: {}",
-                    report.root.display()
-                );
+                let source_label =
+                    format!("generated active pane scene: {}", report.root.display());
                 let gui_window = self.window.clone();
                 let (overlay, future) = start_overlay(self, &tab, move |_tab_id, term| {
                     crate::overlay::show_generated_visual_scene_overlay(

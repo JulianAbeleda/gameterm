@@ -30,7 +30,9 @@ pub struct WorkspaceSceneReport {
     pub used_pane_cwd: bool,
 }
 
-pub fn generate_workspace_scene(context: SceneWorkspaceContext) -> (VisualScene, WorkspaceSceneReport) {
+pub fn generate_workspace_scene(
+    context: SceneWorkspaceContext,
+) -> (VisualScene, WorkspaceSceneReport) {
     let workspace_root = discover_workspace_root(&context.cwd);
     let files = discover_files(&workspace_root, context.max_files);
     let used_pane_cwd = context
@@ -59,7 +61,10 @@ pub fn generate_workspace_scene(context: SceneWorkspaceContext) -> (VisualScene,
             state_flags: vec!["active".to_string()],
             metadata: vec![
                 ("path".to_string(), workspace_root.display().to_string()),
-                ("discovery".to_string(), "rust-workspace-generator".to_string()),
+                (
+                    "discovery".to_string(),
+                    "rust-workspace-generator".to_string(),
+                ),
             ],
         },
         VisualEntity {
@@ -179,7 +184,11 @@ fn workspace_choices(root: &Path, first_file: Option<&PathBuf>) -> Vec<SceneActi
         SceneAction {
             label: "Run git status".to_string(),
             kind: SceneActionKind::RunCommand {
-                argv: vec!["git".to_string(), "status".to_string(), "--short".to_string()],
+                argv: vec![
+                    "git".to_string(),
+                    "status".to_string(),
+                    "--short".to_string(),
+                ],
                 cwd: Some(root.display().to_string()),
                 target: RunCommandTarget::Tab,
             },
@@ -309,7 +318,11 @@ mod tests {
     #[test]
     fn generated_workspace_scene_validates_and_uses_pane_context() {
         let dir = tempdir().unwrap();
-        fs::write(dir.path().join("Cargo.toml"), "[package]\nname = \"fixture\"\n").unwrap();
+        fs::write(
+            dir.path().join("Cargo.toml"),
+            "[package]\nname = \"fixture\"\n",
+        )
+        .unwrap();
         fs::write(dir.path().join("README.md"), "fixture").unwrap();
 
         let (scene, report) = generate_workspace_scene(SceneWorkspaceContext {
@@ -333,8 +346,10 @@ mod tests {
             .iter()
             .any(|entry| entry.key == "pane_context"
                 && entry.value == VisualStateValue::Text("pane:7 window:3".to_string())));
-        assert!(scene.entities.iter().any(|entity| entity.id == "active-pane"
-            && entity.label == "zsh"));
+        assert!(scene
+            .entities
+            .iter()
+            .any(|entity| entity.id == "active-pane" && entity.label == "zsh"));
     }
 
     #[test]

@@ -781,15 +781,15 @@ fn initial_generated_scene_state(
 )> {
     let sprite_manifest = load_sprite_manifest_status(sprite_manifest_path);
     let source = VisualSceneSource::new(source_label, VisualSceneLoadStatus::Loaded, reload_count);
-    match SceneRuntime::new_with_source_and_action_base_dir(scene, source.clone(), action_base_dir) {
+    match SceneRuntime::new_with_source_and_action_base_dir(scene, source.clone(), action_base_dir)
+    {
         Ok(runtime) => {
             render_runtime(term, &runtime, &sprite_manifest)?;
             Ok((Some(runtime), sprite_manifest, None))
         }
         Err(err) => {
             let error = err.to_string();
-            let source =
-                VisualSceneSource::invalid(source.scene_path, reload_count, error.clone());
+            let source = VisualSceneSource::invalid(source.scene_path, reload_count, error.clone());
             render_error(term, &source)?;
             Ok((None, sprite_manifest, Some(error)))
         }

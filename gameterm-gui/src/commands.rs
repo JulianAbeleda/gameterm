@@ -2166,3 +2166,32 @@ fn compute_default_actions() -> Vec<KeyAssignment> {
         OpenLinkAtMouseCursor,
     ];
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn active_pane_scene_action_is_in_default_actions() {
+        assert!(compute_default_actions().contains(&KeyAssignment::ShowGameTermActivePaneScene));
+    }
+
+    #[test]
+    fn active_pane_scene_action_has_command_surface() {
+        let command =
+            derive_command_from_key_assignment(&KeyAssignment::ShowGameTermActivePaneScene)
+                .expect("active pane Scene command definition");
+
+        assert_eq!(command.brief, "Show active pane Scene");
+        assert_eq!(command.menubar, &["View"]);
+        assert_eq!(
+            command.keys,
+            vec![(
+                Modifiers::CTRL
+                    .union(Modifiers::ALT)
+                    .union(Modifiers::SHIFT),
+                "g".to_string()
+            )]
+        );
+    }
+}
