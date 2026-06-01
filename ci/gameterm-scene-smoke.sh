@@ -35,10 +35,14 @@ Options:
                            launch setup. Supported keys: enter, tab, escape,
                            space, up, down, left, right, h, j, k, l, q, r,
                            and delay:N.
+  --open-active-pane-scene  When auto-opening Scene Mode, send the native
+                           active-pane shortcut Ctrl+Alt+Shift+G instead of
+                           the configured-scene shortcut Ctrl+Shift+G.
   --wait-before-capture N  Seconds to wait after launch before capture.
-                           Use this time to press Ctrl+Shift+G. Default: 10.
+                           Use this time to press the relevant Scene shortcut.
+                           Default: 10.
   --no-auto-open-scene     Do not use macOS automation to foreground GameTerm
-                           and press Ctrl+Shift+G after launch.
+                           and press the Scene shortcut after launch.
   --allow-background-capture
                            Warn instead of failing when the launched GameTerm
                            process is not frontmost before capture.
@@ -85,6 +89,7 @@ patch_inbox=""
 submit_mux_patch=""
 submit_target_pane_id=""
 key_sequence=""
+scene_open_shortcut="configured"
 log_file="/tmp/gameterm-scene-smoke-ffmpeg.log"
 
 while [[ $# -gt 0 ]]; do
@@ -128,6 +133,10 @@ while [[ $# -gt 0 ]]; do
     --key-sequence)
       key_sequence="$2"
       shift 2
+      ;;
+    --open-active-pane-scene)
+      scene_open_shortcut="active-pane"
+      shift
       ;;
     --wait-before-capture)
       wait_before_capture="$2"
@@ -210,6 +219,7 @@ authoring-loop
 patch-inbox
 mux-patch
 process-state
+active-pane-gui
 EOF
 }
 
@@ -332,6 +342,15 @@ Checks: entity transitions running -> succeeded/failed and Tile Debugger shows t
 Expected status: Process succeeded: true.
 EOF
       ;;
+    active-pane-gui)
+      cat <<'EOF'
+Scenario: active-pane-gui
+Fixture: renderer-rows
+Setup: launch GameTerm from the current build and use macOS automation to send Ctrl+Alt+Shift+G.
+Checks: native active-pane Scene action opens a transient generated workspace scene without writing the configured scene file.
+Expected status: generated active pane scene is visible; Esc/q closes it cleanly.
+EOF
+      ;;
     *)
       echo "unknown smoke scenario: $1" >&2
       list_smoke_scenarios >&2
@@ -412,6 +431,10 @@ apply_smoke_scenario_defaults() {
       if [[ -z "${patch_inbox}" ]]; then
         patch_inbox="auto"
       fi
+      ;;
+    active-pane-gui)
+      fixture="renderer-rows"
+      scene_open_shortcut="active-pane"
       ;;
     *)
       echo "unknown smoke scenario: ${scenario}" >&2
@@ -613,6 +636,12 @@ EOF
 foreground_gui_and_open_scene() {
   local pid="$1"
   local timeout="$2"
+  local shortcut="$3"
+  local shortcut_label="Ctrl+Shift+G"
+
+  if [[ "${shortcut}" == "active-pane" ]]; then
+    shortcut_label="Ctrl+Alt+Shift+G"
+  fi
 
   if [[ "$(uname -s)" != "Darwin" ]]; then
     echo "Automatic Scene Mode opening is only supported on macOS; open Scene Mode manually." >&2
@@ -623,11 +652,12 @@ foreground_gui_and_open_scene() {
     return 0
   fi
 
-  echo "Foregrounding GameTerm pid ${pid} and opening Scene Mode..."
-  if ! osascript - "${pid}" "${timeout}" <<'EOF'
+  echo "Foregrounding GameTerm pid ${pid} and opening Scene Mode with ${shortcut_label}..."
+  if ! osascript - "${pid}" "${timeout}" "${shortcut}" <<'EOF'
 on run argv
   set targetPid to (item 1 of argv) as integer
   set timeoutSeconds to (item 2 of argv) as integer
+  set shortcutName to item 3 of argv
   set deadline to (current date) + timeoutSeconds
 
   tell application "System Events"
@@ -636,7 +666,11 @@ on run argv
         set targetProcess to first application process whose unix id is targetPid
         set frontmost of targetProcess to true
         delay 0.5
-        keystroke "g" using {control down, shift down}
+        if shortcutName is "active-pane" then
+          keystroke "g" using {control down, option down, shift down}
+        else
+          keystroke "g" using {control down, shift down}
+        end if
         delay 0.5
         return
       end if
@@ -648,8 +682,8 @@ on run argv
 end run
 EOF
   then
-    cat >&2 <<'EOF'
-Failed to foreground GameTerm or send Ctrl+Shift+G through macOS automation.
+    cat >&2 <<EOF
+Failed to foreground GameTerm or send ${shortcut_label} through macOS automation.
 
 Most likely causes:
   - Accessibility permission is not granted to the terminal/host app running
@@ -983,9 +1017,13 @@ EOF
   echo "GameTerm pid: ${gui_pid}"
   echo "GameTerm class: ${gui_class}"
   if [[ "${auto_open_scene}" -eq 1 ]]; then
-    foreground_gui_and_open_scene "${gui_pid}" "${focus_timeout}"
+    foreground_gui_and_open_scene "${gui_pid}" "${focus_timeout}" "${scene_open_shortcut}"
   else
-    echo "Press Ctrl+Shift+G in the GameTerm window to open Scene Mode."
+    if [[ "${scene_open_shortcut}" == "active-pane" ]]; then
+      echo "Press Ctrl+Alt+Shift+G in the GameTerm window to open active-pane Scene Mode."
+    else
+      echo "Press Ctrl+Shift+G in the GameTerm window to open Scene Mode."
+    fi
   fi
   if [[ "${fixture}" == "run-command-targets" ]]; then
     echo "RunCommand audit: activate tab, split_right, and split_down choices."
@@ -1014,6 +1052,9 @@ EOF
   fi
   if [[ "${scenario}" == "process-state" ]]; then
     echo "Process-state audit: the script will run a true command through ci/gameterm-scene-process.sh before capture."
+  fi
+  if [[ "${scenario}" == "active-pane-gui" ]]; then
+    echo "Active-pane GUI audit: open a transient generated workspace scene through the native shortcut."
   fi
   if [[ "${scenario}" == "agent-lifecycle" ]]; then
     echo "Agent lifecycle audit: the script will emit planning, blocked, and complete patches before capture."
