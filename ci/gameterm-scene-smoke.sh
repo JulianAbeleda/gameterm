@@ -22,8 +22,11 @@ Options:
                            navigate, invalid, sprites, missing-sprite,
                            run-command-targets, layered-mode, vertical-slice,
                            workspace-agent, workspace-discovery, authoring-loop,
-                           or renderer-rows. Default:
+                           vn-demo, or renderer-rows. Default:
                            renderer-rows.
+  --vn-asset-source-root PATH
+                           Local VN asset source root for the vn-demo scenario.
+                           Defaults to the repo-safe fixture asset source.
   --patch-inbox PATH       Set GAMETERM_SCENE_PATCH_FILE to PATH when
                            launching. Use "auto" to create a temporary inbox.
   --submit-mux-patch PATH  After --launch wait, submit PATCH through
@@ -90,6 +93,7 @@ submit_mux_patch=""
 submit_target_pane_id=""
 key_sequence=""
 scene_open_shortcut="configured"
+vn_asset_source_root=""
 log_file="/tmp/gameterm-scene-smoke-ffmpeg.log"
 
 while [[ $# -gt 0 ]]; do
@@ -116,6 +120,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --fixture)
       fixture="$2"
+      shift 2
+      ;;
+    --vn-asset-source-root)
+      vn_asset_source_root="$2"
       shift 2
       ;;
     --patch-inbox)
@@ -220,6 +228,7 @@ patch-inbox
 mux-patch
 process-state
 active-pane-gui
+vn-demo
 EOF
 }
 
@@ -351,6 +360,15 @@ Checks: native active-pane Scene action opens a transient generated workspace sc
 Expected status: generated active pane scene is visible; Esc/q closes it cleanly.
 EOF
       ;;
+    vn-demo)
+      cat <<'EOF'
+Scenario: vn-demo
+Fixture: generated VN demo
+Setup: generate the VN demo into a temporary Scene config, validate sprite files as real PNG images, then launch Scene Mode.
+Checks: imported VN dialogue, choices, bindings, and copied VN sprite assets render through the normal Scene Mode path.
+Expected status: VN Script Demo Import is visible.
+EOF
+      ;;
     *)
       echo "unknown smoke scenario: $1" >&2
       list_smoke_scenarios >&2
@@ -435,6 +453,12 @@ apply_smoke_scenario_defaults() {
     active-pane-gui)
       fixture="renderer-rows"
       scene_open_shortcut="active-pane"
+      ;;
+    vn-demo)
+      fixture="vn-demo"
+      if [[ -z "${key_sequence}" ]]; then
+        key_sequence="enter,j,enter"
+      fi
       ;;
     *)
       echo "unknown smoke scenario: ${scenario}" >&2
@@ -551,6 +575,16 @@ install_scene_fixture() {
     authoring-loop)
       cp "${fixture_root}/authoring-loop.json" "${scene_dir}/default.json"
       install_sprite_manifest "${scene_dir}/sprites.json"
+      ;;
+    vn-demo)
+      if [[ -z "${vn_asset_source_root}" ]]; then
+        vn_asset_source_root="${fixture_root}/vn-asset-source"
+      fi
+      "${repo_root}/ci/gameterm-scene-vn-demo.sh" generate \
+        --output-dir "${scene_dir}" \
+        --asset-source-root "${vn_asset_source_root}" \
+        --strict-images \
+        --force >/dev/null
       ;;
     *)
       echo "unknown fixture: ${fixture}" >&2
@@ -1061,6 +1095,9 @@ EOF
   fi
   if [[ "${scenario}" == "authoring-loop" ]]; then
     echo "Authoring loop audit: save story state, mutate draft state, then reload the saved state."
+  fi
+  if [[ "${scenario}" == "vn-demo" ]]; then
+    echo "VN demo audit: launch imported VN script with strict-validated local PNG assets."
   fi
   if [[ -n "${submit_mux_patch}" ]]; then
     echo "Mux patch audit: open Scene Mode before the wait expires; the script will submit:"
