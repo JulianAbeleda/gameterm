@@ -52,7 +52,8 @@ implementation details.
 | Runtime history and lower-level feature roadmap | [Runtime Roadmap](gameterm-scene-runtime-roadmap.md) | Mostly historical; keep for design context |
 | Broad product completion stack | [Product Completion Scope](gameterm-scene-product-completion-scope.md) | Active planning source |
 | Command policy second pass | [Command Policy Second-Pass Scope](gameterm-scene-command-policy-second-pass-scope.md) | Complete |
-| Ren'Py demo import | [Ren'Py Demo Scope](gameterm-scene-renpy-demo-scope.md) | Scoped next |
+| Ren'Py demo import | [Ren'Py Demo Scope](gameterm-scene-renpy-demo-scope.md) | Prototype implemented |
+| Rust Ren'Py importer | [Rust Ren'Py Import Scope](gameterm-scene-renpy-rust-import-scope.md) | Scoped next |
 | Live pane/process context | [Pane And Process Discovery Scope](gameterm-scene-pane-process-discovery-scope.md) | Implemented through explicit metadata |
 | Agent/Workspace authored model | [Agent And Workspace Scope](gameterm-scene-agent-workspace-scope.md) | First-pass implemented |
 | Workspace Discovery | [Workspace Discovery Scope](gameterm-scene-workspace-discovery-scope.md) | First-pass implemented |
@@ -82,9 +83,10 @@ It is a stateful visual layer over them.
 
 ## Priority Stack
 
-### Priority 0: Ren'Py Demo Import
+### Priority 0: Rust Ren'Py Import
 
-Status: scoped next.
+Status: scoped next. Python prototype exists; Rust-native importer is the next
+implementation target.
 
 Goal: prove Scene Mode can host a real visual-novel-shaped demo by importing a
 conservative Ren'Py demo/tutorial subset into a valid Scene Mode fixture.
@@ -94,17 +96,26 @@ state, story persistence, and action policy. A Ren'Py demo import tests whether
 those primitives can carry an outside VN format without turning GameTerm into a
 full VN engine.
 
-Scope owner:
+Scope owners:
 
 - [Ren'Py Demo Scope](gameterm-scene-renpy-demo-scope.md)
+- [Rust Ren'Py Import Scope](gameterm-scene-renpy-rust-import-scope.md)
 
-First slice:
+Completed prototype:
 
-- import a small licensed Ren'Py demo/tutorial slice
+- import a small GameTerm-authored Ren'Py-shaped fixture source
 - preserve source/license attribution
 - convert labels, dialogue, menus, jumps, simple assignments, and simple guards
 - generate a valid Scene Mode fixture
 - verify import, doctor, and runtime traversal in CI
+- record open-license VN asset source policy
+
+Next slice:
+
+- move the importer from Python to Rust
+- construct `VisualScene` directly in `gameterm-visual`
+- expose a Rust example/CLI for fixture generation
+- remove or reduce the Python helper so there is only one canonical importer
 
 Deferred:
 
