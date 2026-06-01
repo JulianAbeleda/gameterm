@@ -1,0 +1,11 @@
+{
+  "source": "fixture",
+  "available": true,
+  "pane_id": 231,
+  "mux_window_id": 7,
+  "pane_cwd": ".",
+  "foreground_process_name": "zsh",
+  "foreground_process_path": "/bin/zsh",
+  "pane_progress": "None",
+  "warnings": []
+}

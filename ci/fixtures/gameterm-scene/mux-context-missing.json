@@ -1,0 +1,7 @@
+{
+  "source": "fixture",
+  "available": false,
+  "warnings": [
+    "fixture does not provide mux context"
+  ]
+}
