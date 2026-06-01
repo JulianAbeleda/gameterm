@@ -41,14 +41,14 @@ Implemented:
 - fixture-backed normalized mux context fixtures
 - `ci/gameterm-scene-mux-context.sh collect|discover|patch|doctor`
 - direct caller and environment collection for active pane/process fields
+- `gameterm cli list --format json` collection for active pane id, mux window
+  id, and pane cwd
 - fallback behavior with `--allow-missing`
 - verifier coverage for generated scenes, generated patches, fallback, invalid
-  pane ids, invalid pane cwd, and caller-style collection
+  pane ids, invalid pane cwd, CLI list parsing, and caller-style collection
 
 Pending:
 
-- direct GUI active-pane wiring that fills the same normalized fields from a
-  running `TermWindow`/mux session
 - live GUI smoke that records the real active pane id/window id used by Scene
   Mode
 
@@ -133,6 +133,10 @@ Common options:
 --patch-output PATH           Forwarded to workspace patch.
 --config-home PATH            Forwarded where install behavior is used later.
 --fixture-context PATH        Use fixture JSON instead of live mux lookup.
+--cli-list-json PATH          Parse saved gameterm cli list JSON.
+--gameterm-bin PATH           gameterm binary for live CLI lookup.
+--class CLASS                 Forwarded to gameterm cli lookup.
+--prefer-mux                  Forwarded to gameterm cli lookup.
 --allow-missing               Succeed with available=false when mux context is absent.
 --format json|args            Output normalized JSON or shell args from collect.
 --install                     Forwarded only to workspace discover.
@@ -142,6 +146,8 @@ Common options:
 Defaults:
 
 - `collect` uses live mux context when available.
+- when no caller/environment/fixture context is supplied, live collection uses
+  `gameterm cli --no-auto-start list --format json`.
 - deterministic tests use `--fixture-context`.
 - missing live context is a warning for `collect --allow-missing` and a failure
   otherwise.

@@ -208,8 +208,11 @@ or the direct environment fields `GAMETERM_SCENE_PANE_ID`,
 `GAMETERM_SCENE_FOREGROUND_PROCESS_NAME`,
 `GAMETERM_SCENE_FOREGROUND_PROCESS_PATH`, and
 `GAMETERM_SCENE_PANE_PROGRESS`. Deterministic tests use
-`--fixture-context`. When mux context is unavailable, pass `--allow-missing` to
-fall back to normal cwd-based workspace discovery.
+`--fixture-context` or `--cli-list-json`. When no fixture, direct caller, or
+environment context is supplied, the helper tries
+`gameterm cli --no-auto-start list --format json`, chooses the active pane, and
+normalizes its pane id, mux window id, and cwd. When mux context is unavailable,
+pass `--allow-missing` to fall back to normal cwd-based workspace discovery.
 
 ## VN script import
 
@@ -769,8 +772,9 @@ ci/gameterm-scene-mux-context.sh discover \
 ```
 
 This exercises the same scene/patch metadata path that a live GUI caller uses.
-The remaining live smoke step is to wire a running GameTerm overlay or mux
-caller to provide the same normalized fields automatically.
+The remaining live smoke step is to run this against an active GameTerm GUI/mux
+session and record the real pane/window ids selected by
+`gameterm cli list --format json`.
 
 To live-audit mux submission, let the smoke script launch GameTerm, open Scene
 Mode before the wait timer expires, and have the script submit a patch before

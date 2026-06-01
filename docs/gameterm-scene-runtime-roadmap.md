@@ -151,8 +151,8 @@ Workspace Discovery and the deferred live mux integration boundary.
 The live mux discovery layer is scoped in
 [GameTerm Scene Live Mux Discovery Scope](gameterm-scene-live-mux-discovery-scope.md).
 The first pass adds a normalized mux-context helper, fixture-backed verifier
-coverage, and caller/env collection; direct GUI active-pane wiring and live
-overlay smoke remain the next integration step.
+coverage, caller/env collection, and `gameterm cli list --format json`
+collection; live overlay smoke remains the next validation step.
 
 The normal-view product layer is scoped in
 [GameTerm Scene Mode Normal View Polish Scope](gameterm-scene-normal-view-polish-scope.md).
