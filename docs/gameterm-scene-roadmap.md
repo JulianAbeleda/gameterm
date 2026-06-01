@@ -64,6 +64,7 @@ implementation details.
 | VN script importer | [VN Script Import Scope](gameterm-scene-vn-script-import-scope.md) | First-pass implemented |
 | VN asset intake | [VN Asset Intake Scope](gameterm-scene-vn-asset-intake-scope.md) | First-pass implemented |
 | VN demo install | [VN Demo Install Scope](gameterm-scene-vn-demo-install-scope.md) | First-pass implemented |
+| VN real asset run | [VN Real Assets Run Scope](gameterm-scene-vn-real-assets-run-scope.md) | Scoped next |
 | Live pane/process context | [Pane And Process Discovery Scope](gameterm-scene-pane-process-discovery-scope.md) | Implemented through explicit metadata |
 | Agent/Workspace authored model | [Agent And Workspace Scope](gameterm-scene-agent-workspace-scope.md) | First-pass implemented |
 | Workspace Discovery | [Workspace Discovery Scope](gameterm-scene-workspace-discovery-scope.md) | First-pass implemented |
@@ -214,6 +215,37 @@ Deferred:
 - automatic asset downloads
 - full VN staging/expression changes per dialogue line
 - app bundle installer integration
+
+### Priority 0.8: VN Real Asset Run
+
+Status: scoped next.
+
+Goal: make the VN demo run with real local PNG assets, make doctor catch fake
+image placeholders in strict mode, and add a repeatable `vn-demo` smoke
+scenario.
+
+Why it matters: the current VN pipeline proves Rust import, intake, bindings,
+attribution, install safety, and doctor wiring, but the repo-safe fixture assets
+are text placeholders. A real asset run proves Scene Mode can render an actual
+VN-shaped demo without committing unclear-license art.
+
+Scope owner:
+
+- [VN Real Assets Run Scope](gameterm-scene-vn-real-assets-run-scope.md)
+
+Planned slice:
+
+- use approved local PNG assets through `--asset-source-root`
+- add opt-in strict image validation to doctor
+- add `vn-demo` smoke scenario
+- record live smoke with fixture mode and, when available, real local art mode
+
+Non-goals:
+
+- automatic asset downloads
+- DDLC/proprietary asset import
+- committing user-downloaded third-party art
+- renderer redesign for full VN staging
 
 ### Priority 1: Live Pane And Process Context
 
