@@ -164,6 +164,11 @@ The active-pane daily workflow is scoped in
 That document defines preview, install, fallback, verification, and live smoke
 for using the active mux pane as the default Scene Mode workspace.
 
+The deferred GUI entrypoint is scoped in
+[GameTerm Scene Active Pane GUI Entrypoint Scope](gameterm-scene-active-pane-gui-entrypoint-scope.md).
+That document keeps the future keybinding/action path separate from the current
+shell install workflow.
+
 The normal-view product layer is scoped in
 [GameTerm Scene Mode Normal View Polish Scope](gameterm-scene-normal-view-polish-scope.md).
 That document defines the compact selected-entity, layer, process, and state

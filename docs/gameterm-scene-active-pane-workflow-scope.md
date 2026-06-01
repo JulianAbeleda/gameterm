@@ -274,9 +274,9 @@ Commit:
 
 Deliverables:
 
-- separate scope for a GUI action/keybinding such as "Open Scene From Active
+- [x] separate scope for a GUI action/keybinding such as "Open Scene From Active
   Pane"
-- decide whether the GUI action should install, preview, or open a transient
+- [x] decide whether the GUI action should install, preview, or open a transient
   generated scene
 
 Verification:
