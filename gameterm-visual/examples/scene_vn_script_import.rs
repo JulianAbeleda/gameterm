@@ -1,4 +1,6 @@
-use gameterm_visual::{import_vn_script_scene, VnScriptDialect, VnScriptImportOptions};
+use gameterm_visual::{
+    import_vn_script_scene, VnAssetBindings, VnScriptDialect, VnScriptImportOptions,
+};
 use serde::Serialize;
 use std::path::PathBuf;
 
@@ -11,6 +13,7 @@ struct CliArgs {
     source_title: String,
     source_version: Option<String>,
     asset_root: Option<PathBuf>,
+    bindings: Option<PathBuf>,
     title: String,
 }
 
@@ -24,6 +27,7 @@ fn usage() {
   --source-title TITLE \\
   [--source-version VERSION] \\
   [--asset-root PATH] \\
+  [--bindings PATH] \\
   [--title TITLE]"
     );
 }
@@ -48,6 +52,10 @@ fn main() {
             std::process::exit(1);
         }
     };
+    let bindings = match args.bindings.as_ref() {
+        Some(path) => Some(load_bindings(path)),
+        None => None,
+    };
     let report = match import_vn_script_scene(
         &source,
         VnScriptImportOptions {
@@ -56,6 +64,7 @@ fn main() {
             source_title: args.source_title,
             source_version: args.source_version,
             asset_root: args.asset_root,
+            bindings,
             title: args.title,
         },
     ) {
@@ -89,6 +98,7 @@ fn parse_args() -> Result<CliArgs, String> {
     let mut source_title = None;
     let mut source_version = None;
     let mut asset_root = None;
+    let mut bindings = None;
     let mut title = "VN Script Demo Import".to_string();
 
     let mut args = std::env::args_os().skip(1);
@@ -106,6 +116,7 @@ fn parse_args() -> Result<CliArgs, String> {
                 source_version = Some(next_string(&mut args, "--source-version")?)
             }
             "--asset-root" => asset_root = Some(next_path(&mut args, "--asset-root")?),
+            "--bindings" => bindings = Some(next_path(&mut args, "--bindings")?),
             "--title" => title = next_string(&mut args, "--title")?,
             "-h" | "--help" => {
                 usage();
@@ -123,6 +134,7 @@ fn parse_args() -> Result<CliArgs, String> {
         source_title: source_title.unwrap_or_else(|| "VN Script Demo".to_string()),
         source_version,
         asset_root,
+        bindings,
         title,
     })
 }
@@ -156,6 +168,23 @@ fn next_string(
 
 fn required_path(value: Option<PathBuf>, flag: &str) -> Result<PathBuf, String> {
     value.ok_or_else(|| format!("{flag} is required"))
+}
+
+fn load_bindings(path: &PathBuf) -> VnAssetBindings {
+    let json = match std::fs::read_to_string(path) {
+        Ok(json) => json,
+        Err(err) => {
+            eprintln!("failed to read bindings {}: {err}", path.display());
+            std::process::exit(1);
+        }
+    };
+    match serde_json::from_str(&json) {
+        Ok(bindings) => bindings,
+        Err(err) => {
+            eprintln!("failed to parse bindings {}: {err}", path.display());
+            std::process::exit(1);
+        }
+    }
 }
 
 fn write_json(path: &PathBuf, value: &impl Serialize) {

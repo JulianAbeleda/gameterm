@@ -1,7 +1,7 @@
 use crate::{
     SceneAction, SceneActionKind, SceneActionPolicy, VisualCondition, VisualDialogueLine,
     VisualEntity, VisualEntityKind, VisualModeDescriptor, VisualPosition, VisualScene,
-    VisualStateEntry, VisualStateValue,
+    VisualStateEntry, VisualStateValue, VnAssetBindings,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
@@ -28,6 +28,7 @@ pub struct VnScriptImportOptions {
     pub source_title: String,
     pub source_version: Option<String>,
     pub asset_root: Option<PathBuf>,
+    pub bindings: Option<VnAssetBindings>,
     pub title: String,
 }
 
@@ -39,6 +40,7 @@ impl Default for VnScriptImportOptions {
             source_title: "VN Script Demo".to_string(),
             source_version: None,
             asset_root: None,
+            bindings: None,
             title: "VN Script Demo Import".to_string(),
         }
     }
@@ -358,7 +360,7 @@ fn build_scene(
 
     VisualScene {
         title: options.title.clone(),
-        background: "workspace-map".to_string(),
+        background: binding_background(options),
         width: 16,
         height: 9,
         mode: VisualModeDescriptor {
@@ -396,7 +398,7 @@ fn build_scene(
                 kind: VisualEntityKind::Agent,
                 label: "Narrator".to_string(),
                 position: VisualPosition { x: 7, y: 4 },
-                sprite: "agent_idle".to_string(),
+                sprite: binding_character_sprite(options, "guide", "neutral", "agent_idle"),
                 visible: true,
                 state_flags: Vec::new(),
                 metadata: vec![(
@@ -420,6 +422,29 @@ fn build_scene(
         dialogue_lines: dialogue,
         choices,
     }
+}
+
+fn binding_background(options: &VnScriptImportOptions) -> String {
+    options
+        .bindings
+        .as_ref()
+        .and_then(|bindings| bindings.default_background.clone())
+        .unwrap_or_else(|| "workspace-map".to_string())
+}
+
+fn binding_character_sprite(
+    options: &VnScriptImportOptions,
+    character: &str,
+    expression: &str,
+    fallback: &str,
+) -> String {
+    options
+        .bindings
+        .as_ref()
+        .and_then(|bindings| bindings.characters.get(character))
+        .and_then(|binding| binding.expressions.get(expression))
+        .cloned()
+        .unwrap_or_else(|| fallback.to_string())
 }
 
 fn build_attribution(
@@ -613,6 +638,7 @@ fn format_warning(warning: &VnScriptImportWarning) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::VnAssetBindingCharacter;
 
     const SOURCE: &str = r#"
 default met_guide = True
@@ -689,5 +715,40 @@ label start:
         assert!(report.scene.variables.iter().any(|entry| {
             entry.key == "vn_script_import_warnings" && entry.value == VisualStateValue::Number(1)
         }));
+    }
+
+    #[test]
+    fn vn_script_import_applies_asset_bindings_when_present() {
+        let mut guide = VnAssetBindingCharacter::default();
+        guide.expressions.insert(
+            "neutral".to_string(),
+            "vn.character.guide.neutral".to_string(),
+        );
+        let mut bindings = VnAssetBindings {
+            default_background: Some("vn.background.school_classroom".to_string()),
+            ..Default::default()
+        };
+        bindings.characters.insert("guide".to_string(), guide);
+
+        let report = import_vn_script_scene(
+            SOURCE,
+            VnScriptImportOptions {
+                bindings: Some(bindings),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(report.scene.background, "vn.background.school_classroom");
+        assert_eq!(
+            report
+                .scene
+                .entities
+                .iter()
+                .find(|entity| entity.id == "vn-script-narrator")
+                .unwrap()
+                .sprite,
+            "vn.character.guide.neutral"
+        );
     }
 }
