@@ -413,6 +413,7 @@ pub(crate) fn is_supported_action_policy_origin(origin: &str) -> bool {
             | "agent"
             | "runtime"
             | "fixture"
+            | "vn_script_import"
             | "renpy_import"
             | "unknown"
     )

@@ -11,6 +11,7 @@ mod schema;
 mod story_state;
 mod validation;
 mod vn_asset_intake;
+mod vn_script_import;
 
 use actions::{action_kind_name, action_policy_summary, derived_action_policy};
 use conditions::{condition_guard_detail, conditions_match};
@@ -37,6 +38,11 @@ pub use vn_asset_intake::{
     VnAssetCatalog, VnAssetCatalogPolicy, VnAssetCatalogSource, VnAssetIntakeError,
     VnAssetIntakeOptions, VnAssetIntakeReport, VnAssetIntakeWarning, VnAssetIntakeWarningKind,
     VnAssetUsedAsset,
+};
+pub use vn_script_import::{
+    import_vn_script_scene, VnScriptAssetAttribution, VnScriptAttributionManifest, VnScriptDialect,
+    VnScriptImportError, VnScriptImportOptions, VnScriptImportReport, VnScriptImportWarning,
+    VnScriptImportWarningKind,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
