@@ -81,6 +81,9 @@ Scope:
 - Keep missing optional expressions as warnings, not hard failures.
 - Keep generated paths under `assets/vn-demo/...`.
 - Preserve attribution/provenance for every copied asset.
+- Flatten local PSD/image downloads into the existing source-root layout with
+  `ci/gameterm-scene-vn-image-export.sh` when the source provides layered art
+  instead of directly runnable PNG sprites.
 
 Acceptance:
 
@@ -101,11 +104,21 @@ Verification:
 ```sh
 cargo test -p gameterm-visual vn_asset_intake
 
+ci/gameterm-scene-vn-image-export.sh \
+  --source PATH_TO_LOCAL_CHARACTER.psd \
+  --output-source-root /tmp/gameterm-vn-source-root \
+  --force
+
 ci/gameterm-scene-vn-demo.sh generate \
   --output-dir /tmp/gameterm-vn-demo-real \
-  --asset-source-root PATH_TO_APPROVED_LOCAL_ASSETS \
+  --asset-source-root /tmp/gameterm-vn-source-root \
   --force
 ```
+
+The export helper writes `4cher_set4_vn_sprites/guide-neutral.png`,
+`guide-happy.png`, `guide-concerned.png`, and `guide-surprised.png` by default
+because that is the current catalog shape used by the VN demo. It intentionally
+does not commit or vendor the downloaded PSD/image source.
 
 ## 2. Strict Image Validation
 
@@ -183,6 +196,8 @@ Acceptance:
 - real-asset mode validates real PNGs before launch.
 - live capture shows the VN imported demo in Scene Mode.
 - smoke writes only temporary config unless explicitly told otherwise.
+- locally exported PSD/image sprites can be supplied through
+  `--vn-asset-source-root`.
 
 Commit:
 

@@ -106,6 +106,27 @@ ci/gameterm-scene-vn-demo.sh doctor
 The helper validates generated output before install and refuses overwrites
 unless `--force` is passed. It does not download or commit third-party assets.
 
+If a downloaded VN character source is a layered PSD instead of ready-to-run
+PNG sprites, flatten it into the expected local source-root layout first:
+
+```sh
+ci/gameterm-scene-vn-image-export.sh \
+  --source ~/Downloads/character.psd \
+  --output-source-root ~/.cache/gameterm-scene/vn-assets \
+  --force
+
+ci/gameterm-scene-smoke.sh \
+  --launch \
+  --scenario vn-demo \
+  --vn-asset-source-root ~/.cache/gameterm-scene/vn-assets \
+  --wait-before-capture 3 \
+  --capture-timeout 8 \
+  --output /tmp/gameterm-scene-vn-demo-local.png
+```
+
+Downloaded PSDs and unclear-license art should stay local unless the source
+explicitly allows redistribution and attribution/provenance is preserved.
+
 ## Recovery
 
 If the generated scene is invalid, keep the installed scene untouched and rerun

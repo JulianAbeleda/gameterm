@@ -37,6 +37,7 @@ scene_scripts=(
   gameterm-scene-story.sh
   gameterm-scene-verify.sh
   gameterm-scene-vn-demo.sh
+  gameterm-scene-vn-image-export.sh
   gameterm-scene-workspace.sh
 )
 onboarding_required_patterns=(
@@ -725,6 +726,61 @@ run_vn_demo_install_check() {
     /tmp/gameterm-scene-vn-demo-overwrite.err
 
   echo "vn demo install: ok"
+}
+
+run_vn_image_export_check() {
+  local tmp_dir
+  local output_root
+  local generated_dir
+  local missing_rc
+  if ! command -v sips >/dev/null 2>&1; then
+    echo "vn image export: skipped; sips unavailable"
+    return 0
+  fi
+  tmp_dir="$(mktemp -d /tmp/gameterm-scene-vn-image-export-verify.XXXXXX)"
+  tmp_paths+=("${tmp_dir}")
+  output_root="${tmp_dir}/source-root"
+  generated_dir="${tmp_dir}/generated"
+
+  set +e
+  "${repo_root}/ci/gameterm-scene-vn-image-export.sh" \
+    --source "${tmp_dir}/missing.psd" \
+    --output-source-root "${output_root}" \
+    >/tmp/gameterm-scene-vn-image-export-missing.out \
+    2>/tmp/gameterm-scene-vn-image-export-missing.err
+  missing_rc=$?
+  set -e
+  if [[ "${missing_rc}" -eq 0 ]]; then
+    echo "expected VN image export to reject a missing source image" >&2
+    exit 1
+  fi
+  grep -q "source image not found" \
+    /tmp/gameterm-scene-vn-image-export-missing.err
+
+  "${repo_root}/ci/gameterm-scene-vn-image-export.sh" \
+    --source "${fixture_root}/vn-asset-source/4cher_set4_vn_sprites/guide-neutral.png" \
+    --output-source-root "${output_root}" \
+    >/tmp/gameterm-scene-vn-image-export.out
+
+  test -f "${output_root}/4cher_set4_vn_sprites/guide-neutral.png"
+  test -f "${output_root}/4cher_set4_vn_sprites/guide-happy.png"
+  test -f "${output_root}/4cher_set4_vn_sprites/guide-concerned.png"
+  test -f "${output_root}/4cher_set4_vn_sprites/guide-surprised.png"
+
+  "${repo_root}/ci/gameterm-scene-vn-demo.sh" generate \
+    --output-dir "${generated_dir}" \
+    --asset-source-root "${output_root}" \
+    --force \
+    --strict-images \
+    >/tmp/gameterm-scene-vn-image-export-generate.out \
+    2>/tmp/gameterm-scene-vn-image-export-generate.err
+
+  jq -e '
+    any(.sprites[]; .id == "vn.character.guide.neutral"
+      and (.path | endswith("assets/vn-demo/characters/guide-neutral.png")))
+  ' "${generated_dir}/sprites.json" >/dev/null
+
+  echo "vn image export: ok"
 }
 
 run_patch_check() {
@@ -1656,6 +1712,7 @@ run_all() {
   run_vn_script_import_check
   run_vn_asset_intake_check
   run_vn_demo_install_check
+  run_vn_image_export_check
   run_patch_check
   run_agent_check
   run_workspace_discovery_check
