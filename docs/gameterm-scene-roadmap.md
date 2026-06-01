@@ -7,7 +7,7 @@ status and next priorities.
 ## Current Status
 
 Status: first shippable Scene Mode pass complete; command policy second pass
-complete; Ren'Py demo import is the next scoped VN interoperability layer.
+complete; VN script import is the next scoped interoperability layer.
 
 Scene Mode currently has:
 
@@ -53,7 +53,7 @@ implementation details.
 | Broad product completion stack | [Product Completion Scope](gameterm-scene-product-completion-scope.md) | Active planning source |
 | Command policy second pass | [Command Policy Second-Pass Scope](gameterm-scene-command-policy-second-pass-scope.md) | Complete |
 | Ren'Py demo import | [Ren'Py Demo Scope](gameterm-scene-renpy-demo-scope.md) | Prototype implemented |
-| Rust Ren'Py importer | [Rust Ren'Py Import Scope](gameterm-scene-renpy-rust-import-scope.md) | Scoped next |
+| VN script importer | [VN Script Import Scope](gameterm-scene-vn-script-import-scope.md) | Scoped next |
 | Live pane/process context | [Pane And Process Discovery Scope](gameterm-scene-pane-process-discovery-scope.md) | Implemented through explicit metadata |
 | Agent/Workspace authored model | [Agent And Workspace Scope](gameterm-scene-agent-workspace-scope.md) | First-pass implemented |
 | Workspace Discovery | [Workspace Discovery Scope](gameterm-scene-workspace-discovery-scope.md) | First-pass implemented |
@@ -83,23 +83,23 @@ It is a stateful visual layer over them.
 
 ## Priority Stack
 
-### Priority 0: Rust Ren'Py Import
+### Priority 0: VN Script Import
 
-Status: scoped next. Python prototype exists; Rust-native importer is the next
-implementation target.
+Status: scoped next. Python `.rpy` prototype exists; Rust-native,
+engine-agnostic importer is the next implementation target.
 
 Goal: prove Scene Mode can host a real visual-novel-shaped demo by importing a
-conservative Ren'Py demo/tutorial subset into a valid Scene Mode fixture.
+conservative visual-novel script subset into a valid Scene Mode fixture.
 
 Why it matters: Scene Mode already has dialogue, choices, variables, guarded
-state, story persistence, and action policy. A Ren'Py demo import tests whether
-those primitives can carry an outside VN format without turning GameTerm into a
-full VN engine.
+state, story persistence, and action policy. A VN script import tests whether
+those primitives can carry outside VN-style authoring formats without turning
+GameTerm into a full VN engine.
 
 Scope owners:
 
 - [Ren'Py Demo Scope](gameterm-scene-renpy-demo-scope.md)
-- [Rust Ren'Py Import Scope](gameterm-scene-renpy-rust-import-scope.md)
+- [VN Script Import Scope](gameterm-scene-vn-script-import-scope.md)
 
 Completed prototype:
 
@@ -113,6 +113,7 @@ Completed prototype:
 Next slice:
 
 - move the importer from Python to Rust
+- name the product layer around VN scripts, not a single source engine
 - construct `VisualScene` directly in `gameterm-visual`
 - expose a Rust example/CLI for fixture generation
 - remove or reduce the Python helper so there is only one canonical importer

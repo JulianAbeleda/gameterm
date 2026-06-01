@@ -1,25 +1,27 @@
-# GameTerm Scene Mode Rust Ren'Py Import Scope
+# GameTerm Scene Mode VN Script Import Scope
 
-This document scopes replacing the current Python Ren'Py subset importer with
-a Rust-native importer owned by `gameterm-visual`.
+This document scopes replacing the current Python visual-novel script prototype
+with a Rust-native importer owned by `gameterm-visual`.
 
-The `.rpy` file remains an external authoring/source format. Ren'Py is not a
-runtime dependency. Scene Mode should parse the conservative subset directly in
-Rust and emit native `VisualScene` data.
+The current `.rpy` fixture remains an external authoring/source format. Ren'Py
+is not a runtime dependency and should not name the product layer. Scene Mode
+should parse conservative visual-novel script dialects directly in Rust and emit
+native `VisualScene` data.
 
 ## Goal
 
-Move Ren'Py demo import from an auxiliary Python script to Rust so the import
-path is part of the same typed model, validation path, and test discipline as
-the rest of Scene Mode.
+Move the visual-novel script import path from an auxiliary Python prototype to
+Rust so the import path is part of the same typed model, validation path, and
+test discipline as the rest of Scene Mode.
 
 The user should be able to run:
 
 ```sh
-cargo run -p gameterm-visual --example scene_renpy_import -- \
+cargo run -p gameterm-visual --example scene_vn_script_import -- \
   --source ci/fixtures/gameterm-scene/renpy-demo-source.rpy \
   --output /tmp/gameterm-renpy-demo.json \
   --attribution /tmp/gameterm-renpy-demo-attribution.json \
+  --source-dialect rpy \
   --source-title "GameTerm Ren'Py Demo Fixture"
 ```
 
@@ -43,13 +45,13 @@ Rust gives us:
 
 The Rust import pass is complete when:
 
-1. `gameterm-visual` exposes a Rust Ren'Py subset importer module.
+1. `gameterm-visual` exposes a Rust VN script importer module.
 2. The importer accepts source text/path and import options.
 3. The importer returns:
    - `VisualScene`
    - attribution/provenance data
    - structured warnings
-4. The supported syntax matches the current Python first pass:
+4. The first supported dialect matches the current `.rpy` Python prototype:
    - `label`
    - dialogue/say statements
    - narrator lines
@@ -60,15 +62,17 @@ The Rust import pass is complete when:
    - `$ name = literal`
    - simple variable guards: `"Choice" if flag:`
 5. The generated fixture remains valid and behaviorally equivalent.
-6. `renpy_import` policy metadata remains on generated choices.
-7. The open asset catalog remains separate from imported scene data.
-8. CI no longer depends on Python for Ren'Py import verification.
-9. The old Python helper is deleted or reduced to a compatibility wrapper that
+6. `vn_script_import` policy metadata is used on generated choices.
+7. Legacy `renpy_import` metadata remains accepted for existing fixtures.
+8. The open asset catalog remains separate from imported scene data.
+9. CI no longer depends on Python for visual-novel script import verification.
+10. The old Python helper is deleted or reduced to a compatibility wrapper that
    calls the Rust example.
 
 ## Non-Goals
 
 - No full Ren'Py interpreter.
+- No full Ink/Yarn interpreter.
 - No Python expression execution.
 - No screen language.
 - No ATL/animation support.
@@ -83,39 +87,44 @@ The Rust import pass is complete when:
 Add:
 
 ```text
-gameterm-visual/src/renpy_import.rs
-gameterm-visual/examples/scene_renpy_import.rs
+gameterm-visual/src/vn_script_import.rs
+gameterm-visual/examples/scene_vn_script_import.rs
 ```
 
 Export from `gameterm-visual/src/lib.rs`:
 
 ```rust
-pub use renpy_import::{
-    RenpyAttributionManifest, RenpyImportOptions, RenpyImportReport,
-    RenpyImportWarning, import_renpy_scene,
+pub use vn_script_import::{
+    VnScriptAttributionManifest, VnScriptDialect, VnScriptImportOptions,
+    VnScriptImportReport, VnScriptImportWarning, import_vn_script_scene,
 };
 ```
 
 Candidate API:
 
 ```rust
-pub struct RenpyImportOptions {
+pub enum VnScriptDialect {
+    Rpy,
+}
+
+pub struct VnScriptImportOptions {
+    pub dialect: VnScriptDialect,
     pub source_path: Option<PathBuf>,
     pub source_title: String,
-    pub renpy_version: Option<String>,
+    pub source_version: Option<String>,
     pub asset_root: Option<PathBuf>,
 }
 
-pub struct RenpyImportReport {
+pub struct VnScriptImportReport {
     pub scene: VisualScene,
-    pub attribution: RenpyAttributionManifest,
-    pub warnings: Vec<RenpyImportWarning>,
+    pub attribution: VnScriptAttributionManifest,
+    pub warnings: Vec<VnScriptImportWarning>,
 }
 
-pub fn import_renpy_scene(
+pub fn import_vn_script_scene(
     source: &str,
-    options: RenpyImportOptions,
-) -> Result<RenpyImportReport, RenpyImportError>;
+    options: VnScriptImportOptions,
+) -> Result<VnScriptImportReport, VnScriptImportError>;
 ```
 
 The importer should construct `VisualScene` directly. JSON serialization should
@@ -128,7 +137,7 @@ Use a conservative line-oriented parser for the first Rust pass.
 Reasoning:
 
 - the current supported subset is indentation-light and small
-- exact Ren'Py grammar support is not the goal
+- exact engine grammar support is not the goal
 - parser behavior should be easy to audit in tests
 
 Rules:
@@ -156,13 +165,13 @@ Warnings should be structured, not free-form strings.
 Candidate:
 
 ```rust
-pub struct RenpyImportWarning {
+pub struct VnScriptImportWarning {
     pub line: usize,
-    pub kind: RenpyImportWarningKind,
+    pub kind: VnScriptImportWarningKind,
     pub detail: String,
 }
 
-pub enum RenpyImportWarningKind {
+pub enum VnScriptImportWarningKind {
     UnsupportedStatement,
     UnsupportedAssignment,
     NonMenuJump,
@@ -183,15 +192,16 @@ Keep attribution serializable and separate from `VisualScene`.
 Candidate:
 
 ```rust
-pub struct RenpyAttributionManifest {
+pub struct VnScriptAttributionManifest {
     pub source: String,
     pub source_title: String,
-    pub renpy_version: String,
+    pub source_dialect: String,
+    pub source_version: String,
     pub source_path: Option<String>,
     pub asset_root: Option<String>,
     pub license_url: String,
-    pub assets: Vec<RenpyAssetAttribution>,
-    pub recommended_open_asset_sources: Vec<RenpyOpenAssetSource>,
+    pub assets: Vec<VnScriptAssetAttribution>,
+    pub recommended_open_asset_sources: Vec<VnScriptOpenAssetSource>,
     pub notes: Vec<String>,
     pub warnings: Vec<String>,
 }
@@ -222,14 +232,15 @@ commit.
 Required focused checks:
 
 ```sh
-cargo test -p gameterm-visual renpy_import
+cargo test -p gameterm-visual vn_script_import
 cargo test -p gameterm-visual renpy
-cargo run -q -p gameterm-visual --example scene_renpy_import -- \
+cargo run -q -p gameterm-visual --example scene_vn_script_import -- \
   --source ci/fixtures/gameterm-scene/renpy-demo-source.rpy \
   --output /tmp/gameterm-renpy-demo.json \
   --attribution /tmp/gameterm-renpy-demo-attribution.json \
+  --source-dialect rpy \
   --source-title "GameTerm Ren'Py Demo Fixture" \
-  --renpy-version fixture
+  --source-version fixture
 cmp /tmp/gameterm-renpy-demo.json ci/fixtures/gameterm-scene/renpy-demo.json
 ci/gameterm-scene-verify.sh --fixture renpy-demo
 ```
@@ -250,7 +261,7 @@ Update `ci/gameterm-scene-verify.sh`:
 
 - remove Python syntax checking for `gameterm-scene-renpy-import.py` if the
   Python file is deleted
-- call the Rust example in `run_renpy_import_check`
+- call the Rust example in `run_vn_script_import_check`
 - compare or validate generated scene/attribution
 - keep the open asset catalog jq checks
 
@@ -266,9 +277,9 @@ Preferred:
 Acceptable transitional option:
 
 - replace the Python file with a tiny shell script named
-  `ci/gameterm-scene-renpy-import.sh`
+  `ci/gameterm-scene-vn-script-import.sh`
 - the shell script calls `cargo run -p gameterm-visual --example
-  scene_renpy_import -- "$@"`
+  scene_vn_script_import -- "$@"`
 
 Do not keep two independent import implementations.
 
@@ -276,13 +287,13 @@ Do not keep two independent import implementations.
 
 Use separate commits:
 
-1. `[docs] scope Scene Rust RenPy importer`
-2. `[visual] add Rust RenPy import model`
-3. `[visual] add Rust RenPy import example`
-4. `[test] regenerate Scene RenPy demo fixture`
-5. `[tools] verify Rust RenPy import path`
-6. `[docs] document Rust RenPy import workflow`
-7. `[tools] remove Python RenPy importer` if not already deleted in the tools
+1. `[docs] rename Scene VN script import scope`
+2. `[visual] add Scene VN script import model`
+3. `[visual] add Scene VN script import example`
+4. `[test] regenerate Scene VN demo fixture`
+5. `[tools] verify Scene VN script import path`
+6. `[docs] document Scene VN script import workflow`
+7. `[tools] remove Python VN script importer` if not already deleted in the tools
    commit
 
 If commits 2 and 3 are tightly coupled, they can be combined, but do not mix
@@ -307,5 +318,5 @@ After this pass:
 2. Decide whether AI-assisted backgrounds are acceptable for demo fixtures.
 3. Add local menu visibility or current-label state if global choices become
    confusing.
-4. Add a command for installing the generated Ren'Py demo into the user Scene
+4. Add a command for installing the generated VN demo into the user Scene
    config.
