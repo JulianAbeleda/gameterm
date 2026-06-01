@@ -8,7 +8,8 @@ status and next priorities.
 
 Status: first shippable Scene Mode pass complete; command policy second pass
 complete; VN asset intake, VN script import, and VN demo install first passes
-complete.
+complete; native active-pane GUI entrypoint implemented with closure work down
+to live GUI capture evidence.
 
 Scene Mode currently has:
 
@@ -27,6 +28,8 @@ Scene Mode currently has:
   helper overwrite checks, enter-lifecycle cleanup, and live smoke audit
 - command/action policy metadata, diagnostics, workspace-generated policy
   metadata, command filtering data model, and command-selection view
+- native active-pane Scene action that opens a transient generated workspace
+  scene without overwriting the configured scene
 
 Latest verification baseline:
 
@@ -50,12 +53,12 @@ implementation details.
 | Area | Owner Doc | Status |
 | --- | --- | --- |
 | First shippable Scene Mode pass | [First-Pass Scope](gameterm-scene-first-pass-scope.md) | Complete |
-| First-pass closure items | [First-Pass Completion Scope](gameterm-scene-first-pass-completion-scope.md) | Scoped |
+| First-pass closure items | [First-Pass Completion Scope](gameterm-scene-first-pass-completion-scope.md) | Implemented; live active-pane GUI capture pending |
 | Runtime history and lower-level feature roadmap | [Runtime Roadmap](gameterm-scene-runtime-roadmap.md) | Mostly historical; keep for design context |
 | Broad product completion stack | [Product Completion Scope](gameterm-scene-product-completion-scope.md) | Active planning source |
 | Command policy second pass | [Command Policy Second-Pass Scope](gameterm-scene-command-policy-second-pass-scope.md) | Complete |
 | Live mux discovery | [Live Mux Discovery Scope](gameterm-scene-live-mux-discovery-scope.md) | Scoped next |
-| Active-pane GUI entrypoint | [Active Pane GUI Entrypoint Scope](gameterm-scene-active-pane-gui-entrypoint-scope.md) | Implemented; closure smoke/parity scoped |
+| Active-pane GUI entrypoint | [Active Pane GUI Entrypoint Scope](gameterm-scene-active-pane-gui-entrypoint-scope.md) | Implemented; smoke harness added |
 | Ren'Py demo import | [Ren'Py Demo Scope](gameterm-scene-renpy-demo-scope.md) | Prototype implemented |
 | VN script importer | [VN Script Import Scope](gameterm-scene-vn-script-import-scope.md) | First-pass implemented |
 | VN asset intake | [VN Asset Intake Scope](gameterm-scene-vn-asset-intake-scope.md) | First-pass implemented |
@@ -460,28 +463,25 @@ Avoid:
 
 ## Next Recommended Work
 
-Implement live mux discovery next.
+Run the active-pane GUI live smoke, then start only the scoped refactor lanes.
 
 Reasoning:
 
-- Priority 3 and Priority 4 are now complete through the scoped command policy
-  second pass.
-- The broad product completion scope names direct live GameTerm context as the
-  remaining gap that keeps Scene Mode from feeling like a daily operational
-  surface.
-- The explicit pane/process metadata path is already implemented, so live mux
-  discovery can stay narrow: collect active mux metadata and forward it through
-  the existing workspace helper contract.
-- Refactor work should stay subordinate to the next product lane unless it
-  directly reduces implementation risk.
+- The native active-pane action, Rust generator contract, recoverable context
+  errors, and smoke harness scenario are implemented.
+- The only first-pass closure gap is interactive evidence for the real
+  `CTRL|ALT|SHIFT+g` path.
+- Product work should pause after that evidence unless a smoke failure exposes
+  a concrete defect.
+- Refactor work should stay principle-scoped and behavior-preserving.
 
 Concrete next checklist:
 
-1. Use [Live Mux Discovery Scope](gameterm-scene-live-mux-discovery-scope.md).
-2. Add fixture mux-context JSON before live integration.
-3. Add `ci/gameterm-scene-mux-context.sh` with fixture-backed `collect`,
-   `discover`, `patch`, and `doctor`.
-4. Add verifier coverage for active, missing, invalid, cwd override, and patch
-   output cases.
-5. Add live mux collection only behind the same normalized metadata contract.
-6. Record live smoke once a real GUI/mux caller path is available.
+1. Build the GUI with `cargo build -p gameterm-gui`.
+2. Run `ci/gameterm-scene-smoke.sh --launch --scenario active-pane-gui`.
+3. Record the smoke result in
+   [Smoke Report](gameterm-scene-smoke-report.md).
+4. If the smoke passes, mark first-pass closure complete.
+5. If the smoke fails, scope the failure as a product fix before refactoring.
+6. Begin [Refactor Plan](gameterm-scene-refactor-plan.md) lanes only after the
+   product closure status is clear.
