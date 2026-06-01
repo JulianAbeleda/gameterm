@@ -35,6 +35,7 @@ scene_scripts=(
   gameterm-scene-smoke.sh
   gameterm-scene-story.sh
   gameterm-scene-verify.sh
+  gameterm-scene-vn-demo.sh
   gameterm-scene-workspace.sh
 )
 onboarding_required_patterns=(
@@ -623,6 +624,80 @@ run_vn_asset_intake_check() {
   grep -q "Doctor summary: 0 error(s)" /tmp/gameterm-scene-vn-assets-doctor.out
 
   echo "vn asset intake: ok"
+}
+
+run_vn_demo_install_check() {
+  local tmp_dir
+  local generated_dir
+  local config_home
+  local installed_dir
+  local overwrite_rc
+  tmp_dir="$(mktemp -d /tmp/gameterm-scene-vn-demo-verify.XXXXXX)"
+  tmp_paths+=("${tmp_dir}")
+  generated_dir="${tmp_dir}/generated"
+  config_home="${tmp_dir}/config"
+  installed_dir="${config_home}/gameterm/scenes"
+
+  "${repo_root}/ci/gameterm-scene-vn-demo.sh" generate \
+    --output-dir "${generated_dir}" \
+    --asset-source-root "${fixture_root}/vn-asset-source" \
+    --force \
+    >/tmp/gameterm-scene-vn-demo-generate.out \
+    2>/tmp/gameterm-scene-vn-demo-generate.err
+
+  cargo run -q -p gameterm-visual --example scene_validate -- \
+    "${generated_dir}/default.json" >/dev/null
+  jq -e '
+    .background == "workspace-map"
+    and any(.entities[]; .id == "vn-script-narrator"
+      and .sprite == "vn.character.guide.neutral")
+  ' "${generated_dir}/default.json" >/dev/null
+  jq -e '
+    any(.sprites[]; .id == "workspace-map")
+    and any(.sprites[]; .id == "vn.character.guide.neutral")
+  ' "${generated_dir}/sprites.json" >/dev/null
+  jq -e '
+    .characters.guide.expressions.neutral == "vn.character.guide.neutral"
+  ' "${generated_dir}/vn-demo-bindings.json" >/dev/null
+  jq -e '.source_dialect == "rpy"' \
+    "${generated_dir}/vn-demo-script-attribution.json" >/dev/null
+  jq -e '.generated_by == "scene_vn_asset_intake"' \
+    "${generated_dir}/vn-demo-asset-attribution.json" >/dev/null
+  test -f "${generated_dir}/assets/vn-demo/characters/guide-neutral.png"
+  grep -q "AI-assisted source skipped" /tmp/gameterm-scene-vn-demo-generate.err
+
+  "${repo_root}/ci/gameterm-scene-vn-demo.sh" doctor \
+    --output-dir "${generated_dir}" \
+    >/tmp/gameterm-scene-vn-demo-doctor.out
+  grep -q "Doctor summary: 0 error(s)" /tmp/gameterm-scene-vn-demo-doctor.out
+
+  "${repo_root}/ci/gameterm-scene-vn-demo.sh" install \
+    --config-home "${config_home}" \
+    --asset-source-root "${fixture_root}/vn-asset-source" \
+    --force \
+    >/tmp/gameterm-scene-vn-demo-install.out \
+    2>/tmp/gameterm-scene-vn-demo-install.err
+  cargo run -q -p gameterm-visual --example scene_validate -- \
+    "${installed_dir}/default.json" >/dev/null
+
+  cp "${installed_dir}/default.json" "${tmp_dir}/default.before.json"
+  set +e
+  "${repo_root}/ci/gameterm-scene-vn-demo.sh" install \
+    --config-home "${config_home}" \
+    --asset-source-root "${fixture_root}/vn-asset-source" \
+    >/tmp/gameterm-scene-vn-demo-overwrite.out \
+    2>/tmp/gameterm-scene-vn-demo-overwrite.err
+  overwrite_rc=$?
+  set -e
+  if [[ "${overwrite_rc}" -eq 0 ]]; then
+    echo "expected vn demo install to refuse overwrite without --force" >&2
+    exit 1
+  fi
+  cmp -s "${tmp_dir}/default.before.json" "${installed_dir}/default.json"
+  grep -q "refusing to overwrite existing file without --force" \
+    /tmp/gameterm-scene-vn-demo-overwrite.err
+
+  echo "vn demo install: ok"
 }
 
 run_patch_check() {
@@ -1273,6 +1348,7 @@ run_all() {
   run_doctor_check
   run_vn_script_import_check
   run_vn_asset_intake_check
+  run_vn_demo_install_check
   run_patch_check
   run_agent_check
   run_workspace_discovery_check
