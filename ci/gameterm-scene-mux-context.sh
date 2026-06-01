@@ -17,6 +17,12 @@ Commands:
 Common options:
   --pane-id ID                  Override collected pane id.
   --mux-window-id ID            Override collected mux window id.
+  --pane-cwd PATH               Use active pane cwd from a live caller.
+  --foreground-process-name TEXT
+                                Use active foreground process name.
+  --foreground-process-path PATH
+                                Use active foreground process executable path.
+  --pane-progress TEXT          Use active pane progress label.
   --cwd PATH                    Explicit workspace cwd override.
   --scene-output PATH           Forwarded to workspace discover.
   --patch-output PATH           Forwarded to workspace patch.
@@ -58,6 +64,10 @@ install=0
 force=0
 override_pane_id=""
 override_mux_window_id=""
+caller_pane_cwd=""
+caller_foreground_process_name=""
+caller_foreground_process_path=""
+caller_pane_progress=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -71,6 +81,22 @@ while [[ $# -gt 0 ]]; do
       ;;
     --mux-window-id)
       override_mux_window_id="$2"
+      shift 2
+      ;;
+    --pane-cwd)
+      caller_pane_cwd="$2"
+      shift 2
+      ;;
+    --foreground-process-name)
+      caller_foreground_process_name="$2"
+      shift 2
+      ;;
+    --foreground-process-path)
+      caller_foreground_process_path="$2"
+      shift 2
+      ;;
+    --pane-progress)
+      caller_pane_progress="$2"
       shift 2
       ;;
     --cwd)
@@ -131,6 +157,8 @@ if [[ -n "${override_mux_window_id}" && ! "${override_mux_window_id}" =~ ^[0-9]+
 fi
 
 tmp_paths=()
+workspace_args=()
+context_args=()
 cleanup() {
   set +u
   for path in "${tmp_paths[@]}"; do
@@ -183,19 +211,38 @@ normalize_json() {
 build_env_context() {
   local target_file="$1"
   local available=false
-  if [[ -n "${GAMETERM_SCENE_PANE_ID:-}${GAMETERM_SCENE_MUX_WINDOW_ID:-}${GAMETERM_SCENE_PANE_CWD:-}${GAMETERM_SCENE_FOREGROUND_PROCESS_NAME:-}${GAMETERM_SCENE_FOREGROUND_PROCESS_PATH:-}${GAMETERM_SCENE_PANE_PROGRESS:-}" ]]; then
+  local source="env"
+  local pane_id="${GAMETERM_SCENE_PANE_ID:-}"
+  local mux_window_id="${GAMETERM_SCENE_MUX_WINDOW_ID:-}"
+  local pane_cwd="${GAMETERM_SCENE_PANE_CWD:-}"
+  local foreground_process_name="${GAMETERM_SCENE_FOREGROUND_PROCESS_NAME:-}"
+  local foreground_process_path="${GAMETERM_SCENE_FOREGROUND_PROCESS_PATH:-}"
+  local pane_progress="${GAMETERM_SCENE_PANE_PROGRESS:-}"
+
+  if [[ -n "${override_pane_id}${override_mux_window_id}${caller_pane_cwd}${caller_foreground_process_name}${caller_foreground_process_path}${caller_pane_progress}" ]]; then
+    source="caller"
+    pane_id="${override_pane_id}"
+    mux_window_id="${override_mux_window_id}"
+    pane_cwd="${caller_pane_cwd}"
+    foreground_process_name="${caller_foreground_process_name}"
+    foreground_process_path="${caller_foreground_process_path}"
+    pane_progress="${caller_pane_progress}"
+  fi
+
+  if [[ -n "${pane_id}${mux_window_id}${pane_cwd}${foreground_process_name}${foreground_process_path}${pane_progress}" ]]; then
     available=true
   fi
   jq -n \
+    --arg source "${source}" \
     --argjson available "${available}" \
-    --arg pane_id "${GAMETERM_SCENE_PANE_ID:-}" \
-    --arg mux_window_id "${GAMETERM_SCENE_MUX_WINDOW_ID:-}" \
-    --arg pane_cwd "${GAMETERM_SCENE_PANE_CWD:-}" \
-    --arg foreground_process_name "${GAMETERM_SCENE_FOREGROUND_PROCESS_NAME:-}" \
-    --arg foreground_process_path "${GAMETERM_SCENE_FOREGROUND_PROCESS_PATH:-}" \
-    --arg pane_progress "${GAMETERM_SCENE_PANE_PROGRESS:-}" \
+    --arg pane_id "${pane_id}" \
+    --arg mux_window_id "${mux_window_id}" \
+    --arg pane_cwd "${pane_cwd}" \
+    --arg foreground_process_name "${foreground_process_name}" \
+    --arg foreground_process_path "${foreground_process_path}" \
+    --arg pane_progress "${pane_progress}" \
     '{
-      source: "env",
+      source: $source,
       available: $available,
       pane_id: (if $pane_id == "" then null else $pane_id end),
       mux_window_id: (if $mux_window_id == "" then null else $mux_window_id end),
@@ -321,7 +368,9 @@ build_workspace_args() {
       context_args+=(--pane-progress "${value}")
     fi
   fi
-  workspace_args+=("${context_args[@]}")
+  if [[ "${#context_args[@]}" -gt 0 ]]; then
+    workspace_args+=("${context_args[@]}")
+  fi
 }
 
 run_collect() {
