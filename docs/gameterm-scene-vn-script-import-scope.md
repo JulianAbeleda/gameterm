@@ -268,7 +268,7 @@ If a compatibility shell wrapper is kept, verify it with `bash -n`.
 
 ## Deletion Strategy
 
-- delete `ci/gameterm-scene-renpy-import.py`
+- deleted the old `ci/gameterm-scene-renpy-import.py` helper
 - replace docs references with the Rust example command
 
 Do not keep two independent import implementations.
