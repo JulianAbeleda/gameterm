@@ -61,6 +61,34 @@ Validated named scenarios:
 
 ## Live Results
 
+### live-mux-discovery-scenario-pass-20260531-2130
+
+Command:
+
+```sh
+cargo build -p gameterm-gui
+ci/gameterm-scene-smoke.sh --launch --scenario live-mux-discovery \
+  --wait-before-capture 2 \
+  --capture-timeout 12 \
+  --output /Users/julianabeleda/Desktop/gameterm-scene-smoke-live-mux-discovery-20260531-213010.png
+```
+
+Result: PASS.
+
+Capture:
+
+```text
+/Users/julianabeleda/Desktop/gameterm-scene-smoke-live-mux-discovery-20260531-213010.png
+```
+
+Observation: the named smoke scenario generated a Scene Mode scene through
+`ci/gameterm-scene-mux-context.sh discover --allow-missing`, launched the
+generated scene, foregrounded `gameterm-gui`, opened Scene Mode, and captured a
+non-empty 1920x1080 PNG. The helper used the repo-local
+`target/debug/gameterm` CLI and collected real live mux context:
+`source=gameterm-cli`, `pane_id=0`, `mux_window_id=0`, and
+`pane_cwd=/Users/julianabeleda`.
+
 ### live-mux-discovery-pass-20260601
 
 Command:

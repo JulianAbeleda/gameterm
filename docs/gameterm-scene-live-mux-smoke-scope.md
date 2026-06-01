@@ -238,8 +238,8 @@ Commit:
 
 Deliverables:
 
-- live launch capture when a GUI/mux session is available
-- `docs/gameterm-scene-smoke-report.md` entry with command, artifact path, and
+- [x] live launch capture when a GUI/mux session is available
+- [x] `docs/gameterm-scene-smoke-report.md` entry with command, artifact path, and
   normalized context
 
 Verification:
