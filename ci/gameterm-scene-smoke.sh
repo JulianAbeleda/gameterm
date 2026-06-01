@@ -456,6 +456,16 @@ resolve_ffmpeg() {
   return 1
 }
 
+run_mux_context_helper() {
+  local subcommand="$1"
+  shift
+  local args=("${subcommand}")
+  if [[ -x "${repo_root}/target/debug/gameterm" ]]; then
+    args+=(--gameterm-bin "${repo_root}/target/debug/gameterm")
+  fi
+  "${repo_root}/ci/gameterm-scene-mux-context.sh" "${args[@]}" "$@"
+}
+
 install_scene_fixture() {
   local scene_dir="$1"
   mkdir -p "${scene_dir}"
@@ -508,7 +518,7 @@ install_scene_fixture() {
       install_sprite_manifest "${scene_dir}/sprites.json"
       ;;
     live-mux-discovery)
-      "${repo_root}/ci/gameterm-scene-mux-context.sh" \
+      run_mux_context_helper \
         discover \
         --allow-missing \
         --scene-output "${scene_dir}/default.json" \
@@ -997,7 +1007,7 @@ EOF
   fi
   if [[ "${scenario}" == "live-mux-discovery" ]]; then
     echo "Live mux discovery audit: launch a scene generated from active mux context."
-    "${repo_root}/ci/gameterm-scene-mux-context.sh" collect --allow-missing || true
+    run_mux_context_helper collect --allow-missing || true
   fi
   if [[ -n "${patch_inbox}" ]]; then
     echo "Patch audit: inbox transport is enabled at ${patch_inbox}"
