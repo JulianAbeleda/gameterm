@@ -40,7 +40,6 @@ pub fn show_visual_scene_overlay(
     )
 }
 
-#[allow(dead_code)]
 pub fn show_generated_visual_scene_overlay(
     term: TermWizTerminal,
     route_pane_id: Option<mux::pane::PaneId>,
@@ -61,7 +60,6 @@ pub fn show_generated_visual_scene_overlay(
     )
 }
 
-#[allow(dead_code)]
 enum VisualSceneOverlaySource {
     Default,
     Generated {

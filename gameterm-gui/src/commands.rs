@@ -806,6 +806,17 @@ pub fn derive_command_from_key_assignment(action: &KeyAssignment) -> Option<Comm
             menubar: &["View"],
             icon: Some("cod_symbol_color"),
         },
+        ShowGameTermActivePaneScene => CommandDef {
+            brief: "Show active pane Scene".into(),
+            doc: "Generates a GameTerm visual scene from the active pane workspace context".into(),
+            keys: vec![(
+                Modifiers::CTRL.union(Modifiers::ALT).union(Modifiers::SHIFT),
+                "g".into(),
+            )],
+            args: &[ArgType::ActiveWindow],
+            menubar: &["View"],
+            icon: Some("cod_symbol_namespace"),
+        },
         InputSelector(_) => CommandDef {
             brief: "Prompt the user to choose from a list".into(),
             doc: "Activates the selector overlay and wait for input".into(),
@@ -2072,6 +2083,7 @@ fn compute_default_actions() -> Vec<KeyAssignment> {
         ScrollToTop,
         ScrollToBottom,
         ShowGameTermScene,
+        ShowGameTermActivePaneScene,
         // ----------------- Window
         ToggleFullScreen,
         ToggleAlwaysOnTop,

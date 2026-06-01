@@ -574,6 +574,7 @@ pub enum KeyAssignment {
     ShowTabNavigator,
     ShowDebugOverlay,
     ShowGameTermScene,
+    ShowGameTermActivePaneScene,
     HideApplication,
     QuitApplication,
     SpawnCommandInNewTab(SpawnCommand),
