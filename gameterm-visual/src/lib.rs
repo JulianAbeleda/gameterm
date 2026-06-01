@@ -12,6 +12,7 @@ mod story_state;
 mod validation;
 mod vn_asset_intake;
 mod vn_script_import;
+mod workspace_scene;
 
 use actions::{action_kind_name, action_policy_summary, derived_action_policy};
 use conditions::{condition_guard_detail, conditions_match};
@@ -43,6 +44,9 @@ pub use vn_script_import::{
     import_vn_script_scene, VnScriptAssetAttribution, VnScriptAttributionManifest, VnScriptDialect,
     VnScriptImportError, VnScriptImportOptions, VnScriptImportReport, VnScriptImportWarning,
     VnScriptImportWarningKind,
+};
+pub use workspace_scene::{
+    generate_workspace_scene, ScenePaneContext, SceneWorkspaceContext, WorkspaceSceneReport,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
