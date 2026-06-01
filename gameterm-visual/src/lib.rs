@@ -3656,10 +3656,10 @@ mod tests {
         let mut runtime = SceneRuntime::new(scene).unwrap();
 
         let snapshot = runtime.render_snapshot();
-        assert_eq!(snapshot.title, "Ren'Py Demo Import");
+        assert_eq!(snapshot.title, "VN Script Demo Import");
         assert!(snapshot.variables.iter().any(|entry| {
-            entry.key == "source_engine"
-                && entry.value == VisualStateValue::Text("renpy".to_string())
+            entry.key == "source_dialect"
+                && entry.value == VisualStateValue::Text("rpy".to_string())
         }));
         assert!(snapshot
             .choices
@@ -3668,7 +3668,7 @@ mod tests {
 
         let options = runtime.command_options();
         assert!(options.iter().any(|option| {
-            option.origin == "renpy_import"
+            option.origin == "vn_script_import"
                 && option.risk == "state_change"
                 && option.scope == "scene"
         }));

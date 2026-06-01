@@ -1,23 +1,24 @@
 {
-  "title": "Ren'Py Demo Import",
+  "title": "VN Script Demo Import",
   "background": "workspace-map",
   "width": 16,
   "height": 9,
   "mode": {
-    "mode_id": "renpy-demo",
-    "label": "Ren'Py Demo",
-    "description": "Imported Ren'Py subset demo",
+    "mode_id": "vn-script-demo",
+    "label": "VN Script Demo",
+    "description": "Imported VN script subset demo",
     "scene_profile": "scene",
     "allowed_actions": [
       "Inspect",
       "AdvanceDialogue"
-    ]
+    ],
+    "default_transition": null
   },
   "variables": [
     {
-      "key": "source_engine",
+      "key": "source_dialect",
       "value": {
-        "Text": "renpy"
+        "Text": "rpy"
       }
     },
     {
@@ -39,7 +40,7 @@
       }
     },
     {
-      "key": "renpy_import_warnings",
+      "key": "vn_script_import_warnings",
       "value": {
         "Number": 1
       }
@@ -47,7 +48,7 @@
   ],
   "entities": [
     {
-      "id": "renpy-source",
+      "id": "vn-script-source",
       "kind": "Project",
       "label": "GameTerm Ren'Py Demo Fixture",
       "position": {
@@ -55,10 +56,11 @@
         "y": 2
       },
       "sprite": "project_core",
+      "state_flags": [],
       "metadata": [
         [
-          "source_engine",
-          "renpy"
+          "source_dialect",
+          "rpy"
         ],
         [
           "source_file",
@@ -67,7 +69,7 @@
       ]
     },
     {
-      "id": "renpy-narrator",
+      "id": "vn-script-narrator",
       "kind": "Agent",
       "label": "Narrator",
       "position": {
@@ -75,15 +77,16 @@
         "y": 4
       },
       "sprite": "agent_idle",
+      "state_flags": [],
       "metadata": [
         [
-          "source_engine",
-          "renpy"
+          "source_dialect",
+          "rpy"
         ]
       ]
     },
     {
-      "id": "renpy-importer",
+      "id": "vn-script-importer",
       "kind": "Task",
       "label": "Import Check",
       "position": {
@@ -91,6 +94,7 @@
         "y": 5
       },
       "sprite": "task_tile",
+      "state_flags": [],
       "metadata": [
         [
           "warnings",
@@ -168,10 +172,10 @@
         }
       },
       "policy": {
-        "origin": "renpy_import",
+        "origin": "vn_script_import",
         "risk": "state_change",
         "scope": "scene",
-        "summary": "Continue imported Ren'Py demo at label explain"
+        "summary": "Continue imported VN script at label explain"
       },
       "conditions": [
         {
@@ -190,12 +194,11 @@
         }
       },
       "policy": {
-        "origin": "renpy_import",
+        "origin": "vn_script_import",
         "risk": "state_change",
         "scope": "scene",
-        "summary": "Continue imported Ren'Py demo at label ending"
-      },
-      "conditions": []
+        "summary": "Continue imported VN script at label ending"
+      }
     }
   ]
 }

@@ -1,33 +1,15 @@
 {
-  "source": "renpy-demo-subset",
+  "source": "vn-script-subset",
   "source_title": "GameTerm Ren'Py Demo Fixture",
-  "renpy_version": "fixture",
+  "source_dialect": "rpy",
+  "source_version": "fixture",
   "source_path": "ci/fixtures/gameterm-scene/renpy-demo-source.rpy",
-  "asset_root": null,
   "license_url": "https://www.renpy.org/doc/html/license.html",
   "assets": [],
-  "recommended_open_asset_sources": [
-    {
-      "id": "tainara_p_female_character_creator",
-      "role": "character_sprite_parts",
-      "source_url": "https://tainara-p.itch.io/female-character-sprite-creator",
-      "license": "CC0-1.0",
-      "repo_policy": "allowed_with_provenance"
-    },
-    {
-      "id": "4cher_set4_vn_sprites",
-      "role": "character_sprite",
-      "source_url": "https://4cher.itch.io/set4-vnsprites",
-      "license": "CC-BY-4.0",
-      "attribution": "4cher - https://4cher.itch.io/set4-vnsprites",
-      "repo_policy": "allowed_with_attribution"
-    }
-  ],
   "notes": [
     "This importer records asset provenance but does not copy assets.",
     "The checked-in fixture source is GameTerm-authored Ren'Py-shaped test content.",
-    "When importing upstream Ren'Py demo/tutorial material, preserve upstream credits and license files before vendoring assets.",
-    "Use ci/fixtures/gameterm-scene/renpy-demo-open-assets.json for curated open-license asset source policy."
+    "When importing upstream visual-novel script material, preserve upstream credits and license files before vendoring assets."
   ],
   "warnings": [
     "line 19: non-menu jump is recorded as source flow only: ending"
