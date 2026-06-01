@@ -46,6 +46,8 @@ Options:
                            Default: 10.
   --no-auto-open-scene     Do not use macOS automation to foreground GameTerm
                            and press the Scene shortcut after launch.
+  --no-fullscreen-window   Do not resize the launched GameTerm window to fill
+                           the visible desktop before capture.
   --allow-background-capture
                            Warn instead of failing when the launched GameTerm
                            process is not frontmost before capture.
@@ -80,6 +82,7 @@ describe_scenario=""
 list_scenarios=0
 wait_before_capture=10
 auto_open_scene=1
+fullscreen_window=1
 require_frontmost=1
 post_action_wait=1
 focus_timeout=10
@@ -152,6 +155,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --no-auto-open-scene)
       auto_open_scene=0
+      shift
+      ;;
+    --no-fullscreen-window)
+      fullscreen_window=0
       shift
       ;;
     --allow-background-capture)
@@ -671,6 +678,7 @@ foreground_gui_and_open_scene() {
   local pid="$1"
   local timeout="$2"
   local shortcut="$3"
+  local resize_window="$4"
   local shortcut_label="Ctrl+Shift+G"
 
   if [[ "${shortcut}" == "active-pane" ]]; then
@@ -687,11 +695,23 @@ foreground_gui_and_open_scene() {
   fi
 
   echo "Foregrounding GameTerm pid ${pid} and opening Scene Mode with ${shortcut_label}..."
-  if ! osascript - "${pid}" "${timeout}" "${shortcut}" <<'EOF'
+  if ! osascript - "${pid}" "${timeout}" "${shortcut}" "${resize_window}" <<'EOF'
+on visibleDesktopFrame()
+  tell application "Finder"
+    set desktopBounds to bounds of window of desktop
+  end tell
+  set leftEdge to item 1 of desktopBounds
+  set topEdge to item 2 of desktopBounds
+  set rightEdge to item 3 of desktopBounds
+  set bottomEdge to item 4 of desktopBounds
+  return {leftEdge, topEdge + 24, rightEdge - leftEdge, bottomEdge - topEdge - 24}
+end visibleDesktopFrame
+
 on run argv
   set targetPid to (item 1 of argv) as integer
   set timeoutSeconds to (item 2 of argv) as integer
   set shortcutName to item 3 of argv
+  set resizeWindow to item 4 of argv
   set deadline to (current date) + timeoutSeconds
 
   tell application "System Events"
@@ -700,6 +720,16 @@ on run argv
         set targetProcess to first application process whose unix id is targetPid
         set frontmost of targetProcess to true
         delay 0.5
+        if resizeWindow is "1" then
+          set frame to my visibleDesktopFrame()
+          set windowPosition to {item 1 of frame, item 2 of frame}
+          set windowSize to {item 3 of frame, item 4 of frame}
+          if exists window 1 of targetProcess then
+            set position of window 1 of targetProcess to windowPosition
+            set size of window 1 of targetProcess to windowSize
+            delay 0.5
+          end if
+        end if
         if shortcutName is "active-pane" then
           keystroke "g" using {control down, option down, shift down}
         else
@@ -1051,12 +1081,19 @@ EOF
   echo "GameTerm pid: ${gui_pid}"
   echo "GameTerm class: ${gui_class}"
   if [[ "${auto_open_scene}" -eq 1 ]]; then
-    foreground_gui_and_open_scene "${gui_pid}" "${focus_timeout}" "${scene_open_shortcut}"
+    foreground_gui_and_open_scene \
+      "${gui_pid}" \
+      "${focus_timeout}" \
+      "${scene_open_shortcut}" \
+      "${fullscreen_window}"
   else
     if [[ "${scene_open_shortcut}" == "active-pane" ]]; then
       echo "Press Ctrl+Alt+Shift+G in the GameTerm window to open active-pane Scene Mode."
     else
       echo "Press Ctrl+Shift+G in the GameTerm window to open Scene Mode."
+    fi
+    if [[ "${fullscreen_window}" -eq 1 ]]; then
+      echo "Resize the GameTerm window to fill the screen before capture."
     fi
   fi
   if [[ "${fixture}" == "run-command-targets" ]]; then

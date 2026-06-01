@@ -618,7 +618,7 @@ ci/gameterm-scene-smoke.sh \
   --scenario vn-demo \
   --wait-before-capture 3 \
   --capture-timeout 8 \
-  --output /tmp/gameterm-scene-vn-demo.png
+  --output /tmp/gameterm-scene-vn-demo-fullscreen.png
 ```
 
 Result: PASS.
@@ -626,13 +626,14 @@ Result: PASS.
 Capture:
 
 ```text
-/tmp/gameterm-scene-vn-demo.png
+/tmp/gameterm-scene-vn-demo-fullscreen.png
 ```
 
 Observation: the smoke harness generated the VN demo into a temporary Scene
-config, strict-validated sprite files as PNG image data, opened Scene Mode,
-sent the scripted VN key sequence, and captured the imported VN scene. The
-capture shows `VN Script Demo` with `sprite=vn.character.guide.neutral`.
+config, strict-validated sprite files as PNG image data, resized the launched
+GameTerm window to fill the visible desktop, opened Scene Mode, sent the
+scripted VN key sequence, and captured the imported VN scene. The capture shows
+`VN Script Demo` with `sprite=vn.character.guide.neutral`.
 
 ## Follow-Up
 
