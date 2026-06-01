@@ -7,8 +7,9 @@ status and next priorities.
 ## Current Status
 
 Status: first shippable Scene Mode pass complete; command policy second pass
-complete; VN asset intake, VN script import, and VN demo install first passes
-complete; native active-pane GUI first-pass closure complete.
+complete; VN asset intake, VN script import, VN demo install, real asset run,
+strict image validation, fullscreen smoke capture, local PSD/image export, and
+native active-pane GUI first-pass closure complete.
 
 Scene Mode currently has:
 
@@ -29,6 +30,9 @@ Scene Mode currently has:
   metadata, command filtering data model, and command-selection view
 - native active-pane Scene action that opens a transient generated workspace
   scene without overwriting the configured scene
+- Rust VN script import, local VN asset intake, generated VN demo
+  install/doctor workflow, strict PNG validation, fullscreen `vn-demo` smoke,
+  and a local PSD/image export helper for downloaded assets
 
 Latest verification baseline:
 
@@ -38,6 +42,9 @@ Latest verification baseline:
 - Live smoke: PASS for `workspace-discovery`, recorded in
   [GameTerm Scene Mode Smoke Report](gameterm-scene-smoke-report.md)
 - Live smoke: PASS for `active-pane-gui`, recorded in
+  [GameTerm Scene Mode Smoke Report](gameterm-scene-smoke-report.md)
+- Live smoke: PASS for `vn-demo` with repo fixture PNGs and with local
+  downloaded PSD/school assets, recorded in
   [GameTerm Scene Mode Smoke Report](gameterm-scene-smoke-report.md)
 
 Known non-blocking warning noise remains outside Scene Mode scope:
@@ -65,6 +72,7 @@ implementation details.
 | VN asset intake | [VN Asset Intake Scope](gameterm-scene-vn-asset-intake-scope.md) | First-pass implemented |
 | VN demo install | [VN Demo Install Scope](gameterm-scene-vn-demo-install-scope.md) | First-pass implemented |
 | VN real asset run | [VN Real Assets Run Scope](gameterm-scene-vn-real-assets-run-scope.md) | Complete |
+| VN local PSD/image export | [VN Real Assets Run Scope](gameterm-scene-vn-real-assets-run-scope.md) | Complete |
 | Live pane/process context | [Pane And Process Discovery Scope](gameterm-scene-pane-process-discovery-scope.md) | Implemented through explicit metadata |
 | Agent/Workspace authored model | [Agent And Workspace Scope](gameterm-scene-agent-workspace-scope.md) | First-pass implemented |
 | Workspace Discovery | [Workspace Discovery Scope](gameterm-scene-workspace-discovery-scope.md) | First-pass implemented |
@@ -240,6 +248,10 @@ Completed slice:
 - opt-in strict image validation is available through doctor
 - `vn-demo` smoke scenario opens and captures the generated VN demo
 - live smoke is recorded with fixture-mode real PNG assets
+- `ci/gameterm-scene-vn-image-export.sh` can flatten local PSD/image downloads
+  into the current VN source-root layout
+- live smoke is recorded with local downloaded PSD character art and
+  AI-assisted school backgrounds when explicitly allowed
 
 Non-goals:
 
@@ -247,6 +259,14 @@ Non-goals:
 - DDLC/proprietary asset import
 - committing user-downloaded third-party art
 - renderer redesign for full VN staging
+
+Next likely VN pass:
+
+- staged VN presentation with expression/background changes from imported VN
+  script state
+- better normal-view placement/scaling for character and background assets
+- clearer support for alternate local source ids and multi-character local
+  asset roots
 
 ### Priority 1: Live Pane And Process Context
 

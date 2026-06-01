@@ -88,6 +88,40 @@ Launch GameTerm and open Scene Mode with the configured keybinding:
 - When live smoke is available, run
   `ci/gameterm-scene-smoke.sh --launch --scenario workspace-discovery`.
 
+## VN Demo Assets
+
+- Run `ci/gameterm-scene-vn-demo.sh generate --output-dir /tmp/gameterm-vn-demo --asset-source-root ci/fixtures/gameterm-scene/vn-asset-source --force --strict-images`.
+- Run `ci/gameterm-scene-vn-demo.sh doctor --output-dir /tmp/gameterm-vn-demo --strict-images`.
+- Confirm `/tmp/gameterm-vn-demo/sprites.json` includes
+  `vn.character.guide.neutral`.
+- If testing local downloaded PSD/image art, export it into an ignored
+  source-root first:
+
+```sh
+ci/gameterm-scene-vn-image-export.sh \
+  --source PATH_TO_LOCAL_CHARACTER.psd \
+  --output-source-root .cache/gameterm-scene/vn-assets \
+  --force
+```
+
+- Keep downloaded PSDs, ZIPs, RARs, and unclear-license derived files out of
+  git unless redistribution and attribution/provenance are clean.
+- If using AI-assisted school backgrounds, pass the explicit opt-in flag:
+  `--allow-ai-assisted-assets` for generation or
+  `--allow-ai-assisted-vn-assets` for smoke.
+- When live smoke is available, run fullscreen VN smoke:
+
+```sh
+ci/gameterm-scene-smoke.sh \
+  --launch \
+  --scenario vn-demo \
+  --vn-asset-source-root .cache/gameterm-scene/vn-assets \
+  --allow-ai-assisted-vn-assets \
+  --wait-before-capture 3 \
+  --capture-timeout 8 \
+  --output /tmp/gameterm-scene-vn-demo-local.png
+```
+
 ## Asset And Scene Failure Recovery
 
 - Invalid scene JSON on launch shows an error frame instead of crashing.
