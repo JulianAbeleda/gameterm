@@ -7,7 +7,8 @@ status and next priorities.
 ## Current Status
 
 Status: first shippable Scene Mode pass complete; command policy second pass
-complete; VN script import is the next scoped interoperability layer.
+complete; VN script import and VN asset intake are the next scoped
+interoperability layers.
 
 Scene Mode currently has:
 
@@ -54,6 +55,7 @@ implementation details.
 | Command policy second pass | [Command Policy Second-Pass Scope](gameterm-scene-command-policy-second-pass-scope.md) | Complete |
 | Ren'Py demo import | [Ren'Py Demo Scope](gameterm-scene-renpy-demo-scope.md) | Prototype implemented |
 | VN script importer | [VN Script Import Scope](gameterm-scene-vn-script-import-scope.md) | Scoped next |
+| VN asset intake | [VN Asset Intake Scope](gameterm-scene-vn-asset-intake-scope.md) | Scoped next |
 | Live pane/process context | [Pane And Process Discovery Scope](gameterm-scene-pane-process-discovery-scope.md) | Implemented through explicit metadata |
 | Agent/Workspace authored model | [Agent And Workspace Scope](gameterm-scene-agent-workspace-scope.md) | First-pass implemented |
 | Workspace Discovery | [Workspace Discovery Scope](gameterm-scene-workspace-discovery-scope.md) | First-pass implemented |
@@ -124,6 +126,37 @@ Deferred:
 - Python execution
 - audio, transitions, rollback, screen language, and exact VN staging
 - committing demo assets before attribution is fully represented
+
+### Priority 0.5: VN Asset Intake
+
+Status: scoped next.
+
+Goal: make approved VN character and background assets usable in Scene Mode
+through local asset intake, stable sprite IDs, generated `sprites.json`, and
+attribution.
+
+Why it matters: VN Script Import can build the dialogue and choice structure,
+but the user needs a concrete way to use open art packs without copying
+unreviewed files into the repo or hardcoding local paths into scenes.
+
+Scope owner:
+
+- [VN Asset Intake Scope](gameterm-scene-vn-asset-intake-scope.md)
+
+Next slice:
+
+- validate the open asset catalog policy
+- copy approved local files into the user's Scene asset cache
+- generate stable VN sprite IDs
+- generate `sprites.json`, bindings, and attribution files
+- verify the manifest with the existing Scene doctor
+
+Deferred:
+
+- automatic itch.io download/login
+- committing third-party art before attribution is represented
+- AI-assisted backgrounds unless explicitly accepted
+- sprite-parts composition beyond warning/reporting
 
 ### Priority 1: Live Pane And Process Context
 
