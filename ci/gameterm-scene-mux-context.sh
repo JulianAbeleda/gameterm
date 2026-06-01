@@ -28,6 +28,10 @@ Common options:
   --patch-output PATH           Forwarded to workspace patch.
   --config-home PATH            Forwarded for workspace install.
   --fixture-context PATH        Use fixture JSON instead of live collection.
+  --cli-list-json PATH          Parse saved gameterm cli list JSON.
+  --gameterm-bin PATH           gameterm binary for live CLI lookup.
+  --class CLASS                 Forwarded to gameterm cli lookup.
+  --prefer-mux                  Forwarded to gameterm cli lookup.
   --allow-missing               Succeed when mux context is unavailable.
   --format json|args            collect output format. Default: json.
   --install                     Forwarded only to workspace discover.
@@ -54,6 +58,10 @@ fi
 shift
 
 fixture_context=""
+cli_list_json=""
+gameterm_bin="${GAMETERM_BIN:-gameterm}"
+window_class=""
+prefer_mux=0
 cwd=""
 scene_output=""
 patch_output=""
@@ -74,6 +82,22 @@ while [[ $# -gt 0 ]]; do
     --fixture-context)
       fixture_context="$2"
       shift 2
+      ;;
+    --cli-list-json)
+      cli_list_json="$2"
+      shift 2
+      ;;
+    --gameterm-bin)
+      gameterm_bin="$2"
+      shift 2
+      ;;
+    --class)
+      window_class="$2"
+      shift 2
+      ;;
+    --prefer-mux)
+      prefer_mux=1
+      shift
       ;;
     --pane-id)
       override_pane_id="$2"
@@ -254,6 +278,122 @@ build_env_context() {
     }' >"${target_file}"
 }
 
+normalize_cli_cwd() {
+  local cwd="$1"
+  case "${cwd}" in
+    file://localhost/*)
+      printf '%s\n' "${cwd#file://localhost}"
+      ;;
+    file:///*)
+      printf '%s\n' "${cwd#file://}"
+      ;;
+    file://.)
+      printf '.\n'
+      ;;
+    *)
+      printf '%s\n' "${cwd}"
+      ;;
+  esac
+}
+
+build_cli_list_context() {
+  local source_file="$1"
+  local target_file="$2"
+  local selected_file pane_cwd raw_cwd
+  selected_file="$(new_tmp)"
+  jq \
+    --arg pane_id "${override_pane_id}" \
+    --arg mux_window_id "${override_mux_window_id}" \
+    '
+      if type != "array" then
+        null
+      else
+        map(select(
+          ($pane_id == "" or (.pane_id | tostring) == $pane_id)
+          and ($mux_window_id == "" or (.window_id | tostring) == $mux_window_id)
+        ))
+        | (map(select(.is_active == true))[0] // .[0] // null)
+      end
+    ' "${source_file}" >"${selected_file}"
+
+  if jq -e '. == null' "${selected_file}" >/dev/null; then
+    jq -n \
+      --arg source "gameterm-cli" \
+      '{
+        source: $source,
+        available: false,
+        pane_id: null,
+        mux_window_id: null,
+        pane_cwd: null,
+        foreground_process_name: null,
+        foreground_process_path: null,
+        pane_progress: null,
+        warnings: ["gameterm cli list returned no matching pane"]
+      }' >"${target_file}"
+    return 0
+  fi
+
+  raw_cwd="$(jq -r '.cwd // empty' "${selected_file}")"
+  pane_cwd=""
+  if [[ -n "${raw_cwd}" ]]; then
+    pane_cwd="$(normalize_cli_cwd "${raw_cwd}")"
+  fi
+  jq -n \
+    --arg pane_id "$(jq -r '.pane_id // empty' "${selected_file}")" \
+    --arg mux_window_id "$(jq -r '.window_id // empty' "${selected_file}")" \
+    --arg pane_cwd "${pane_cwd}" \
+    '{
+      source: "gameterm-cli",
+      available: true,
+      pane_id: (if $pane_id == "" then null else ($pane_id | tonumber) end),
+      mux_window_id: (if $mux_window_id == "" then null else ($mux_window_id | tonumber) end),
+      pane_cwd: (if $pane_cwd == "" then null else $pane_cwd end),
+      foreground_process_name: null,
+      foreground_process_path: null,
+      pane_progress: null,
+      warnings: []
+    }' >"${target_file}"
+}
+
+collect_gameterm_cli_context() {
+  local raw_file="$1"
+  local list_file err_file
+  list_file="$(new_tmp)"
+  err_file="$(new_tmp)"
+
+  if ! command -v "${gameterm_bin}" >/dev/null 2>&1 && [[ ! -x "${gameterm_bin}" ]]; then
+    jq -n \
+      --arg bin "${gameterm_bin}" \
+      '{
+        source: "gameterm-cli",
+        available: false,
+        warnings: ["gameterm binary is not available: " + $bin]
+      }' >"${raw_file}"
+    return 0
+  fi
+
+  local cli_args=(cli --no-auto-start)
+  if [[ "${prefer_mux}" -eq 1 ]]; then
+    cli_args+=(--prefer-mux)
+  fi
+  if [[ -n "${window_class}" ]]; then
+    cli_args+=(--class "${window_class}")
+  fi
+  cli_args+=(list --format json)
+
+  if "${gameterm_bin}" "${cli_args[@]}" >"${list_file}" 2>"${err_file}"; then
+    build_cli_list_context "${list_file}" "${raw_file}"
+  else
+    jq -n \
+      --arg error "$(tr '\n' ' ' <"${err_file}")" \
+      '{
+        source: "gameterm-cli",
+        available: false,
+        warnings: ["gameterm cli list failed: " + $error]
+      }' >"${raw_file}"
+  fi
+}
+
 load_context() {
   local raw_file normalized_file
   raw_file="$(new_tmp)"
@@ -271,6 +411,14 @@ load_context() {
       exit 2
     fi
     cp "${GAMETERM_SCENE_MUX_CONTEXT}" "${raw_file}"
+  elif [[ -n "${cli_list_json}" ]]; then
+    if [[ ! -f "${cli_list_json}" ]]; then
+      echo "cli list JSON does not exist: ${cli_list_json}" >&2
+      exit 2
+    fi
+    build_cli_list_context "${cli_list_json}" "${raw_file}"
+  elif [[ -z "${override_pane_id}${override_mux_window_id}${caller_pane_cwd}${caller_foreground_process_name}${caller_foreground_process_path}${caller_pane_progress}${GAMETERM_SCENE_PANE_ID:-}${GAMETERM_SCENE_MUX_WINDOW_ID:-}${GAMETERM_SCENE_PANE_CWD:-}${GAMETERM_SCENE_FOREGROUND_PROCESS_NAME:-}${GAMETERM_SCENE_FOREGROUND_PROCESS_PATH:-}${GAMETERM_SCENE_PANE_PROGRESS:-}" ]]; then
+    collect_gameterm_cli_context "${raw_file}"
   else
     build_env_context "${raw_file}"
   fi
