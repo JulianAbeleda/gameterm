@@ -407,17 +407,20 @@ for path in "${default_files[@]}"; do
   add_file_entry "${path}" 0
 done
 
-files_json="$(
-  printf '%s\n' "${file_entries[@]}" | jq -R -s '
-    split("\n")[:-1]
-    | map(split("\t") | {
-        path: .[0],
-        role: .[1],
-        kind: .[2],
-        label: .[3]
-      })
-  '
-)"
+files_json="[]"
+if [[ "${#file_entries[@]}" -gt 0 ]]; then
+  files_json="$(
+    printf '%s\n' "${file_entries[@]}" | jq -R -s '
+      split("\n")[:-1]
+      | map(split("\t") | {
+          path: .[0],
+          role: .[1],
+          kind: .[2],
+          label: .[3]
+        })
+    '
+  )"
+fi
 
 verify_json="${verify_argv:-null}"
 if [[ "${verify_json}" != "null" ]]; then

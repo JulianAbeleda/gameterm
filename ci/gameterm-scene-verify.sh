@@ -975,13 +975,15 @@ run_agent_check() {
 }
 
 run_workspace_discovery_check() {
-  local tmp_home git_scene pane_scene non_git_dir non_git_scene patch_path pane_patch_path brief_path install_home
+  local tmp_home git_scene pane_scene non_git_dir non_git_scene empty_dir empty_scene patch_path pane_patch_path brief_path install_home
   tmp_home="$(mktemp -d /tmp/gameterm-scene-workspace-verify.XXXXXX)"
   tmp_paths+=("${tmp_home}")
   git_scene="${tmp_home}/git-workspace.json"
   pane_scene="${tmp_home}/pane-workspace.json"
   non_git_dir="${tmp_home}/non-git"
   non_git_scene="${tmp_home}/non-git-workspace.json"
+  empty_dir="${tmp_home}/empty-workspace"
+  empty_scene="${tmp_home}/empty-workspace.json"
   patch_path="${tmp_home}/workspace.patch.json"
   pane_patch_path="${tmp_home}/workspace-pane.patch.json"
   brief_path="${tmp_home}/task-brief.json"
@@ -1104,6 +1106,19 @@ run_workspace_discovery_check() {
     any(.variables[]; .key == "repo_status" and .value == {"Text": "not_git"})
     and any(.choices[]; .label == "Open README.md")
   ' "${non_git_scene}" >/dev/null
+
+  mkdir -p "${empty_dir}"
+  "${repo_root}/ci/gameterm-scene-workspace.sh" \
+    discover \
+    --cwd "${empty_dir}" \
+    --scene-output "${empty_scene}" \
+    --force >/dev/null
+  "${repo_root}/ci/gameterm-scene-author.sh" validate "${empty_scene}" >/dev/null
+  jq -e '
+    any(.variables[]; .key == "repo_status" and .value == {"Text": "not_git"})
+    and any(.variables[]; .key == "discovered_file_count" and .value == {"Number": 0})
+    and all(.entities[]; ((.metadata // []) | any(.[0] == "entity_type" and .[1] == "file")) | not)
+  ' "${empty_scene}" >/dev/null
 
   "${repo_root}/ci/gameterm-scene-workspace.sh" \
     patch \
