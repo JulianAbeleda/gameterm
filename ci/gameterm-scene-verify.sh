@@ -1209,12 +1209,13 @@ run_workspace_discovery_check() {
 }
 
 run_mux_context_check() {
-  local tmp_home active_scene explicit_scene fallback_scene patch_path
+  local tmp_home active_scene explicit_scene fallback_scene live_smoke_scene patch_path
   tmp_home="$(mktemp -d /tmp/gameterm-scene-mux-context-verify.XXXXXX)"
   tmp_paths+=("${tmp_home}")
   active_scene="${tmp_home}/active-mux-workspace.json"
   explicit_scene="${tmp_home}/explicit-cwd-mux-workspace.json"
   fallback_scene="${tmp_home}/fallback-workspace.json"
+  live_smoke_scene="${tmp_home}/live-mux-smoke/default.json"
   patch_path="${tmp_home}/active-mux-workspace.patch.json"
 
   "${repo_root}/ci/gameterm-scene-mux-context.sh" \
@@ -1291,6 +1292,22 @@ run_mux_context_check() {
     any(.variables[]; .key == "discovery_source" and .value == {"Text": "cwd_with_pane_metadata"})
     and any(.variables[]; .key == "pane_context" and .value == {"Text": "provided"})
   ' "${explicit_scene}" >/dev/null
+
+  mkdir -p "$(dirname "${live_smoke_scene}")"
+  "${repo_root}/ci/gameterm-scene-mux-context.sh" \
+    discover \
+    --cli-list-json "${fixture_root}/mux-list-active.json" \
+    --scene-output "${live_smoke_scene}" \
+    --force >/dev/null
+  "${repo_root}/ci/gameterm-scene-author.sh" validate "${live_smoke_scene}" >/dev/null
+  jq -e '
+    any(.variables[]; .key == "pane_context" and .value == {"Text": "provided"})
+    and any(.variables[]; .key == "discovery_source" and .value == {"Text": "pane_cwd"})
+    and any(.variables[]; .key == "active_pane_id" and .value == {"Number": 231})
+    and any(.variables[]; .key == "active_mux_window_id" and .value == {"Number": 7})
+    and any(.entities[]; .id == "discovered-pane"
+      and (.metadata | any(.[0] == "pane_id" and .[1] == "231")))
+  ' "${live_smoke_scene}" >/dev/null
 
   "${repo_root}/ci/gameterm-scene-mux-context.sh" \
     patch \
@@ -1492,6 +1509,7 @@ run_smoke_asset_check() {
     vertical-slice \
     workspace-agent \
     workspace-discovery \
+    live-mux-discovery \
     agent-lifecycle \
     authoring-loop \
     patch-inbox \
@@ -1512,6 +1530,8 @@ run_smoke_asset_check() {
     --describe-scenario workspace-agent | grep -q "Agent/Workspace"
   "${repo_root}/ci/gameterm-scene-smoke.sh" \
     --describe-scenario workspace-discovery | grep -q "generated workspace"
+  "${repo_root}/ci/gameterm-scene-smoke.sh" \
+    --describe-scenario live-mux-discovery | grep -q "active mux pane"
   echo "smoke assets: ok"
 }
 

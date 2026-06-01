@@ -760,6 +760,16 @@ ci/gameterm-scene-smoke.sh --launch --scenario workspace-discovery
 The scenario generates a scene from the current repository, launches it, and
 captures the generated workspace view.
 
+To live-audit generated workspace discovery from the active mux pane, use:
+
+```sh
+ci/gameterm-scene-smoke.sh --launch --scenario live-mux-discovery
+```
+
+The scenario generates a scene through
+`ci/gameterm-scene-mux-context.sh discover --allow-missing`, launches it, and
+captures the generated live mux workspace view.
+
 To validate the mux-context discovery layer without a GUI, use:
 
 ```sh

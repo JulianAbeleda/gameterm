@@ -186,9 +186,9 @@ Commit:
 
 Deliverables:
 
-- add `live-mux-discovery` to scenario list and description
-- add default scenario mapping
-- add launch audit text
+- [x] add `live-mux-discovery` to scenario list and description
+- [x] add default scenario mapping
+- [x] add launch audit text
 
 Verification:
 
@@ -204,10 +204,10 @@ Commit:
 
 Deliverables:
 
-- smoke fixture/setup branch that writes generated mux-discovery scene to
+- [x] smoke fixture/setup branch that writes generated mux-discovery scene to
   `default.json`
-- sprite manifest install, matching generated workspace scenarios
-- clear fallback output when live mux context is absent
+- [x] sprite manifest install, matching generated workspace scenarios
+- [x] clear fallback output when live mux context is absent
 
 Verification:
 
@@ -222,9 +222,9 @@ Commit:
 
 Deliverables:
 
-- verifier coverage for scenario registry/description
-- fallback or fixture-backed generated scene check without live GUI
-- docs checklist update
+- [x] verifier coverage for scenario registry/description
+- [x] fallback or fixture-backed generated scene check without live GUI
+- [x] docs checklist update
 
 Verification:
 
