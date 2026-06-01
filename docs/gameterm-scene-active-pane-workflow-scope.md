@@ -222,10 +222,10 @@ Commit:
 
 Deliverables:
 
-- deterministic verifier coverage for `discover --install --config-home`
-- overwrite protection check through the mux helper
-- invalid cwd does not install
-- fallback install with `--allow-missing`
+- [x] deterministic verifier coverage for `discover --install --config-home`
+- [x] overwrite protection check through the mux helper
+- [x] invalid cwd does not install
+- [x] fallback install with `--allow-missing`
 
 Verification:
 
@@ -239,9 +239,9 @@ Commit:
 
 Deliverables:
 
-- active pane preview and install commands in Scene Mode docs
-- onboarding entry for "open Scene from where I am now"
-- recovery notes for missing mux context and invalid cwd
+- [x] active pane preview and install commands in Scene Mode docs
+- [x] onboarding entry for "open Scene from where I am now"
+- [x] recovery notes for missing mux context and invalid cwd
 
 Verification:
 

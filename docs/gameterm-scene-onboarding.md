@@ -42,6 +42,29 @@ ${XDG_CONFIG_HOME:-~/.config}/gameterm/scenes/default.json
 
 Install refuses to overwrite an existing scene unless `--force` is passed.
 
+## Active Pane
+
+To generate a Scene Mode workspace from the active GameTerm pane, preview it
+first:
+
+```sh
+ci/gameterm-scene-mux-context.sh discover \
+  --scene-output "${tmp}/active-pane.json" \
+  --force
+ci/gameterm-scene-author.sh validate "${tmp}/active-pane.json"
+```
+
+Then install it as the default Scene Mode workspace:
+
+```sh
+ci/gameterm-scene-mux-context.sh discover --install --force
+```
+
+The helper uses active mux pane context when available. If mux context is
+unavailable and a cwd-based fallback is acceptable, add `--allow-missing`. If
+the active pane cwd is invalid, rerun from a valid pane or pass `--cwd PATH`;
+the helper fails before writing the installed scene.
+
 ## Launch
 
 Launch Scene Mode from GameTerm with the configured key assignment or command

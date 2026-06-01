@@ -214,6 +214,33 @@ environment context is supplied, the helper tries
 normalizes its pane id, mux window id, and cwd. When mux context is unavailable,
 pass `--allow-missing` to fall back to normal cwd-based workspace discovery.
 
+To preview a Scene generated from the active GameTerm pane without changing
+your config:
+
+```sh
+ci/gameterm-scene-mux-context.sh discover \
+  --scene-output /tmp/gameterm-active-pane-scene.json \
+  --force
+ci/gameterm-scene-author.sh validate /tmp/gameterm-active-pane-scene.json
+```
+
+To make that active-pane scene the default Scene Mode workspace:
+
+```sh
+ci/gameterm-scene-mux-context.sh discover --install --force
+```
+
+This installs to:
+
+```text
+${XDG_CONFIG_HOME:-~/.config}/gameterm/scenes/default.json
+```
+
+If live mux context is unavailable and you intentionally want a cwd-based
+fallback scene, add `--allow-missing`. If the active pane cwd is invalid, the
+helper fails before writing the default scene; rerun from a valid pane or pass
+an explicit `--cwd PATH`.
+
 ## VN script import
 
 Scene Mode can import a conservative visual-novel script subset into native
