@@ -63,7 +63,9 @@ Verification:
 
 ## Second-Pass Scope
 
-The next command-selection pass is real product work, not a small rendering
+Status: implemented in the command policy second pass.
+
+The second command-selection pass was real product work, not a small rendering
 cleanup.
 
 Candidate goals:
@@ -78,17 +80,14 @@ Candidate goals:
 
 ## Deferred Work
 
-Deferred items:
+Deferred items after the second pass:
 
-- true modal command palette mode
-- text filtering
-- selected-entity scoped filtering
 - explicit action group metadata
-- policy/risk badges
-- command search
+- GUI overlay command palette
+- persistent command history
 
-These should come after the policy layer defines safe display language for
-generated and agent-proposed commands.
+The runtime command-selection view, command option rows, filtering helpers, and
+policy/risk display are implemented in `gameterm-visual`.
 
 ## Verification
 
@@ -109,14 +108,17 @@ Implemented:
 - normal-view grouping of choices by action kind
 - focused unit coverage for grouped choice rendering
 
+Implemented in the command policy second pass:
+
+- command option rows
+- text/action-kind/risk/scope/enabled filtering helpers
+- runtime command-selection view
+- policy/risk display in normal and command-selection views
+
 Deferred:
 
-- modal command palette
-- filtering
+- GUI overlay command palette
 - group metadata
 
-Recommendation: treat Product Layer 3 as complete for the current first pass.
-The next meaningful work is a combined command-selection and policy second pass
-that defines action origin, risk display, and filtering together.
-That combined work is scoped in
-[GameTerm Scene Command Policy Second-Pass Scope](gameterm-scene-command-policy-second-pass-scope.md).
+Recommendation: treat Product Layer 3 as complete through the scoped command
+policy second pass.

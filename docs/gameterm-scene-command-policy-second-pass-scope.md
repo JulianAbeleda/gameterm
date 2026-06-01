@@ -1,5 +1,7 @@
 # GameTerm Scene Command Policy Second-Pass Scope
 
+Status: implemented through Lane 7.
+
 This document scopes the next meaningful Scene Mode product layer after the
 first-pass roadmap was completed.
 
@@ -73,14 +75,15 @@ Already implemented:
 - Docs state that discovery does not run commands, start agents, or submit
   prompts.
 
-Current gaps:
+Second-pass additions now implemented:
 
-- No action origin model.
-- No risk/policy metadata.
-- No text filtering or selected-entity scoped command surface.
-- No modal command-selection mode.
-- No policy-aware rendering beyond action kind labels.
-- No doctor checks for origin/risk consistency.
+- optional action origin/risk/scope policy metadata
+- derived policy defaults for old scenes
+- policy-aware normal view and Tile Debugger output
+- doctor diagnostics for missing and mismatched policy metadata
+- workspace-generated policy metadata
+- derived command option rows and deterministic filtering helpers
+- runtime command-selection view rendered by `gameterm-visual`
 
 ## Action Model
 
@@ -493,6 +496,9 @@ Second pass is complete when:
 - activation remains explicit and unchanged
 - full verifier passes
 
+Current status: implemented. The runtime command-selection view is intentionally
+inside `gameterm-visual`; a separate GUI overlay remains deferred.
+
 ## Risks
 
 Risk: schema metadata becomes policy theater.
@@ -535,4 +541,3 @@ The second-pass command policy layer is done when Scene Mode has a compatible,
 tested action policy model and a visible command-selection surface that helps
 users find actions and understand their origin/risk without changing explicit
 activation semantics.
-

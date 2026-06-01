@@ -7,8 +7,8 @@ status and next priorities.
 ## Current Status
 
 Status: first shippable Scene Mode pass complete; command policy second pass
-complete; VN asset intake and VN script import first passes complete. VN demo
-install is scoped next.
+complete; VN asset intake, VN script import, and VN demo install first passes
+complete.
 
 Scene Mode currently has:
 
@@ -26,7 +26,7 @@ Scene Mode currently has:
 - stabilization/refactor pass covering commit discipline, verifier structure,
   helper overwrite checks, enter-lifecycle cleanup, and live smoke audit
 - command/action policy metadata, diagnostics, workspace-generated policy
-  metadata, and command filtering data model
+  metadata, command filtering data model, and command-selection view
 
 Latest verification baseline:
 
@@ -285,8 +285,7 @@ Deferred:
 
 ### Priority 3: Command Selection Surface
 
-Status: complete for the first grouped-choice pass; modal/filtering work is
-deferred.
+Status: complete through the command policy second pass.
 
 Goal: avoid turning generated workspaces into long flat choice lists.
 
@@ -297,31 +296,34 @@ Scope owner:
 
 - [Command Selection Scope](gameterm-scene-command-selection-scope.md)
 
-Completed first slice:
+Completed slices:
 
 - group actions by selected entity, file, project, or process
 - preserve existing choices and explicit activation semantics
 - ensure `RunCommand` and `OpenFile` remain visibly different
+- expose derived command option rows
+- filter command options by text, action kind, risk, scope, and enabled state
+- render a runtime command-selection view with policy rows
 
 Verified behavior:
 
 - normal view groups choices by action kind
 - selected choice markers remain attached to the original choices
 - `RunCommand` and `OpenFile` remain explicit, user-activated actions
-- focused tests cover grouped choice rendering
+- command-selection view preserves selected-entity context while moving
+  between command choices
+- focused tests cover grouped choice rendering, policy rendering, filtering,
+  and command-selection activation
 
 Deferred:
 
-- modal command palette
-- text filtering/search
-- selected-entity scoped action filtering
 - explicit action group metadata
-- policy/risk badges
+- GUI overlay command palette
+- persistent command history
 
 ### Priority 4: Policy And Permission Boundaries
 
-Status: complete for the first doctor-diagnostics pass; schema-level policy
-metadata is deferred.
+Status: complete through the command policy second pass.
 
 Goal: make generated and future agent-proposed actions auditable before they
 can run.
@@ -333,12 +335,17 @@ Scope owner:
 
 - [Policy Boundaries Scope](gameterm-scene-policy-boundaries-scope.md)
 
-Completed first slice:
+Completed slices:
 
 - require explicit command shape through validation and doctor diagnostics
 - warn when reusable or generated `RunCommand` choices omit cwd
 - keep generated workspace `RunCommand` choices cwd-explicit
 - preserve explicit activation for all command execution
+- add optional action policy metadata with origin, risk, scope, confirmation,
+  and summary
+- derive policy defaults for old scenes without metadata
+- render policy in normal view, Tile Debugger, and command-selection view
+- generate deterministic policy metadata from Workspace Discovery
 
 Verified behavior:
 
@@ -347,13 +354,15 @@ Verified behavior:
 - verifier covers target diagnostics and missing-cwd policy warnings
 - discovery docs state that generated workflows do not run commands or start
   agents automatically
+- old fixtures and user scenes without policy still load
+- generated workspace scenes include `policy.origin=workspace_discovery`
+- command actions remain visibly distinct from inspect/open/navigate actions
 
 Deferred:
 
-- schema-level action origin
-- risk metadata or badges
 - allowlist enforcement
-- policy-aware command palette filtering
+- agent-proposed command approval UI
+- workspace command sandboxing
 
 ### Priority 5: Persisted Workspace Sessions
 
@@ -448,28 +457,23 @@ Avoid:
 
 ## Next Recommended Work
 
-Do the command-selection and policy second pass next.
+Use the product completion scope to choose the next product lane.
 
 Reasoning:
 
-- Priority 1 is already complete for the explicit metadata path.
-- Priority 2 is already complete for the first product-summary pass.
-- Priority 3 is complete for grouped choices, but not for modal filtering or
-  selected-entity scoped command search.
-- Priority 4 is complete for doctor diagnostics, but not for schema-level
-  action origin, risk metadata, or policy-aware display.
-- Those two deferred areas should be designed together so command filtering and
-  safety labels describe the same action model.
+- Priority 3 and Priority 4 are now complete through the scoped command policy
+  second pass.
+- The next choice should come from
+  [Product Completion Scope](gameterm-scene-product-completion-scope.md) and
+  should be scoped before implementation.
+- Refactor work should stay subordinate to the next product lane unless it
+  directly reduces implementation risk.
 
 Concrete next checklist:
 
-1. Re-read [Command Selection Scope](gameterm-scene-command-selection-scope.md).
-2. Re-read [Policy Boundaries Scope](gameterm-scene-policy-boundaries-scope.md).
-3. Use [Command Policy Second-Pass Scope](gameterm-scene-command-policy-second-pass-scope.md)
-   as the implementation plan.
-4. Start with the optional action policy schema lane.
-5. Preserve existing choice activation behavior unless a migration is scoped.
-6. Add focused render/runtime tests for policy-aware grouped or filtered
-   commands.
-7. Run `cargo test -p gameterm-visual`.
-8. Run `ci/gameterm-scene-verify.sh --all`.
+1. Re-read [Product Completion Scope](gameterm-scene-product-completion-scope.md).
+2. Compare remaining deferred work against current smoke evidence.
+3. Pick one next lane and write or update its scope.
+4. Keep commits separated by docs, visual/runtime, helper, verifier, and smoke.
+5. Run `cargo test -p gameterm-visual`.
+6. Run `ci/gameterm-scene-verify.sh --all`.

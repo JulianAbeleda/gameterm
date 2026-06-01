@@ -334,6 +334,29 @@ window, then reports the spawned pane id or spawn failure in the status line and
 Tile Debugger. Command output belongs to the spawned pane; it does not mutate
 the scene JSON.
 
+Actions can carry optional policy metadata:
+
+```json
+{
+  "policy": {
+    "origin": "workspace_discovery",
+    "risk": "command",
+    "scope": "workspace",
+    "requires_confirmation": true,
+    "summary": "Runs the explicit verifier in the discovered workspace"
+  }
+}
+```
+
+Policy metadata is display and diagnostic metadata. It does not approve,
+sandbox, or automatically execute commands. Old scenes without `policy` still
+load; Scene Mode derives display defaults from the action kind. The normal
+view, Tile Debugger, and command-selection view show origin/risk/scope so
+`RunCommand` actions are visibly different from inspect/open/navigate actions.
+Scene input maps can enter the command-selection view with
+`show_command_selection` or `toggle_command_selection`, and leave it with
+`hide_command_selection`.
+
 `Navigate` choices load another scene JSON file. Relative navigation targets
 are resolved against the directory of the currently active scene file. After a
 successful navigation, `r` reloads the active scene rather than returning to

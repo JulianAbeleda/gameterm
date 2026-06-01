@@ -87,11 +87,19 @@ Implemented:
 - default fixture updated to include cwd on its command choice
 - verifier coverage for missing-cwd policy diagnostics
 
+Implemented in the command policy second pass:
+
+- optional schema-level action origin, risk, scope, confirmation, and summary
+  metadata
+- derived policy defaults for old scenes
+- policy-aware rendering and command filtering helpers
+- doctor diagnostics for missing and mismatched policy metadata
+
 Deferred:
 
-- schema-level action origin
-- risk metadata
 - allowlist enforcement
+- workspace command sandboxing
+- agent-proposed command approval UI
 
-The combined command-selection and policy second pass is scoped in
+The combined command-selection and policy second pass is implemented through
 [GameTerm Scene Command Policy Second-Pass Scope](gameterm-scene-command-policy-second-pass-scope.md).
