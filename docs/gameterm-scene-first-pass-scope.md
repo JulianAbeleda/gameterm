@@ -9,6 +9,12 @@ for internal daily use.
 
 Status: COMPLETE for the first shippable Scene Mode pass.
 
+Post-completion closure work for the native active-pane GUI path is tracked in
+[GameTerm Scene Mode First-Pass Completion Scope](gameterm-scene-first-pass-completion-scope.md).
+That closure scope covers live GUI smoke, generator parity, recoverable context
+errors, roadmap consolidation, and refactor planning without reopening the
+broader first-pass feature set.
+
 Final verification:
 
 - `ci/gameterm-scene-verify.sh --all`: PASS.

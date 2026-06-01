@@ -50,10 +50,12 @@ implementation details.
 | Area | Owner Doc | Status |
 | --- | --- | --- |
 | First shippable Scene Mode pass | [First-Pass Scope](gameterm-scene-first-pass-scope.md) | Complete |
+| First-pass closure items | [First-Pass Completion Scope](gameterm-scene-first-pass-completion-scope.md) | Scoped |
 | Runtime history and lower-level feature roadmap | [Runtime Roadmap](gameterm-scene-runtime-roadmap.md) | Mostly historical; keep for design context |
 | Broad product completion stack | [Product Completion Scope](gameterm-scene-product-completion-scope.md) | Active planning source |
 | Command policy second pass | [Command Policy Second-Pass Scope](gameterm-scene-command-policy-second-pass-scope.md) | Complete |
 | Live mux discovery | [Live Mux Discovery Scope](gameterm-scene-live-mux-discovery-scope.md) | Scoped next |
+| Active-pane GUI entrypoint | [Active Pane GUI Entrypoint Scope](gameterm-scene-active-pane-gui-entrypoint-scope.md) | Implemented; closure smoke/parity scoped |
 | Ren'Py demo import | [Ren'Py Demo Scope](gameterm-scene-renpy-demo-scope.md) | Prototype implemented |
 | VN script importer | [VN Script Import Scope](gameterm-scene-vn-script-import-scope.md) | First-pass implemented |
 | VN asset intake | [VN Asset Intake Scope](gameterm-scene-vn-asset-intake-scope.md) | First-pass implemented |
