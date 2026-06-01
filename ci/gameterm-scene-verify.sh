@@ -31,7 +31,6 @@ scene_scripts=(
   gameterm-scene-init.sh
   gameterm-scene-patch.sh
   gameterm-scene-process.sh
-  gameterm-scene-renpy-import.py
   gameterm-scene-session.sh
   gameterm-scene-smoke.sh
   gameterm-scene-story.sh
@@ -516,35 +515,39 @@ run_doctor_check() {
   echo "doctor: ok"
 }
 
-run_renpy_import_check() {
+run_vn_script_import_check() {
   local tmp_dir
   local scene_output
   local attribution_output
-  tmp_dir="$(mktemp -d /tmp/gameterm-scene-renpy-verify.XXXXXX)"
+  tmp_dir="$(mktemp -d /tmp/gameterm-scene-vn-script-verify.XXXXXX)"
   tmp_paths+=("${tmp_dir}")
   scene_output="${tmp_dir}/renpy-demo.json"
   attribution_output="${tmp_dir}/renpy-demo-attribution.json"
 
-  "${repo_root}/ci/gameterm-scene-renpy-import.py" \
+  cargo run -q -p gameterm-visual --example scene_vn_script_import -- \
     --source "${fixture_root}/renpy-demo-source.rpy" \
     --output "${scene_output}" \
     --attribution "${attribution_output}" \
+    --source-dialect rpy \
     --source-title "GameTerm Ren'Py Demo Fixture" \
-    --renpy-version fixture \
-    >/tmp/gameterm-scene-renpy-verify.out \
-    2>/tmp/gameterm-scene-renpy-verify.err
+    --source-version fixture \
+    --title "VN Script Demo Import" \
+    >/tmp/gameterm-scene-vn-script-verify.out \
+    2>/tmp/gameterm-scene-vn-script-verify.err
 
   jq -e '
-    .variables[] | select(.key == "source_engine" and .value.Text == "renpy")
+    .variables[] | select(.key == "source_dialect" and .value.Text == "rpy")
   ' "${scene_output}" >/dev/null
   jq -e '
-    any(.choices[]; .policy.origin == "renpy_import"
+    any(.choices[]; .policy.origin == "vn_script_import"
       and .policy.risk == "state_change"
       and .policy.scope == "scene")
     and any(.choices[]; .conditions[]? | .variable == "met_guide")
   ' "${scene_output}" >/dev/null
   jq -e '
     .license_url == "https://www.renpy.org/doc/html/license.html"
+    and .source_dialect == "rpy"
+    and .source_version == "fixture"
     and (.assets | length) == 0
     and any(.notes[]; contains("does not copy assets"))
   ' "${attribution_output}" >/dev/null
@@ -557,14 +560,14 @@ run_renpy_import_check() {
       and .repo_policy == "allowed_with_attribution")
     and all(.sources[]; .id != "potat0master_school_mini_pack_1")
   ' "${fixture_root}/renpy-demo-open-assets.json" >/dev/null
-  grep -q "non-menu jump is recorded" /tmp/gameterm-scene-renpy-verify.err
+  grep -q "non-menu jump is recorded" /tmp/gameterm-scene-vn-script-verify.err
   cargo run -q -p gameterm-visual --example scene_validate -- "${scene_output}" >/dev/null
   "${repo_root}/ci/gameterm-scene-doctor.sh" \
     --scene "${scene_output}" \
-    --sprites "${fixture_root}/sprites.json" >/tmp/gameterm-scene-renpy-doctor.out
-  grep -q "Doctor summary: 0 error(s)" /tmp/gameterm-scene-renpy-doctor.out
+    --sprites "${fixture_root}/sprites.json" >/tmp/gameterm-scene-vn-script-doctor.out
+  grep -q "Doctor summary: 0 error(s)" /tmp/gameterm-scene-vn-script-doctor.out
 
-  echo "renpy import: ok"
+  echo "vn script import: ok"
 }
 
 run_vn_asset_intake_check() {
@@ -1268,7 +1271,7 @@ run_all() {
   run_init_helper_check
   run_author_helper_check
   run_doctor_check
-  run_renpy_import_check
+  run_vn_script_import_check
   run_vn_asset_intake_check
   run_patch_check
   run_agent_check
