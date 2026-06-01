@@ -1224,6 +1224,29 @@ run_mux_context_check() {
   grep -q -- '--pane-cwd' "${tmp_home}/active-context.args"
 
   "${repo_root}/ci/gameterm-scene-mux-context.sh" \
+    collect \
+    --cli-list-json "${fixture_root}/mux-list-active.json" \
+    >"${tmp_home}/cli-list-context.json"
+  jq -e '
+    .source == "gameterm-cli"
+    and .available == true
+    and .pane_id == 231
+    and .mux_window_id == 7
+    and .pane_cwd == "'"${repo_root}"'"
+  ' "${tmp_home}/cli-list-context.json" >/dev/null
+
+  "${repo_root}/ci/gameterm-scene-mux-context.sh" \
+    collect \
+    --gameterm-bin /tmp/gameterm-scene-missing-gameterm-bin \
+    --allow-missing \
+    >"${tmp_home}/missing-cli-context.json"
+  jq -e '
+    .source == "gameterm-cli"
+    and .available == false
+    and (.warnings | length == 1)
+  ' "${tmp_home}/missing-cli-context.json" >/dev/null
+
+  "${repo_root}/ci/gameterm-scene-mux-context.sh" \
     discover \
     --fixture-context "${fixture_root}/mux-context-active.json" \
     --scene-output "${active_scene}" \
