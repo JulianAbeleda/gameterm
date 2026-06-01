@@ -1,5 +1,7 @@
 # GameTerm Scene Mode VN Demo Install Scope
 
+Status: first-pass implemented.
+
 This document scopes the first pass that turns the Rust VN script importer and
 Rust VN asset intake helper into one usable local demo install workflow.
 

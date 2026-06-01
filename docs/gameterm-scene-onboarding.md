@@ -61,6 +61,28 @@ Run live smoke when a GUI session is available:
 ci/gameterm-scene-smoke.sh --launch --scenario workspace-discovery
 ```
 
+## VN Demo
+
+To install the Rust VN demo path without local art:
+
+```sh
+ci/gameterm-scene-vn-demo.sh install --skip-assets --force
+ci/gameterm-scene-vn-demo.sh doctor
+```
+
+To use approved local art, extract the asset sources outside the repo and pass
+the root directory:
+
+```sh
+ci/gameterm-scene-vn-demo.sh install \
+  --asset-source-root ~/Downloads/vn-assets \
+  --force
+ci/gameterm-scene-vn-demo.sh doctor
+```
+
+The helper validates generated output before install and refuses overwrites
+unless `--force` is passed. It does not download or commit third-party assets.
+
 ## Recovery
 
 If the generated scene is invalid, keep the installed scene untouched and rerun

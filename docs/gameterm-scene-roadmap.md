@@ -56,7 +56,7 @@ implementation details.
 | Ren'Py demo import | [Ren'Py Demo Scope](gameterm-scene-renpy-demo-scope.md) | Prototype implemented |
 | VN script importer | [VN Script Import Scope](gameterm-scene-vn-script-import-scope.md) | First-pass implemented |
 | VN asset intake | [VN Asset Intake Scope](gameterm-scene-vn-asset-intake-scope.md) | First-pass implemented |
-| VN demo install | [VN Demo Install Scope](gameterm-scene-vn-demo-install-scope.md) | Scoped next |
+| VN demo install | [VN Demo Install Scope](gameterm-scene-vn-demo-install-scope.md) | First-pass implemented |
 | Live pane/process context | [Pane And Process Discovery Scope](gameterm-scene-pane-process-discovery-scope.md) | Implemented through explicit metadata |
 | Agent/Workspace authored model | [Agent And Workspace Scope](gameterm-scene-agent-workspace-scope.md) | First-pass implemented |
 | Workspace Discovery | [Workspace Discovery Scope](gameterm-scene-workspace-discovery-scope.md) | First-pass implemented |
@@ -193,13 +193,14 @@ Scope owner:
 
 - [VN Demo Install Scope](gameterm-scene-vn-demo-install-scope.md)
 
-Next slice:
+Implemented first pass:
 
-- add `--bindings` support to `scene_vn_script_import`
-- add `ci/gameterm-scene-vn-demo.sh`
-- support generate and install commands
-- validate and doctor generated output before install
-- verify script-only and asset-backed demo paths
+- `scene_vn_script_import` accepts `--bindings` and can reference VN sprite IDs
+- `ci/gameterm-scene-vn-demo.sh` supports `generate`, `install`, and `doctor`
+- generated output is validated and doctored before install
+- installs refuse overwrites unless `--force` is passed
+- verifier coverage checks generate, install, doctor, bindings, attribution,
+  and overwrite protection
 
 Deferred:
 

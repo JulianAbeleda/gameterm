@@ -230,6 +230,29 @@ The helper copies only approved local files, writes a normal Scene
 `--allow-ai-assisted-assets` is passed. Existing output files are not
 overwritten unless `--force` is passed.
 
+For the full local demo workflow, use the VN demo helper. Script-only installs
+copy the base Scene sprite manifest so fallback sprites resolve:
+
+```sh
+ci/gameterm-scene-vn-demo.sh install --skip-assets --force
+```
+
+Asset-backed installs use approved local files from an extracted asset
+directory, write `default.json`, `sprites.json`, script attribution, asset
+attribution, and bindings beside the installed scene, and validate the output
+before touching config:
+
+```sh
+ci/gameterm-scene-vn-demo.sh install \
+  --asset-source-root ~/Downloads/vn-assets \
+  --force
+```
+
+The install target is
+`${XDG_CONFIG_HOME:-~/.config}/gameterm/scenes/`. The helper refuses to
+overwrite existing generated or installed files unless `--force` is passed. It
+does not download third-party assets or commit extracted art.
+
 First-pass support is intentionally small: `label`, dialogue/say lines,
 `menu`, `jump`, simple literal assignments, and simple variable guards. The
 script import helper does not execute Python, copy assets, emulate Ren'Py
