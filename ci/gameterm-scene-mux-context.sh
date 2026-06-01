@@ -287,6 +287,10 @@ normalize_cli_cwd() {
     file:///*)
       printf '%s\n' "${cwd#file://}"
       ;;
+    file://*/*)
+      local without_scheme="${cwd#file://}"
+      printf '/%s\n' "${without_scheme#*/}"
+      ;;
     file://.)
       printf '.\n'
       ;;
