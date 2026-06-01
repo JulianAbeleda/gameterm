@@ -28,9 +28,54 @@ use termwiz::terminal::Terminal;
 use window::{Window, WindowOps};
 
 pub fn show_visual_scene_overlay(
+    term: TermWizTerminal,
+    route_pane_id: Option<mux::pane::PaneId>,
+    gui_window: Option<Window>,
+) -> anyhow::Result<()> {
+    show_visual_scene_overlay_with_source(
+        term,
+        route_pane_id,
+        gui_window,
+        VisualSceneOverlaySource::Default,
+    )
+}
+
+#[allow(dead_code)]
+pub fn show_generated_visual_scene_overlay(
+    term: TermWizTerminal,
+    route_pane_id: Option<mux::pane::PaneId>,
+    gui_window: Option<Window>,
+    scene: VisualScene,
+    action_base_dir: PathBuf,
+    source_label: impl Into<String>,
+) -> anyhow::Result<()> {
+    show_visual_scene_overlay_with_source(
+        term,
+        route_pane_id,
+        gui_window,
+        VisualSceneOverlaySource::Generated {
+            scene,
+            action_base_dir,
+            source_label: source_label.into(),
+        },
+    )
+}
+
+#[allow(dead_code)]
+enum VisualSceneOverlaySource {
+    Default,
+    Generated {
+        scene: VisualScene,
+        action_base_dir: PathBuf,
+        source_label: String,
+    },
+}
+
+fn show_visual_scene_overlay_with_source(
     mut term: TermWizTerminal,
     route_pane_id: Option<mux::pane::PaneId>,
     gui_window: Option<Window>,
+    source: VisualSceneOverlaySource,
 ) -> anyhow::Result<()> {
     term.no_grab_mouse_in_raw_mode();
     term.set_raw_mode()?;
@@ -47,9 +92,34 @@ pub fn show_visual_scene_overlay(
     let mut runtime;
     let mut reload_count = 1;
     let (command_tx, command_rx) = mpsc::channel();
-    (runtime, sprite_manifest, load_error) =
-        initial_scene_state(&mut term, &scene_path, &sprite_manifest_path, reload_count)?;
-    let mut file_watcher = SceneFileWatcher::from_env(&scene_path, &sprite_manifest_path);
+    let generated_scene = match source {
+        VisualSceneOverlaySource::Default => {
+            (runtime, sprite_manifest, load_error) =
+                initial_scene_state(&mut term, &scene_path, &sprite_manifest_path, reload_count)?;
+            None
+        }
+        VisualSceneOverlaySource::Generated {
+            scene,
+            action_base_dir,
+            source_label,
+        } => {
+            (runtime, sprite_manifest, load_error) = initial_generated_scene_state(
+                &mut term,
+                scene.clone(),
+                source_label.clone(),
+                &sprite_manifest_path,
+                action_base_dir.clone(),
+                reload_count,
+            )?;
+            scene_path = PathBuf::from(source_label.as_str());
+            Some((scene, source_label, action_base_dir))
+        }
+    };
+    let mut file_watcher = if generated_scene.is_some() {
+        SceneFileWatcher::disabled()
+    } else {
+        SceneFileWatcher::from_env(&scene_path, &sprite_manifest_path)
+    };
     let mut patch_inbox = ScenePatchInbox::from_env();
     let (scene_patch_tx, scene_patch_rx) = mpsc::channel();
     let _scene_patch_subscription =
@@ -123,15 +193,29 @@ pub fn show_visual_scene_overlay(
                     break;
                 }
                 if visual_input == VisualInput::Reload {
-                    reload_active_scene(
-                        &mut term,
-                        &scene_path,
-                        &sprite_manifest_path,
-                        &mut reload_count,
-                        &mut runtime,
-                        &mut sprite_manifest,
-                        &mut load_error,
-                    )?;
+                    if let Some((scene, source_label, action_base_dir)) = &generated_scene {
+                        reload_generated_scene(
+                            &mut term,
+                            scene.clone(),
+                            source_label,
+                            &sprite_manifest_path,
+                            action_base_dir,
+                            &mut reload_count,
+                            &mut runtime,
+                            &mut sprite_manifest,
+                            &mut load_error,
+                        )?;
+                    } else {
+                        reload_active_scene(
+                            &mut term,
+                            &scene_path,
+                            &sprite_manifest_path,
+                            &mut reload_count,
+                            &mut runtime,
+                            &mut sprite_manifest,
+                            &mut load_error,
+                        )?;
+                    }
                     file_watcher.refresh(&scene_path, &sprite_manifest_path);
                     continue;
                 }
@@ -305,6 +389,37 @@ fn reload_active_scene(
             }
         }
     }
+    Ok(())
+}
+
+fn reload_generated_scene(
+    term: &mut TermWizTerminal,
+    scene: VisualScene,
+    source_label: &str,
+    sprite_manifest_path: &PathBuf,
+    action_base_dir: &Path,
+    reload_count: &mut u64,
+    runtime: &mut Option<SceneRuntime>,
+    sprite_manifest: &mut VisualSpriteManifestStatus,
+    load_error: &mut Option<String>,
+) -> anyhow::Result<()> {
+    *reload_count = reload_count.saturating_add(1);
+    *sprite_manifest = load_sprite_manifest_status(sprite_manifest_path);
+    let source = VisualSceneSource::new(
+        source_label.to_string(),
+        VisualSceneLoadStatus::Loaded,
+        *reload_count,
+    );
+    if let Some(runtime) = runtime.as_mut() {
+        runtime.replace_scene_preserving_state(scene, source)?;
+        render_runtime(term, runtime, sprite_manifest)?;
+    } else {
+        let loaded =
+            SceneRuntime::new_with_source_and_action_base_dir(scene, source, action_base_dir)?;
+        render_runtime(term, &loaded, sprite_manifest)?;
+        *runtime = Some(loaded);
+    }
+    *load_error = None;
     Ok(())
 }
 
@@ -648,6 +763,35 @@ fn initial_scene_state(
                 reload_count,
                 error.clone(),
             );
+            render_error(term, &source)?;
+            Ok((None, sprite_manifest, Some(error)))
+        }
+    }
+}
+
+fn initial_generated_scene_state(
+    term: &mut TermWizTerminal,
+    scene: VisualScene,
+    source_label: String,
+    sprite_manifest_path: &PathBuf,
+    action_base_dir: PathBuf,
+    reload_count: u64,
+) -> anyhow::Result<(
+    Option<SceneRuntime>,
+    VisualSpriteManifestStatus,
+    Option<String>,
+)> {
+    let sprite_manifest = load_sprite_manifest_status(sprite_manifest_path);
+    let source = VisualSceneSource::new(source_label, VisualSceneLoadStatus::Loaded, reload_count);
+    match SceneRuntime::new_with_source_and_action_base_dir(scene, source.clone(), action_base_dir) {
+        Ok(runtime) => {
+            render_runtime(term, &runtime, &sprite_manifest)?;
+            Ok((Some(runtime), sprite_manifest, None))
+        }
+        Err(err) => {
+            let error = err.to_string();
+            let source =
+                VisualSceneSource::invalid(source.scene_path, reload_count, error.clone());
             render_error(term, &source)?;
             Ok((None, sprite_manifest, Some(error)))
         }
