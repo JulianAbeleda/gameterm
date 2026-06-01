@@ -20,6 +20,27 @@ The active-pane GUI entrypoint now exists:
 
 The remaining work is closure work.
 
+## Implementation Status
+
+Status: implementation complete except live GUI capture evidence.
+
+Closed:
+
+- Rust generated active-pane scenes now use the stable shell-helper contract
+  for core variables, pane/window ids, process metadata, and entity ids.
+- Expected missing context is recoverable: no active tab produces a visible
+  toast, and no active pane opens a small generated error scene.
+- Smoke automation has an `active-pane-gui` scenario that sends
+  `CTRL|ALT|SHIFT+g`.
+- Shell/Rust generator ownership is explicit: shell helpers remain the
+  install/persistence path; the Rust generator is the transient in-process GUI
+  path.
+
+Still requiring a local interactive pass:
+
+- Run the `active-pane-gui` live smoke capture and append the result to the
+  smoke report.
+
 ## 1. Live Smoke The Native GUI Path
 
 Purpose: prove the real app path, not just the command definition.
@@ -132,6 +153,17 @@ Acceptance:
   generator.
 - Existing helper verification still passes.
 
+First-pass decision:
+
+- `ci/gameterm-scene-workspace.sh` and `ci/gameterm-scene-mux-context.sh`
+  remain the install/persistence workflows.
+- `gameterm-visual::generate_workspace_scene` is the source for native
+  transient GUI previews.
+- Shared contract fields are tested in Rust and documented in the active-pane
+  entrypoint scope.
+- A future refactor may route the shell helpers through a Rust CLI, but that is
+  not required for first-pass closure.
+
 Commit:
 
 - `[tools] consolidate active pane Scene generator path`
@@ -215,4 +247,3 @@ The six-item closure pass is complete when:
 - shell/Rust generator ownership is explicit
 - roadmap status is coherent
 - refactor work is scoped separately from product completion
-

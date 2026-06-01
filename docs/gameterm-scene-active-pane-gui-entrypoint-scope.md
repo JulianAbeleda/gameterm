@@ -54,9 +54,10 @@ and opens that generated scene immediately.
 Expected visible result:
 
 - selected workspace/project/process/pane entities render in Scene Mode
-- `pane_context=pane:<id> window:<id>` when active pane metadata is available
-- `discovery_source=rust-workspace-generator`
+- `pane_context=provided` when active pane metadata is available
+- `discovery_source=pane_cwd` when the pane reports a local cwd
 - active pane/window ids are visible in debug state
+- foreground process name/path are exposed as process metadata when available
 - no default scene file is overwritten
 
 ## First-Pass Product Decision
@@ -74,6 +75,33 @@ The shell workflow remains the install path:
 
 ```sh
 ci/gameterm-scene-mux-context.sh discover --install --force
+```
+
+The Rust generator is the transient GUI path. First-pass consolidation keeps
+these roles explicit instead of making the GUI shell out:
+
+- shell helpers own install/persistence and overwrite protection
+- the Rust generator owns native in-process preview
+- stable shared fields are covered by generator tests and smoke scenarios
+- presentation-only layout can differ as long as the stable contract remains
+  intact
+
+Stable shared contract fields:
+
+- variables: `workspace_mode`, `workspace_root`, `active_cwd`,
+  `pane_context`, `discovery_source`, `discovered_file_count`,
+  `active_pane_id`, and `active_mux_window_id`
+- entities: `discovered-workspace`, `discovered-pane`,
+  `discovered-process`, and `discovered-files`
+- process metadata: `foreground_process_name`,
+  `foreground_process_path`, and `pane_progress` when available
+
+Live smoke command:
+
+```sh
+cargo build -p gameterm-gui
+ci/gameterm-scene-smoke.sh --launch --scenario active-pane-gui \
+  --output /tmp/gameterm-scene-active-pane-gui.png
 ```
 
 ## Non-Goals
