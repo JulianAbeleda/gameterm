@@ -10,6 +10,7 @@ pub mod render;
 mod schema;
 mod story_state;
 mod validation;
+mod vn_asset_intake;
 
 use actions::{action_kind_name, action_policy_summary, derived_action_policy};
 use conditions::{condition_guard_detail, conditions_match};
@@ -30,6 +31,12 @@ pub(crate) use validation::{
     relationship_key, validate_dialogue_lines, validate_layers, validate_rpg_state,
     validate_state_entries, validate_state_operations, VisualDialogueLineError,
     VisualStateEntryError,
+};
+pub use vn_asset_intake::{
+    run_vn_asset_intake, VnAssetAttributionManifest, VnAssetBindingCharacter, VnAssetBindings,
+    VnAssetCatalog, VnAssetCatalogPolicy, VnAssetCatalogSource, VnAssetIntakeError,
+    VnAssetIntakeOptions, VnAssetIntakeReport, VnAssetIntakeWarning, VnAssetIntakeWarningKind,
+    VnAssetUsedAsset,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
