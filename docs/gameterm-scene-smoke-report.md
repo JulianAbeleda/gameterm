@@ -61,6 +61,36 @@ Validated named scenarios:
 
 ## Live Results
 
+### live-mux-discovery-pass-20260601
+
+Command:
+
+```sh
+ci/gameterm-scene-mux-context.sh collect --allow-missing \
+  >/tmp/gameterm-live-mux-context.json
+ci/gameterm-scene-mux-context.sh discover --allow-missing \
+  --scene-output /tmp/gameterm-live-mux-workspace.json \
+  --force
+ci/gameterm-scene-author.sh validate /tmp/gameterm-live-mux-workspace.json
+```
+
+Result: PASS.
+
+Artifacts:
+
+```text
+/tmp/gameterm-live-mux-context.json
+/tmp/gameterm-live-mux-workspace.json
+```
+
+Observation: the helper queried the running mux through
+`gameterm cli --no-auto-start list --format json`, selected active pane `0` in
+mux window `0`, normalized hosted cwd URL `file://.../Users/julianabeleda` to
+`/Users/julianabeleda`, generated a Scene Mode workspace from that active pane
+cwd, and validated the scene. The generated scene recorded
+`pane_context=provided`, `discovery_source=pane_cwd`, `active_pane_id=0`, and
+`active_mux_window_id=0`.
+
 ### stabilization-refactor-workspace-discovery-20260531-1835
 
 Command:

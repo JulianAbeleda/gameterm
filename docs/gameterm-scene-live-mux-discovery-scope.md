@@ -46,11 +46,8 @@ Implemented:
 - fallback behavior with `--allow-missing`
 - verifier coverage for generated scenes, generated patches, fallback, invalid
   pane ids, invalid pane cwd, CLI list parsing, and caller-style collection
-
-Pending:
-
-- live GUI smoke that records the real active pane id/window id used by Scene
-  Mode
+- live mux discovery smoke recorded against a running mux session with real
+  active pane/window ids
 
 ## Non-Goals
 

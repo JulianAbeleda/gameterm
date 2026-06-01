@@ -772,8 +772,8 @@ ci/gameterm-scene-mux-context.sh discover \
 ```
 
 This exercises the same scene/patch metadata path that a live GUI caller uses.
-The remaining live smoke step is to run this against an active GameTerm GUI/mux
-session and record the real pane/window ids selected by
+The live mux discovery smoke report records the same command path against an
+active GameTerm GUI/mux session with the real pane/window ids selected by
 `gameterm cli list --format json`.
 
 To live-audit mux submission, let the smoke script launch GameTerm, open Scene
