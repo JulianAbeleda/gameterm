@@ -1,0 +1,54 @@
+[
+  {
+    "window_id": 7,
+    "tab_id": 1,
+    "pane_id": 230,
+    "workspace": "default",
+    "size": {
+      "rows": 24,
+      "cols": 80,
+      "pixel_width": 0,
+      "pixel_height": 0,
+      "dpi": 0
+    },
+    "title": "shell",
+    "cwd": "file:///tmp",
+    "cursor_x": 0,
+    "cursor_y": 0,
+    "cursor_shape": "Default",
+    "cursor_visibility": "Visible",
+    "left_col": 0,
+    "top_row": 0,
+    "tab_title": "inactive",
+    "window_title": "GameTerm",
+    "is_active": false,
+    "is_zoomed": false,
+    "tty_name": null
+  },
+  {
+    "window_id": 7,
+    "tab_id": 1,
+    "pane_id": 231,
+    "workspace": "default",
+    "size": {
+      "rows": 24,
+      "cols": 80,
+      "pixel_width": 0,
+      "pixel_height": 0,
+      "dpi": 0
+    },
+    "title": "zsh",
+    "cwd": "file://.",
+    "cursor_x": 0,
+    "cursor_y": 0,
+    "cursor_shape": "Default",
+    "cursor_visibility": "Visible",
+    "left_col": 0,
+    "top_row": 0,
+    "tab_title": "active",
+    "window_title": "GameTerm",
+    "is_active": true,
+    "is_zoomed": false,
+    "tty_name": null
+  }
+]

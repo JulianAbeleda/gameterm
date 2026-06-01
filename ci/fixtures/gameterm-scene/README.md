@@ -22,6 +22,8 @@ These fixtures exercise Scene Mode without touching user config.
 - `mux-context-missing.json`: deterministic unavailable mux context for fallback checks.
 - `mux-context-invalid-pane.json`: invalid pane id fixture for mux context validation.
 - `mux-context-invalid-cwd.json`: invalid pane cwd fixture for mux context validation.
+- `mux-list-active.json`: deterministic `gameterm cli list --format json`
+  output for mux context parser checks.
 - `sprites.json`: sprite manifest that points at bundled test assets.
 - `sprites-missing.json`: sprite manifest with one intentionally missing sprite path.
 
@@ -47,5 +49,6 @@ These fixtures exercise Scene Mode without touching user config.
 | `mux-context-missing.json` | Safe fallback when mux context is unavailable. | mux context helper check |
 | `mux-context-invalid-pane.json` | Rejection of malformed pane identity before forwarding workspace metadata. | mux context helper negative check |
 | `mux-context-invalid-cwd.json` | Rejection of missing pane cwd before using it as discovery context. | mux context helper negative check |
+| `mux-list-active.json` | Live CLI list parsing into normalized active pane context. | mux context helper check |
 | `sprites.json` | Sprite manifest resolution against bundled assets. | `scene_fixture_sprite_manifest_resolves_relative_paths`, fixture `sprites` |
 | `sprites-missing.json` | Missing sprite paths are reported without dropping valid sprite entries. | `scene_fixture_missing_sprite_manifest_keeps_valid_entries`, fixture `missing-sprite` |
