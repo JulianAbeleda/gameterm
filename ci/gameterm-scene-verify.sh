@@ -611,7 +611,7 @@ run_vn_asset_intake_check() {
     .generated_by == "scene_vn_asset_intake"
     and any(.sources[]; .id == "4cher_set4_vn_sprites"
       and .repo_policy == "allowed_with_attribution"
-      and (.used_assets | length) == 2)
+      and (.used_assets | length) == 4)
     and any(.warnings[]; contains("requires sprite composition"))
     and any(.warnings[]; contains("AI-assisted source skipped"))
   ' "${attribution}" >/dev/null
