@@ -154,6 +154,11 @@ The first pass adds a normalized mux-context helper, fixture-backed verifier
 coverage, caller/env collection, and `gameterm cli list --format json`
 collection; live overlay smoke remains the next validation step.
 
+The named live mux smoke scenario follow-up is scoped in
+[GameTerm Scene Live Mux Smoke Scenario Scope](gameterm-scene-live-mux-smoke-scope.md).
+That document defines the `live-mux-discovery` smoke harness scenario,
+deterministic coverage, and live smoke report lane.
+
 The normal-view product layer is scoped in
 [GameTerm Scene Mode Normal View Polish Scope](gameterm-scene-normal-view-polish-scope.md).
 That document defines the compact selected-entity, layer, process, and state

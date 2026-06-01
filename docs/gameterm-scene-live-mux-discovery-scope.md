@@ -49,6 +49,11 @@ Implemented:
 - live mux discovery smoke recorded against a running mux session with real
   active pane/window ids
 
+The named smoke scenario follow-up is scoped in
+[GameTerm Scene Live Mux Smoke Scenario Scope](gameterm-scene-live-mux-smoke-scope.md).
+That document defines how `live-mux-discovery` should become a first-class
+`ci/gameterm-scene-smoke.sh --scenario` entry.
+
 ## Non-Goals
 
 - No terminal scrollback parsing.
