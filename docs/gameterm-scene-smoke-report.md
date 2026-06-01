@@ -61,6 +61,50 @@ Validated named scenarios:
 
 ## Live Results
 
+### active-pane-workflow-pass-20260531-2140
+
+Command:
+
+```sh
+cargo build -p gameterm -p gameterm-gui
+tmp_home="$(mktemp -d /tmp/gameterm-active-pane-live.XXXXXX)"
+ci/gameterm-scene-mux-context.sh discover \
+  --gameterm-bin target/debug/gameterm \
+  --install \
+  --config-home "${tmp_home}" \
+  --force
+ci/gameterm-scene-author.sh validate "${tmp_home}/gameterm/scenes/default.json"
+
+ci/gameterm-scene-smoke.sh --launch --scenario live-mux-discovery \
+  --wait-before-capture 2 \
+  --capture-timeout 12 \
+  --output /Users/julianabeleda/Desktop/gameterm-scene-smoke-active-pane-workflow-20260531-214051.png
+```
+
+Result: PASS.
+
+Capture:
+
+```text
+/Users/julianabeleda/Desktop/gameterm-scene-smoke-active-pane-workflow-20260531-214051.png
+```
+
+Artifacts:
+
+```text
+/tmp/gameterm-active-pane-installed-default.json
+/tmp/gameterm-active-pane-live-context.json
+```
+
+Observation: the active-pane install workflow wrote a validated default scene to
+a temporary config home, leaving user config untouched. The live context came
+from `target/debug/gameterm cli --no-auto-start list --format json` through the
+mux-context helper: `source=gameterm-cli`, `pane_id=0`, `mux_window_id=0`, and
+`pane_cwd=/Users/julianabeleda`. The installed scene recorded
+`pane_context=provided`, `discovery_source=pane_cwd`, `active_pane_id=0`, and
+`active_mux_window_id=0`. The named smoke scenario then launched and captured a
+non-empty 1920x1080 PNG.
+
 ### live-mux-discovery-scenario-pass-20260531-2130
 
 Command:

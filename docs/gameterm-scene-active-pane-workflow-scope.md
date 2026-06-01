@@ -256,9 +256,9 @@ Commit:
 
 Deliverables:
 
-- live install to temporary or user-approved config home
-- launch/capture through the named smoke scenario
-- smoke report entry with active pane/window/cwd
+- [x] live install to temporary or user-approved config home
+- [x] launch/capture through the named smoke scenario
+- [x] smoke report entry with active pane/window/cwd
 
 Verification:
 
