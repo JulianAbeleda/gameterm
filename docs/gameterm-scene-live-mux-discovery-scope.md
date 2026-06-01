@@ -34,6 +34,24 @@ This lane is complete when:
 8. Live smoke covers the real active-pane path when a GUI/mux session is
    available.
 
+## First-Pass Status
+
+Implemented:
+
+- fixture-backed normalized mux context fixtures
+- `ci/gameterm-scene-mux-context.sh collect|discover|patch|doctor`
+- direct caller and environment collection for active pane/process fields
+- fallback behavior with `--allow-missing`
+- verifier coverage for generated scenes, generated patches, fallback, invalid
+  pane ids, invalid pane cwd, and caller-style collection
+
+Pending:
+
+- direct GUI active-pane wiring that fills the same normalized fields from a
+  running `TermWindow`/mux session
+- live GUI smoke that records the real active pane id/window id used by Scene
+  Mode
+
 ## Non-Goals
 
 - No terminal scrollback parsing.
@@ -63,7 +81,7 @@ logic.
 
 ## Proposed Command Shape
 
-Add a small helper command:
+The small helper command is:
 
 ```sh
 ci/gameterm-scene-mux-context.sh collect [OPTIONS]
@@ -104,6 +122,12 @@ Common options:
 ```text
 --pane-id ID                  Prefer a specific pane when supplied.
 --mux-window-id ID            Prefer a specific mux window when supplied.
+--pane-cwd PATH               Use active pane cwd from a live caller.
+--foreground-process-name TEXT
+                              Use active foreground process name.
+--foreground-process-path PATH
+                              Use active foreground process executable path.
+--pane-progress TEXT          Use active pane progress label.
 --cwd PATH                    Explicit workspace cwd override.
 --scene-output PATH           Forwarded to workspace discover.
 --patch-output PATH           Forwarded to workspace patch.

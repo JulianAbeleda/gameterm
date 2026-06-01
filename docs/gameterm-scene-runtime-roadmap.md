@@ -148,6 +148,12 @@ The first product-completion layer is scoped in
 That document defines the explicit pane/process metadata path used by
 Workspace Discovery and the deferred live mux integration boundary.
 
+The live mux discovery layer is scoped in
+[GameTerm Scene Live Mux Discovery Scope](gameterm-scene-live-mux-discovery-scope.md).
+The first pass adds a normalized mux-context helper, fixture-backed verifier
+coverage, and caller/env collection; direct GUI active-pane wiring and live
+overlay smoke remain the next integration step.
+
 The normal-view product layer is scoped in
 [GameTerm Scene Mode Normal View Polish Scope](gameterm-scene-normal-view-polish-scope.md).
 That document defines the compact selected-entity, layer, process, and state

@@ -177,6 +177,40 @@ If `--cwd` is omitted, `--pane-cwd` becomes the discovery cwd. Pane and process
 metadata is rendered as scene variables, entity metadata, and patch process
 state when available.
 
+For callers that can provide active mux context, use the mux-context helper as
+the normalization layer:
+
+```sh
+ci/gameterm-scene-mux-context.sh collect \
+  --pane-id 231 \
+  --mux-window-id 7 \
+  --pane-cwd . \
+  --foreground-process-name zsh
+
+ci/gameterm-scene-mux-context.sh discover \
+  --pane-id 231 \
+  --mux-window-id 7 \
+  --pane-cwd . \
+  --foreground-process-name zsh \
+  --scene-output /tmp/gameterm-live-workspace.json
+
+ci/gameterm-scene-mux-context.sh patch \
+  --pane-id 231 \
+  --mux-window-id 7 \
+  --pane-cwd . \
+  --foreground-process-name zsh \
+  --patch-output /tmp/gameterm-live-workspace.patch.json
+```
+
+`collect` also accepts `GAMETERM_SCENE_MUX_CONTEXT` pointing at normalized JSON,
+or the direct environment fields `GAMETERM_SCENE_PANE_ID`,
+`GAMETERM_SCENE_MUX_WINDOW_ID`, `GAMETERM_SCENE_PANE_CWD`,
+`GAMETERM_SCENE_FOREGROUND_PROCESS_NAME`,
+`GAMETERM_SCENE_FOREGROUND_PROCESS_PATH`, and
+`GAMETERM_SCENE_PANE_PROGRESS`. Deterministic tests use
+`--fixture-context`. When mux context is unavailable, pass `--allow-missing` to
+fall back to normal cwd-based workspace discovery.
+
 ## VN script import
 
 Scene Mode can import a conservative visual-novel script subset into native
@@ -722,6 +756,21 @@ ci/gameterm-scene-smoke.sh --launch --scenario workspace-discovery
 
 The scenario generates a scene from the current repository, launches it, and
 captures the generated workspace view.
+
+To validate the mux-context discovery layer without a GUI, use:
+
+```sh
+ci/gameterm-scene-mux-context.sh doctor \
+  --fixture-context ci/fixtures/gameterm-scene/mux-context-active.json
+ci/gameterm-scene-mux-context.sh discover \
+  --fixture-context ci/fixtures/gameterm-scene/mux-context-active.json \
+  --scene-output /tmp/gameterm-mux-workspace.json \
+  --force
+```
+
+This exercises the same scene/patch metadata path that a live GUI caller uses.
+The remaining live smoke step is to wire a running GameTerm overlay or mux
+caller to provide the same normalized fields automatically.
 
 To live-audit mux submission, let the smoke script launch GameTerm, open Scene
 Mode before the wait timer expires, and have the script submit a patch before
