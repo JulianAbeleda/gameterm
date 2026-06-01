@@ -31,6 +31,13 @@ Open the scene with:
 { key = 'g', mods = 'CTRL|SHIFT', action = gameterm.action.ShowGameTermScene },
 ```
 
+To open a transient Scene generated from the active pane without changing
+`~/.config/gameterm/scenes/default.json`, use:
+
+```lua
+{ key = 'g', mods = 'CTRL|ALT|SHIFT', action = gameterm.action.ShowGameTermActivePaneScene },
+```
+
 ## Authoring quickstart
 
 Create an editable copy of the bundled scene with:
@@ -223,6 +230,13 @@ ci/gameterm-scene-mux-context.sh discover \
   --force
 ci/gameterm-scene-author.sh validate /tmp/gameterm-active-pane-scene.json
 ```
+
+The native GUI action `ShowGameTermActivePaneScene` performs the transient
+version of that workflow in-process. It snapshots the active pane id, mux window
+id, pane cwd, foreground process name, and pane progress; generates a validated
+workspace scene; and opens it immediately as a Scene Mode overlay. Reloading the
+generated overlay refreshes the in-memory generated scene status. It does not
+install or overwrite the configured default scene.
 
 To make that active-pane scene the default Scene Mode workspace:
 

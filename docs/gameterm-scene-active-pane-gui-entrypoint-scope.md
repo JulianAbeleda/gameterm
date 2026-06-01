@@ -12,16 +12,14 @@ which defines the current shell-based preview and install workflow.
 Add a native GameTerm action that generates a Scene Mode workspace from the
 active pane and opens it as a transient Scene Mode overlay.
 
-Recommended first-pass action:
+Implemented first-pass action:
 
 ```text
-ShowGameTermSceneForActivePane
+ShowGameTermActivePaneScene
 ```
 
-The final action name should be checked against existing action naming in
-`gameterm-gui/src/commands.rs` before implementation. If the existing action
-system prefers shorter names, `ShowGameTermSceneFromActivePane` is an acceptable
-alternative, but only one name should ship.
+This follows the existing `ShowGameTermScene` naming while making the active
+pane source explicit.
 
 ## Product End State
 
@@ -46,7 +44,7 @@ The user binds a key, for example:
 
 ```lua
 { key = 'g', mods = 'CTRL|SHIFT', action = gameterm.action.ShowGameTermScene },
-{ key = 'g', mods = 'CTRL|ALT|SHIFT', action = gameterm.action.ShowGameTermSceneForActivePane },
+{ key = 'g', mods = 'CTRL|ALT|SHIFT', action = gameterm.action.ShowGameTermActivePaneScene },
 ```
 
 The normal Scene key continues to open the configured default scene. The new
@@ -56,8 +54,8 @@ and opens that generated scene immediately.
 Expected visible result:
 
 - selected workspace/project/process/pane entities render in Scene Mode
-- `pane_context=provided` when active pane metadata is available
-- `discovery_source=pane_cwd` when active pane cwd is used
+- `pane_context=pane:<id> window:<id>` when active pane metadata is available
+- `discovery_source=rust-workspace-generator`
 - active pane/window ids are visible in debug state
 - no default scene file is overwritten
 
