@@ -1232,6 +1232,7 @@ impl VisualScene {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum VisualView {
     Scene,
+    CommandSelection,
     TileDebugger,
 }
 
@@ -1470,7 +1471,30 @@ impl SceneRuntime {
     pub fn toggle_debugger(&mut self) {
         self.view = match self.view {
             VisualView::Scene => VisualView::TileDebugger,
+            VisualView::CommandSelection => VisualView::TileDebugger,
             VisualView::TileDebugger => VisualView::Scene,
+        };
+        self.bump_generation();
+    }
+
+    pub fn show_command_selection(&mut self) {
+        if self.view != VisualView::CommandSelection {
+            self.view = VisualView::CommandSelection;
+            self.bump_generation();
+        }
+    }
+
+    pub fn hide_command_selection(&mut self) {
+        if self.view == VisualView::CommandSelection {
+            self.view = VisualView::Scene;
+            self.bump_generation();
+        }
+    }
+
+    pub fn toggle_command_selection(&mut self) {
+        self.view = match self.view {
+            VisualView::CommandSelection => VisualView::Scene,
+            VisualView::Scene | VisualView::TileDebugger => VisualView::CommandSelection,
         };
         self.bump_generation();
     }
@@ -1516,17 +1540,33 @@ impl SceneRuntime {
                 self.toggle_debugger();
                 VisualModeOutcome::Continue
             }
+            "show_command_selection" => {
+                self.show_command_selection();
+                VisualModeOutcome::Continue
+            }
+            "hide_command_selection" => {
+                self.hide_command_selection();
+                VisualModeOutcome::Continue
+            }
+            "toggle_command_selection" => {
+                self.toggle_command_selection();
+                VisualModeOutcome::Continue
+            }
             "activate_choice" => {
                 self.activate_choice();
                 VisualModeOutcome::Continue
             }
             "select_next" => {
-                self.select_next_entity();
+                if self.view != VisualView::CommandSelection {
+                    self.select_next_entity();
+                }
                 self.select_next_choice();
                 VisualModeOutcome::Continue
             }
             "select_previous" => {
-                self.select_prev_entity();
+                if self.view != VisualView::CommandSelection {
+                    self.select_prev_entity();
+                }
                 self.select_prev_choice();
                 VisualModeOutcome::Continue
             }
@@ -1799,6 +1839,7 @@ impl SceneRuntime {
     pub fn render_text_frame(&self, cols: usize, rows: usize) -> String {
         match self.view {
             VisualView::Scene => self.render_scene(cols, rows),
+            VisualView::CommandSelection => self.render_command_selection(cols, rows),
             VisualView::TileDebugger => self.render_debugger(cols, rows),
         }
     }
@@ -2019,6 +2060,60 @@ impl SceneRuntime {
                 choice.label,
                 guard,
                 action_policy_summary(choice)
+            ));
+        }
+        out.push_str(&format!("\r\nStatus: {}\r\n", self.status));
+        truncate_to_screen(out, cols, rows)
+    }
+
+    fn render_command_selection(&self, cols: usize, rows: usize) -> String {
+        let mut out = String::new();
+        out.push_str("GameTerm Command Selection\r\n");
+        out.push_str(
+            "[arrows/hjkl: select command] [enter: action] [tab: debugger] [esc/q: close]\r\n\r\n",
+        );
+        out.push_str("Filter: none\r\n");
+        if let Some(entity) = self.selected_entity() {
+            out.push_str(&format!(
+                "Selected entity: {} ({})\r\n",
+                entity.label, entity.id
+            ));
+        }
+        out.push_str("\r\nCommands:\r\n");
+        for option in self.command_options() {
+            let marker = if option.choice_index == self.selected_choice {
+                ">"
+            } else {
+                " "
+            };
+            let lock = if option.enabled { "" } else { " locked" };
+            let confirm = if option.requires_confirmation {
+                " confirm=true"
+            } else {
+                ""
+            };
+            let guard = option
+                .guard_detail
+                .as_ref()
+                .map(|detail| format!(" guard={detail}"))
+                .unwrap_or_default();
+            let summary = option
+                .summary
+                .as_ref()
+                .map(|summary| format!(" summary={summary}"))
+                .unwrap_or_default();
+            out.push_str(&format!(
+                "{marker} #{:02} {:<18} {:<14} {:<16} {:<14} {}{}{}{}{}\r\n",
+                option.choice_index,
+                option.action_kind,
+                option.risk,
+                option.origin,
+                option.scope,
+                option.label,
+                lock,
+                confirm,
+                guard,
+                summary
             ));
         }
         out.push_str(&format!("\r\nStatus: {}\r\n", self.status));
@@ -3839,6 +3934,34 @@ mod tests {
     }
 
     #[test]
+    fn mode_input_map_can_enter_and_exit_command_selection_view() {
+        let mut scene = VisualScene::demo();
+        scene.mode.input_map = vec![
+            VisualInputBinding {
+                input: "other".to_string(),
+                action: "toggle_command_selection".to_string(),
+                conditions: Vec::new(),
+            },
+            VisualInputBinding {
+                input: "reload".to_string(),
+                action: "hide_command_selection".to_string(),
+                conditions: Vec::new(),
+            },
+        ];
+        let mut runtime = SceneRuntime::new(scene).unwrap();
+
+        let outcome = runtime.handle_input(VisualInput::Other);
+
+        assert_eq!(outcome, VisualModeOutcome::Continue);
+        assert_eq!(runtime.view(), VisualView::CommandSelection);
+
+        let outcome = runtime.handle_input(VisualInput::Reload);
+
+        assert_eq!(outcome, VisualModeOutcome::Continue);
+        assert_eq!(runtime.view(), VisualView::Scene);
+    }
+
+    #[test]
     fn mode_next_input_advances_selection() {
         let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
         let initial_generation = runtime.generation();
@@ -5300,6 +5423,54 @@ mod tests {
         assert_eq!(all_command_options.len(), 1);
         assert_eq!(all_command_options[0].choice_index, 2);
         assert!(!all_command_options[0].enabled);
+    }
+
+    #[test]
+    fn command_selection_view_renders_policy_rows() {
+        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        runtime.show_command_selection();
+
+        let frame = runtime.render_text_frame(200, 80);
+
+        assert!(frame.contains("GameTerm Command Selection"));
+        assert!(frame.contains("> #00 Inspect"));
+        assert!(frame.contains("inspect"));
+        assert!(frame.contains("unknown"));
+        assert!(frame.contains("selected_entity"));
+        assert!(frame.contains("Inspect selected entity"));
+        assert!(frame.contains("#02 RunCommand"));
+        assert!(frame.contains("command"));
+        assert!(frame.contains("confirm=true"));
+    }
+
+    #[test]
+    fn command_selection_input_preserves_entity_and_activates_selected_choice() {
+        let mut scene = VisualScene::demo();
+        scene.mode.input_map = vec![VisualInputBinding {
+            input: "other".to_string(),
+            action: "toggle_command_selection".to_string(),
+            conditions: Vec::new(),
+        }];
+        let mut runtime = SceneRuntime::new(scene).unwrap();
+        runtime.handle_input(VisualInput::Other);
+        let selected_entity = runtime.render_snapshot().selected_entity_id;
+
+        runtime.handle_input(VisualInput::Next);
+        runtime.handle_input(VisualInput::Next);
+
+        assert_eq!(runtime.view(), VisualView::CommandSelection);
+        assert_eq!(
+            runtime.render_snapshot().selected_entity_id,
+            selected_entity
+        );
+        assert_eq!(runtime.render_snapshot().selected_choice, 2);
+
+        runtime.handle_input(VisualInput::Activate);
+
+        assert!(matches!(
+            runtime.take_pending_action(),
+            Some(VisualActionRequest::RunCommand { .. })
+        ));
     }
 
     #[test]
