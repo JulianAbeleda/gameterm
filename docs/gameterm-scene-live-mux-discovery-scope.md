@@ -54,6 +54,11 @@ The named smoke scenario follow-up is scoped in
 That document defines how `live-mux-discovery` should become a first-class
 `ci/gameterm-scene-smoke.sh --scenario` entry.
 
+The daily-use active-pane install workflow is scoped in
+[GameTerm Scene Active Pane Workflow Scope](gameterm-scene-active-pane-workflow-scope.md).
+That document defines the preview/install path for turning the active mux pane
+into the default Scene Mode workspace.
+
 ## Non-Goals
 
 - No terminal scrollback parsing.
