@@ -179,7 +179,7 @@ Deferred:
 
 ### Priority 0.75: VN Demo Install
 
-Status: scoped next.
+Status: first-pass implemented.
 
 Goal: combine Rust VN script import and Rust VN asset intake into one safe local
 demo install workflow.
