@@ -7,7 +7,8 @@ status and next priorities.
 ## Current Status
 
 Status: first shippable Scene Mode pass complete; command policy second pass
-complete; VN asset intake and VN script import first passes complete.
+complete; VN asset intake and VN script import first passes complete. VN demo
+install is scoped next.
 
 Scene Mode currently has:
 
@@ -55,6 +56,7 @@ implementation details.
 | Ren'Py demo import | [Ren'Py Demo Scope](gameterm-scene-renpy-demo-scope.md) | Prototype implemented |
 | VN script importer | [VN Script Import Scope](gameterm-scene-vn-script-import-scope.md) | First-pass implemented |
 | VN asset intake | [VN Asset Intake Scope](gameterm-scene-vn-asset-intake-scope.md) | First-pass implemented |
+| VN demo install | [VN Demo Install Scope](gameterm-scene-vn-demo-install-scope.md) | Scoped next |
 | Live pane/process context | [Pane And Process Discovery Scope](gameterm-scene-pane-process-discovery-scope.md) | Implemented through explicit metadata |
 | Agent/Workspace authored model | [Agent And Workspace Scope](gameterm-scene-agent-workspace-scope.md) | First-pass implemented |
 | Workspace Discovery | [Workspace Discovery Scope](gameterm-scene-workspace-discovery-scope.md) | First-pass implemented |
@@ -174,6 +176,36 @@ Deferred:
 - committing third-party art before attribution is represented
 - AI-assisted backgrounds unless explicitly accepted
 - sprite-parts composition beyond warning/reporting
+
+### Priority 0.75: VN Demo Install
+
+Status: scoped next.
+
+Goal: combine Rust VN script import and Rust VN asset intake into one safe local
+demo install workflow.
+
+Why it matters: VN Script Import and VN Asset Intake now work independently.
+The user still needs a single workflow that writes `default.json`,
+`sprites.json`, bindings, and attribution into the Scene config directory
+without hand-wiring commands or risking accidental overwrite.
+
+Scope owner:
+
+- [VN Demo Install Scope](gameterm-scene-vn-demo-install-scope.md)
+
+Next slice:
+
+- add `--bindings` support to `scene_vn_script_import`
+- add `ci/gameterm-scene-vn-demo.sh`
+- support generate and install commands
+- validate and doctor generated output before install
+- verify script-only and asset-backed demo paths
+
+Deferred:
+
+- automatic asset downloads
+- full VN staging/expression changes per dialogue line
+- app bundle installer integration
 
 ### Priority 1: Live Pane And Process Context
 
