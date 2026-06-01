@@ -582,6 +582,32 @@ Capture:
 Observation: the smoke script wrote a typed process-state patch through the
 temporary inbox before capture and kept Scene Mode open.
 
+### active-pane-gui
+
+Command:
+
+```sh
+ci/gameterm-scene-smoke.sh \
+  --launch \
+  --scenario active-pane-gui \
+  --wait-before-capture 3 \
+  --capture-timeout 8 \
+  --output /tmp/gameterm-scene-active-pane-gui.png
+```
+
+Result: PASS.
+
+Capture:
+
+```text
+/tmp/gameterm-scene-active-pane-gui.png
+```
+
+Observation: macOS automation foregrounded the launched GameTerm process and
+sent `CTRL|ALT|SHIFT+g`. The capture shows the native active-pane generated
+Scene overlay open with source/status text for the generated workspace scene.
+No configured `default.json` scene file was written by the transient GUI path.
+
 ## Follow-Up
 
 1. Keep deterministic smoke registry and asset checks in

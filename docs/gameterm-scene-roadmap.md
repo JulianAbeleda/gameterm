@@ -8,8 +8,7 @@ status and next priorities.
 
 Status: first shippable Scene Mode pass complete; command policy second pass
 complete; VN asset intake, VN script import, and VN demo install first passes
-complete; native active-pane GUI entrypoint implemented with closure work down
-to live GUI capture evidence.
+complete; native active-pane GUI first-pass closure complete.
 
 Scene Mode currently has:
 
@@ -38,6 +37,8 @@ Latest verification baseline:
 - `cargo build -p gameterm-gui`: PASS with pre-existing macOS warning noise
 - Live smoke: PASS for `workspace-discovery`, recorded in
   [GameTerm Scene Mode Smoke Report](gameterm-scene-smoke-report.md)
+- Live smoke: PASS for `active-pane-gui`, recorded in
+  [GameTerm Scene Mode Smoke Report](gameterm-scene-smoke-report.md)
 
 Known non-blocking warning noise remains outside Scene Mode scope:
 
@@ -53,12 +54,12 @@ implementation details.
 | Area | Owner Doc | Status |
 | --- | --- | --- |
 | First shippable Scene Mode pass | [First-Pass Scope](gameterm-scene-first-pass-scope.md) | Complete |
-| First-pass closure items | [First-Pass Completion Scope](gameterm-scene-first-pass-completion-scope.md) | Implemented; live active-pane GUI capture pending |
+| First-pass closure items | [First-Pass Completion Scope](gameterm-scene-first-pass-completion-scope.md) | Complete |
 | Runtime history and lower-level feature roadmap | [Runtime Roadmap](gameterm-scene-runtime-roadmap.md) | Mostly historical; keep for design context |
 | Broad product completion stack | [Product Completion Scope](gameterm-scene-product-completion-scope.md) | Active planning source |
 | Command policy second pass | [Command Policy Second-Pass Scope](gameterm-scene-command-policy-second-pass-scope.md) | Complete |
 | Live mux discovery | [Live Mux Discovery Scope](gameterm-scene-live-mux-discovery-scope.md) | Scoped next |
-| Active-pane GUI entrypoint | [Active Pane GUI Entrypoint Scope](gameterm-scene-active-pane-gui-entrypoint-scope.md) | Implemented; smoke harness added |
+| Active-pane GUI entrypoint | [Active Pane GUI Entrypoint Scope](gameterm-scene-active-pane-gui-entrypoint-scope.md) | Complete |
 | Ren'Py demo import | [Ren'Py Demo Scope](gameterm-scene-renpy-demo-scope.md) | Prototype implemented |
 | VN script importer | [VN Script Import Scope](gameterm-scene-vn-script-import-scope.md) | First-pass implemented |
 | VN asset intake | [VN Asset Intake Scope](gameterm-scene-vn-asset-intake-scope.md) | First-pass implemented |
@@ -463,25 +464,20 @@ Avoid:
 
 ## Next Recommended Work
 
-Run the active-pane GUI live smoke, then start only the scoped refactor lanes.
+Start only the scoped refactor lanes.
 
 Reasoning:
 
 - The native active-pane action, Rust generator contract, recoverable context
-  errors, and smoke harness scenario are implemented.
-- The only first-pass closure gap is interactive evidence for the real
-  `CTRL|ALT|SHIFT+g` path.
-- Product work should pause after that evidence unless a smoke failure exposes
-  a concrete defect.
+  errors, smoke harness scenario, and live `CTRL|ALT|SHIFT+g` evidence are
+  complete.
+- Product work should pause unless a smoke failure exposes a concrete defect.
 - Refactor work should stay principle-scoped and behavior-preserving.
 
 Concrete next checklist:
 
-1. Build the GUI with `cargo build -p gameterm-gui`.
-2. Run `ci/gameterm-scene-smoke.sh --launch --scenario active-pane-gui`.
-3. Record the smoke result in
-   [Smoke Report](gameterm-scene-smoke-report.md).
-4. If the smoke passes, mark first-pass closure complete.
-5. If the smoke fails, scope the failure as a product fix before refactoring.
-6. Begin [Refactor Plan](gameterm-scene-refactor-plan.md) lanes only after the
-   product closure status is clear.
+1. Use [Refactor Plan](gameterm-scene-refactor-plan.md).
+2. Start with the smoke metadata table-drive lane if smoke edits continue.
+3. Keep each refactor behavior-preserving and separately committed.
+4. Run the focused check named by each lane, then broaden before push.
+5. Scope any newly discovered product defect before continuing NFC cleanup.

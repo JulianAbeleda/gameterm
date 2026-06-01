@@ -22,7 +22,7 @@ The remaining work is closure work.
 
 ## Implementation Status
 
-Status: implementation complete except live GUI capture evidence.
+Status: COMPLETE.
 
 Closed:
 
@@ -35,11 +35,7 @@ Closed:
 - Shell/Rust generator ownership is explicit: shell helpers remain the
   install/persistence path; the Rust generator is the transient in-process GUI
   path.
-
-Still requiring a local interactive pass:
-
-- Run the `active-pane-gui` live smoke capture and append the result to the
-  smoke report.
+- Live `active-pane-gui` smoke passed and is recorded in the smoke report.
 
 ## 1. Live Smoke The Native GUI Path
 
