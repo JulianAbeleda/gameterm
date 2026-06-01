@@ -286,7 +286,15 @@ fn load_base_sprites(
         VisualSpriteManifest::load_from_path(path).map_err(|err: VisualSpriteManifestError| {
             VnAssetIntakeError::SpriteManifest(err.to_string())
         })?;
-    Ok(manifest.sprites)
+    Ok(manifest
+        .resolve_against(path)
+        .sprites
+        .into_iter()
+        .map(|sprite| VisualSpriteDefinition {
+            id: sprite.id,
+            path: sprite.path,
+        })
+        .collect())
 }
 
 fn source_is_allowed(
