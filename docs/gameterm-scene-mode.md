@@ -208,12 +208,32 @@ not suitable for vendoring as raw images. Do not commit downloaded itch.io
 archives or extracted assets unless the catalog entry allows repo inclusion and
 the attribution manifest is updated.
 
+To turn approved local VN assets into Scene Mode sprite IDs, use the Rust asset
+intake helper:
+
+```sh
+cargo run -p gameterm-visual --example scene_vn_asset_intake -- \
+  --catalog ci/fixtures/gameterm-scene/renpy-demo-open-assets.json \
+  --source-root ~/Downloads/vn-assets \
+  --output-root ~/.config/gameterm/scenes/assets/vn-demo \
+  --sprite-manifest ~/.config/gameterm/scenes/sprites.json \
+  --attribution ~/.config/gameterm/scenes/vn-demo-attribution.json \
+  --bindings ~/.config/gameterm/scenes/vn-demo-bindings.json \
+  --base-manifest ci/fixtures/gameterm-scene/sprites.json
+```
+
+The helper copies only approved local files, writes a normal Scene
+`sprites.json`, writes attribution, and writes bindings such as
+`vn.character.guide.neutral`. AI-assisted sources are skipped unless
+`--allow-ai-assisted-assets` is passed. Existing output files are not
+overwritten unless `--force` is passed.
+
 First-pass support is intentionally small: `label`, dialogue/say lines,
 `menu`, `jump`, simple literal assignments, and simple variable guards. The
-helper does not execute Python, copy assets, emulate Ren'Py screens, or import
-third-party games automatically. Unsupported statements are reported as
-warnings. Imported choices use `policy.origin=renpy_import` so they remain
-auditable in Scene Mode.
+script import helper does not execute Python, copy assets, emulate Ren'Py
+screens, or import third-party games automatically. Unsupported statements are
+reported as warnings. Imported choices use `policy.origin=renpy_import` so they
+remain auditable in Scene Mode.
 
 For final app-level verification, use the product smoke checklist in
 [`docs/gameterm-scene-product-smoke.md`](gameterm-scene-product-smoke.md).

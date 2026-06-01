@@ -7,8 +7,8 @@ status and next priorities.
 ## Current Status
 
 Status: first shippable Scene Mode pass complete; command policy second pass
-complete; VN script import and VN asset intake are the next scoped
-interoperability layers.
+complete; VN asset intake first pass complete; VN script import remains the
+next scoped interoperability layer.
 
 Scene Mode currently has:
 
@@ -55,7 +55,7 @@ implementation details.
 | Command policy second pass | [Command Policy Second-Pass Scope](gameterm-scene-command-policy-second-pass-scope.md) | Complete |
 | Ren'Py demo import | [Ren'Py Demo Scope](gameterm-scene-renpy-demo-scope.md) | Prototype implemented |
 | VN script importer | [VN Script Import Scope](gameterm-scene-vn-script-import-scope.md) | Scoped next |
-| VN asset intake | [VN Asset Intake Scope](gameterm-scene-vn-asset-intake-scope.md) | Scoped next |
+| VN asset intake | [VN Asset Intake Scope](gameterm-scene-vn-asset-intake-scope.md) | First-pass implemented |
 | Live pane/process context | [Pane And Process Discovery Scope](gameterm-scene-pane-process-discovery-scope.md) | Implemented through explicit metadata |
 | Agent/Workspace authored model | [Agent And Workspace Scope](gameterm-scene-agent-workspace-scope.md) | First-pass implemented |
 | Workspace Discovery | [Workspace Discovery Scope](gameterm-scene-workspace-discovery-scope.md) | First-pass implemented |
@@ -129,7 +129,7 @@ Deferred:
 
 ### Priority 0.5: VN Asset Intake
 
-Status: scoped next.
+Status: first-pass implemented.
 
 Goal: make approved VN character and background assets usable in Scene Mode
 through local asset intake, stable sprite IDs, generated `sprites.json`, and
@@ -143,13 +143,26 @@ Scope owner:
 
 - [VN Asset Intake Scope](gameterm-scene-vn-asset-intake-scope.md)
 
-Next slice:
+Completed first slice:
 
 - validate the open asset catalog policy
 - copy approved local files into the user's Scene asset cache
 - generate stable VN sprite IDs
 - generate `sprites.json`, bindings, and attribution files
 - verify the manifest with the existing Scene doctor
+
+Verified behavior:
+
+- `scene_vn_asset_intake` reads the curated open asset catalog.
+- Approved local character sprite files are copied into a chosen asset output
+  root.
+- Generated `sprites.json`, bindings, and attribution files are serialized by
+  the Rust example.
+- AI-assisted background sources are skipped unless explicitly allowed.
+- Sprite-parts sources report composition-required warnings instead of broken
+  manifest entries.
+- `ci/gameterm-scene-verify.sh --all` covers the intake path with repo-owned
+  placeholder fixtures.
 
 Deferred:
 
