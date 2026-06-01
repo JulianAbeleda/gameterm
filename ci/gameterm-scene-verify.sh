@@ -630,9 +630,11 @@ run_vn_asset_intake_check() {
 run_vn_demo_install_check() {
   local tmp_dir
   local generated_dir
+  local fake_image_dir
   local config_home
   local installed_dir
   local overwrite_rc
+  local fake_image_rc
   tmp_dir="$(mktemp -d /tmp/gameterm-scene-vn-demo-verify.XXXXXX)"
   tmp_paths+=("${tmp_dir}")
   generated_dir="${tmp_dir}/generated"
@@ -671,6 +673,30 @@ run_vn_demo_install_check() {
     --output-dir "${generated_dir}" \
     >/tmp/gameterm-scene-vn-demo-doctor.out
   grep -q "Doctor summary: 0 error(s)" /tmp/gameterm-scene-vn-demo-doctor.out
+  "${repo_root}/ci/gameterm-scene-vn-demo.sh" doctor \
+    --output-dir "${generated_dir}" \
+    --strict-images \
+    >/tmp/gameterm-scene-vn-demo-strict-doctor.out
+  grep -q "Doctor summary: 0 error(s)" /tmp/gameterm-scene-vn-demo-strict-doctor.out
+
+  fake_image_dir="${tmp_dir}/fake-image"
+  cp -R "${generated_dir}" "${fake_image_dir}"
+  printf 'not a png\n' \
+    >"${fake_image_dir}/assets/vn-demo/characters/guide-neutral.png"
+  set +e
+  "${repo_root}/ci/gameterm-scene-vn-demo.sh" doctor \
+    --output-dir "${fake_image_dir}" \
+    --strict-images \
+    >/tmp/gameterm-scene-vn-demo-fake-image.out \
+    2>/tmp/gameterm-scene-vn-demo-fake-image.err
+  fake_image_rc=$?
+  set -e
+  if [[ "${fake_image_rc}" -eq 0 ]]; then
+    echo "expected strict VN image doctor to reject text placeholder PNG" >&2
+    exit 1
+  fi
+  grep -q "sprite asset is not PNG image data: vn.character.guide.neutral" \
+    /tmp/gameterm-scene-vn-demo-fake-image.out
 
   "${repo_root}/ci/gameterm-scene-vn-demo.sh" install \
     --config-home "${config_home}" \

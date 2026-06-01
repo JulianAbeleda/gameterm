@@ -12,6 +12,7 @@ Options:
   --sprites PATH        Sprite manifest to check. Default: config sprites.json.
   --config-home PATH    Use PATH instead of XDG_CONFIG_HOME or ~/.config.
   --strict              Treat warnings as failures.
+  --strict-images       Require sprite files to be PNG image data.
   -h, --help            Show this help.
 EOF
 }
@@ -21,6 +22,7 @@ config_home="${XDG_CONFIG_HOME:-${HOME}/.config}"
 scene_path=""
 sprites_path=""
 strict=0
+strict_images=0
 warnings=0
 errors=0
 scene_valid=0
@@ -42,6 +44,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --strict)
       strict=1
+      shift
+      ;;
+    --strict-images)
+      strict_images=1
       shift
       ;;
     -h|--help)
@@ -88,6 +94,31 @@ resolve_path() {
     printf '%s\n' "${path}"
   else
     printf '%s\n' "${base}/${path}"
+  fi
+}
+
+check_sprite_image_file() {
+  local id="$1"
+  local resolved="$2"
+
+  if [[ "${strict_images}" -ne 1 ]]; then
+    return
+  fi
+  if ! command -v file >/dev/null 2>&1; then
+    error "--strict-images requires the file command"
+    return
+  fi
+
+  local file_info
+  file_info="$(file "${resolved}" 2>/dev/null || true)"
+  if [[ "${file_info}" == *"PNG image data"* ]]; then
+    ok "sprite asset is PNG image data: ${id}"
+  else
+    error "sprite asset is not PNG image data: ${id} -> ${resolved}"
+    if [[ -n "${file_info}" ]]; then
+      echo "${file_info}"
+    fi
+    suggest "replace ${resolved} with a real PNG file or rerun without --strict-images for fixture-only checks"
   fi
 }
 
@@ -311,6 +342,7 @@ validate_sprite_manifest() {
     resolved="$(resolve_path "${manifest_dir}" "${path}")"
     if [[ -f "${resolved}" ]]; then
       ok "sprite asset exists: ${id} -> ${resolved}"
+      check_sprite_image_file "${id}" "${resolved}"
     else
       warn "sprite asset missing: ${id} -> ${resolved}"
       suggest "create ${resolved} or update sprite id ${id} in ${sprites_path}"

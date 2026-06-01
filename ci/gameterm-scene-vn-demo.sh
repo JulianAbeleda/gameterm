@@ -18,6 +18,7 @@ Options:
   --output-dir PATH             Output directory for generate or doctor.
   --config-home PATH            Config root for install or doctor.
   --allow-ai-assisted-assets    Permit catalog entries marked AI-assisted.
+  --strict-images               Require doctor to validate real PNG files.
   --force                       Overwrite existing output/install files.
   --skip-assets                 Generate a script-only demo.
   -h, --help                    Show this help.
@@ -40,6 +41,7 @@ asset_source_root=""
 output_dir=""
 config_home="${XDG_CONFIG_HOME:-${HOME}/.config}"
 allow_ai_assisted_assets=0
+strict_images=0
 force=0
 skip_assets=0
 tmp_paths=()
@@ -109,6 +111,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --allow-ai-assisted-assets)
       allow_ai_assisted_assets=1
+      shift
+      ;;
+    --strict-images)
+      strict_images=1
       shift
       ;;
     --force)
@@ -181,15 +187,21 @@ validate_generated_dir() {
   local scene="${dir}/default.json"
   local sprites="${dir}/sprites.json"
   local doctor_output
+  local doctor_args
   doctor_output="$(mktemp /tmp/gameterm-scene-vn-demo-doctor.XXXXXX)"
+  doctor_args=(
+    --scene "${scene}"
+    --sprites "${sprites}"
+  )
+  if [[ "${strict_images}" -eq 1 ]]; then
+    doctor_args+=(--strict-images)
+  fi
 
   cargo run -q -p gameterm-visual --example scene_validate -- "${scene}" >/dev/null
   if command -v jq >/dev/null 2>&1; then
     jq -e '.sprites | type == "array"' "${sprites}" >/dev/null
   fi
-  "${repo_root}/ci/gameterm-scene-doctor.sh" \
-    --scene "${scene}" \
-    --sprites "${sprites}" >"${doctor_output}"
+  "${repo_root}/ci/gameterm-scene-doctor.sh" "${doctor_args[@]}" >"${doctor_output}"
   grep -q "Doctor summary: 0 error(s)" "${doctor_output}"
   rm -f "${doctor_output}"
 }
@@ -266,8 +278,13 @@ case "${command}" in
     else
       doctor_dir="${config_home}/gameterm/scenes"
     fi
-    "${repo_root}/ci/gameterm-scene-doctor.sh" \
+    doctor_args=(
       --scene "${doctor_dir}/default.json" \
       --sprites "${doctor_dir}/sprites.json"
+    )
+    if [[ "${strict_images}" -eq 1 ]]; then
+      doctor_args+=(--strict-images)
+    fi
+    "${repo_root}/ci/gameterm-scene-doctor.sh" "${doctor_args[@]}"
     ;;
 esac
