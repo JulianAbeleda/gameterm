@@ -29,6 +29,7 @@ scene_scripts=(
   gameterm-scene-author.sh
   gameterm-scene-doctor.sh
   gameterm-scene-init.sh
+  gameterm-scene-mux-context.sh
   gameterm-scene-patch.sh
   gameterm-scene-process.sh
   gameterm-scene-session.sh
@@ -1192,6 +1193,153 @@ run_workspace_discovery_check() {
   echo "workspace discovery: ok"
 }
 
+run_mux_context_check() {
+  local tmp_home active_scene explicit_scene fallback_scene patch_path
+  tmp_home="$(mktemp -d /tmp/gameterm-scene-mux-context-verify.XXXXXX)"
+  tmp_paths+=("${tmp_home}")
+  active_scene="${tmp_home}/active-mux-workspace.json"
+  explicit_scene="${tmp_home}/explicit-cwd-mux-workspace.json"
+  fallback_scene="${tmp_home}/fallback-workspace.json"
+  patch_path="${tmp_home}/active-mux-workspace.patch.json"
+
+  "${repo_root}/ci/gameterm-scene-mux-context.sh" \
+    collect \
+    --fixture-context "${fixture_root}/mux-context-active.json" \
+    >"${tmp_home}/active-context.json"
+  jq -e '
+    .source == "fixture"
+    and .available == true
+    and .pane_id == 231
+    and .mux_window_id == 7
+    and .pane_cwd == "'"${repo_root}"'"
+    and .foreground_process_name == "zsh"
+  ' "${tmp_home}/active-context.json" >/dev/null
+
+  "${repo_root}/ci/gameterm-scene-mux-context.sh" \
+    collect \
+    --fixture-context "${fixture_root}/mux-context-active.json" \
+    --format args \
+    >"${tmp_home}/active-context.args"
+  grep -q -- '--pane-id 231' "${tmp_home}/active-context.args"
+  grep -q -- '--pane-cwd' "${tmp_home}/active-context.args"
+
+  "${repo_root}/ci/gameterm-scene-mux-context.sh" \
+    discover \
+    --fixture-context "${fixture_root}/mux-context-active.json" \
+    --scene-output "${active_scene}" \
+    --force >/dev/null
+  "${repo_root}/ci/gameterm-scene-author.sh" validate "${active_scene}" >/dev/null
+  jq -e '
+    any(.variables[]; .key == "pane_context" and .value == {"Text": "provided"})
+    and any(.variables[]; .key == "discovery_source" and .value == {"Text": "pane_cwd"})
+    and any(.variables[]; .key == "active_pane_id" and .value == {"Number": 231})
+    and any(.variables[]; .key == "active_mux_window_id" and .value == {"Number": 7})
+    and any(.variables[]; .key == "process_phase" and .value == {"Text": "running"})
+    and any(.entities[]; .id == "discovered-pane"
+      and (.metadata | any(.[0] == "cwd" and .[1] == "'"${repo_root}"'"))
+      and (.metadata | any(.[0] == "progress" and .[1] == "None")))
+    and any(.entities[]; .id == "discovered-process"
+      and .label == "zsh"
+      and (.metadata | any(.[0] == "foreground_process_path" and .[1] == "/bin/zsh")))
+  ' "${active_scene}" >/dev/null
+
+  "${repo_root}/ci/gameterm-scene-mux-context.sh" \
+    discover \
+    --fixture-context "${fixture_root}/mux-context-active.json" \
+    --cwd "${repo_root}" \
+    --scene-output "${explicit_scene}" \
+    --force >/dev/null
+  jq -e '
+    any(.variables[]; .key == "discovery_source" and .value == {"Text": "cwd_with_pane_metadata"})
+    and any(.variables[]; .key == "pane_context" and .value == {"Text": "provided"})
+  ' "${explicit_scene}" >/dev/null
+
+  "${repo_root}/ci/gameterm-scene-mux-context.sh" \
+    patch \
+    --fixture-context "${fixture_root}/mux-context-active.json" \
+    --patch-output "${patch_path}" \
+    --force >/dev/null
+  "${repo_root}/ci/gameterm-scene-patch.sh" validate \
+    --scene "${fixture_root}/workspace-agent.json" \
+    --patch "${patch_path}" >/dev/null
+  jq -e '
+    .process_state.entity_id == "scene-verify-process"
+    and .process_state.phase == "running"
+    and .process_state.command == "zsh"
+    and (.variables | any(.key == "active_pane_id" and .value == {"Number": 231}))
+    and any(.updates[]; .entity_id == "workspace-gameterm"
+      and (.metadata | any(.[0] == "pane_cwd" and .[1] == "'"${repo_root}"'")))
+  ' "${patch_path}" >/dev/null
+
+  "${repo_root}/ci/gameterm-scene-mux-context.sh" \
+    discover \
+    --fixture-context "${fixture_root}/mux-context-missing.json" \
+    --allow-missing \
+    --cwd "${repo_root}" \
+    --scene-output "${fallback_scene}" \
+    --force >/dev/null
+  jq -e '
+    any(.variables[]; .key == "pane_context" and .value == {"Text": "absent"})
+    and any(.variables[]; .key == "discovery_source" and .value == {"Text": "cwd"})
+  ' "${fallback_scene}" >/dev/null
+
+  "${repo_root}/ci/gameterm-scene-mux-context.sh" \
+    doctor \
+    --fixture-context "${fixture_root}/mux-context-active.json" >/dev/null
+  "${repo_root}/ci/gameterm-scene-mux-context.sh" \
+    doctor \
+    --fixture-context "${fixture_root}/mux-context-missing.json" \
+    --allow-missing >/dev/null
+
+  "${repo_root}/ci/gameterm-scene-mux-context.sh" \
+    collect \
+    --pane-id 231 \
+    --mux-window-id 7 \
+    --pane-cwd "${repo_root}" \
+    --foreground-process-name zsh \
+    --foreground-process-path /bin/zsh \
+    --pane-progress None \
+    >"${tmp_home}/caller-context.json"
+  jq -e '
+    .source == "caller"
+    and .available == true
+    and .pane_id == 231
+    and .mux_window_id == 7
+  ' "${tmp_home}/caller-context.json" >/dev/null
+
+  set +e
+  "${repo_root}/ci/gameterm-scene-mux-context.sh" \
+    collect \
+    --fixture-context "${fixture_root}/mux-context-invalid-pane.json" \
+    >/tmp/gameterm-scene-mux-invalid-pane.out \
+    2>/tmp/gameterm-scene-mux-invalid-pane.err
+  invalid_pane_rc=$?
+  set -e
+  if [[ "${invalid_pane_rc}" -eq 0 ]]; then
+    echo "expected mux context helper to reject invalid pane id" >&2
+    exit 1
+  fi
+  grep -q "pane_id must be a non-negative integer" \
+    /tmp/gameterm-scene-mux-invalid-pane.err
+
+  set +e
+  "${repo_root}/ci/gameterm-scene-mux-context.sh" \
+    collect \
+    --fixture-context "${fixture_root}/mux-context-invalid-cwd.json" \
+    >/tmp/gameterm-scene-mux-invalid-cwd.out \
+    2>/tmp/gameterm-scene-mux-invalid-cwd.err
+  invalid_cwd_rc=$?
+  set -e
+  if [[ "${invalid_cwd_rc}" -eq 0 ]]; then
+    echo "expected mux context helper to reject invalid pane cwd" >&2
+    exit 1
+  fi
+  grep -q "pane cwd does not exist or is not a directory" \
+    /tmp/gameterm-scene-mux-invalid-cwd.err
+
+  echo "mux context helper: ok"
+}
+
 run_story_state_check() {
   local tmp_home
   local scene_path
@@ -1352,6 +1500,7 @@ run_all() {
   run_patch_check
   run_agent_check
   run_workspace_discovery_check
+  run_mux_context_check
   run_story_state_check
   run_workspace_session_check
   run_onboarding_check
