@@ -2,6 +2,8 @@ use crate::quad::{QuadTrait, TripleLayerQuadAllocator, TripleLayerQuadAllocatorT
 use crate::termwindow::render::paint::AllowImage;
 use crate::termwindow::render::RenderScreenLineParams;
 use crate::termwindow::TermWindow;
+use ::window::bitmaps::atlas::Sprite;
+use ::window::bitmaps::{TextureCoord, TextureRect, TextureSize};
 use ::window::RectF;
 use anyhow::Context;
 use config::HsbTransform;
@@ -9,17 +11,23 @@ use gameterm_visual::{
     VisualRenderEntity, VisualRenderSnapshot, VisualRenderStageDisplayable, VisualRenderTile,
     VisualStagePlacement,
 };
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use termwiz::color::LinearRgba;
 use termwiz::image::ImageData;
 
-const VN_PANEL_ALPHA: f32 = 0.42;
-const VN_PANEL_BORDER_ALPHA: f32 = 0.22;
+const VN_PANEL_ALPHA: f32 = 0.38;
+const VN_PANEL_BORDER_ALPHA: f32 = 0.18;
 const VN_PANEL_CORNER_SEGMENTS: usize = 8;
+const VN_PANEL_SLICE_PX: f32 = 32.0;
 const VN_FULLSCREEN_PANEL_MIN_ROWS: usize = 40;
 const VN_FULLSCREEN_PANEL_SIDE_MARGIN: f32 = 0.033;
 const VN_FULLSCREEN_PANEL_TOP: f32 = 0.085;
 const VN_FULLSCREEN_PANEL_BOTTOM: f32 = 0.896;
+static VN_PANEL_IMAGE_DATA: LazyLock<Arc<ImageData>> = LazyLock::new(|| {
+    Arc::new(ImageData::with_raw_data(
+        include_bytes!("../../../../assets/gameterm-scene/vn-panel.png").to_vec(),
+    ))
+});
 
 fn visual_placeholder_color(sprite: &str, alpha: f32, floor: f32) -> LinearRgba {
     let mut hash = 0xcbf29ce484222325u64;
@@ -94,9 +102,66 @@ impl TermWindow {
     ) -> anyhow::Result<()> {
         let cell_width = params.render_metrics.cell_size.width as f32;
         for rect in vn_panel_rects(stage_rect, params.dims.viewport_rows, cell_width, cell_height) {
-            self.populate_rounded_vn_panel(layers, 1, rect, cell_width, hsv)?;
+            if !self.populate_vn_panel_texture(layers, 1, rect, cell_width, params, hsv)? {
+                self.populate_rounded_vn_panel(layers, 1, rect, cell_width, hsv)?;
+            }
         }
         Ok(())
+    }
+
+    fn populate_vn_panel_texture(
+        &self,
+        layers: &mut TripleLayerQuadAllocator,
+        layer_num: usize,
+        rect: RectF,
+        cell_width: f32,
+        params: &RenderScreenLineParams,
+        hsv: Option<HsbTransform>,
+    ) -> anyhow::Result<bool> {
+        if self.allow_images == AllowImage::No {
+            return Ok(false);
+        }
+
+        let gl_state = self.render_state.as_ref().unwrap();
+        let padding = params
+            .render_metrics
+            .cell_size
+            .height
+            .max(params.render_metrics.cell_size.width) as usize;
+        let padding = if padding.is_power_of_two() {
+            padding
+        } else {
+            padding.next_power_of_two()
+        };
+        let (sprite, next_due, _load_state) = gl_state
+            .glyph_cache
+            .borrow_mut()
+            .cached_image(&VN_PANEL_IMAGE_DATA, Some(padding), self.allow_images)
+            .context("cached vn panel image")?;
+        self.update_next_frame_time(next_due);
+
+        let screen_slices = vn_panel_screen_slices(rect, cell_width);
+        let texture_slices = vn_panel_texture_slices();
+        let left_offset = self.dimensions.pixel_width as f32 / 2.;
+        let top_offset = self.dimensions.pixel_height as f32 / 2.;
+        for (screen_rect, texture_rect) in screen_slices.into_iter().zip(texture_slices) {
+            if screen_rect.size.width <= 0.0 || screen_rect.size.height <= 0.0 {
+                continue;
+            }
+            let mut quad = layers.allocate(layer_num)?;
+            quad.set_position(
+                screen_rect.min_x() - left_offset,
+                screen_rect.min_y() - top_offset,
+                screen_rect.max_x() - left_offset,
+                screen_rect.max_y() - top_offset,
+            );
+            quad.set_texture(sprite_texture_rect(&sprite, texture_rect));
+            quad.set_fg_color(LinearRgba::with_components(1.0, 1.0, 1.0, 1.0));
+            quad.set_hsv(hsv);
+            quad.set_has_color(true);
+        }
+
+        Ok(true)
     }
 
     fn populate_rounded_vn_panel(
@@ -406,6 +471,60 @@ fn rounded_panel_rects(rect: RectF, radius: f32) -> Vec<RectF> {
     rects
 }
 
+fn vn_panel_screen_slices(rect: RectF, cell_width: f32) -> Vec<RectF> {
+    let margin = (cell_width * 3.0)
+        .max(16.0)
+        .min(rect.size.width / 2.0)
+        .min(rect.size.height / 2.0);
+    nine_slice_rects(rect, margin)
+}
+
+fn vn_panel_texture_slices() -> Vec<RectF> {
+    let rect = euclid::rect(0.0, 0.0, 128.0, 128.0);
+    nine_slice_rects(rect, VN_PANEL_SLICE_PX)
+}
+
+fn nine_slice_rects(rect: RectF, margin: f32) -> Vec<RectF> {
+    let margin = margin
+        .max(0.0)
+        .min(rect.size.width / 2.0)
+        .min(rect.size.height / 2.0);
+    let x0 = rect.min_x();
+    let x1 = rect.min_x() + margin;
+    let x2 = rect.max_x() - margin;
+    let x3 = rect.max_x();
+    let y0 = rect.min_y();
+    let y1 = rect.min_y() + margin;
+    let y2 = rect.max_y() - margin;
+    let y3 = rect.max_y();
+    vec![
+        euclid::rect(x0, y0, x1 - x0, y1 - y0),
+        euclid::rect(x1, y0, x2 - x1, y1 - y0),
+        euclid::rect(x2, y0, x3 - x2, y1 - y0),
+        euclid::rect(x0, y1, x1 - x0, y2 - y1),
+        euclid::rect(x1, y1, x2 - x1, y2 - y1),
+        euclid::rect(x2, y1, x3 - x2, y2 - y1),
+        euclid::rect(x0, y2, x1 - x0, y3 - y2),
+        euclid::rect(x1, y2, x2 - x1, y3 - y2),
+        euclid::rect(x2, y2, x3 - x2, y3 - y2),
+    ]
+}
+
+fn sprite_texture_rect(sprite: &Sprite, source_rect: RectF) -> TextureRect {
+    let texture_width = sprite.texture.width() as f32;
+    let texture_height = sprite.texture.height() as f32;
+    TextureRect::new(
+        TextureCoord::new(
+            (sprite.coords.origin.x as f32 + source_rect.min_x()) / texture_width,
+            (sprite.coords.origin.y as f32 + source_rect.min_y()) / texture_height,
+        ),
+        TextureSize::new(
+            source_rect.size.width / texture_width,
+            source_rect.size.height / texture_height,
+        ),
+    )
+}
+
 fn inset_rect(rect: RectF, inset: f32) -> RectF {
     let inset = inset
         .max(0.0)
@@ -586,5 +705,29 @@ mod tests {
         assert!(rects[1].size.width < rect.size.width);
         assert!(rects[15].min_x() < rects[1].min_x());
         assert!(rects[15].size.width > rects[1].size.width);
+    }
+
+    #[test]
+    fn nine_slice_rects_preserve_corners_and_stretch_center() {
+        let rect = euclid::rect(10.0, 20.0, 100.0, 60.0);
+        let rects = nine_slice_rects(rect, 12.0);
+
+        assert_eq!(rects.len(), 9);
+        assert_eq!(rects[0], euclid::rect(10.0, 20.0, 12.0, 12.0));
+        assert_eq!(rects[2], euclid::rect(98.0, 20.0, 12.0, 12.0));
+        assert_eq!(rects[4], euclid::rect(22.0, 32.0, 76.0, 36.0));
+        assert_eq!(rects[8], euclid::rect(98.0, 68.0, 12.0, 12.0));
+    }
+
+    #[test]
+    fn nine_slice_rects_clamp_margin_for_small_panels() {
+        let rect = euclid::rect(0.0, 0.0, 20.0, 10.0);
+        let rects = nine_slice_rects(rect, 12.0);
+
+        assert_eq!(rects.len(), 9);
+        for rect in rects {
+            assert!(rect.size.width >= 0.0);
+            assert!(rect.size.height >= 0.0);
+        }
     }
 }
