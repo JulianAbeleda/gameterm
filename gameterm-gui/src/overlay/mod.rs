@@ -1,11 +1,12 @@
 use crate::termwindow::TermWindow;
+use gameterm_term::{TerminalConfiguration, TerminalSize};
 use mux::pane::{Pane, PaneId};
 use mux::tab::{Tab, TabId};
 use mux::termwiztermtab::{allocate, TermWizTerminal};
 use std::pin::Pin;
 use std::sync::Arc;
-use gameterm_term::{TerminalConfiguration, TerminalSize};
 
+pub mod boot_menu;
 pub mod confirm;
 pub mod confirm_close_pane;
 pub mod copy;
@@ -16,6 +17,7 @@ pub mod quickselect;
 pub mod selector;
 pub mod visual;
 
+pub use boot_menu::boot_menu;
 pub use confirm_close_pane::{
     confirm_close_pane, confirm_close_tab, confirm_close_window, confirm_quit_program,
 };

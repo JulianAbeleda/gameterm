@@ -98,6 +98,8 @@ lazy_static::lazy_static! {
     static ref POSITION: Mutex<Option<GuiPosition>> = Mutex::new(None);
 }
 
+static BOOT_MENU_SHOWN: AtomicBool = AtomicBool::new(false);
+
 pub const ICON_DATA: &'static [u8] = include_bytes!("../../../assets/icon/terminal.png");
 
 pub fn set_window_position(pos: GuiPosition) {
@@ -894,6 +896,7 @@ impl TermWindow {
             myself.subscribe_to_pane_updates();
             myself.emit_window_event("window-config-reloaded", None);
             myself.emit_status_event();
+            myself.show_boot_menu_once();
         }
 
         crate::update::start_update_checker();
@@ -2410,6 +2413,26 @@ impl TermWindow {
             alphabet: None,
         };
         self.show_launcher_impl(args, 0);
+    }
+
+    fn show_boot_menu_once(&mut self) {
+        if BOOT_MENU_SHOWN.swap(true, Ordering::Relaxed) {
+            return;
+        }
+
+        let mux = Mux::get();
+        let tab = match mux.get_active_tab_for_window(self.mux_window_id) {
+            Some(tab) => tab,
+            None => return,
+        };
+        let tab_id = tab.tab_id();
+        let window = self.window.as_ref().unwrap().clone();
+        let boot_window = window.clone();
+        let (overlay, future) = start_overlay(self, &tab, move |_tab_id, term| {
+            crate::overlay::boot_menu(term, boot_window)
+        });
+        self.assign_overlay(tab_id, overlay);
+        promise::spawn::spawn(future).detach();
     }
 
     fn show_launcher_impl(&mut self, args: LauncherActionArgs, initial_choice_idx: usize) {
