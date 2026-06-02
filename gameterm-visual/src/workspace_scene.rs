@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use crate::{
     RunCommandTarget, SceneAction, SceneActionKind, VisualEntity, VisualEntityKind,
     VisualInputBinding, VisualModeDescriptor, VisualModeLifecycle, VisualPosition, VisualRpgState,
-    VisualScene, VisualStateEntry, VisualStateValue,
+    VisualScene, VisualStage, VisualStateEntry, VisualStateValue,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -153,6 +153,7 @@ pub fn generate_workspace_scene(
             }],
         },
         layers: Vec::new(),
+        stage: VisualStage::default(),
         variables: vec![
             text_var("workspace_mode", "active_pane"),
             text_var("workspace_root", workspace_root.display().to_string()),
@@ -222,6 +223,7 @@ pub fn generate_workspace_context_error_scene(
             input_map: Vec::new(),
         },
         layers: Vec::new(),
+        stage: VisualStage::default(),
         variables: vec![
             text_var("workspace_mode", "active_pane_error"),
             text_var("workspace_root", cwd.display().to_string()),

@@ -80,6 +80,7 @@ mod tests {
                     layer: VisualRenderLayer::Tile,
                 },
             ],
+            stage: Vec::new(),
             entities: vec![
                 VisualRenderEntity {
                     id: "visible_entity".to_string(),

@@ -80,6 +80,53 @@ pub struct VisualEntity {
     pub metadata: Vec<(String, String)>,
 }
 
+fn is_empty_stage(stage: &VisualStage) -> bool {
+    stage.is_empty()
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VisualStage {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub layers: Vec<VisualStageLayer>,
+}
+
+impl VisualStage {
+    pub fn is_empty(&self) -> bool {
+        self.layers.is_empty()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VisualStageLayer {
+    pub layer_id: String,
+    #[serde(default)]
+    pub zorder: i32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub displayables: Vec<VisualStageDisplayable>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VisualStageDisplayable {
+    pub tag: String,
+    pub sprite: String,
+    #[serde(default)]
+    pub placement: VisualStagePlacement,
+    #[serde(default)]
+    pub zorder: i32,
+    #[serde(default = "default_true", skip_serializing_if = "is_true")]
+    pub visible: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VisualStagePlacement {
+    Fullscreen,
+    Left,
+    #[default]
+    Center,
+    Right,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SceneActionKind {
     Inspect,
@@ -373,6 +420,8 @@ pub struct VisualScene {
     pub mode: VisualModeDescriptor,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub layers: Vec<VisualLayerState>,
+    #[serde(default, skip_serializing_if = "is_empty_stage")]
+    pub stage: VisualStage,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub variables: Vec<VisualStateEntry>,
     #[serde(default, skip_serializing_if = "is_empty_rpg_state")]
@@ -452,6 +501,16 @@ pub struct VisualRenderEntity {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VisualRenderStageDisplayable {
+    pub layer_id: String,
+    pub tag: String,
+    pub sprite: String,
+    pub placement: VisualStagePlacement,
+    pub layer_zorder: i32,
+    pub zorder: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VisualRenderSnapshot {
     pub generation: u64,
     pub view: VisualView,
@@ -468,6 +527,8 @@ pub struct VisualRenderSnapshot {
     pub selected_entity_id: Option<String>,
     pub selected_choice: usize,
     pub tiles: Vec<VisualRenderTile>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stage: Vec<VisualRenderStageDisplayable>,
     pub entities: Vec<VisualRenderEntity>,
     pub dialogue_speaker: String,
     pub dialogue: String,
@@ -729,6 +790,16 @@ pub enum VisualSceneError {
     UnknownLayerTransitionInput { layer_id: String, input: String },
     #[error("scene layer `{layer_id}` transition condition variable must be non-empty")]
     EmptyLayerTransitionConditionVariable { layer_id: String },
+    #[error("scene stage layer id must be non-empty")]
+    EmptyStageLayerId,
+    #[error("duplicate scene stage layer id `{0}`")]
+    DuplicateStageLayerId(String),
+    #[error("scene stage displayable tag must be non-empty")]
+    EmptyStageDisplayableTag,
+    #[error("scene stage displayable `{tag}` sprite must be non-empty")]
+    EmptyStageDisplayableSprite { tag: String },
+    #[error("duplicate scene stage displayable tag `{layer_id}:{tag}`")]
+    DuplicateStageDisplayableTag { layer_id: String, tag: String },
     #[error("scene variable key must be non-empty")]
     EmptyVariableKey,
     #[error("duplicate scene variable key `{0}`")]
@@ -871,6 +942,39 @@ impl VisualSpriteManifest {
     }
 }
 
+fn validate_stage(stage: &VisualStage) -> Result<(), VisualSceneError> {
+    let mut layer_ids = HashSet::new();
+    for layer in &stage.layers {
+        if layer.layer_id.trim().is_empty() {
+            return Err(VisualSceneError::EmptyStageLayerId);
+        }
+        if !layer_ids.insert(layer.layer_id.as_str()) {
+            return Err(VisualSceneError::DuplicateStageLayerId(
+                layer.layer_id.clone(),
+            ));
+        }
+
+        let mut tags = HashSet::new();
+        for displayable in &layer.displayables {
+            if displayable.tag.trim().is_empty() {
+                return Err(VisualSceneError::EmptyStageDisplayableTag);
+            }
+            if displayable.sprite.trim().is_empty() {
+                return Err(VisualSceneError::EmptyStageDisplayableSprite {
+                    tag: displayable.tag.clone(),
+                });
+            }
+            if !tags.insert(displayable.tag.as_str()) {
+                return Err(VisualSceneError::DuplicateStageDisplayableTag {
+                    layer_id: layer.layer_id.clone(),
+                    tag: displayable.tag.clone(),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
 impl VisualScene {
     pub fn from_json(json: &str) -> Result<Self, VisualSceneError> {
         let scene: Self =
@@ -953,6 +1057,7 @@ impl VisualScene {
             }
         }
         validate_layers(&self.layers)?;
+        validate_stage(&self.stage)?;
         validate_state_entries(&self.variables).map_err(|err| match err {
             VisualStateEntryError::EmptyKey => VisualSceneError::EmptyVariableKey,
             VisualStateEntryError::DuplicateKey(key) => VisualSceneError::DuplicateVariableKey(key),
@@ -1117,6 +1222,7 @@ impl VisualScene {
                 input_map: Vec::new(),
             },
             layers: Vec::new(),
+            stage: VisualStage::default(),
             variables: vec![
                 VisualStateEntry {
                     key: "conversation_unlocked".to_string(),
@@ -1869,6 +1975,7 @@ impl SceneRuntime {
             selected_entity_id,
             selected_choice: self.selected_choice,
             tiles: self.render_tiles(),
+            stage: self.render_stage(),
             entities: self.render_entities(),
             dialogue_speaker: active_dialogue.speaker,
             dialogue: active_dialogue.text,
@@ -1885,6 +1992,9 @@ impl SceneRuntime {
     }
 
     fn render_tiles(&self) -> Vec<VisualRenderTile> {
+        if !self.scene.stage.is_empty() {
+            return Vec::new();
+        }
         let mut tiles = Vec::with_capacity(self.scene.width * self.scene.height);
         for y in 0..self.scene.height {
             for x in 0..self.scene.width {
@@ -1896,6 +2006,32 @@ impl SceneRuntime {
             }
         }
         tiles
+    }
+
+    fn render_stage(&self) -> Vec<VisualRenderStageDisplayable> {
+        let mut displayables = Vec::new();
+        for layer in &self.scene.stage.layers {
+            for displayable in &layer.displayables {
+                if displayable.visible {
+                    displayables.push(VisualRenderStageDisplayable {
+                        layer_id: layer.layer_id.clone(),
+                        tag: displayable.tag.clone(),
+                        sprite: displayable.sprite.clone(),
+                        placement: displayable.placement,
+                        layer_zorder: layer.zorder,
+                        zorder: displayable.zorder,
+                    });
+                }
+            }
+        }
+        displayables.sort_by(|left, right| {
+            left.layer_zorder
+                .cmp(&right.layer_zorder)
+                .then(left.zorder.cmp(&right.zorder))
+                .then(left.layer_id.cmp(&right.layer_id))
+                .then(left.tag.cmp(&right.tag))
+        });
+        displayables
     }
 
     fn render_entities(&self) -> Vec<VisualRenderEntity> {
@@ -2690,6 +2826,7 @@ mod tests {
                     layer: VisualRenderLayer::Tile,
                 },
             ],
+            stage: Vec::new(),
             entities: vec![
                 VisualRenderEntity {
                     id: "row-one-left".to_string(),
@@ -3778,6 +3915,89 @@ mod tests {
             runtime.active_dialogue_line().text,
             "Labels become dialogue targets, and menu items become Scene Mode choices."
         );
+    }
+
+    #[test]
+    fn render_snapshot_uses_stage_displayables_when_present() {
+        let mut scene = VisualScene::demo();
+        scene.stage = VisualStage {
+            layers: vec![
+                VisualStageLayer {
+                    layer_id: "characters".to_string(),
+                    zorder: 10,
+                    displayables: vec![VisualStageDisplayable {
+                        tag: "guide".to_string(),
+                        sprite: "vn.character.guide.neutral".to_string(),
+                        placement: VisualStagePlacement::Center,
+                        zorder: 0,
+                        visible: true,
+                    }],
+                },
+                VisualStageLayer {
+                    layer_id: "background".to_string(),
+                    zorder: 0,
+                    displayables: vec![VisualStageDisplayable {
+                        tag: "background".to_string(),
+                        sprite: "vn.background.school_classroom".to_string(),
+                        placement: VisualStagePlacement::Fullscreen,
+                        zorder: 0,
+                        visible: true,
+                    }],
+                },
+            ],
+        };
+        let runtime = SceneRuntime::new(scene).unwrap();
+
+        let snapshot = runtime.render_snapshot();
+        assert!(snapshot.tiles.is_empty());
+        assert_eq!(
+            snapshot
+                .stage
+                .iter()
+                .map(|displayable| displayable.tag.as_str())
+                .collect::<Vec<_>>(),
+            vec!["background", "guide"]
+        );
+        assert_eq!(
+            snapshot.stage[0].placement,
+            VisualStagePlacement::Fullscreen
+        );
+        assert_eq!(snapshot.stage[1].placement, VisualStagePlacement::Center);
+    }
+
+    #[test]
+    fn scene_rejects_invalid_stage_fields() {
+        let mut empty_layer = VisualScene::demo();
+        empty_layer.stage = VisualStage {
+            layers: vec![VisualStageLayer {
+                layer_id: " ".to_string(),
+                zorder: 0,
+                displayables: Vec::new(),
+            }],
+        };
+        assert!(matches!(
+            empty_layer.validate(),
+            Err(VisualSceneError::EmptyStageLayerId)
+        ));
+
+        let mut empty_sprite = VisualScene::demo();
+        empty_sprite.stage = VisualStage {
+            layers: vec![VisualStageLayer {
+                layer_id: "characters".to_string(),
+                zorder: 0,
+                displayables: vec![VisualStageDisplayable {
+                    tag: "guide".to_string(),
+                    sprite: " ".to_string(),
+                    placement: VisualStagePlacement::Center,
+                    zorder: 0,
+                    visible: true,
+                }],
+            }],
+        };
+        assert!(matches!(
+            empty_sprite.validate(),
+            Err(VisualSceneError::EmptyStageDisplayableSprite { tag }) if tag == "guide"
+        ));
     }
 
     #[test]
