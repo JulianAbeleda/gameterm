@@ -73,6 +73,7 @@ implementation details.
 | VN demo install | [VN Demo Install Scope](gameterm-scene-vn-demo-install-scope.md) | First-pass implemented |
 | VN real asset run | [VN Real Assets Run Scope](gameterm-scene-vn-real-assets-run-scope.md) | Complete |
 | VN local PSD/image export | [VN Real Assets Run Scope](gameterm-scene-vn-real-assets-run-scope.md) | Complete |
+| VN staged presentation | [VN Presentation Scope](gameterm-scene-vn-presentation-scope.md) | Scoped next |
 | Live pane/process context | [Pane And Process Discovery Scope](gameterm-scene-pane-process-discovery-scope.md) | Implemented through explicit metadata |
 | Agent/Workspace authored model | [Agent And Workspace Scope](gameterm-scene-agent-workspace-scope.md) | First-pass implemented |
 | Workspace Discovery | [Workspace Discovery Scope](gameterm-scene-workspace-discovery-scope.md) | First-pass implemented |
@@ -267,6 +268,10 @@ Next likely VN pass:
 - better normal-view placement/scaling for character and background assets
 - clearer support for alternate local source ids and multi-character local
   asset roots
+
+Scope owner:
+
+- [VN Presentation Scope](gameterm-scene-vn-presentation-scope.md)
 
 ### Priority 1: Live Pane And Process Context
 
