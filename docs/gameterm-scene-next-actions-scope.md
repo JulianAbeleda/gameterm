@@ -113,11 +113,15 @@ ci/gameterm-scene-smoke.sh --launch --scenario vn-compose \
 
 After smoke reliability is stable, choose exactly one product lane:
 
+The three lanes are fully scoped together in
+[Scene Next Product Lanes Scope](gameterm-scene-next-product-lanes-scope.md).
+
 ### Option A: TTS First Pass
 
 Scope owner:
 
 - [Scene Agent TTS Scope](gameterm-scene-agent-tts-scope.md)
+- [Scene Next Product Lanes Scope](gameterm-scene-next-product-lanes-scope.md)
 
 Why first:
 
@@ -139,6 +143,7 @@ First commits:
 Scope owner:
 
 - [Scene Agent STT Scope](gameterm-scene-agent-stt-scope.md)
+- [Scene Next Product Lanes Scope](gameterm-scene-next-product-lanes-scope.md)
 
 Why first:
 
@@ -154,6 +159,7 @@ Tradeoff:
 Scope owner:
 
 - [VN Presentation Scope](gameterm-scene-vn-presentation-scope.md)
+- [Scene Next Product Lanes Scope](gameterm-scene-next-product-lanes-scope.md)
 
 Why first:
 
@@ -188,4 +194,3 @@ Stop and rescope if:
 - TTS requires a network service by default
 - STT requires always-on listening
 - a product feature needs broad renderer, mux, or terminal protocol changes
-
