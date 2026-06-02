@@ -750,6 +750,41 @@ as `Codex` dialogue. The capture shows `Status: Codex succeeded`, the staged
 classroom background, the character sprite, and the compose dock still mounted
 with the last prompt.
 
+### vn-compose-native-open
+
+Command:
+
+```sh
+cargo build -p gameterm-gui
+ci/gameterm-scene-smoke.sh --launch --scenario vn-compose \
+  --output /tmp/gameterm-scene-smoke-vn-compose-native.png
+```
+
+Result: PASS.
+
+Capture:
+
+```text
+/tmp/gameterm-scene-smoke-vn-compose-native.png
+```
+
+Smoke report:
+
+```text
+scenario: vn-compose
+fixture: vn-demo
+GameTerm class: org.gameterm.scene-smoke.22762
+native Scene open: 1
+output: /tmp/gameterm-scene-smoke-vn-compose-native.png
+bytes: 282894
+```
+
+Observation: the smoke harness opened Scene Mode through the native smoke hook
+instead of the keyboard shortcut path, foregrounded the launched GameTerm
+window, typed `look at roadmap` into the compose dock, and captured a
+`1920x1080` PNG. This validates the current GUI smoke path for Scene changes
+without depending on shortcut automation to enter Scene Mode.
+
 ## Follow-Up
 
 1. Keep deterministic smoke registry and asset checks in
