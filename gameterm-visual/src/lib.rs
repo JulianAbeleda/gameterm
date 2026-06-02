@@ -7,7 +7,10 @@ mod conditions;
 mod debug;
 mod patch;
 pub mod render;
+mod runtime_input;
+mod runtime_selection;
 mod runtime_status;
+mod runtime_status_methods;
 mod schema;
 mod story_state;
 mod validation;
@@ -22,6 +25,7 @@ pub use patch::{
     VisualSceneDialoguePatch, VisualSceneEntityPatch, VisualScenePatch, VisualScenePatchError,
 };
 pub use render::{intersecting_entities_for_row, visible_tiles_for_row};
+use runtime_input::default_mode_input_action;
 use runtime_status::{
     clip_text, format_layer_summary, format_metadata_summary, format_process_summary,
     format_relationship_metadata, format_relationship_summary, format_state_summary,
@@ -1729,278 +1733,12 @@ impl SceneRuntime {
 }
 
 impl SceneRuntime {
-    fn run_mode_input_action(&mut self, action: &str) -> VisualModeOutcome {
-        match action {
-            "close" => VisualModeOutcome::Exit,
-            "reload" | "ignore" => VisualModeOutcome::Continue,
-            "toggle_debug" => {
-                self.toggle_debugger();
-                VisualModeOutcome::Continue
-            }
-            "show_command_selection" => {
-                self.show_command_selection();
-                VisualModeOutcome::Continue
-            }
-            "hide_command_selection" => {
-                self.hide_command_selection();
-                VisualModeOutcome::Continue
-            }
-            "toggle_command_selection" => {
-                self.toggle_command_selection();
-                VisualModeOutcome::Continue
-            }
-            "activate_choice" => {
-                self.activate_choice();
-                VisualModeOutcome::Continue
-            }
-            "select_next" => {
-                if self.view != VisualView::CommandSelection {
-                    self.select_next_entity();
-                }
-                self.select_next_choice();
-                VisualModeOutcome::Continue
-            }
-            "select_previous" => {
-                if self.view != VisualView::CommandSelection {
-                    self.select_prev_entity();
-                }
-                self.select_prev_choice();
-                VisualModeOutcome::Continue
-            }
-            "run_update_hooks" => {
-                self.run_mode_update_hooks();
-                VisualModeOutcome::Continue
-            }
-            "run_exit_hooks" => {
-                self.run_mode_exit_hooks();
-                VisualModeOutcome::Continue
-            }
-            "export_story_state" => {
-                let path = self.default_story_state_path();
-                self.request_story_state_export(path);
-                VisualModeOutcome::Continue
-            }
-            "import_story_state" => {
-                let path = self.default_story_state_path();
-                self.request_story_state_import(path);
-                VisualModeOutcome::Continue
-            }
-            _ => VisualModeOutcome::Continue,
-        }
-    }
-
-    fn handle_layer_input(&mut self, input: VisualInput) -> Option<VisualModeOutcome> {
-        let input_key = input.binding_key();
-        for layer_index in 0..self.scene.layers.len() {
-            let transition = self.scene.layers[layer_index]
-                .transitions
-                .iter()
-                .find(|transition| transition.input.trim() == input_key)
-                .cloned();
-            if let Some(transition) = transition {
-                let layer_id = self.scene.layers[layer_index].layer_id.clone();
-                let selected_entity = self.selected_entity().cloned();
-                let process_state = self.last_process_state.clone();
-                self.last_input_layer = Some(layer_id.clone());
-                let transition_result = actions::apply_layer_transition_at(
-                    &mut self.scene.layers,
-                    layer_index,
-                    input_key,
-                    &self.scene.variables,
-                    &self.scene.rpg,
-                    selected_entity.as_ref(),
-                    process_state.as_ref(),
-                )
-                .expect("transition was found before applying it");
-                match transition_result {
-                    Err(report) => {
-                        let layer_id = report.layer_id.clone();
-                        let from_state = report.from_state.clone();
-                        let target_state = report.target_state.clone();
-                        self.last_layer_transition = Some(report);
-                        self.status = format!(
-                            "Layer transition unavailable: {} {}",
-                            layer_id,
-                            condition_guard_detail(&transition.conditions)
-                                .unwrap_or_else(|| "guard condition not met".to_string())
-                        );
-                        self.record_runtime_event(
-                            "transition",
-                            format!("{layer_id} {from_state} -> {target_state} blocked"),
-                        );
-                        self.bump_generation();
-                        return Some(VisualModeOutcome::Continue);
-                    }
-                    Ok(report) => {
-                        let layer_id = report.layer_id.clone();
-                        let from_state = report.from_state.clone();
-                        let target_state = report.target_state.clone();
-                        self.last_layer_transition = Some(report);
-                        self.status = format!(
-                            "Layer {layer_id} transitioned: {from_state} -> {target_state}"
-                        );
-                        self.record_runtime_event(
-                            "transition",
-                            format!("{layer_id} {from_state} -> {target_state}"),
-                        );
-                        self.bump_generation();
-                        return Some(VisualModeOutcome::Continue);
-                    }
-                }
-            }
-
-            let binding = self.scene.layers[layer_index]
-                .input_map
-                .iter()
-                .find(|binding| binding.input.trim() == input_key)
-                .cloned();
-            if let Some(binding) = binding {
-                let layer_id = self.scene.layers[layer_index].layer_id.clone();
-                self.last_input_layer = Some(layer_id.clone());
-                if !conditions_match(
-                    &binding.conditions,
-                    &self.scene.variables,
-                    &self.scene.rpg,
-                    self.selected_entity(),
-                    self.last_process_state.as_ref(),
-                ) {
-                    self.status = format!(
-                        "Layer input unavailable: {} {}",
-                        layer_id,
-                        condition_guard_detail(&binding.conditions)
-                            .unwrap_or_else(|| "guard condition not met".to_string())
-                    );
-                    self.record_runtime_event("input", format!("{layer_id} {input_key} blocked"));
-                    self.bump_generation();
-                    return Some(VisualModeOutcome::Continue);
-                }
-                self.record_runtime_event("input", format!("{layer_id} {input_key}"));
-                return Some(self.run_mode_input_action(binding.action.trim()));
-            }
-        }
-        None
-    }
-
-    pub fn select_next_entity(&mut self) {
-        if self.scene.entities.len() > 1 {
-            self.selected_entity = (self.selected_entity + 1) % self.scene.entities.len();
-            self.bump_generation();
-        }
-    }
-
-    pub fn select_prev_entity(&mut self) {
-        if self.scene.entities.len() > 1 {
-            self.selected_entity = if self.selected_entity == 0 {
-                self.scene.entities.len() - 1
-            } else {
-                self.selected_entity - 1
-            };
-            self.bump_generation();
-        }
-    }
-
-    pub fn select_next_choice(&mut self) {
-        if self.scene.choices.len() > 1 {
-            self.selected_choice = (self.selected_choice + 1) % self.scene.choices.len();
-            self.bump_generation();
-        }
-    }
-
-    pub fn select_prev_choice(&mut self) {
-        if self.scene.choices.len() > 1 {
-            self.selected_choice = if self.selected_choice == 0 {
-                self.scene.choices.len() - 1
-            } else {
-                self.selected_choice - 1
-            };
-            self.bump_generation();
-        }
-    }
-
-    pub fn activate_choice(&mut self) {
-        self.pending_action = None;
-        if let Some(choice) = self.scene.choices.get(self.selected_choice).cloned() {
-            if !conditions_match(
-                &choice.conditions,
-                &self.scene.variables,
-                &self.scene.rpg,
-                self.selected_entity(),
-                self.last_process_state.as_ref(),
-            ) {
-                self.status = format!(
-                    "Choice unavailable: {}",
-                    condition_guard_detail(&choice.conditions)
-                        .unwrap_or_else(|| "guard condition not met".to_string())
-                );
-                self.bump_generation();
-                return;
-            }
-            let outcome = actions::scene_action_outcome(self, &choice);
-            self.apply_action_outcome(outcome);
-        }
-    }
-
-    fn apply_action_outcome(&mut self, outcome: actions::SceneActionOutcome) {
-        self.status = outcome.status;
-        self.pending_action = outcome.pending_action;
-        for event in outcome.events {
-            self.record_runtime_event(event.kind, event.detail);
-        }
-        self.bump_generation();
-    }
-
     fn apply_state_operations(
         &mut self,
         label: &str,
         operations: &[VisualStateOperation],
     ) -> Result<usize, VisualSceneError> {
         actions::apply_state_operations(self, label, operations)
-    }
-
-    pub fn mark_action_status(&mut self, status: impl Into<String>) {
-        self.status = status.into();
-        self.bump_generation();
-    }
-
-    pub fn mark_compose_running(&mut self, status: impl Into<String>, prompt: &str) {
-        let prompt = prompt.trim().to_string();
-        self.compose_state.mark_running(&prompt);
-        self.status = status.into();
-        self.record_runtime_event("compose", format!("submit: {prompt}"));
-        self.bump_generation();
-    }
-
-    pub fn mark_compose_succeeded(&mut self, speaker: &str, reply: &str) {
-        let trimmed_reply = reply.trim();
-        let role = if speaker.trim().is_empty() {
-            VisualComposeRole::Assistant
-        } else if speaker.eq_ignore_ascii_case("scene") {
-            VisualComposeRole::System
-        } else if speaker.eq_ignore_ascii_case("error") {
-            VisualComposeRole::Error
-        } else {
-            VisualComposeRole::Assistant
-        };
-        let event_detail = if trimmed_reply.is_empty() {
-            format!("{role:?}: {speaker}: <empty>")
-        } else {
-            format!("{role:?}: {speaker}: {trimmed_reply}")
-        };
-        self.compose_state.mark_succeeded(trimmed_reply);
-        self.record_runtime_event("compose", event_detail);
-        self.bump_generation();
-    }
-
-    pub fn mark_compose_failed(&mut self, error: &str) {
-        let trimmed_error = error.trim();
-        let event_detail = if trimmed_error.is_empty() {
-            "failed".to_string()
-        } else {
-            format!("failed: {trimmed_error}")
-        };
-        self.compose_state.mark_failed(trimmed_error);
-        self.record_runtime_event("compose", event_detail);
-        self.bump_generation();
     }
 
     fn resolve_action_path(&self, path: &str) -> PathBuf {
@@ -2010,44 +1748,6 @@ impl SceneRuntime {
         } else {
             self.action_base_dir.join(raw_path)
         }
-    }
-
-    pub fn mark_open_file_dispatched(&mut self, path: &Path) {
-        self.status = format!("OpenFile opening: {}", path.display());
-        self.bump_generation();
-    }
-
-    pub fn mark_run_command_spawning(&mut self, argv: &[String], target: RunCommandTarget) {
-        self.status = format!("RunCommand opening {}: {}", target.as_str(), argv.join(" "));
-        self.bump_generation();
-    }
-
-    pub fn mark_run_command_spawned(
-        &mut self,
-        argv: &[String],
-        target: RunCommandTarget,
-        pane_id: usize,
-    ) {
-        self.status = format!(
-            "RunCommand opened {} pane {pane_id}: {}",
-            target.as_str(),
-            argv.join(" ")
-        );
-        self.bump_generation();
-    }
-
-    pub fn mark_run_command_failed(
-        &mut self,
-        argv: &[String],
-        target: RunCommandTarget,
-        error: impl std::fmt::Display,
-    ) {
-        self.status = format!(
-            "RunCommand failed ({}): {}: {error}",
-            target.as_str(),
-            argv.join(" ")
-        );
-        self.bump_generation();
     }
 
     pub fn selected_entity(&self) -> Option<&VisualEntity> {
@@ -2901,18 +2601,6 @@ impl VisualMode for SceneRuntime {
         }
 
         self.run_mode_input_action(default_mode_input_action(input))
-    }
-}
-
-fn default_mode_input_action(input: VisualInput) -> &'static str {
-    match input {
-        VisualInput::Close => "close",
-        VisualInput::Reload => "reload",
-        VisualInput::ToggleDebug => "toggle_debug",
-        VisualInput::Activate => "activate_choice",
-        VisualInput::Next => "select_next",
-        VisualInput::Previous => "select_previous",
-        VisualInput::Other => "ignore",
     }
 }
 
