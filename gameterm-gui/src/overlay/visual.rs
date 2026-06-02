@@ -33,6 +33,7 @@ use super::visual_compose::ComposeBackendLabel;
 use super::visual_compose::{
     compose_running_status, spawn_compose_backend, ComposeBackendRequest, ComposeBackendResult,
 };
+use super::visual_stt::{spawn_stt_backend, SceneSttCancel, SceneSttResult, SceneSttState};
 use super::visual_tts::{
     extract_speakable_segments, spawn_tts_backend, SceneTtsRequest, SceneTtsResult, SceneTtsState,
     SpeakableSegment, SpeakableSource,
@@ -138,6 +139,9 @@ fn show_visual_scene_overlay_with_source(
     let mut compose_backend_running = false;
     let (tts_tx, tts_rx) = mpsc::channel();
     let mut tts_state = SceneTtsState::default();
+    let (stt_tx, stt_rx) = mpsc::channel();
+    let mut stt_state = SceneSttState::default();
+    let mut stt_cancel: Option<SceneSttCancel> = None;
 
     loop {
         let mut needs_render = false;
@@ -177,6 +181,22 @@ fn show_visual_scene_overlay_with_source(
         while let Ok(result) = tts_rx.try_recv() {
             if let Some(runtime) = runtime.as_mut() {
                 apply_tts_result(runtime, &mut tts_state, result);
+                needs_render = true;
+            }
+        }
+        while let Ok(result) = stt_rx.try_recv() {
+            stt_cancel = None;
+            if let Some(runtime) = runtime.as_mut() {
+                apply_stt_result(
+                    runtime,
+                    &mut compose_dock,
+                    &mut stt_state,
+                    result,
+                    &mut compose_backend_running,
+                    &compose_tx,
+                    &scene_path,
+                    pane_id,
+                );
                 needs_render = true;
             }
         }
@@ -223,6 +243,24 @@ fn show_visual_scene_overlay_with_source(
                 if let Some(runtime) = runtime.as_mut() {
                     if is_tts_toggle_key(key, modifiers) {
                         runtime.mark_action_status(tts_state.toggle_muted());
+                        render_runtime_with_compose(
+                            &mut term,
+                            runtime,
+                            &sprite_manifest,
+                            &compose_dock,
+                        )?;
+                        continue;
+                    }
+                    if is_stt_toggle_key(key, modifiers) {
+                        if stt_state.is_running() {
+                            if let Some(cancel) = stt_cancel.take() {
+                                cancel.cancel();
+                            }
+                            runtime.mark_action_status(stt_state.mark_canceling());
+                        } else {
+                            runtime.mark_action_status(stt_state.mark_started());
+                            stt_cancel = Some(spawn_stt_backend(stt_tx.clone()));
+                        }
                         render_runtime_with_compose(
                             &mut term,
                             runtime,
@@ -1104,6 +1142,10 @@ fn is_tts_toggle_key(key: KeyCode, modifiers: Modifiers) -> bool {
     matches!(key, KeyCode::Char('m') | KeyCode::Char('M')) && modifiers.contains(Modifiers::ALT)
 }
 
+fn is_stt_toggle_key(key: KeyCode, modifiers: Modifiers) -> bool {
+    matches!(key, KeyCode::Char('v') | KeyCode::Char('V')) && modifiers.contains(Modifiers::ALT)
+}
+
 const COMPOSE_OUTPUT_LIMIT: usize = 1200;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1183,6 +1225,52 @@ fn apply_tts_result(
     let status = tts_state.apply_result(&result);
     if result.succeeded() {
         runtime.mark_action_status(status);
+    } else if let Some(error) = result.error {
+        runtime.mark_action_status(format!("{status}: {error}"));
+    } else {
+        runtime.mark_action_status(status);
+    }
+}
+
+fn apply_stt_result(
+    runtime: &mut SceneRuntime,
+    compose_dock: &mut SceneComposeDock,
+    stt_state: &mut SceneSttState,
+    result: SceneSttResult,
+    compose_backend_running: &mut bool,
+    compose_tx: &mpsc::Sender<ComposeBackendResult>,
+    scene_path: &Path,
+    pane_id: mux::pane::PaneId,
+) {
+    let status = stt_state.apply_result(&result);
+    let succeeded = result.succeeded();
+    if succeeded {
+        let Some(transcript) = result.transcript else {
+            return;
+        };
+        compose_dock.insert_transcript(&transcript);
+        runtime.mark_action_status(status);
+        if result.auto_submit {
+            let prompt = compose_dock.buffer.trim().to_string();
+            if prompt.is_empty() {
+                return;
+            }
+            if *compose_backend_running {
+                runtime.mark_action_status("Voice transcript ready: compose busy");
+                return;
+            }
+            compose_dock.mark_submitted(&prompt);
+            runtime.mark_compose_running(compose_running_status(&prompt), &prompt);
+            *compose_backend_running = true;
+            spawn_compose_backend(
+                ComposeBackendRequest {
+                    prompt,
+                    scene_path: Some(scene_path.display().to_string()),
+                    pane_id: Some(pane_id),
+                },
+                compose_tx.clone(),
+            );
+        }
     } else if let Some(error) = result.error {
         runtime.mark_action_status(format!("{status}: {error}"));
     } else {
@@ -1455,6 +1543,22 @@ impl SceneComposeDock {
             self.history.remove(0);
         }
         self.clear_buffer();
+    }
+
+    fn insert_transcript(&mut self, transcript: &str) {
+        let transcript = transcript.trim();
+        if transcript.is_empty() {
+            return;
+        }
+        if !self.buffer.is_empty()
+            && self.cursor == self.buffer_char_len()
+            && !self.buffer.chars().last().is_some_and(char::is_whitespace)
+        {
+            self.insert_char(' ');
+        }
+        for ch in transcript.chars().filter(|ch| is_compose_char(*ch)) {
+            self.insert_char(ch);
+        }
     }
 
     fn render_line(&self, cols: usize) -> String {
@@ -2111,6 +2215,17 @@ mod tests {
     }
 
     #[test]
+    fn scene_compose_dock_inserts_voice_transcript_as_editable_text() {
+        let mut dock = SceneComposeDock::default();
+        dock.insert_transcript("open the roadmap");
+        assert_eq!(dock.buffer, "open the roadmap");
+        assert_eq!(dock.cursor, "open the roadmap".chars().count());
+
+        dock.insert_transcript("and summarize it");
+        assert_eq!(dock.buffer, "open the roadmap and summarize it");
+    }
+
+    #[test]
     fn compose_backend_success_updates_dialogue() {
         let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
         let segments = apply_compose_backend_result(
@@ -2206,6 +2321,13 @@ mod tests {
         assert!(is_tts_toggle_key(KeyCode::Char('m'), Modifiers::ALT));
         assert!(is_tts_toggle_key(KeyCode::Char('M'), Modifiers::ALT));
         assert!(!is_tts_toggle_key(KeyCode::Char('m'), Modifiers::NONE));
+    }
+
+    #[test]
+    fn scene_stt_toggle_uses_alt_v_without_consuming_plain_v() {
+        assert!(is_stt_toggle_key(KeyCode::Char('v'), Modifiers::ALT));
+        assert!(is_stt_toggle_key(KeyCode::Char('V'), Modifiers::ALT));
+        assert!(!is_stt_toggle_key(KeyCode::Char('v'), Modifiers::NONE));
     }
 
     #[test]

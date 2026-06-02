@@ -141,6 +141,7 @@ ci/gameterm-scene-smoke.sh --launch --scenario vn-compose \
 Scope owner:
 
 - [Scene Agent STT Scope](gameterm-scene-agent-stt-scope.md)
+- [Scene STT Setup](gameterm-scene-stt-setup.md)
 
 ### End Goal
 
