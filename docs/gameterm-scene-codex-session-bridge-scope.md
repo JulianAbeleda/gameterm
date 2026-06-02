@@ -60,8 +60,7 @@ Useful options for this bridge:
 - `-C, --cd <DIR>` sets the working root
 - `-s, --sandbox <read-only|workspace-write|danger-full-access>` controls
   sandbox mode
-- `-a, --ask-for-approval <untrusted|on-request|never>` controls approval
-  behavior
+- `-c approval_policy="<untrusted|on-request|never>"` controls approval behavior
 - `--skip-git-repo-check` allows non-git workspaces
 - `--ephemeral` avoids persisted session files
 - `resume` can continue a previous session by id or by picker/last mode
@@ -153,7 +152,8 @@ The bridge should derive:
 Security default:
 
 - default sandbox should be `read-only`
-- default approval should be `never`
+- default approval should be `on-request`, matching Scene/VN choice behavior
+  where potentially consequential actions pause for an explicit user decision
 - no dangerous bypass flags by default
 - no shell expansion
 - timeout remains required

@@ -11,6 +11,7 @@ const COMPOSE_CODEX_BIN_ENV: &str = "GAMETERM_SCENE_COMPOSE_CODEX_BIN";
 const COMPOSE_CODEX_WORKSPACE_ENV: &str = "GAMETERM_SCENE_COMPOSE_WORKSPACE";
 const COMPOSE_CODEX_SANDBOX_ENV: &str = "GAMETERM_SCENE_COMPOSE_CODEX_SANDBOX";
 const COMPOSE_CODEX_APPROVAL_ENV: &str = "GAMETERM_SCENE_COMPOSE_CODEX_APPROVAL";
+const DEFAULT_CODEX_APPROVAL_POLICY: &str = "on-request";
 const COMPOSE_BACKEND_TIMEOUT: Duration = Duration::from_secs(15);
 const COMPOSE_BACKEND_POLL_INTERVAL: Duration = Duration::from_millis(25);
 
@@ -156,7 +157,7 @@ fn codex_compose_config_from_env() -> CodexComposeConfig {
         approval: std::env::var(COMPOSE_CODEX_APPROVAL_ENV)
             .ok()
             .filter(|value| !value.trim().is_empty())
-            .unwrap_or_else(|| "never".to_string()),
+            .unwrap_or_else(|| DEFAULT_CODEX_APPROVAL_POLICY.to_string()),
         json: true,
     }
 }
@@ -467,7 +468,7 @@ mod tests {
             program: "codex".to_string(),
             workspace: PathBuf::from("/workspace"),
             sandbox: "read-only".to_string(),
-            approval: "never".to_string(),
+            approval: DEFAULT_CODEX_APPROVAL_POLICY.to_string(),
             json: true,
         };
 
@@ -580,7 +581,7 @@ mod tests {
             program: "codex".to_string(),
             workspace: PathBuf::from("/workspace with spaces"),
             sandbox: "read-only".to_string(),
-            approval: "never".to_string(),
+            approval: "on-request".to_string(),
             json: true,
         };
         let argv = codex_compose_argv(
@@ -604,7 +605,7 @@ mod tests {
                 "-s",
                 "read-only",
                 "-c",
-                "approval_policy=\"never\"",
+                "approval_policy=\"on-request\"",
                 "--json",
                 "inspect roadmap && do not shell split"
             ]
@@ -636,7 +637,7 @@ mod tests {
             program: fake_codex.display().to_string(),
             workspace: dir.path().to_path_buf(),
             sandbox: "read-only".to_string(),
-            approval: "never".to_string(),
+            approval: "on-request".to_string(),
             json: true,
         };
         let result = run_codex_compose_backend(request("look at roadmap"), config);

@@ -2154,7 +2154,7 @@ mod tests {
             program: "codex".to_string(),
             workspace: PathBuf::from("/workspace"),
             sandbox: "read-only".to_string(),
-            approval: "never".to_string(),
+            approval: "on-request".to_string(),
             json: true,
         };
 
@@ -2182,7 +2182,7 @@ mod tests {
             program: "codex".to_string(),
             workspace: PathBuf::from("/workspace with spaces"),
             sandbox: "read-only".to_string(),
-            approval: "never".to_string(),
+            approval: "on-request".to_string(),
             json: true,
         };
         let argv = codex_compose_argv(
@@ -2206,7 +2206,7 @@ mod tests {
                 "-s",
                 "read-only",
                 "-c",
-                "approval_policy=\"never\"",
+                "approval_policy=\"on-request\"",
                 "--json",
                 "inspect roadmap && do not shell split"
             ]
@@ -2251,7 +2251,7 @@ mod tests {
             program: fake_codex.display().to_string(),
             workspace: dir.path().to_path_buf(),
             sandbox: "read-only".to_string(),
-            approval: "never".to_string(),
+            approval: "on-request".to_string(),
             json: true,
         };
         let result = run_codex_compose_backend(request, config);
