@@ -75,7 +75,7 @@ pub const VN_OVERLAY_DIALOGUE_BOTTOM_RATIO: f32 = 0.76;
 pub const VN_OVERLAY_TEXT_INSET_COLS: usize = 4;
 pub const VN_OVERLAY_DIALOGUE_TEXT_INSET_ROWS: usize = 2;
 pub const VN_OVERLAY_COMPOSER_TEXT_INSET_ROWS: usize = 1;
-pub const VN_OVERLAY_NAMEPLATE_OFFSET_ROWS: usize = 2;
+pub const VN_OVERLAY_NAMEPLATE_OFFSET_ROWS: usize = 0;
 pub const VN_OVERLAY_NAMEPLATE_HEIGHT_ROWS: usize = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -203,12 +203,13 @@ pub fn vn_overlay_side_margin(cols: usize, rows: usize) -> usize {
 fn vn_overlay_nameplate_rect(panel: &VnOverlayRect, label: &str) -> VnOverlayRect {
     let label_width = label.chars().count().max(1);
     let width = (label_width + 6).clamp(10, panel.width.max(1).min(32));
-    let row_offset = panel.row.min(VN_OVERLAY_NAMEPLATE_OFFSET_ROWS);
+    let height = VN_OVERLAY_NAMEPLATE_HEIGHT_ROWS.min(panel.height.max(1));
+    let row_offset = height.saturating_add(VN_OVERLAY_NAMEPLATE_OFFSET_ROWS);
     VnOverlayRect {
         col: panel.col.saturating_add(VN_OVERLAY_TEXT_INSET_COLS),
         row: panel.row.saturating_sub(row_offset),
         width,
-        height: VN_OVERLAY_NAMEPLATE_HEIGHT_ROWS.min(panel.height.max(1)),
+        height,
     }
 }
 
@@ -3851,21 +3852,26 @@ mod tests {
             layout.dialogue_panel.col + VN_OVERLAY_TEXT_INSET_COLS
         );
         assert_eq!(
-            layout.dialogue_nameplate.row,
-            layout
-                .dialogue_panel
-                .row
-                .saturating_sub(VN_OVERLAY_NAMEPLATE_OFFSET_ROWS)
+            layout.dialogue_nameplate.height,
+            VN_OVERLAY_NAMEPLATE_HEIGHT_ROWS.min(layout.dialogue_panel.height.max(1)),
+        );
+        assert_eq!(
+            layout.dialogue_nameplate.row
+                + layout.dialogue_nameplate.height
+                + VN_OVERLAY_NAMEPLATE_OFFSET_ROWS,
+            layout.dialogue_panel.row
         );
         assert_eq!(
             composer_nameplate.col,
             composer.col + VN_OVERLAY_TEXT_INSET_COLS
         );
         assert_eq!(
-            composer_nameplate.row,
-            composer
-                .row
-                .saturating_sub(VN_OVERLAY_NAMEPLATE_OFFSET_ROWS)
+            composer_nameplate.height,
+            VN_OVERLAY_NAMEPLATE_HEIGHT_ROWS.min(composer.height)
+        );
+        assert_eq!(
+            composer_nameplate.row + composer_nameplate.height + VN_OVERLAY_NAMEPLATE_OFFSET_ROWS,
+            composer.row
         );
         assert_eq!(
             layout.composer_nameplate.as_ref().unwrap().height,
