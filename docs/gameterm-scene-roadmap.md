@@ -9,7 +9,8 @@ status and next priorities.
 Status: first shippable Scene Mode pass complete; command policy second pass
 complete; VN asset intake, VN script import, VN demo install, real asset run,
 strict image validation, fullscreen smoke capture, local PSD/image export, and
-native active-pane GUI first-pass closure complete.
+native active-pane GUI first-pass closure complete. Staged VN text presentation
+and compose dock input are implemented; the Codex compose bridge is scoped next.
 
 Scene Mode currently has:
 
@@ -33,6 +34,8 @@ Scene Mode currently has:
 - Rust VN script import, local VN asset intake, generated VN demo
   install/doctor workflow, strict PNG validation, fullscreen `vn-demo` smoke,
   and a local PSD/image export helper for downloaded assets
+- staged VN background/character rendering, wide VN text presentation, and a
+  typeable compose dock surface
 
 Latest verification baseline:
 
@@ -73,7 +76,8 @@ implementation details.
 | VN demo install | [VN Demo Install Scope](gameterm-scene-vn-demo-install-scope.md) | First-pass implemented |
 | VN real asset run | [VN Real Assets Run Scope](gameterm-scene-vn-real-assets-run-scope.md) | Complete |
 | VN local PSD/image export | [VN Real Assets Run Scope](gameterm-scene-vn-real-assets-run-scope.md) | Complete |
-| VN staged presentation | [VN Presentation Scope](gameterm-scene-vn-presentation-scope.md) | Scoped next |
+| VN staged presentation | [VN Presentation Scope](gameterm-scene-vn-presentation-scope.md) | First-pass implemented |
+| Codex compose bridge | [Codex Compose Bridge Scope](gameterm-scene-codex-compose-bridge-scope.md) | Scoped next |
 | Live pane/process context | [Pane And Process Discovery Scope](gameterm-scene-pane-process-discovery-scope.md) | Implemented through explicit metadata |
 | Agent/Workspace authored model | [Agent And Workspace Scope](gameterm-scene-agent-workspace-scope.md) | First-pass implemented |
 | Workspace Discovery | [Workspace Discovery Scope](gameterm-scene-workspace-discovery-scope.md) | First-pass implemented |
