@@ -14,6 +14,79 @@ This is not a full replacement for the terminal pane or a direct Codex protocol
 implementation yet. The first pass should prove the input/output loop with a
 small Rust-owned process bridge, then leave room for a direct Codex backend.
 
+## Reference Repos
+
+Local references inspected:
+
+- `/Users/julianabeleda/env/deepseek`
+- `/Users/julianabeleda/env/pkos_v0.2/arkey-rs`
+- `/Users/julianabeleda/env/pkos_v0.2/arkey-core`
+
+These references are used for architecture and behavior, not copied code.
+
+### DeepSeek DockedComposer
+
+Relevant files:
+
+- `/Users/julianabeleda/env/deepseek/src/input/composer.rs`
+- `/Users/julianabeleda/env/deepseek/src/repl/chat.rs`
+
+Useful patterns:
+
+- `DockedComposer` owns a prompt, editable buffer, cursor, history, slash
+  completion state, approval modal, progress rows, stream buffer, and transcript
+  view state.
+- The dock remains mounted while output is printed above it.
+- `poll_action()` returns structured actions: submit, approval, cancel, exit.
+- Enter submits, Shift/Alt+Enter inserts a newline, Esc cancels, Ctrl-D exits,
+  Ctrl-C clears, Ctrl-W deletes a previous word, arrows move cursor/history.
+- Large pasted input is compacted into markers while preserving expanded
+  context for submission.
+- Progress is rendered in the dock while work is active.
+- Streaming output is written above the dock without unmounting the composer.
+- Approval prompts are dock-native so background workers do not compete with
+  stdin.
+
+Scene Mode should adopt the behavioral shape:
+
+- compose input returns structured events, not direct runtime mutation
+- the dock stays mounted while backend output changes the scene
+- active work has a visible running/progress phase
+- approval and future tool actions must be dock-native, not raw stdin prompts
+
+### Arkey Bottom Composer
+
+Relevant files:
+
+- `/Users/julianabeleda/env/pkos_v0.2/arkey-rs/src/input.rs`
+- `/Users/julianabeleda/env/pkos_v0.2/arkey-rs/src/render/prompt.rs`
+- `/Users/julianabeleda/env/pkos_v0.2/arkey-rs/src/render/terminal_renderer.rs`
+- `/Users/julianabeleda/env/pkos_v0.2/arkey-core/src/runtime.rs`
+
+Useful patterns:
+
+- `NativeInputBuffer` separates idle key actions from running key editing.
+- The running phase still lets the user edit the next draft.
+- `InlineDockPhase` changes footer/status copy without changing dock geometry.
+- `inline_dock_height()` is stable, so layout does not jump between idle and
+  running.
+- `TerminalPhase` models prompt idle, context scan, response render, and prompt
+  resume.
+- Repaint scope is explicit: dock-only updates during active work, scanner-only
+  updates during progress, full repaint when necessary.
+- Cursor math accounts for prompt width, Unicode display width, wrapping, and
+  ANSI-stripped prompt labels.
+- The runtime facade exposes `run_turn(prompt)` and observed phase callbacks,
+  separating UI from backend execution.
+
+Scene Mode should adopt the behavioral shape:
+
+- keep a stable compose dock height
+- support editing a next draft while the backend is running
+- use explicit phases instead of one boolean busy flag
+- preserve Scene layout while only the dock/status changes
+- separate compose UI state from backend runtime state
+
 ## Current Baseline
 
 Already implemented:
@@ -351,6 +424,9 @@ Integration/smoke:
 - keep existing edit behavior
 - preserve Escape/Tab behavior
 - tests for typed submit and empty Enter fallthrough
+- add cursor-aware buffer editing: left/right/home/end
+- add history recall for submitted prompts
+- keep dock geometry stable across idle/running phases
 
 ### Slice 3: Local Compose Backend
 
@@ -367,6 +443,9 @@ Integration/smoke:
 - on failure, set error dialogue/status
 - record runtime events
 - cap compose history
+- allow drafting the next prompt while the current backend turn is running
+- reject or queue submit while running; first implementation may reject, but
+  the UI should not discard the draft
 
 ### Slice 5: Helper And Smoke
 
