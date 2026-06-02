@@ -88,6 +88,7 @@ implementation details.
 | VN staged presentation | [VN Presentation Scope](gameterm-scene-vn-presentation-scope.md) | First-pass implemented |
 | Codex compose bridge | [Codex Compose Bridge Scope](gameterm-scene-codex-compose-bridge-scope.md) | First-pass implemented |
 | Codex session bridge | [Codex Session Bridge Scope](gameterm-scene-codex-session-bridge-scope.md) | First-pass implemented |
+| Dogfood workspace | [Dogfood Workspace Scope](gameterm-scene-dogfood-workspace-scope.md) | Scoped |
 | Next actions | [Scene Next Actions Scope](gameterm-scene-next-actions-scope.md) | Current execution scope |
 | Next product lanes | [Scene Next Product Lanes Scope](gameterm-scene-next-product-lanes-scope.md) | Scoped |
 | Live pane/process context | [Pane And Process Discovery Scope](gameterm-scene-pane-process-discovery-scope.md) | Implemented through explicit metadata |
@@ -537,20 +538,23 @@ Avoid:
 
 ## Next Recommended Work
 
-Start only the scoped refactor lanes.
+Start the dogfood workspace product gate.
 
 Reasoning:
 
-- The native active-pane action, Rust generator contract, recoverable context
-  errors, smoke harness scenario, and live `CTRL|ALT|SHIFT+g` evidence are
+- The first maintainable refactor pass and author-helper cleanup pass are
   complete.
-- Product work should pause unless a smoke failure exposes a concrete defect.
-- Refactor work should stay principle-scoped and behavior-preserving.
+- Scene Mode now needs a daily-use path so we can dogfood it while developing
+  GameTerm.
+- The existing workspace discovery, boot menu, default scene loading, and smoke
+  harness are enough to scope a narrow dogfood profile without changing the
+  Scene runtime schema.
 
 Concrete next checklist:
 
-1. Use [Refactor Plan](gameterm-scene-refactor-plan.md).
-2. Start with the smoke metadata table-drive lane if smoke edits continue.
-3. Keep each refactor behavior-preserving and separately committed.
-4. Run the focused check named by each lane, then broaden before push.
-5. Scope any newly discovered product defect before continuing NFC cleanup.
+1. Use [Dogfood Workspace Scope](gameterm-scene-dogfood-workspace-scope.md).
+2. Add the dogfood workspace profile.
+3. Add deterministic verifier coverage.
+4. Add the dogfood smoke scenario.
+5. Verify the boot/menu path loads the installed dogfood default scene.
+6. Record live fullscreen dogfood smoke.
