@@ -2070,6 +2070,10 @@ impl SceneRuntime {
     }
 
     fn render_scene(&self, cols: usize, rows: usize) -> String {
+        if !self.scene.stage.is_empty() {
+            return self.render_staged_scene(cols, rows);
+        }
+
         let mut out = String::new();
         out.push_str(&format!("{}\r\n", self.scene.title));
         out.push_str("Scene Mode  [arrows/hjkl: select] [enter: action] [tab: debugger] [r: reload] [esc/q: close]\r\n\r\n");
@@ -2205,6 +2209,130 @@ impl SceneRuntime {
         }
         out.push_str(&format!("\r\nStatus: {}\r\n", self.status));
         truncate_to_screen(out, cols, rows)
+    }
+
+    fn render_staged_scene(&self, cols: usize, rows: usize) -> String {
+        let cols = cols.max(1);
+        let rows = rows.max(1);
+        let box_width = cols.saturating_sub(4).max(20);
+        let box_height = if rows >= 18 { 7 } else { 4 }.min(rows);
+        let dock_height = if rows >= 10 { 1 } else { 0 };
+        let bottom_height = box_height + dock_height;
+        let top_budget = rows.saturating_sub(bottom_height);
+        let mut top = Vec::new();
+
+        top.push(self.scene.title.clone());
+        top.push("Scene Mode  [enter: action] [tab: debugger] [r: reload] [esc/q: close]".to_string());
+        if self.scene_source.load_status == VisualSceneLoadStatus::ReloadFailed {
+            if let Some(error) = &self.scene_source.last_error {
+                top.push(format!("Reload failed: {error}"));
+            }
+        }
+        if let Some(entity) = self.selected_entity() {
+            top.push(format!(
+                "Selected: {} [{:?}] sprite={} flags={}",
+                entity.label,
+                entity.kind,
+                entity.sprite,
+                entity.state_flags.join(", ")
+            ));
+        }
+        top.push(format!(
+            "Mode: {} ({})",
+            self.scene.mode.label, self.scene.mode.mode_id
+        ));
+        top.push(format!(
+            "Stage: {} layer(s), {} displayable(s)",
+            self.scene.stage.layers.len(),
+            self.scene
+                .stage
+                .layers
+                .iter()
+                .map(|layer| layer.displayables.len())
+                .sum::<usize>()
+        ));
+        if !self.scene.variables.is_empty() {
+            top.push(format!(
+                "State: {}",
+                format_state_summary(&self.scene.variables, 4)
+            ));
+        }
+        if !self.status.is_empty() {
+            top.push(format!("Status: {}", self.status));
+        }
+
+        let mut frame = String::new();
+        for line in top.into_iter().take(top_budget) {
+            frame.push_str(&line);
+            frame.push_str("\r\n");
+        }
+        let used_top_rows = frame.lines().count();
+        for _ in used_top_rows..top_budget {
+            frame.push_str("\r\n");
+        }
+
+        frame.push_str(&self.render_vn_dialogue_box(box_width, box_height));
+        if dock_height > 0 {
+            frame.push_str(&self.render_vn_dock(cols));
+        }
+        truncate_to_screen(frame, cols, rows)
+    }
+
+    fn render_vn_dialogue_box(&self, width: usize, height: usize) -> String {
+        let width = width.max(6);
+        let height = height.max(3);
+        let inner_width = width.saturating_sub(6);
+        let border_width = inner_width + 2;
+        let dialogue = self.active_dialogue_line();
+        let mut lines = Vec::new();
+        lines.push(format!("{}:", dialogue.speaker));
+        lines.extend(wrap_text(&dialogue.text, inner_width));
+
+        if !self.scene.choices.is_empty() && height >= 6 {
+            lines.push(String::new());
+            for (idx, choice) in self.scene.choices.iter().take(2).enumerate() {
+                let marker = if idx == self.selected_choice { ">" } else { " " };
+                let guard = if conditions_match(
+                    &choice.conditions,
+                    &self.scene.variables,
+                    &self.scene.rpg,
+                    self.selected_entity(),
+                    self.last_process_state.as_ref(),
+                ) {
+                    ""
+                } else {
+                    " [locked]"
+                };
+                lines.push(format!("{marker} {}{guard}", choice.label));
+            }
+        }
+
+        let mut out = String::new();
+        out.push_str(&format!("  +{}+\r\n", "-".repeat(border_width)));
+        for idx in 0..height.saturating_sub(2) {
+            let line = lines.get(idx).map(String::as_str).unwrap_or("");
+            out.push_str(&format!("  | {:<inner_width$} |\r\n", clip_text(line, inner_width)));
+        }
+        out.push_str(&format!("  +{}+\r\n", "-".repeat(border_width)));
+        out
+    }
+
+    fn render_vn_dock(&self, cols: usize) -> String {
+        let choice_count = self.scene.choices.len();
+        let selected_choice = if choice_count == 0 {
+            "none".to_string()
+        } else {
+            format!("{}/{}", self.selected_choice + 1, choice_count)
+        };
+        let dock = format!(
+            " Compose: _ | scene={} | choice={} | dialogue={} | controls=enter/tab/r/esc ",
+            self.scene.mode.mode_id,
+            selected_choice,
+            dialogue_index(&self.scene, self.dialogue_index)
+                .map(|idx| (idx + 1).to_string())
+                .unwrap_or_else(|| "static".to_string())
+        );
+        format!("{}\r\n", clip_text(&dock, cols.max(1)))
     }
 
     fn render_command_selection(&self, cols: usize, rows: usize) -> String {
@@ -2755,6 +2883,36 @@ fn format_process_summary(process_state: &VisualProcessState) -> String {
         parts.push(clip_summary_value(message, 48));
     }
     parts.join(", ")
+}
+
+fn clip_text(text: &str, max_chars: usize) -> String {
+    text.chars().take(max_chars).collect()
+}
+
+fn wrap_text(text: &str, max_chars: usize) -> Vec<String> {
+    let max_chars = max_chars.max(1);
+    let mut lines = Vec::new();
+    let mut current = String::new();
+    for word in text.split_whitespace() {
+        let word_len = word.chars().count();
+        let current_len = current.chars().count();
+        if current_len == 0 {
+            current.push_str(word);
+        } else if current_len + 1 + word_len <= max_chars {
+            current.push(' ');
+            current.push_str(word);
+        } else {
+            lines.push(current);
+            current = word.to_string();
+        }
+    }
+    if !current.is_empty() {
+        lines.push(current);
+    }
+    if lines.is_empty() {
+        lines.push(String::new());
+    }
+    lines
 }
 
 pub fn truncate_to_screen(text: String, cols: usize, rows: usize) -> String {
@@ -3963,6 +4121,34 @@ mod tests {
             VisualStagePlacement::Fullscreen
         );
         assert_eq!(snapshot.stage[1].placement, VisualStagePlacement::Center);
+    }
+
+    #[test]
+    fn staged_scene_renders_vn_dialogue_box_and_compose_dock() {
+        let mut scene = VisualScene::demo();
+        scene.stage = VisualStage {
+            layers: vec![VisualStageLayer {
+                layer_id: "background".to_string(),
+                zorder: 0,
+                displayables: vec![VisualStageDisplayable {
+                    tag: "background".to_string(),
+                    sprite: "vn.background.school_classroom".to_string(),
+                    placement: VisualStagePlacement::Fullscreen,
+                    zorder: 0,
+                    visible: true,
+                }],
+            }],
+        };
+        scene.dialogue_speaker = "Codex".to_string();
+        scene.dialogue = "This line belongs in the transparent VN overlay.".to_string();
+        let runtime = SceneRuntime::new(scene).unwrap();
+
+        let frame = runtime.render_text_frame(80, 24);
+        assert!(frame.contains("Stage: 1 layer(s), 1 displayable(s)"));
+        assert!(frame.contains("+"));
+        assert!(frame.contains("Codex:"));
+        assert!(frame.contains("transparent VN overlay"));
+        assert!(frame.contains("Compose: _"));
     }
 
     #[test]
