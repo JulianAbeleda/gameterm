@@ -31,6 +31,15 @@ Updated live smoke automation pass:
 - Sprite fixtures: copied smoke fixtures rewrite sprite paths to absolute repo
   asset paths before launch.
 
+Updated dogfood workspace pass:
+
+- Date recorded: 2026-06-02
+- Foreground automation: `osascript` foregrounded the launched
+  `gameterm-gui` process before capture.
+- Dogfood fixture: generated from
+  `/Users/julianabeleda/env/gameterm` through
+  `ci/gameterm-scene-workspace.sh dogfood`.
+
 ## Deterministic Checks
 
 Command:
@@ -39,6 +48,7 @@ Command:
 ci/gameterm-scene-smoke.sh --list-scenarios
 ci/gameterm-scene-smoke.sh --describe-scenario guarded-input
 ci/gameterm-scene-smoke.sh --describe-scenario process-state
+ci/gameterm-scene-smoke.sh --describe-scenario dogfood
 ci/gameterm-scene-smoke.sh --check-assets
 ```
 
@@ -53,6 +63,7 @@ Validated named scenarios:
 - `vertical-slice`
 - `workspace-agent`
 - `workspace-discovery`
+- `dogfood`
 - `agent-lifecycle`
 - `authoring-loop`
 - `patch-inbox`
@@ -60,6 +71,34 @@ Validated named scenarios:
 - `process-state`
 
 ## Live Results
+
+### dogfood-workspace-pass-20260602-1713
+
+Command:
+
+```sh
+cargo build -p gameterm-gui
+ci/gameterm-scene-smoke.sh --launch --scenario dogfood \
+  --wait-before-capture 3 \
+  --capture-timeout 12 \
+  --output /Users/julianabeleda/Desktop/gameterm-scene-smoke-dogfood-20260602-171327.png
+```
+
+Result: PASS.
+
+Capture:
+
+```text
+/Users/julianabeleda/Desktop/gameterm-scene-smoke-dogfood-20260602-171327.png
+```
+
+Observation: the smoke helper generated the dogfood workspace scene from
+`/Users/julianabeleda/env/gameterm`, installed it into an isolated temporary
+config, launched `gameterm-gui`, foregrounded it, opened Scene Mode through the
+native smoke hook, and captured a non-empty 1920x1080 PNG. Visual inspection
+confirmed the dogfood workspace, roadmap/onboarding/smoke/refactor docs, task
+brief, `Run verification`, `Run git status`, and `Run dogfood smoke` choices are
+visible.
 
 ### stabilization-refactor-lane4-lane5-smoke-pass-20260602-0132
 

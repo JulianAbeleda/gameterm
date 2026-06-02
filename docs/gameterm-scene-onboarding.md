@@ -42,6 +42,35 @@ ${XDG_CONFIG_HOME:-~/.config}/gameterm/scenes/default.json
 
 Install refuses to overwrite an existing scene unless `--force` is passed.
 
+## Dogfood Workspace
+
+Use the dogfood profile when the goal is to work on GameTerm through Scene Mode
+itself:
+
+```sh
+tmp="$(mktemp -d /tmp/gameterm-scene-dogfood.XXXXXX)"
+
+ci/gameterm-scene-workspace.sh dogfood \
+  --cwd . \
+  --brief-output "${tmp}/dogfood-task-brief.json" \
+  --scene-output "${tmp}/dogfood-workspace.json" \
+  --force
+
+ci/gameterm-scene-author.sh validate "${tmp}/dogfood-workspace.json"
+ci/gameterm-scene-doctor.sh --scene "${tmp}/dogfood-workspace.json"
+```
+
+To install it as the default Scene Mode workspace:
+
+```sh
+ci/gameterm-scene-workspace.sh dogfood --cwd . --install --force
+```
+
+The profile marks `dogfood_profile=true`, opens the roadmap/onboarding/smoke
+docs, writes a task brief when requested or installed, and exposes explicit
+confirmed choices for `ci/gameterm-scene-verify.sh --all`, `git status --short`,
+and the focused dogfood smoke check.
+
 ## Active Pane
 
 To generate a Scene Mode workspace from the active GameTerm pane, preview it
@@ -82,6 +111,7 @@ Run live smoke when a GUI session is available:
 
 ```sh
 ci/gameterm-scene-smoke.sh --launch --scenario workspace-discovery
+ci/gameterm-scene-smoke.sh --launch --scenario dogfood
 ```
 
 ## VN Demo
