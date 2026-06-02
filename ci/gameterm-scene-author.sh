@@ -607,7 +607,7 @@ validate_scene_file() {
   cargo run -q -p gameterm-visual --example scene_validate -- "$1"
 }
 
-write_json() {
+write_validated_json() {
   local target="$1"
   local tmp
   tmp="$(mktemp /tmp/gameterm-scene-author.XXXXXX)"
@@ -634,8 +634,7 @@ create_scene() {
       dialogue_speaker: "GameTerm",
       dialogue: "Edit this scene, then press r in Scene Mode to reload.",
       choices: [{ label: "Inspect selected entity", kind: "Inspect" }]
-    }' | write_json "${target}"
-  validate_scene_file "${target}" >/dev/null
+    }' | write_validated_json "${target}"
   echo "Wrote ${target}"
 }
 
@@ -695,7 +694,7 @@ create_template() {
             }
           }
         ]
-      }' | write_json "${target}"
+      }' | write_validated_json "${target}"
       ;;
     project-dashboard)
       jq -n '{
@@ -741,7 +740,7 @@ create_template() {
             kind: { OpenFile: { path: "docs/gameterm-scene-runtime-roadmap.md" } }
           }
         ]
-      }' | write_json "${target}"
+      }' | write_validated_json "${target}"
       ;;
     visual-novel)
       jq -n '{
@@ -796,7 +795,7 @@ create_template() {
             ]
           }
         ]
-      }' | write_json "${target}"
+      }' | write_validated_json "${target}"
       ;;
     layered-mode)
       jq -n '{
@@ -854,7 +853,7 @@ create_template() {
         choices: [
           { label: "Inspect selected entity", kind: "Inspect" }
         ]
-      }' | write_json "${target}"
+      }' | write_validated_json "${target}"
       ;;
     rpg-quest)
       jq -n '{
@@ -931,7 +930,7 @@ create_template() {
             ]
           }
         ]
-      }' | write_json "${target}"
+      }' | write_validated_json "${target}"
       ;;
     vertical-slice)
       jq -n '{
@@ -1096,13 +1095,13 @@ create_template() {
             ]
           }
         ]
-      }' | write_json "${target}"
+      }' | write_validated_json "${target}"
       ;;
     workspace-agent)
-      jq '.' "${fixture_root}/workspace-agent.json" | write_json "${target}"
+      jq '.' "${fixture_root}/workspace-agent.json" | write_validated_json "${target}"
       ;;
     multi-agent-coordination)
-      jq '.' "${fixture_root}/multi-agent-coordination.json" | write_json "${target}"
+      jq '.' "${fixture_root}/multi-agent-coordination.json" | write_validated_json "${target}"
       ;;
     *)
       echo "unknown template: ${template_name}" >&2
@@ -1111,7 +1110,6 @@ create_template() {
       ;;
   esac
 
-  validate_scene_file "${target}" >/dev/null
   echo "Wrote ${template_name} template to ${target}"
 }
 
@@ -1148,8 +1146,7 @@ add_entity() {
       sprite: $sprite,
       state_flags: $flags,
       metadata: $metadata
-    }]' "${target}" | write_json "${target}"
-  validate_scene_file "${target}" >/dev/null
+    }]' "${target}" | write_validated_json "${target}"
   echo "Added entity ${entity_id} to ${target}"
 }
 
@@ -1162,19 +1159,19 @@ add_choice() {
     Inspect)
       jq --arg label "${choice_label}" \
         '.choices += [{ label: $label, kind: "Inspect" }]' \
-        "${target}" | write_json "${target}"
+        "${target}" | write_validated_json "${target}"
       ;;
     OpenFile)
       require_value "--open-file" "${choice_payload}"
       jq --arg label "${choice_label}" --arg path "${choice_payload}" \
         '.choices += [{ label: $label, kind: { OpenFile: { path: $path } } }]' \
-        "${target}" | write_json "${target}"
+        "${target}" | write_validated_json "${target}"
       ;;
     Navigate)
       require_value "--navigate" "${choice_payload}"
       jq --arg label "${choice_label}" --arg target_path "${choice_payload}" \
         '.choices += [{ label: $label, kind: { Navigate: { target: $target_path } } }]' \
-        "${target}" | write_json "${target}"
+        "${target}" | write_validated_json "${target}"
       ;;
     RunCommand)
       require_value "--run-argv" "${choice_payload}"
@@ -1184,18 +1181,17 @@ add_choice() {
           --arg cwd "${choice_cwd}" \
           --arg target "${choice_target}" \
           '.choices += [{ label: $label, kind: { RunCommand: { argv: $argv, cwd: $cwd, target: $target } } }]' \
-          "${target}" | write_json "${target}"
+          "${target}" | write_validated_json "${target}"
       else
         jq --arg label "${choice_label}" \
           --argjson argv "${choice_payload}" \
           --arg target "${choice_target}" \
           '.choices += [{ label: $label, kind: { RunCommand: { argv: $argv, target: $target } } }]' \
-          "${target}" | write_json "${target}"
+          "${target}" | write_validated_json "${target}"
       fi
       ;;
   esac
 
-  validate_scene_file "${target}" >/dev/null
   echo "Added choice ${choice_label} to ${target}"
 }
 
@@ -1236,8 +1232,7 @@ remove_choice() {
     else
       error("choice index not found: " + ($index | tostring))
     end
-  ' "${target}" | write_json "${target}"
-  validate_scene_file "${target}" >/dev/null
+  ' "${target}" | write_validated_json "${target}"
   echo "Removed choice ${choice_index} from ${target}"
 }
 
@@ -1259,7 +1254,7 @@ update_choice() {
         --arg target "${choice_target}" \
         --arg payload "${choice_payload}" \
         "if (.choices | has(\$index)) then .choices[\$index] = ${filter} else error(\"choice index not found: \" + (\$index | tostring)) end" \
-        "${target}" | write_json "${target}"
+        "${target}" | write_validated_json "${target}"
     else
       jq --argjson index "${choice_index}" \
         --arg label "${choice_label}" \
@@ -1267,17 +1262,16 @@ update_choice() {
         --arg target "${choice_target}" \
         --arg payload "${choice_payload}" \
         "if (.choices | has(\$index)) then .choices[\$index] = ${filter} else error(\"choice index not found: \" + (\$index | tostring)) end" \
-        "${target}" | write_json "${target}"
+        "${target}" | write_validated_json "${target}"
     fi
   else
     jq --argjson index "${choice_index}" \
       --arg label "${choice_label}" \
       --arg payload "${choice_payload}" \
       "if (.choices | has(\$index)) then .choices[\$index] = ${filter} else error(\"choice index not found: \" + (\$index | tostring)) end" \
-      "${target}" | write_json "${target}"
+      "${target}" | write_validated_json "${target}"
   fi
 
-  validate_scene_file "${target}" >/dev/null
   echo "Updated choice ${choice_index} in ${target}"
 }
 
@@ -1291,8 +1285,7 @@ remove_entity() {
     else
       error("entity id not found: " + $id)
     end
-  ' "${target}" | write_json "${target}"
-  validate_scene_file "${target}" >/dev/null
+  ' "${target}" | write_validated_json "${target}"
   echo "Removed entity ${entity_id} from ${target}"
 }
 
@@ -1308,8 +1301,7 @@ move_entity() {
     else
       error("entity id not found: " + $id)
     end
-  ' "${target}" | write_json "${target}"
-  validate_scene_file "${target}" >/dev/null
+  ' "${target}" | write_validated_json "${target}"
   echo "Moved entity ${entity_id} in ${target}"
 }
 
@@ -1320,8 +1312,7 @@ set_dialogue() {
 
   jq --arg speaker "${dialogue_speaker}" --arg text "${dialogue_text}" '
     .dialogue_speaker = $speaker | .dialogue = $text
-  ' "${target}" | write_json "${target}"
-  validate_scene_file "${target}" >/dev/null
+  ' "${target}" | write_validated_json "${target}"
   echo "Updated dialogue in ${target}"
 }
 
@@ -1334,8 +1325,7 @@ set_variable() {
   jq --arg key "${state_key}" --argjson value "${value_json}" '
     .variables = (((.variables // []) | map(select(.key != $key)))
       + [{ key: $key, value: $value }])
-  ' "${target}" | write_json "${target}"
-  validate_scene_file "${target}" >/dev/null
+  ' "${target}" | write_validated_json "${target}"
   echo "Set variable ${state_key} in ${target}"
 }
 
@@ -1345,8 +1335,7 @@ clear_variable() {
 
   jq --arg key "${state_key}" '
     .variables = ((.variables // []) | map(select(.key != $key)))
-  ' "${target}" | write_json "${target}"
-  validate_scene_file "${target}" >/dev/null
+  ' "${target}" | write_validated_json "${target}"
   echo "Cleared variable ${state_key} in ${target}"
 }
 
@@ -1370,8 +1359,7 @@ add_layer() {
         transitions: []
       } | with_entries(select(.value != null))])
     end
-  ' "${target}" | write_json "${target}"
-  validate_scene_file "${target}" >/dev/null
+  ' "${target}" | write_validated_json "${target}"
   echo "Added layer ${layer_id} to ${target}"
 }
 
@@ -1386,8 +1374,7 @@ set_layer() {
     else
       error("layer id not found: " + $layer_id)
     end
-  ' "${target}" | write_json "${target}"
-  validate_scene_file "${target}" >/dev/null
+  ' "${target}" | write_validated_json "${target}"
   echo "Set layer ${layer_id} state in ${target}"
 }
 
@@ -1416,8 +1403,7 @@ add_layer_transition() {
     else
       error("layer id not found: " + $layer_id)
     end
-  ' "${target}" | write_json "${target}"
-  validate_scene_file "${target}" >/dev/null
+  ' "${target}" | write_validated_json "${target}"
   echo "Added layer transition ${layer_id}:${transition_input} to ${target}"
 }
 
@@ -1441,8 +1427,7 @@ add_mode_input() {
       action: \$action,
       conditions: \$conditions
     }])
-  " "${target}" | write_json "${target}"
-  validate_scene_file "${target}" >/dev/null
+  " "${target}" | write_validated_json "${target}"
   echo "Added mode input ${transition_input}->${mode_action} to ${target}"
 }
 
@@ -1464,8 +1449,7 @@ set_lifecycle() {
     | if \$enter_status != \"\" then .mode.lifecycle.enter_status = \$enter_status else . end
     | if \$update_status != \"\" then .mode.lifecycle.update_status = \$update_status else . end
     | if \$exit_status != \"\" then .mode.lifecycle.exit_status = \$exit_status else . end
-  " "${target}" | write_json "${target}"
-  validate_scene_file "${target}" >/dev/null
+  " "${target}" | write_validated_json "${target}"
   echo "Updated mode lifecycle in ${target}"
 }
 
@@ -1486,8 +1470,7 @@ add_inventory() {
     .rpg = (.rpg // {})
     | .rpg.inventory = (((.rpg.inventory // []) | map(select(.item_id != $item_id)))
       + [{ item_id: $item_id, label: $label, count: $count }])
-  ' "${target}" | write_json "${target}"
-  validate_scene_file "${target}" >/dev/null
+  ' "${target}" | write_validated_json "${target}"
   echo "Added inventory item ${item_id} to ${target}"
 }
 
@@ -1498,8 +1481,7 @@ remove_inventory() {
   jq --arg item_id "${item_id}" '
     .rpg = (.rpg // {})
     | .rpg.inventory = ((.rpg.inventory // []) | map(select(.item_id != $item_id)))
-  ' "${target}" | write_json "${target}"
-  validate_scene_file "${target}" >/dev/null
+  ' "${target}" | write_validated_json "${target}"
   echo "Removed inventory item ${item_id} from ${target}"
 }
 
@@ -1521,8 +1503,7 @@ set_stat() {
         key: $key,
         value: $value
       } | with_entries(select(.value != null))])
-  ' "${target}" | write_json "${target}"
-  validate_scene_file "${target}" >/dev/null
+  ' "${target}" | write_validated_json "${target}"
   echo "Set stat ${state_key} in ${target}"
 }
 
@@ -1550,8 +1531,7 @@ adjust_stat() {
     else
       error("stat key not found: " + $key)
     end
-  ' "${target}" | write_json "${target}"
-  validate_scene_file "${target}" >/dev/null
+  ' "${target}" | write_validated_json "${target}"
   echo "Adjusted stat ${state_key} in ${target}"
 }
 
@@ -1579,8 +1559,7 @@ add_quest() {
         completed: false,
         journal: $journal
       }])
-  ' "${target}" | write_json "${target}"
-  validate_scene_file "${target}" >/dev/null
+  ' "${target}" | write_validated_json "${target}"
   echo "Added quest ${quest_id} to ${target}"
 }
 
@@ -1599,8 +1578,7 @@ advance_quest() {
     else
       error("quest id not found: " + $quest_id)
     end
-  ' "${target}" | write_json "${target}"
-  validate_scene_file "${target}" >/dev/null
+  ' "${target}" | write_validated_json "${target}"
   echo "Advanced quest ${quest_id} in ${target}"
 }
 
@@ -1614,8 +1592,7 @@ complete_quest() {
     else
       error("quest id not found: " + $quest_id)
     end
-  ' "${target}" | write_json "${target}"
-  validate_scene_file "${target}" >/dev/null
+  ' "${target}" | write_validated_json "${target}"
   echo "Completed quest ${quest_id} in ${target}"
 }
 
@@ -1632,15 +1609,13 @@ append_quest_journal() {
     else
       error("quest id not found: " + $quest_id)
     end
-  ' "${target}" | write_json "${target}"
-  validate_scene_file "${target}" >/dev/null
+  ' "${target}" | write_validated_json "${target}"
   echo "Appended quest journal ${quest_id} in ${target}"
 }
 
 format_scene() {
   local target="$1"
-  jq '.' "${target}" | write_json "${target}"
-  validate_scene_file "${target}" >/dev/null
+  jq '.' "${target}" | write_validated_json "${target}"
   echo "Formatted ${target}"
 }
 
