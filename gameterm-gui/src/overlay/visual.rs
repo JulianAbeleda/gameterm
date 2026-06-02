@@ -6,9 +6,9 @@ use gameterm_term::color::ColorAttribute;
 use gameterm_term::TerminalSize;
 use gameterm_visual::{
     truncate_to_screen, RunCommandTarget, SceneRuntime, VisualActionRequest, VisualInput,
-    VisualMode, VisualModeOutcome, VisualResolvedSprite, VisualScene, VisualSceneLoadStatus,
-    VisualScenePatch, VisualSceneSource, VisualSpriteManifest, VisualSpriteManifestStatus,
-    VisualStoryState,
+    VisualMode, VisualModeOutcome, VisualResolvedSprite, VisualScene, VisualSceneDialoguePatch,
+    VisualSceneLoadStatus, VisualScenePatch, VisualSceneSource, VisualSpriteManifest,
+    VisualSpriteManifestStatus, VisualStoryState,
 };
 use mux::domain::SplitSource;
 use mux::tab::{SplitDirection, SplitRequest, SplitSize};
@@ -17,11 +17,14 @@ use mux::{Mux, MuxNotification};
 use portable_pty::CommandBuilder;
 use std::collections::HashSet;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::thread;
+use std::time::{Duration, Instant, SystemTime};
 use termwiz::input::{InputEvent, KeyCode, KeyEvent};
 use termwiz::surface::Change;
 use termwiz::terminal::Terminal;
@@ -123,6 +126,8 @@ fn show_visual_scene_overlay_with_source(
     let _scene_patch_subscription =
         ScenePatchNotificationSubscription::new(pane_id, route_pane_id, scene_patch_tx);
     let mut compose_dock = SceneComposeDock::default();
+    let (compose_tx, compose_rx) = mpsc::channel();
+    let mut compose_backend_running = false;
 
     loop {
         let mut needs_render = false;
@@ -144,6 +149,13 @@ fn show_visual_scene_overlay_with_source(
                         runtime.mark_run_command_failed(&argv, target, error);
                     }
                 }
+                needs_render = true;
+            }
+        }
+        while let Ok(result) = compose_rx.try_recv() {
+            compose_backend_running = false;
+            if let Some(runtime) = runtime.as_mut() {
+                apply_compose_backend_result(runtime, result);
                 needs_render = true;
             }
         }
@@ -189,14 +201,49 @@ fn show_visual_scene_overlay_with_source(
             InputEvent::Key(KeyEvent { key, .. }) => {
                 if let Some(runtime) = runtime.as_mut() {
                     if !runtime.scene().stage.is_empty() {
-                        if compose_dock.handle_key(key, runtime) {
-                            render_runtime_with_compose(
-                                &mut term,
-                                runtime,
-                                &sprite_manifest,
-                                &compose_dock,
-                            )?;
-                            continue;
+                        match compose_dock.handle_key(key) {
+                            SceneComposeAction::Consumed => {
+                                render_runtime_with_compose(
+                                    &mut term,
+                                    runtime,
+                                    &sprite_manifest,
+                                    &compose_dock,
+                                )?;
+                                continue;
+                            }
+                            SceneComposeAction::Submitted(prompt) => {
+                                if compose_backend_running {
+                                    runtime.mark_action_status(
+                                        "Compose busy; finish the current reply first",
+                                    );
+                                    render_runtime_with_compose(
+                                        &mut term,
+                                        runtime,
+                                        &sprite_manifest,
+                                        &compose_dock,
+                                    )?;
+                                    continue;
+                                }
+                                compose_dock.mark_submitted(&prompt);
+                                runtime.mark_action_status(format!("Compose running: {prompt}"));
+                                compose_backend_running = true;
+                                spawn_compose_backend(
+                                    ComposeBackendRequest {
+                                        prompt,
+                                        scene_path: Some(scene_path.display().to_string()),
+                                        pane_id: Some(pane_id),
+                                    },
+                                    compose_tx.clone(),
+                                );
+                                render_runtime_with_compose(
+                                    &mut term,
+                                    runtime,
+                                    &sprite_manifest,
+                                    &compose_dock,
+                                )?;
+                                continue;
+                            }
+                            SceneComposeAction::Fallthrough => {}
                         }
                     }
                 }
@@ -258,12 +305,22 @@ fn show_visual_scene_overlay_with_source(
                     )?;
                     file_watcher.refresh(&scene_path, &sprite_manifest_path);
                     patch_inbox.refresh();
-                    render_runtime_with_compose(&mut term, runtime, &sprite_manifest, &compose_dock)?;
+                    render_runtime_with_compose(
+                        &mut term,
+                        runtime,
+                        &sprite_manifest,
+                        &compose_dock,
+                    )?;
                 }
             }
             InputEvent::Resized { .. } => {
                 if let Some(runtime) = runtime.as_ref() {
-                    render_runtime_with_compose(&mut term, runtime, &sprite_manifest, &compose_dock)?;
+                    render_runtime_with_compose(
+                        &mut term,
+                        runtime,
+                        &sprite_manifest,
+                        &compose_dock,
+                    )?;
                 } else {
                     let error = load_error
                         .as_deref()
@@ -1009,42 +1066,313 @@ fn visual_input_from_key(key: KeyCode) -> VisualInput {
     }
 }
 
+const COMPOSE_BACKEND_ENV: &str = "GAMETERM_SCENE_COMPOSE_BACKEND";
+const COMPOSE_OUTPUT_LIMIT: usize = 1200;
+const COMPOSE_BACKEND_TIMEOUT: Duration = Duration::from_secs(15);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ComposeBackendRequest {
+    prompt: String,
+    scene_path: Option<String>,
+    pane_id: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ComposeBackendResult {
+    prompt: String,
+    stdout: String,
+    stderr: String,
+    exit_code: Option<i32>,
+}
+
+impl ComposeBackendResult {
+    fn succeeded(&self) -> bool {
+        self.exit_code == Some(0)
+    }
+}
+
+fn spawn_compose_backend(request: ComposeBackendRequest, tx: mpsc::Sender<ComposeBackendResult>) {
+    thread::spawn(move || {
+        let result = run_compose_backend(request);
+        let _ = tx.send(result);
+    });
+}
+
+fn run_compose_backend(request: ComposeBackendRequest) -> ComposeBackendResult {
+    match std::env::var(COMPOSE_BACKEND_ENV) {
+        Ok(command) if !command.trim().is_empty() => {
+            run_configured_compose_backend(request, command)
+        }
+        _ => ComposeBackendResult {
+            stdout: deterministic_compose_reply(&request.prompt),
+            stderr: String::new(),
+            exit_code: Some(0),
+            prompt: request.prompt,
+        },
+    }
+}
+
+fn run_configured_compose_backend(
+    request: ComposeBackendRequest,
+    command: String,
+) -> ComposeBackendResult {
+    let argv = command
+        .split_whitespace()
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    let Some((program, args)) = argv.split_first() else {
+        return ComposeBackendResult {
+            prompt: request.prompt,
+            stdout: String::new(),
+            stderr: "empty compose backend command".to_string(),
+            exit_code: None,
+        };
+    };
+
+    let mut child = match Command::new(program)
+        .args(args)
+        .env("GAMETERM_SCENE_COMPOSE_PROMPT", &request.prompt)
+        .env(
+            "GAMETERM_SCENE_COMPOSE_SESSION_ID",
+            request
+                .pane_id
+                .map(|pane_id| format!("pane-{pane_id}"))
+                .unwrap_or_else(|| "scene".to_string()),
+        )
+        .env(
+            "GAMETERM_SCENE_PATH",
+            request.scene_path.as_deref().unwrap_or(""),
+        )
+        .env(
+            "GAMETERM_SCENE_PANE_ID",
+            request
+                .pane_id
+                .map(|pane_id| pane_id.to_string())
+                .unwrap_or_default(),
+        )
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(err) => {
+            return ComposeBackendResult {
+                prompt: request.prompt,
+                stdout: String::new(),
+                stderr: format!("failed to spawn compose backend: {err}"),
+                exit_code: None,
+            };
+        }
+    };
+
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(request.prompt.as_bytes());
+    }
+
+    let deadline = Instant::now() + COMPOSE_BACKEND_TIMEOUT;
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(25)),
+            Ok(None) => {
+                let _ = child.kill();
+                return match child.wait_with_output() {
+                    Ok(output) => ComposeBackendResult {
+                        prompt: request.prompt,
+                        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+                        stderr: format!(
+                            "compose backend timed out after {}s",
+                            COMPOSE_BACKEND_TIMEOUT.as_secs()
+                        ),
+                        exit_code: None,
+                    },
+                    Err(err) => ComposeBackendResult {
+                        prompt: request.prompt,
+                        stdout: String::new(),
+                        stderr: format!("compose backend timed out and output read failed: {err}"),
+                        exit_code: None,
+                    },
+                };
+            }
+            Err(err) => {
+                return ComposeBackendResult {
+                    prompt: request.prompt,
+                    stdout: String::new(),
+                    stderr: format!("failed to wait for compose backend: {err}"),
+                    exit_code: None,
+                };
+            }
+        }
+    }
+
+    match child.wait_with_output() {
+        Ok(output) => ComposeBackendResult {
+            prompt: request.prompt,
+            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+            exit_code: output.status.code(),
+        },
+        Err(err) => ComposeBackendResult {
+            prompt: request.prompt,
+            stdout: String::new(),
+            stderr: format!("failed to read compose backend output: {err}"),
+            exit_code: None,
+        },
+    }
+}
+
+fn apply_compose_backend_result(runtime: &mut SceneRuntime, result: ComposeBackendResult) {
+    let (speaker, text, status) = if result.succeeded() {
+        let reply = sanitize_compose_output(&result.stdout);
+        let reply = if reply.is_empty() {
+            "The compose backend returned no output.".to_string()
+        } else {
+            reply
+        };
+        ("Codex", reply, "Compose succeeded".to_string())
+    } else {
+        let diagnostic = sanitize_compose_output(&result.stderr);
+        let diagnostic = if diagnostic.is_empty() {
+            format!("Compose backend failed for: {}", result.prompt)
+        } else {
+            diagnostic
+        };
+        ("Scene", diagnostic, "Compose failed".to_string())
+    };
+    let patch = VisualScenePatch {
+        scene_patch_version: VisualScenePatch::VERSION,
+        updates: vec![],
+        variables: vec![],
+        selected_entity_id: None,
+        process_state: None,
+        dialogue: Some(VisualSceneDialoguePatch {
+            speaker: speaker.to_string(),
+            text,
+            append_history: true,
+        }),
+        status: Some(status),
+    };
+    if let Err(err) = runtime.apply_scene_patch(patch) {
+        runtime.mark_action_status(format!("Compose reply failed: {err}"));
+    }
+}
+
+fn deterministic_compose_reply(prompt: &str) -> String {
+    format!("I received your Scene Mode prompt: {}", prompt.trim())
+}
+
+fn sanitize_compose_output(output: &str) -> String {
+    let mut sanitized = String::new();
+    let mut blank_pending = false;
+    for ch in output.chars() {
+        if sanitized.chars().count() >= COMPOSE_OUTPUT_LIMIT {
+            break;
+        }
+        match ch {
+            '\n' | '\r' => {
+                if !blank_pending {
+                    sanitized.push('\n');
+                    blank_pending = true;
+                }
+            }
+            '\t' => {
+                sanitized.push(' ');
+                blank_pending = false;
+            }
+            ch if ch.is_control() => {}
+            ch => {
+                sanitized.push(ch);
+                blank_pending = false;
+            }
+        }
+    }
+    sanitized.trim().to_string()
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct SceneComposeDock {
     buffer: String,
+    cursor: usize,
     last_submitted: Option<String>,
+    history: Vec<String>,
+    history_index: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum SceneComposeAction {
+    Consumed,
+    Submitted(String),
+    Fallthrough,
 }
 
 impl SceneComposeDock {
-    fn handle_key(&mut self, key: KeyCode, runtime: &mut SceneRuntime) -> bool {
+    fn handle_key(&mut self, key: KeyCode) -> SceneComposeAction {
         match key {
             KeyCode::Backspace => {
-                self.buffer.pop();
-                true
+                self.remove_before_cursor();
+                SceneComposeAction::Consumed
             }
             KeyCode::Delete => {
-                self.buffer.clear();
-                true
+                if self.buffer.is_empty() {
+                    SceneComposeAction::Fallthrough
+                } else {
+                    self.clear_buffer();
+                    SceneComposeAction::Consumed
+                }
             }
-            KeyCode::Enter if !self.buffer.trim().is_empty() => {
+            KeyCode::LeftArrow => {
+                self.cursor = self.cursor.saturating_sub(1);
+                SceneComposeAction::Consumed
+            }
+            KeyCode::RightArrow => {
+                self.cursor = (self.cursor + 1).min(self.buffer_char_len());
+                SceneComposeAction::Consumed
+            }
+            KeyCode::Home => {
+                self.cursor = 0;
+                SceneComposeAction::Consumed
+            }
+            KeyCode::End => {
+                self.cursor = self.buffer_char_len();
+                SceneComposeAction::Consumed
+            }
+            KeyCode::UpArrow => {
+                self.recall_previous_history();
+                SceneComposeAction::Consumed
+            }
+            KeyCode::DownArrow => {
+                self.recall_next_history();
+                SceneComposeAction::Consumed
+            }
+            KeyCode::Enter => {
                 let submitted = self.buffer.trim().to_string();
-                self.last_submitted = Some(submitted.clone());
-                self.buffer.clear();
-                runtime.mark_action_status(format!("Composed input ready: {submitted}"));
-                true
+                if submitted.is_empty() {
+                    SceneComposeAction::Fallthrough
+                } else {
+                    SceneComposeAction::Submitted(submitted)
+                }
             }
             KeyCode::Char(ch) if is_compose_char(ch) => {
-                self.buffer.push(ch);
-                true
+                self.insert_char(ch);
+                SceneComposeAction::Consumed
             }
-            _ => false,
+            _ => SceneComposeAction::Fallthrough,
         }
+    }
+
+    fn mark_submitted(&mut self, prompt: &str) {
+        self.last_submitted = Some(prompt.to_string());
+        self.history.push(prompt.to_string());
+        if self.history.len() > 20 {
+            self.history.remove(0);
+        }
+        self.clear_buffer();
     }
 
     fn render_line(&self, cols: usize) -> String {
         let mut line = String::from(" Compose: ");
-        line.push_str(&self.buffer);
-        line.push('_');
+        line.push_str(&self.buffer_with_cursor());
         if self.buffer.is_empty() {
             if let Some(last_submitted) = &self.last_submitted {
                 line.push_str("  last: ");
@@ -1054,6 +1382,88 @@ impl SceneComposeDock {
             }
         }
         clip_text(&line, cols.max(1))
+    }
+
+    fn insert_char(&mut self, ch: char) {
+        let byte_idx = self.cursor_byte_idx();
+        self.buffer.insert(byte_idx, ch);
+        self.cursor += 1;
+        self.history_index = None;
+    }
+
+    fn remove_before_cursor(&mut self) {
+        if self.cursor == 0 {
+            return;
+        }
+        let start = self.cursor_to_byte_idx(self.cursor - 1);
+        let end = self.cursor_byte_idx();
+        self.buffer.replace_range(start..end, "");
+        self.cursor -= 1;
+        self.history_index = None;
+    }
+
+    fn clear_buffer(&mut self) {
+        self.buffer.clear();
+        self.cursor = 0;
+        self.history_index = None;
+    }
+
+    fn recall_previous_history(&mut self) {
+        if self.history.is_empty() {
+            return;
+        }
+        let next_index = match self.history_index {
+            Some(index) => index.saturating_sub(1),
+            None => self.history.len() - 1,
+        };
+        self.set_history_index(next_index);
+    }
+
+    fn recall_next_history(&mut self) {
+        let Some(index) = self.history_index else {
+            return;
+        };
+        if index + 1 >= self.history.len() {
+            self.clear_buffer();
+        } else {
+            self.set_history_index(index + 1);
+        }
+    }
+
+    fn set_history_index(&mut self, index: usize) {
+        self.history_index = Some(index);
+        self.buffer = self.history[index].clone();
+        self.cursor = self.buffer_char_len();
+    }
+
+    fn buffer_with_cursor(&self) -> String {
+        let mut out = String::new();
+        for (idx, ch) in self.buffer.chars().enumerate() {
+            if idx == self.cursor {
+                out.push('_');
+            }
+            out.push(ch);
+        }
+        if self.cursor >= self.buffer_char_len() {
+            out.push('_');
+        }
+        out
+    }
+
+    fn cursor_byte_idx(&self) -> usize {
+        self.cursor_to_byte_idx(self.cursor)
+    }
+
+    fn cursor_to_byte_idx(&self, cursor: usize) -> usize {
+        self.buffer
+            .char_indices()
+            .nth(cursor)
+            .map(|(idx, _)| idx)
+            .unwrap_or(self.buffer.len())
+    }
+
+    fn buffer_char_len(&self) -> usize {
+        self.buffer.chars().count()
     }
 }
 
@@ -1512,22 +1922,108 @@ mod tests {
 
     #[test]
     fn scene_compose_dock_edits_and_submits_buffer() {
-        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
         let mut dock = SceneComposeDock::default();
 
-        assert!(dock.handle_key(KeyCode::Char('h'), &mut runtime));
-        assert!(dock.handle_key(KeyCode::Char('i'), &mut runtime));
+        assert_eq!(
+            dock.handle_key(KeyCode::Char('h')),
+            SceneComposeAction::Consumed
+        );
+        assert_eq!(
+            dock.handle_key(KeyCode::Char('i')),
+            SceneComposeAction::Consumed
+        );
         assert_eq!(dock.buffer, "hi");
-        assert!(dock.handle_key(KeyCode::Backspace, &mut runtime));
+        assert_eq!(dock.cursor, 2);
+        assert_eq!(
+            dock.handle_key(KeyCode::Backspace),
+            SceneComposeAction::Consumed
+        );
         assert_eq!(dock.buffer, "h");
-        assert!(dock.handle_key(KeyCode::Enter, &mut runtime));
+        assert_eq!(
+            dock.handle_key(KeyCode::Enter),
+            SceneComposeAction::Submitted("h".to_string())
+        );
+        dock.mark_submitted("h");
 
         assert!(dock.buffer.is_empty());
         assert_eq!(dock.last_submitted.as_deref(), Some("h"));
-        assert!(runtime
-            .render_snapshot()
-            .status
-            .contains("Composed input ready: h"));
+    }
+
+    #[test]
+    fn scene_compose_dock_empty_enter_falls_through() {
+        let mut dock = SceneComposeDock::default();
+
+        assert_eq!(
+            dock.handle_key(KeyCode::Enter),
+            SceneComposeAction::Fallthrough
+        );
+    }
+
+    #[test]
+    fn scene_compose_dock_moves_cursor_and_recalls_history() {
+        let mut dock = SceneComposeDock::default();
+        dock.handle_key(KeyCode::Char('a'));
+        dock.handle_key(KeyCode::Char('c'));
+        dock.handle_key(KeyCode::LeftArrow);
+        dock.handle_key(KeyCode::Char('b'));
+
+        assert_eq!(dock.buffer, "abc");
+        assert_eq!(dock.cursor, 2);
+
+        dock.mark_submitted("abc");
+        dock.handle_key(KeyCode::Char('x'));
+        dock.handle_key(KeyCode::UpArrow);
+
+        assert_eq!(dock.buffer, "abc");
+        assert_eq!(dock.cursor, 3);
+    }
+
+    #[test]
+    fn compose_backend_success_updates_dialogue() {
+        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        apply_compose_backend_result(
+            &mut runtime,
+            ComposeBackendResult {
+                prompt: "status".to_string(),
+                stdout: "Workspace is ready.\n".to_string(),
+                stderr: String::new(),
+                exit_code: Some(0),
+            },
+        );
+
+        let snapshot = runtime.render_snapshot();
+        assert_eq!(snapshot.dialogue_speaker, "Codex");
+        assert_eq!(snapshot.dialogue, "Workspace is ready.");
+        assert_eq!(snapshot.status, "Compose succeeded");
+    }
+
+    #[test]
+    fn compose_backend_failure_updates_error_dialogue() {
+        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        apply_compose_backend_result(
+            &mut runtime,
+            ComposeBackendResult {
+                prompt: "status".to_string(),
+                stdout: String::new(),
+                stderr: "backend unavailable".to_string(),
+                exit_code: Some(2),
+            },
+        );
+
+        let snapshot = runtime.render_snapshot();
+        assert_eq!(snapshot.dialogue_speaker, "Scene");
+        assert_eq!(snapshot.dialogue, "backend unavailable");
+        assert_eq!(snapshot.status, "Compose failed");
+    }
+
+    #[test]
+    fn compose_backend_output_is_sanitized_and_clipped() {
+        let raw = format!("ok\u{1b}\n\n\t{}", "x".repeat(COMPOSE_OUTPUT_LIMIT + 20));
+        let sanitized = sanitize_compose_output(&raw);
+
+        assert!(!sanitized.contains('\u{1b}'));
+        assert!(!sanitized.contains("\n\n"));
+        assert!(sanitized.len() <= COMPOSE_OUTPUT_LIMIT + 3);
     }
 
     #[test]
