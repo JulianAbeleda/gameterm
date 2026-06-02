@@ -304,9 +304,8 @@ cargo run -p gameterm-visual --example scene_vn_asset_intake -- \
 
 The helper copies only approved local files, writes a normal Scene
 `sprites.json`, writes attribution, and writes bindings such as
-`vn.character.guide.neutral`. AI-assisted sources are skipped unless
-`--allow-ai-assisted-assets` is passed. Existing output files are not
-overwritten unless `--force` is passed.
+`vn.character.guide.neutral`. Existing output files are not overwritten unless
+`--force` is passed.
 
 For the full local demo workflow, use the VN demo helper. Script-only installs
 copy the base Scene sprite manifest so fallback sprites resolve:

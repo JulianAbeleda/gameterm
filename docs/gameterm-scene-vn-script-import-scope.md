@@ -305,8 +305,7 @@ docs-only changes with runtime implementation.
 After this pass:
 
 1. Add a Rust asset-composition helper for CC0/CC BY sprite sources.
-2. Decide whether AI-assisted backgrounds are acceptable for demo fixtures.
-3. Add local menu visibility or current-label state if global choices become
+2. Add local menu visibility or current-label state if global choices become
    confusing.
 4. Add a command for installing the generated VN demo into the user Scene
    config.

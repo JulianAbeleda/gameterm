@@ -107,7 +107,6 @@ Common options:
 --asset-source-root PATH      Local extracted asset root.
 --output-dir PATH             Required for generate.
 --config-home PATH            Config root for install/doctor.
---allow-ai-assisted-assets    Permit catalog entries marked AI-assisted.
 --force                       Overwrite existing generated/install files.
 --skip-assets                 Install script-only demo.
 ```
@@ -300,4 +299,3 @@ After this pass:
 2. Add expression changes per dialogue line.
 3. Add sprite-parts composition for CC0 character sources.
 4. Add a live smoke scenario that launches the installed VN demo.
-5. Decide whether AI-assisted backgrounds are acceptable for local-only demos.

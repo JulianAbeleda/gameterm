@@ -289,7 +289,6 @@ ci/gameterm-scene-smoke.sh \
   --launch \
   --scenario vn-demo \
   --vn-asset-source-root .cache/gameterm-scene/vn-assets \
-  --allow-ai-assisted-vn-assets \
   --wait-before-capture 3 \
   --capture-timeout 8 \
   --output /tmp/gameterm-scene-vn-demo-stage.png

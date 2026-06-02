@@ -621,11 +621,12 @@ run_vn_asset_intake_check() {
       and .repo_policy == "allowed_with_attribution"
       and (.used_assets | length) == 4)
     and any(.warnings[]; contains("requires sprite composition"))
-    and any(.warnings[]; contains("AI-assisted source skipped"))
+    and any(.sources[]; .id == "tainara_p_school_backgrounds"
+      and (.used_assets | length) == 2)
   ' "${attribution}" >/dev/null
   test -f "${output_root}/characters/guide-neutral.png"
   test -f "${output_root}/characters/guide-happy.png"
-  grep -q "AI-assisted source skipped" /tmp/gameterm-scene-vn-assets-verify.err
+  test -f "${output_root}/backgrounds/school-classroom.png"
 
   "${repo_root}/ci/gameterm-scene-doctor.sh" \
     --scene "${fixture_root}/renpy-demo.json" \
@@ -652,7 +653,6 @@ run_vn_demo_install_check() {
   "${repo_root}/ci/gameterm-scene-vn-demo.sh" generate \
     --output-dir "${generated_dir}" \
     --asset-source-root "${fixture_root}/vn-asset-source" \
-    --allow-ai-assisted-assets \
     --force \
     >/tmp/gameterm-scene-vn-demo-generate.out \
     2>/tmp/gameterm-scene-vn-demo-generate.err
@@ -690,7 +690,7 @@ run_vn_demo_install_check() {
   test -f "${generated_dir}/assets/vn-demo/backgrounds/school-classroom.png"
   jq -e '
     any(.sources[]; .id == "tainara_p_school_backgrounds"
-      and .repo_policy == "allowed_only_if_ai_assisted_assets_are_accepted"
+      and .repo_policy == "local_only"
       and (.used_assets | length) == 2)
   ' "${generated_dir}/vn-demo-asset-attribution.json" >/dev/null
 
@@ -722,7 +722,6 @@ run_vn_demo_install_check() {
   "${repo_root}/ci/gameterm-scene-vn-demo.sh" install \
     --config-home "${config_home}" \
     --asset-source-root "${fixture_root}/vn-asset-source" \
-    --allow-ai-assisted-assets \
     --force \
     >/tmp/gameterm-scene-vn-demo-install.out \
     2>/tmp/gameterm-scene-vn-demo-install.err
@@ -737,8 +736,7 @@ run_vn_demo_install_check() {
     "${repo_root}/ci/gameterm-scene-vn-demo.sh" \
     install \
     --config-home "${config_home}" \
-    --asset-source-root "${fixture_root}/vn-asset-source" \
-    --allow-ai-assisted-assets
+    --asset-source-root "${fixture_root}/vn-asset-source"
   cmp -s "${tmp_dir}/default.before.json" "${installed_dir}/default.json"
   grep -q "refusing to overwrite existing file without --force" \
     /tmp/gameterm-scene-vn-demo-overwrite.err

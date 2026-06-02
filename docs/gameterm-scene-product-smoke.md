@@ -106,9 +106,6 @@ ci/gameterm-scene-vn-image-export.sh \
 
 - Keep downloaded PSDs, ZIPs, RARs, and unclear-license derived files out of
   git unless redistribution and attribution/provenance are clean.
-- If using AI-assisted school backgrounds, pass the explicit opt-in flag:
-  `--allow-ai-assisted-assets` for generation or
-  `--allow-ai-assisted-vn-assets` for smoke.
 - When live smoke is available, run fullscreen VN smoke:
 
 ```sh
@@ -116,7 +113,6 @@ ci/gameterm-scene-smoke.sh \
   --launch \
   --scenario vn-demo \
   --vn-asset-source-root .cache/gameterm-scene/vn-assets \
-  --allow-ai-assisted-vn-assets \
   --wait-before-capture 3 \
   --capture-timeout 8 \
   --output /tmp/gameterm-scene-vn-demo-local.png

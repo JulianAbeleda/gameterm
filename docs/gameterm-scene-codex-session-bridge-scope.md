@@ -241,7 +241,6 @@ Add or extend a smoke scenario:
 ci/gameterm-scene-smoke.sh --launch \
   --scenario vn-compose-codex \
   --vn-asset-source-root .cache/gameterm-scene/vn-assets \
-  --allow-ai-assisted-vn-assets \
   --wait-before-capture 3 \
   --capture-timeout 12 \
   --output /tmp/gameterm-scene-vn-compose-codex-fullscreen.png

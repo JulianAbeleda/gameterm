@@ -29,7 +29,7 @@ and get:
 - stable Scene Mode sprite IDs
 - a valid `sprites.json` manifest
 - attribution/provenance JSON
-- warnings for missing, restricted, unclear, or AI-assisted sources
+- warnings for missing, restricted, unclear, or unsupported sources
 
 ## Product End State
 
@@ -51,8 +51,6 @@ This layer is complete when:
 - No scraping asset pages.
 - No committing downloaded archives by default.
 - No DDLC or proprietary asset import.
-- No AI-assisted background inclusion until the project explicitly accepts that
-  policy.
 - No full image editor.
 - No runtime dependency on an asset service.
 - No replacement for the existing Scene sprite manifest model.
@@ -78,7 +76,7 @@ Required source fields:
 - `download_name`
 - `license`
 - `license_url`
-- `ai_disclosure`
+- `source_disclosure`
 - `repo_policy`
 - optional `attribution`
 - optional `notes`
@@ -89,7 +87,6 @@ Supported first-pass `repo_policy` values:
 - `allowed_with_attribution`
 - `local_only`
 - `blocked`
-- `allowed_only_if_ai_assisted_assets_are_accepted`
 
 Default behavior:
 
@@ -97,8 +94,7 @@ Default behavior:
 - CC BY assets may be copied into local output with attribution.
 - Local-only assets may be referenced but not committed.
 - Blocked assets are skipped.
-- AI-assisted assets are skipped unless the command is passed an explicit
-  `--allow-ai-assisted-assets` flag.
+- Asset provenance and source disclosures are preserved in attribution.
 
 ## Asset IDs
 
@@ -293,7 +289,6 @@ pub struct VnAssetIntakeOptions {
     pub catalog_path: PathBuf,
     pub source_root: PathBuf,
     pub output_root: PathBuf,
-    pub allow_ai_assisted_assets: bool,
     pub force: bool,
 }
 
@@ -397,7 +392,7 @@ and attribution explicit.
 After this pass:
 
 1. Add image composition for CC0 sprite-parts sources.
-2. Add optional background policy if AI-assisted art is accepted.
+2. Add optional background policy if redistribution requirements change.
 3. Teach VN Script Import to consume the generated bindings file.
 4. Improve normal view layout for VN-style background plus portrait staging.
 5. Add a local installer command that runs script import and asset intake

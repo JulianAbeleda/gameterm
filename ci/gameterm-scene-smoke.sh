@@ -27,9 +27,6 @@ Options:
   --vn-asset-source-root PATH
                            Local VN asset source root for the vn-demo scenario.
                            Defaults to the repo-safe fixture asset source.
-  --allow-ai-assisted-vn-assets
-                           Allow VN demo intake to include catalog sources
-                           marked as AI-assisted.
   --patch-inbox PATH       Set GAMETERM_SCENE_PATCH_FILE to PATH when
                            launching. Use "auto" to create a temporary inbox.
   --submit-mux-patch PATH  After --launch wait, submit PATCH through
@@ -105,7 +102,6 @@ submit_target_pane_id=""
 key_sequence=""
 scene_open_shortcut="configured"
 vn_asset_source_root=""
-allow_ai_assisted_vn_assets=0
 log_file="/tmp/gameterm-scene-smoke-ffmpeg.log"
 
 while [[ $# -gt 0 ]]; do
@@ -137,10 +133,6 @@ while [[ $# -gt 0 ]]; do
     --vn-asset-source-root)
       vn_asset_source_root="$2"
       shift 2
-      ;;
-    --allow-ai-assisted-vn-assets)
-      allow_ai_assisted_vn_assets=1
-      shift
       ;;
     --patch-inbox)
       patch_inbox="$2"
@@ -482,9 +474,6 @@ install_scene_fixture() {
         --strict-images
         --force
       )
-      if [[ "${allow_ai_assisted_vn_assets}" -eq 1 ]]; then
-        vn_demo_args+=(--allow-ai-assisted-assets)
-      fi
       "${repo_root}/ci/gameterm-scene-vn-demo.sh" generate \
         "${vn_demo_args[@]}" >/dev/null
       ;;

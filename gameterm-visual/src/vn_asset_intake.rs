@@ -30,7 +30,7 @@ pub struct VnAssetCatalogSource {
     pub download_name: String,
     pub license: String,
     pub license_url: String,
-    pub ai_disclosure: String,
+    pub source_disclosure: String,
     pub repo_policy: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attribution: Option<String>,
@@ -45,7 +45,6 @@ pub struct VnAssetIntakeOptions {
     pub output_root: PathBuf,
     pub sprite_manifest_path: Option<PathBuf>,
     pub base_manifest_path: Option<PathBuf>,
-    pub allow_ai_assisted_assets: bool,
     pub force: bool,
 }
 
@@ -115,7 +114,6 @@ pub enum VnAssetIntakeWarningKind {
     MissingSourceDirectory,
     MissingExpectedAsset,
     BlockedSource,
-    AiAssistedSourceSkipped,
     CompositionRequired,
     UnsupportedRole,
     UnsupportedImageFormat,
@@ -160,7 +158,7 @@ pub fn run_vn_asset_intake(
 
     for source in catalog.sources {
         let mut used_assets = Vec::new();
-        if !source_is_allowed(&source, options.allow_ai_assisted_assets, &mut warnings) {
+        if !source_is_allowed(&source, &mut warnings) {
             attribution_sources.push(attribution_source(source, used_assets));
             continue;
         }
@@ -299,23 +297,10 @@ fn load_base_sprites(
 
 fn source_is_allowed(
     source: &VnAssetCatalogSource,
-    allow_ai_assisted_assets: bool,
     warnings: &mut Vec<VnAssetIntakeWarning>,
 ) -> bool {
     match source.repo_policy.as_str() {
         "allowed_with_provenance" | "allowed_with_attribution" | "local_only" => true,
-        "allowed_only_if_ai_assisted_assets_are_accepted" => {
-            if allow_ai_assisted_assets {
-                true
-            } else {
-                warnings.push(warning(
-                    Some(source.id.clone()),
-                    VnAssetIntakeWarningKind::AiAssistedSourceSkipped,
-                    "AI-assisted source skipped; pass --allow-ai-assisted-assets to include it",
-                ));
-                false
-            }
-        }
         "blocked" => {
             warnings.push(warning(
                 Some(source.id.clone()),
@@ -521,7 +506,7 @@ mod tests {
       "download_name": "parts.zip",
       "license": "CC0-1.0",
       "license_url": "https://example.test/license",
-      "ai_disclosure": "No generative AI was used",
+      "source_disclosure": "Source page disclosure recorded",
       "repo_policy": "allowed_with_provenance"
     },
     {
@@ -533,7 +518,7 @@ mod tests {
       "download_name": "character.zip",
       "license": "CC-BY-4.0",
       "license_url": "https://example.test/license",
-      "ai_disclosure": "No generative AI was used",
+      "source_disclosure": "Source page disclosure recorded",
       "repo_policy": "allowed_with_attribution",
       "attribution": "GameTerm test"
     },
@@ -546,8 +531,8 @@ mod tests {
       "download_name": "background.zip",
       "license": "free",
       "license_url": "https://example.test/license",
-      "ai_disclosure": "AI Assisted Graphics",
-      "repo_policy": "allowed_only_if_ai_assisted_assets_are_accepted"
+      "source_disclosure": "Source page disclosure recorded",
+      "repo_policy": "local_only"
     }
   ]
 }"#,
@@ -577,7 +562,6 @@ mod tests {
             output_root: output_root.clone(),
             sprite_manifest_path: Some(sprite_manifest_path),
             base_manifest_path: None,
-            allow_ai_assisted_assets: false,
             force: false,
         })
         .unwrap();
@@ -602,10 +586,6 @@ mod tests {
             warning.kind == VnAssetIntakeWarningKind::CompositionRequired
                 && warning.source_id.as_deref() == Some("parts")
         }));
-        assert!(report.warnings.iter().any(|warning| {
-            warning.kind == VnAssetIntakeWarningKind::AiAssistedSourceSkipped
-                && warning.source_id.as_deref() == Some("background")
-        }));
         assert!(report
             .attribution
             .sources
@@ -614,7 +594,7 @@ mod tests {
     }
 
     #[test]
-    fn vn_asset_intake_can_include_ai_assisted_backgrounds_when_allowed() {
+    fn vn_asset_intake_includes_school_backgrounds_by_default() {
         let tmp = tempfile::tempdir().unwrap();
         let catalog_path = tmp.path().join("catalog.json");
         let source_root = tmp.path().join("source");
@@ -631,7 +611,6 @@ mod tests {
             output_root,
             sprite_manifest_path: None,
             base_manifest_path: None,
-            allow_ai_assisted_assets: true,
             force: false,
         })
         .unwrap();

@@ -197,7 +197,8 @@ Verified behavior:
   root.
 - Generated `sprites.json`, bindings, and attribution files are serialized by
   the Rust example.
-- AI-assisted background sources are skipped unless explicitly allowed.
+- Local school background sources are copied when present and tracked in
+  attribution.
 - Sprite-parts sources report composition-required warnings instead of broken
   manifest entries.
 - `ci/gameterm-scene-verify.sh --all` covers the intake path with repo-owned
@@ -207,7 +208,6 @@ Deferred:
 
 - automatic itch.io download/login
 - committing third-party art before attribution is represented
-- AI-assisted backgrounds unless explicitly accepted
 - sprite-parts composition beyond warning/reporting
 
 ### Priority 0.75: VN Demo Install
@@ -268,7 +268,7 @@ Completed slice:
 - `ci/gameterm-scene-vn-image-export.sh` can flatten local PSD/image downloads
   into the current VN source-root layout
 - live smoke is recorded with local downloaded PSD character art and
-  AI-assisted school backgrounds when explicitly allowed
+  local school backgrounds
 
 Non-goals:
 

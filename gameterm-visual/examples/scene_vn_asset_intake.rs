@@ -11,7 +11,6 @@ struct CliArgs {
     attribution: Option<PathBuf>,
     bindings: Option<PathBuf>,
     base_manifest: Option<PathBuf>,
-    allow_ai_assisted_assets: bool,
     force: bool,
 }
 
@@ -25,7 +24,6 @@ fn usage() {
   --attribution PATH \\
   --bindings PATH \\
   [--base-manifest PATH] \\
-  [--allow-ai-assisted-assets] \\
   [--force]"
     );
 }
@@ -53,7 +51,6 @@ fn main() {
         output_root,
         sprite_manifest_path: Some(sprite_manifest.clone()),
         base_manifest_path: args.base_manifest,
-        allow_ai_assisted_assets: args.allow_ai_assisted_assets,
         force: args.force,
     }) {
         Ok(report) => report,
@@ -101,7 +98,6 @@ fn parse_args() -> Result<CliArgs, String> {
             "--base-manifest" => {
                 parsed.base_manifest = Some(next_path(&mut args, "--base-manifest")?)
             }
-            "--allow-ai-assisted-assets" => parsed.allow_ai_assisted_assets = true,
             "--force" => parsed.force = true,
             "-h" | "--help" => {
                 usage();

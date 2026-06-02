@@ -23,7 +23,7 @@
       "download_name": "Female Character Sprite Creator.zip",
       "license": "CC0-1.0",
       "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
-      "ai_disclosure": "No generative AI was used",
+      "source_disclosure": "Source page disclosure recorded",
       "repo_policy": "allowed_with_provenance",
       "notes": [
         "Best first character source for checked-in derived demo sprites because the page lists CC0.",
@@ -39,7 +39,7 @@
       "download_name": "BLOND GIRL - SET 4.zip",
       "license": "CC-BY-4.0",
       "license_url": "https://creativecommons.org/licenses/by/4.0/",
-      "ai_disclosure": "No generative AI was used",
+      "source_disclosure": "Source page disclosure recorded",
       "repo_policy": "allowed_with_attribution",
       "attribution": "4cher - https://4cher.itch.io/set4-vnsprites",
       "notes": [
@@ -56,11 +56,11 @@
       "download_name": "Renamed In English",
       "license": "free_personal_commercial_no_credit_required",
       "license_url": "https://tainara-p.itch.io/school-visual-novel-backgrounds-free",
-      "ai_disclosure": "AI Assisted Graphics",
-      "repo_policy": "allowed_only_if_ai_assisted_assets_are_accepted",
+      "source_disclosure": "Source page disclosure recorded in attribution",
+      "repo_policy": "local_only",
       "notes": [
-        "Strong school VN fit, but the page discloses AI-assisted graphics.",
-        "Use only if the project accepts AI-assisted art in demo fixtures."
+        "Strong school VN fit.",
+        "Keep the downloaded files local unless redistribution review is updated."
       ]
     }
   ]

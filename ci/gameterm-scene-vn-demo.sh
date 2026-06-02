@@ -17,7 +17,6 @@ Options:
   --asset-source-root PATH      Local extracted asset root.
   --output-dir PATH             Output directory for generate or doctor.
   --config-home PATH            Config root for install or doctor.
-  --allow-ai-assisted-assets    Permit catalog entries marked AI-assisted.
   --strict-images               Require doctor to validate real PNG files.
   --force                       Overwrite existing output/install files.
   --skip-assets                 Generate a script-only demo.
@@ -40,7 +39,6 @@ asset_catalog="${fixture_root}/renpy-demo-open-assets.json"
 asset_source_root=""
 output_dir=""
 config_home="${XDG_CONFIG_HOME:-${HOME}/.config}"
-allow_ai_assisted_assets=0
 strict_images=0
 force=0
 skip_assets=0
@@ -108,10 +106,6 @@ while [[ $# -gt 0 ]]; do
       require_value "$1" "${2:-}"
       config_home="$2"
       shift 2
-      ;;
-    --allow-ai-assisted-assets)
-      allow_ai_assisted_assets=1
-      shift
       ;;
     --strict-images)
       strict_images=1
@@ -228,9 +222,6 @@ generate_to_dir() {
       --bindings "${bindings}"
       --base-manifest "${fixture_root}/sprites.json"
     )
-    if [[ "${allow_ai_assisted_assets}" -eq 1 ]]; then
-      asset_args+=(--allow-ai-assisted-assets)
-    fi
     cargo run -q -p gameterm-visual --example scene_vn_asset_intake -- "${asset_args[@]}"
     script_args+=(--bindings "${bindings}" --asset-root "${asset_output_root}")
   else
