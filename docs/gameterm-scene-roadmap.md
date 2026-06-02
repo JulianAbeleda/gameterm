@@ -12,7 +12,9 @@ strict image validation, fullscreen smoke capture, local PSD/image export, and
 native active-pane GUI first-pass closure complete. Staged VN text presentation
 and compose dock input are implemented; the Codex compose bridge local-backend
 first pass is implemented. The local Codex CLI session bridge first pass is
-implemented with a deterministic fake-Codex smoke path.
+implemented with a deterministic fake-Codex smoke path. VN dialogue/composer
+panel text, nameplates, and GPU quads now share one dynamic overlay layout
+primitive.
 
 Scene Mode currently has:
 
@@ -58,6 +60,8 @@ Latest verification baseline:
 - Live smoke: PASS for `vn-demo` with repo fixture PNGs and with local
   downloaded PSD/school assets, recorded in
   [GameTerm Scene Mode Smoke Report](gameterm-scene-smoke-report.md)
+- Live smoke: PASS for `vn-compose` shared VN overlay layout, recorded in
+  [GameTerm Scene Mode Smoke Report](gameterm-scene-smoke-report.md)
 
 Known non-blocking warning noise remains outside Scene Mode scope:
 
@@ -89,6 +93,7 @@ implementation details.
 | Codex compose bridge | [Codex Compose Bridge Scope](gameterm-scene-codex-compose-bridge-scope.md) | First-pass implemented |
 | Codex session bridge | [Codex Session Bridge Scope](gameterm-scene-codex-session-bridge-scope.md) | First-pass implemented |
 | Dogfood workspace | [Dogfood Workspace Scope](gameterm-scene-dogfood-workspace-scope.md) | Scoped |
+| Current handoff | [Scene Mode Handoff](gameterm-scene-handoff.md) | Current session snapshot |
 | Next actions | [Scene Next Actions Scope](gameterm-scene-next-actions-scope.md) | Current execution scope |
 | Next product lanes | [Scene Next Product Lanes Scope](gameterm-scene-next-product-lanes-scope.md) | Scoped |
 | Live pane/process context | [Pane And Process Discovery Scope](gameterm-scene-pane-process-discovery-scope.md) | Implemented through explicit metadata |

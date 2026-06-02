@@ -72,6 +72,41 @@ Validated named scenarios:
 
 ## Live Results
 
+### vn-compose-shared-layout-pass-20260602-1822
+
+Command:
+
+```sh
+cargo build -p gameterm-gui
+GAMETERM_SCENE_COMPOSE_BACKEND_KIND=fake \
+GAMETERM_SCENE_COMPOSE_FAKE_REPLY='Hi.' \
+ci/gameterm-scene-smoke.sh \
+  --launch \
+  --scenario vn-compose \
+  --vn-asset-source-root .cache/gameterm-scene/vn-assets \
+  --key-sequence 'text:say hi,enter,delay:4' \
+  --wait-before-capture 3 \
+  --post-action-wait 2 \
+  --capture-timeout 12 \
+  --output /Users/julianabeleda/Desktop/gameterm-scene-smoke-vn-shared-layout-20260602-182247.png
+```
+
+Result: PASS.
+
+Capture:
+
+```text
+/Users/julianabeleda/Desktop/gameterm-scene-smoke-vn-shared-layout-20260602-182247.png
+```
+
+Observation: the smoke helper launched the VN compose scenario, sent a
+deterministic `say hi` prompt through the fake compose backend, and captured a
+non-empty 1920x1080 PNG. Visual inspection confirmed the shared VN layout fix:
+`Codex` and `Composer` nameplates/text were inside their respective transparent
+rounded panels. Caveat: macOS left GameTerm in a smaller foreground window
+rather than true fullscreen, so repeat a maximized/fullscreen capture before
+using this as final visual sign-off.
+
 ### dogfood-workspace-pass-20260602-1713
 
 Command:
