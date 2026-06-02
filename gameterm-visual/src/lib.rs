@@ -553,6 +553,82 @@ pub struct VisualProcessState {
     pub message: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum VisualComposePhase {
+    Idle,
+    Running,
+    Succeeded,
+    Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum VisualComposeRole {
+    User,
+    Assistant,
+    System,
+    Error,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct VisualComposeMessage {
+    role: VisualComposeRole,
+    text: String,
+}
+
+#[derive(Debug, Clone)]
+struct VisualComposeRuntimeState {
+    phase: VisualComposePhase,
+    history: Vec<VisualComposeMessage>,
+    last_prompt: Option<String>,
+    last_reply: Option<String>,
+}
+
+impl VisualComposeRuntimeState {
+    fn new() -> Self {
+        Self {
+            phase: VisualComposePhase::Idle,
+            history: Vec::new(),
+            last_prompt: None,
+            last_reply: None,
+        }
+    }
+
+    fn push_message(&mut self, role: VisualComposeRole, text: String) {
+        if text.trim().is_empty() {
+            return;
+        }
+        const MAX_COMPOSE_HISTORY: usize = 20;
+        self.history.push(VisualComposeMessage { role, text });
+        if self.history.len() > MAX_COMPOSE_HISTORY {
+            let excess = self.history.len() - MAX_COMPOSE_HISTORY;
+            self.history.drain(0..excess);
+        }
+    }
+
+    fn set_phase_and_history(&mut self, phase: VisualComposePhase) {
+        self.phase = phase;
+    }
+
+    fn mark_running(&mut self, prompt: &str) {
+        self.set_phase_and_history(VisualComposePhase::Running);
+        self.last_prompt = Some(prompt.to_string());
+        self.last_reply = None;
+        self.push_message(VisualComposeRole::User, prompt.to_string());
+    }
+
+    fn mark_succeeded(&mut self, reply: &str) {
+        self.set_phase_and_history(VisualComposePhase::Succeeded);
+        self.last_reply = Some(reply.to_string());
+        self.push_message(VisualComposeRole::Assistant, reply.to_string());
+    }
+
+    fn mark_failed(&mut self, reason: &str) {
+        self.set_phase_and_history(VisualComposePhase::Failed);
+        self.last_reply = Some(reason.to_string());
+        self.push_message(VisualComposeRole::Error, reason.to_string());
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum VisualProcessPhase {
@@ -1370,6 +1446,7 @@ pub struct SceneRuntime {
     last_input_layer: Option<String>,
     last_layer_transition: Option<VisualLayerTransitionReport>,
     transition_history: Vec<VisualRuntimeEvent>,
+    compose_state: VisualComposeRuntimeState,
 }
 
 impl SceneRuntime {
@@ -1415,6 +1492,7 @@ impl SceneRuntime {
             last_input_layer: None,
             last_layer_transition: None,
             transition_history: Vec::new(),
+            compose_state: VisualComposeRuntimeState::new(),
         };
         runtime.run_mode_enter_hooks();
         Ok(runtime)
@@ -1878,6 +1956,47 @@ impl SceneRuntime {
         self.bump_generation();
     }
 
+    pub fn mark_compose_running(&mut self, status: impl Into<String>, prompt: &str) {
+        let prompt = prompt.trim().to_string();
+        self.compose_state.mark_running(&prompt);
+        self.status = status.into();
+        self.record_runtime_event("compose", format!("submit: {prompt}"));
+        self.bump_generation();
+    }
+
+    pub fn mark_compose_succeeded(&mut self, speaker: &str, reply: &str) {
+        let trimmed_reply = reply.trim();
+        let role = if speaker.trim().is_empty() {
+            VisualComposeRole::Assistant
+        } else if speaker.eq_ignore_ascii_case("scene") {
+            VisualComposeRole::System
+        } else if speaker.eq_ignore_ascii_case("error") {
+            VisualComposeRole::Error
+        } else {
+            VisualComposeRole::Assistant
+        };
+        let event_detail = if trimmed_reply.is_empty() {
+            format!("{role:?}: {speaker}: <empty>")
+        } else {
+            format!("{role:?}: {speaker}: {trimmed_reply}")
+        };
+        self.compose_state.mark_succeeded(trimmed_reply);
+        self.record_runtime_event("compose", event_detail);
+        self.bump_generation();
+    }
+
+    pub fn mark_compose_failed(&mut self, error: &str) {
+        let trimmed_error = error.trim();
+        let event_detail = if trimmed_error.is_empty() {
+            "failed".to_string()
+        } else {
+            format!("failed: {trimmed_error}")
+        };
+        self.compose_state.mark_failed(trimmed_error);
+        self.record_runtime_event("compose", event_detail);
+        self.bump_generation();
+    }
+
     fn resolve_action_path(&self, path: &str) -> PathBuf {
         let raw_path = PathBuf::from(path);
         if raw_path.is_absolute() {
@@ -2244,7 +2363,9 @@ impl SceneRuntime {
         let mut top = Vec::new();
 
         top.push(self.scene.title.clone());
-        top.push("Scene Mode  [enter: action] [tab: debugger] [r: reload] [esc/q: close]".to_string());
+        top.push(
+            "Scene Mode  [enter: action] [tab: debugger] [r: reload] [esc/q: close]".to_string(),
+        );
         if self.scene_source.load_status == VisualSceneLoadStatus::ReloadFailed {
             if let Some(error) = &self.scene_source.last_error {
                 top.push(format!("Reload failed: {error}"));
@@ -2315,7 +2436,11 @@ impl SceneRuntime {
         if !self.scene.choices.is_empty() && height >= 6 {
             lines.push(String::new());
             for (idx, choice) in self.scene.choices.iter().take(2).enumerate() {
-                let marker = if idx == self.selected_choice { ">" } else { " " };
+                let marker = if idx == self.selected_choice {
+                    ">"
+                } else {
+                    " "
+                };
                 let guard = if conditions_match(
                     &choice.conditions,
                     &self.scene.variables,
@@ -4702,6 +4827,63 @@ mod tests {
         let frame = runtime.render_text_frame(120, 40);
         assert!(frame.contains("History:"));
         assert!(frame.contains("transition: story dialogue -> choice"));
+    }
+
+    #[test]
+    fn compose_runtime_records_turn_status_and_history() {
+        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+
+        runtime.mark_compose_running("Compose running: inspect roadmap", "inspect roadmap");
+        assert_eq!(
+            runtime.compose_state.last_prompt.as_deref(),
+            Some("inspect roadmap")
+        );
+        assert_eq!(runtime.compose_state.phase, VisualComposePhase::Running);
+
+        runtime.mark_compose_succeeded("Codex", "I can inspect the route.");
+        assert_eq!(runtime.compose_state.phase, VisualComposePhase::Succeeded);
+        assert_eq!(
+            runtime.compose_state.last_reply.as_deref(),
+            Some("I can inspect the route.")
+        );
+        assert_eq!(runtime.compose_state.history.len(), 2);
+        assert_eq!(
+            runtime.compose_state.history[0].role,
+            VisualComposeRole::User
+        );
+        assert_eq!(
+            runtime.compose_state.history[0].text,
+            "inspect roadmap".to_string()
+        );
+        assert_eq!(
+            runtime.compose_state.history[1].role,
+            VisualComposeRole::Assistant
+        );
+
+        runtime.mark_compose_failed("backend offline");
+        assert_eq!(runtime.compose_state.phase, VisualComposePhase::Failed);
+        assert_eq!(
+            runtime.compose_state.history[2].role,
+            VisualComposeRole::Error
+        );
+
+        let report = runtime.debug_report();
+        assert!(report.transition_history.iter().any(
+            |event| event.kind == "compose" && event.detail.contains("submit: inspect roadmap")
+        ));
+    }
+
+    #[test]
+    fn compose_runtime_history_is_capped() {
+        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+
+        for idx in 0..30 {
+            runtime.mark_compose_running("Compose running", &format!("prompt {idx}"));
+        }
+
+        assert_eq!(runtime.compose_state.history.len(), 20);
+        assert_eq!(runtime.compose_state.history[0].text, "prompt 10");
+        assert_eq!(runtime.compose_state.history[19].text, "prompt 29");
     }
 
     #[test]

@@ -2,13 +2,13 @@ use crate::termwindow::TermWindowNotif;
 use anyhow::Context;
 use config::keyassignment::SpawnTabDomain;
 use gameterm_dynamic::Value;
-use gameterm_term::TerminalSize;
 use gameterm_term::color::ColorAttribute;
+use gameterm_term::TerminalSize;
 use gameterm_visual::{
-    RunCommandTarget, SceneRuntime, VisualActionRequest, VisualInput, VisualMode,
-    VisualModeOutcome, VisualResolvedSprite, VisualScene, VisualSceneDialoguePatch,
+    truncate_to_screen, RunCommandTarget, SceneRuntime, VisualActionRequest, VisualInput,
+    VisualMode, VisualModeOutcome, VisualResolvedSprite, VisualScene, VisualSceneDialoguePatch,
     VisualSceneLoadStatus, VisualScenePatch, VisualSceneSource, VisualSpriteManifest,
-    VisualSpriteManifestStatus, VisualStoryState, truncate_to_screen,
+    VisualSpriteManifestStatus, VisualStoryState,
 };
 use mux::domain::SplitSource;
 use mux::tab::{SplitDirection, SplitRequest, SplitSize};
@@ -21,9 +21,9 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use termwiz::input::{InputEvent, KeyCode, KeyEvent};
@@ -214,8 +214,10 @@ fn show_visual_scene_overlay_with_source(
                             }
                             SceneComposeAction::Submitted(prompt) => {
                                 if compose_backend_running {
+                                    runtime
+                                        .mark_compose_failed("Compose backend is already running");
                                     runtime.mark_action_status(
-                                        "Compose busy; finish the current reply first",
+                                        "Compose busy: finish the current reply first",
                                     );
                                     render_runtime_with_compose(
                                         &mut term,
@@ -226,7 +228,8 @@ fn show_visual_scene_overlay_with_source(
                                     continue;
                                 }
                                 compose_dock.mark_submitted(&prompt);
-                                runtime.mark_action_status(compose_running_status(&prompt));
+                                runtime
+                                    .mark_compose_running(compose_running_status(&prompt), &prompt);
                                 compose_backend_running = true;
                                 spawn_compose_backend(
                                     ComposeBackendRequest {
@@ -1508,10 +1511,30 @@ fn codex_output_text(output_file: &Path, stdout: &[u8]) -> String {
         .unwrap_or_else(|| String::from_utf8_lossy(stdout).to_string())
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum StructuredComposeOutcome {
+    NoReply,
+    WithReply {
+        speaker: String,
+        dialogue_text: String,
+    },
+}
+
 fn apply_compose_backend_result(runtime: &mut SceneRuntime, result: ComposeBackendResult) {
     if result.succeeded() {
-        if apply_structured_compose_backend_result(runtime, &result) {
-            return;
+        match apply_structured_compose_backend_result(runtime, &result) {
+            Some(StructuredComposeOutcome::WithReply {
+                speaker,
+                dialogue_text,
+            }) => {
+                runtime.mark_compose_succeeded(&speaker, &dialogue_text);
+                return;
+            }
+            Some(StructuredComposeOutcome::NoReply) => {
+                runtime.mark_compose_succeeded("Scene", "");
+                return;
+            }
+            None => {}
         }
 
         let reply = sanitize_compose_output(&result.stdout);
@@ -1528,13 +1551,15 @@ fn apply_compose_backend_result(runtime: &mut SceneRuntime, result: ComposeBacke
             process_state: None,
             dialogue: Some(VisualSceneDialoguePatch {
                 speaker: "Codex".to_string(),
-                text: reply,
+                text: reply.clone(),
                 append_history: true,
             }),
             status: Some(result.label.succeeded_status().to_string()),
         };
         if let Err(err) = runtime.apply_scene_patch(patch) {
             runtime.mark_action_status(format!("Compose reply failed: {err}"));
+        } else {
+            runtime.mark_compose_succeeded("Codex", &reply);
         }
         return;
     }
@@ -1605,10 +1630,10 @@ fn parse_structured_compose_patch(value: serde_json::Value) -> Result<VisualScen
 fn apply_structured_compose_backend_result(
     runtime: &mut SceneRuntime,
     result: &ComposeBackendResult,
-) -> bool {
+) -> Option<StructuredComposeOutcome> {
     let mut payload = match parse_structured_compose_payload(&result.stdout) {
         Some(payload) => payload,
-        None => return false,
+        None => return None,
     };
 
     let mut patch = match payload.patch.take() {
@@ -1616,7 +1641,7 @@ fn apply_structured_compose_backend_result(
             Ok(patch) => patch,
             Err(err) => {
                 runtime.mark_action_status(format!("Compose patch parse failed: {err}"));
-                return false;
+                return None;
             }
         },
         None => VisualScenePatch {
@@ -1630,6 +1655,8 @@ fn apply_structured_compose_backend_result(
         },
     };
 
+    let mut applied_dialogue = patch.dialogue.clone();
+
     if patch.dialogue.is_none() && payload.dialogue_text_is_present() {
         let speaker = payload
             .speaker
@@ -1637,11 +1664,13 @@ fn apply_structured_compose_backend_result(
             .filter(|speaker| !speaker.trim().is_empty())
             .unwrap_or_else(|| "Codex".to_string());
 
-        patch.dialogue = Some(VisualSceneDialoguePatch {
+        let dialogue = VisualSceneDialoguePatch {
             speaker,
             text: payload.text_or_default(),
             append_history: payload.append_history.unwrap_or(true),
-        });
+        };
+        applied_dialogue = Some(dialogue.clone());
+        patch.dialogue = Some(dialogue);
     }
 
     if patch.status.is_none() {
@@ -1654,10 +1683,19 @@ fn apply_structured_compose_backend_result(
 
     if let Err(err) = runtime.apply_scene_patch(patch) {
         runtime.mark_action_status(format!("Compose patch failed: {err}"));
-        return false;
+        return None;
     }
 
-    true
+    if applied_dialogue.is_some() {
+        return applied_dialogue
+            .take()
+            .map(|dialogue| StructuredComposeOutcome::WithReply {
+                speaker: dialogue.speaker,
+                dialogue_text: dialogue.text,
+            });
+    }
+
+    Some(StructuredComposeOutcome::NoReply)
 }
 
 fn apply_compose_backend_failure_result(runtime: &mut SceneRuntime, result: &ComposeBackendResult) {
@@ -1667,6 +1705,7 @@ fn apply_compose_backend_failure_result(runtime: &mut SceneRuntime, result: &Com
     } else {
         diagnostic
     };
+    let marked_diagnostic = diagnostic.clone();
     let patch = VisualScenePatch {
         scene_patch_version: VisualScenePatch::VERSION,
         updates: vec![],
@@ -1682,6 +1721,8 @@ fn apply_compose_backend_failure_result(runtime: &mut SceneRuntime, result: &Com
     };
     if let Err(err) = runtime.apply_scene_patch(patch) {
         runtime.mark_action_status(format!("Compose reply failed: {err}"));
+    } else {
+        runtime.mark_compose_failed(&marked_diagnostic);
     }
 }
 
@@ -2094,12 +2135,10 @@ mod tests {
         let status = load_sprite_manifest_status(&path);
 
         assert!(status.warnings.is_empty());
-        assert!(
-            status
-                .sprites
-                .iter()
-                .any(|sprite| sprite.id == "project_core")
-        );
+        assert!(status
+            .sprites
+            .iter()
+            .any(|sprite| sprite.id == "project_core"));
     }
 
     #[test]
@@ -2240,12 +2279,10 @@ mod tests {
             runtime.debug_report().last_story_state_action.as_deref(),
             Some("export")
         );
-        assert!(
-            runtime
-                .render_snapshot()
-                .status
-                .starts_with("Story state exported: ")
-        );
+        assert!(runtime
+            .render_snapshot()
+            .status
+            .starts_with("Story state exported: "));
     }
 
     #[test]
@@ -2304,14 +2341,12 @@ mod tests {
 
         let report = runtime.debug_report();
         assert_eq!(report.last_story_state_action.as_deref(), Some("import"));
-        assert!(
-            report
-                .variables
-                .contains(&gameterm_visual::VisualStateEntry {
-                    key: "loaded_from_gui".to_string(),
-                    value: gameterm_visual::VisualStateValue::Bool(true),
-                })
-        );
+        assert!(report
+            .variables
+            .contains(&gameterm_visual::VisualStateEntry {
+                key: "loaded_from_gui".to_string(),
+                value: gameterm_visual::VisualStateValue::Bool(true),
+            }));
     }
 
     #[test]
