@@ -10,6 +10,7 @@ Discover local workspace state and write GameTerm Scene Mode output.
 Commands:
   inspect                       Print discovered workspace summary.
   discover                      Generate a complete Scene Mode scene.
+  dogfood                       Generate/install the daily dogfood workspace scene.
   patch                         Generate a patch for the workspace-agent scene.
   brief                         Generate a local task brief JSON file.
 
@@ -53,6 +54,8 @@ Examples:
 
   ci/gameterm-scene-workspace.sh discover --cwd . --install --force
 
+  ci/gameterm-scene-workspace.sh dogfood --cwd . --install --force
+
   ci/gameterm-scene-workspace.sh patch \
     --cwd . \
     --patch-output /tmp/gameterm-workspace.patch.json
@@ -79,6 +82,7 @@ title_override=""
 task_text=""
 verify_argv=""
 max_files=5
+max_files_provided=0
 strict=0
 scene_output=""
 patch_output=""
@@ -145,6 +149,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     --max-files)
       max_files="$2"
+      max_files_provided=1
       shift 2
       ;;
     --strict)
@@ -261,8 +266,21 @@ else
 fi
 
 project_label="$(basename "${root_dir}")"
-scene_title="${title_override:-${project_label} Workspace}"
-task_label="${task_text:-Review ${project_label} workspace}"
+dogfood_profile=0
+if [[ "${command}" == "dogfood" ]]; then
+  dogfood_profile=1
+  scene_title="${title_override:-GameTerm Dogfood Workspace}"
+  task_label="${task_text:-Dogfood Scene Mode daily workspace}"
+  if [[ "${max_files_provided}" -eq 0 ]]; then
+    max_files=10
+  fi
+  if [[ "${install}" -eq 1 && -z "${brief_output}" ]]; then
+    brief_output="${config_home}/gameterm/scenes/dogfood-task-brief.json"
+  fi
+else
+  scene_title="${title_override:-${project_label} Workspace}"
+  task_label="${task_text:-Review ${project_label} workspace}"
+fi
 
 language="unknown"
 manifest=""
@@ -278,7 +296,9 @@ elif [[ -f "${root_dir}/pyproject.toml" ]]; then
 fi
 
 if [[ -z "${verify_argv}" ]]; then
-  if [[ -x "${root_dir}/ci/gameterm-scene-verify.sh" ]]; then
+  if [[ "${dogfood_profile}" -eq 1 && -x "${root_dir}/ci/gameterm-scene-verify.sh" ]]; then
+    verify_argv='["ci/gameterm-scene-verify.sh","--all"]'
+  elif [[ -x "${root_dir}/ci/gameterm-scene-verify.sh" ]]; then
     verify_argv='["ci/gameterm-scene-verify.sh","--fixture","workspace-agent"]'
   elif [[ "${language}" == "rust" ]]; then
     verify_argv='["cargo","test"]'
@@ -381,6 +401,19 @@ add_file_entry() {
   file_entries+=("${rel}"$'\t'"${role}"$'\t'"${kind}"$'\t'"${label}")
 }
 
+if [[ "${dogfood_profile}" -eq 1 ]]; then
+  dogfood_files=(
+    docs/gameterm-scene-roadmap.md
+    docs/gameterm-scene-dogfood-workspace-scope.md
+    docs/gameterm-scene-onboarding.md
+    docs/gameterm-scene-smoke-report.md
+    docs/gameterm-scene-refactor-plan.md
+  )
+  for path in "${dogfood_files[@]}"; do
+    open_paths+=("${path}")
+  done
+fi
+
 file_entries=()
 if [[ "${#open_paths[@]}" -gt 0 ]]; then
   for path in "${open_paths[@]}"; do
@@ -456,6 +489,7 @@ scene_json() {
     --arg active_process_command "${active_process_command}" \
     --arg active_process_message "${active_process_message}" \
     --arg brief_output "${brief_output}" \
+    --arg dogfood_profile "${dogfood_profile}" \
     --argjson files "${files_json}" \
     --argjson verify "${verify_json}" \
     '{
@@ -491,7 +525,8 @@ scene_json() {
         { key: "verification_status", value: { Text: "not_run" } },
         { key: "discovery_source", value: { Text: $discovery_source } },
         { key: "pane_context", value: { Text: $pane_context } },
-        { key: "discovered_file_count", value: { Number: ($files | length) } }
+        { key: "discovered_file_count", value: { Number: ($files | length) } },
+        { key: "dogfood_profile", value: { Text: (if $dogfood_profile == "1" then "true" else "false" end) } }
       ] + (if $pane_id == "" then [] else [{ key: "active_pane_id", value: { Number: ($pane_id | tonumber) } }] end)
         + (if $mux_window_id == "" then [] else [{ key: "active_mux_window_id", value: { Number: ($mux_window_id | tonumber) } }] end)),
       rpg: {
@@ -562,7 +597,8 @@ scene_json() {
             ["repo_revision", $revision],
             ["repo_status", $status],
             ["changed_files", $changed],
-            ["discovery_source", $discovery_source]
+            ["discovery_source", $discovery_source],
+            ["dogfood_profile", (if $dogfood_profile == "1" then "true" else "false" end)]
           ] + (if $pane_id == "" then [] else [["active_pane_id", $pane_id]] end)
             + (if $mux_window_id == "" then [] else [["active_mux_window_id", $mux_window_id]] end)
             + (if $pane_cwd == "" then [] else [["pane_cwd", $pane_cwd]] end))
@@ -712,7 +748,43 @@ scene_json() {
           requires_confirmation: true,
           summary: "Run the explicit verification command in the discovered workspace"
         }
-      }] end))
+      }] end)
+      + (if $dogfood_profile == "1" then [
+        {
+          label: "Run git status",
+          kind: {
+            RunCommand: {
+              argv: ["git", "status", "--short"],
+              cwd: $root,
+              target: "split_down"
+            }
+          },
+          policy: {
+            origin: "workspace_discovery",
+            risk: "command",
+            scope: "workspace",
+            requires_confirmation: true,
+            summary: "Inspect the working tree before dogfood changes"
+          }
+        },
+        {
+          label: "Run dogfood smoke",
+          kind: {
+            RunCommand: {
+              argv: ["ci/gameterm-scene-smoke.sh", "--scenario", "dogfood", "--check-assets"],
+              cwd: $root,
+              target: "split_down"
+            }
+          },
+          policy: {
+            origin: "workspace_discovery",
+            risk: "command",
+            scope: "workspace",
+            requires_confirmation: true,
+            summary: "Run the focused dogfood Scene Mode smoke check"
+          }
+        }
+      ] else [] end))
     }'
 }
 
@@ -1039,7 +1111,7 @@ case "${command}" in
   inspect)
     run_inspect
     ;;
-  discover)
+  discover|dogfood)
     run_discover
     ;;
   patch)
