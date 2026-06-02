@@ -1,46 +1,90 @@
-# Wez's Terminal
+# GameTerm
 
-<img height="128" alt="GameTerm Icon" src="https://raw.githubusercontent.com/gameterm/gameterm/main/assets/icon/gameterm-icon.svg" align="left"> *A GPU-accelerated cross-platform terminal emulator and multiplexer written by <a href="https://github.com/wez">@wez</a> and implemented in <a href="https://www.rust-lang.org/">Rust</a>*
+<img height="128" alt="GameTerm Icon" src="https://raw.githubusercontent.com/gameterm/gameterm/main/assets/icon/gameterm-icon.svg" align="left">
 
-User facing docs and guide at: https://gameterm.org/
+A GPU-accelerated terminal emulator with a built-in scene engine, written in
+Rust.
+
+GameTerm is a hard fork of WezTerm. It keeps the terminal foundation that makes
+WezTerm exceptional, including GPU rendering, multiplexing, SSH, and Lua
+scripting, then builds something new on top: Scene Mode, a visual novel and RPG
+scene runtime that runs inside your terminal.
+
+Your workspace becomes a scene. Your projects, agents, and tasks become
+entities you can navigate, inspect, and interact with. Dialogue, choices,
+inventory, quests, and relationships are rendered by the same GPU pipeline that
+draws your text.
 
 ![Screenshot](docs/screenshots/two.png)
 
-*Screenshot of gameterm on macOS, running vim*
+## What's Different From WezTerm
+
+GameTerm is not a configuration fork. The differences are architectural:
+
+- Scene Mode: a full scene runtime with entities, dialogue, state variables,
+  RPG mechanics, and a GPU-rendered stage
+- VN Script Import: parse Ren'Py `.rpy` scripts into GameTerm scenes
+- Asset Pipeline: sprite manifests, asset catalogs, and attribution tracking
+- Workspace Scene Generator: generate a scene from your current project and
+  terminal pane context
+- AI Compose: LLM-backed scene and dialogue composition through explicit,
+  auditable backends
+- Hard rename: config paths, crate names, binaries, and Lua modules use the
+  `gameterm` namespace
+
+WezTerm configs are not loaded automatically. See [MIGRATION.md](MIGRATION.md).
+
+## Scene Mode
+
+Scene Mode is the core of what makes GameTerm different.
+
+A scene is a JSON file that describes a world: a background, a grid of
+entities, dialogue, choices, and state. The terminal renders it through the same
+WebGPU pipeline that renders text. Sprites are real PNGs. VN panels can use
+9-sliced textures. Layouts adapt to terminal size.
+
+Entities have kinds such as `Agent`, `Memory`, `Principle`, `Project`, and
+`Task`. They carry state flags, metadata, and relationships to each other.
+Choices can be locked behind conditions. Actions can open files, run commands,
+advance dialogue, navigate between scenes, or trigger state operations that
+adjust variables, inventory, stats, quests, and relationship values.
+
+Story state is exportable and importable. Scenes can be hot-reloaded. A tile
+debugger is built in.
+
+Read more in [GameTerm Scene Mode](docs/gameterm-scene-mode.md).
+
+## Ren'Py Import
+
+GameTerm can parse a conservative subset of Ren'Py `.rpy` scripts and convert
+them into native Scene Mode scenes. Asset bindings map Ren'Py character
+definitions and image paths to GameTerm sprite IDs.
+
+## Workspace Scene
+
+GameTerm can scan the current working directory and generate a scene
+automatically: project structure becomes entities, and terminal panes can be
+reflected as live context.
 
 ## Installation
 
-https://gameterm.org/installation
+Installation packaging is still in progress. See [docs/installation.md](docs/installation.md)
+for the current installation notes.
 
-## Migrating from WezTerm
+## Migrating From WezTerm
 
-GameTerm uses its own config and runtime paths, such as `~/.config/gameterm/` and `~/.gameterm.lua`. Existing WezTerm configs are not loaded automatically.
+GameTerm uses its own config and runtime paths, such as `~/.config/gameterm/`
+and `~/.gameterm.lua`. Existing WezTerm configs are not loaded automatically.
 
-See [MIGRATION.md](MIGRATION.md) for the path changes and a basic copy-forward example.
+See [MIGRATION.md](MIGRATION.md) for path changes and a basic copy-forward
+example.
 
-## Getting help
+## Getting Help
 
-This is a spare time project, so please bear with me.  There are a couple of channels for support:
+- [GitHub Issues](https://github.com/JulianAbeleda/gameterm/issues)
+- [GitHub Discussions](https://github.com/JulianAbeleda/gameterm/discussions)
+- [Matrix room via Element.io](https://app.element.io/#/room/#gameterm:matrix.org)
 
-* You can use the [GitHub issue tracker](https://github.com/JulianAbeleda/gameterm/issues) to see if someone else has a similar issue, or to file a new one.
-* Start or join a thread in our [GitHub Discussions](https://github.com/JulianAbeleda/gameterm/discussions); if you have general
-  questions or want to chat with other gameterm users, you're welcome here!
-* There is a [Matrix room via Element.io](https://app.element.io/#/room/#gameterm:matrix.org)
-  for (potentially!) real time discussions.
+## License
 
-The GitHub Discussions and Element/Gitter rooms are better suited for questions
-than bug reports, but don't be afraid to use whichever you are most comfortable
-using and we'll work it out.
-
-## Supporting the Project
-
-If you use and like GameTerm, please consider sponsoring it: your support helps
-to cover the fees required to maintain the project and to validate the time
-spent working on it!
-
-[Read more about sponsoring](https://gameterm.org/sponsor.html).
-
-* [![Sponsor GameTerm](https://img.shields.io/github/sponsors/wez?label=Sponsor%20GameTerm&logo=github&style=for-the-badge)](https://github.com/sponsors/wez)
-* [Patreon](https://patreon.com/WezFurlong)
-* [Ko-Fi](https://ko-fi.com/wezfurlong)
-* [Liberapay](https://liberapay.com/wez)
+See [LICENSE.md](LICENSE.md).
