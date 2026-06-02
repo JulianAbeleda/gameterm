@@ -13,8 +13,12 @@ use std::sync::Arc;
 use termwiz::color::LinearRgba;
 use termwiz::image::ImageData;
 
-const VN_PANEL_ALPHA: f32 = 0.80;
-const VN_PANEL_BORDER_ALPHA: f32 = 0.34;
+const VN_PANEL_ALPHA: f32 = 0.62;
+const VN_PANEL_BORDER_ALPHA: f32 = 0.30;
+const VN_FULLSCREEN_PANEL_MIN_ROWS: usize = 40;
+const VN_FULLSCREEN_PANEL_SIDE_MARGIN: f32 = 0.033;
+const VN_FULLSCREEN_PANEL_TOP: f32 = 0.085;
+const VN_FULLSCREEN_PANEL_BOTTOM: f32 = 0.896;
 
 fn visual_placeholder_color(sprite: &str, alpha: f32, floor: f32) -> LinearRgba {
     let mut hash = 0xcbf29ce484222325u64;
@@ -303,10 +307,14 @@ fn vn_panel_rects(
     cell_width: f32,
     cell_height: f32,
 ) -> Vec<RectF> {
-    let horizontal_margin = (cell_width * 2.0).max(12.0);
     let gap = (cell_height * 0.35).max(4.0);
     let dock_rows = if viewport_rows >= 10 { 2.0 } else { 0.0 };
-    let dialogue_rows = if viewport_rows >= 18 { 7.0 } else { 4.0 };
+    let fullscreen_vn_layout = viewport_rows >= VN_FULLSCREEN_PANEL_MIN_ROWS;
+    let horizontal_margin = if fullscreen_vn_layout {
+        (stage_rect.size.width * VN_FULLSCREEN_PANEL_SIDE_MARGIN).max(cell_width)
+    } else {
+        (cell_width * 2.0).max(12.0)
+    };
     let mut rects = Vec::new();
     let panel_width = (stage_rect.size.width - horizontal_margin * 2.0).max(cell_width * 10.0);
 
@@ -321,14 +329,23 @@ fn vn_panel_rects(
         rects.push(dock_rect);
     }
 
-    let dialogue_height = (cell_height * dialogue_rows - gap).max(cell_height * 3.0);
-    let dialogue_bottom = rects
-        .first()
-        .map(|dock_rect| dock_rect.min_y() - gap)
-        .unwrap_or(stage_rect.max_y() - gap);
+    let (dialogue_top, dialogue_bottom) = if fullscreen_vn_layout {
+        let top = stage_rect.min_y() + stage_rect.size.height * VN_FULLSCREEN_PANEL_TOP;
+        let bottom = stage_rect.min_y() + stage_rect.size.height * VN_FULLSCREEN_PANEL_BOTTOM;
+        (top, bottom)
+    } else {
+        let dialogue_rows = if viewport_rows >= 18 { 7.0 } else { 4.0 };
+        let bottom = rects
+            .first()
+            .map(|dock_rect| dock_rect.min_y() - gap)
+            .unwrap_or(stage_rect.max_y() - gap);
+        let height = (cell_height * dialogue_rows - gap).max(cell_height * 3.0);
+        (bottom - height, bottom)
+    };
+    let dialogue_height = (dialogue_bottom - dialogue_top).max(cell_height * 3.0);
     let dialogue_rect = euclid::rect(
         stage_rect.min_x() + horizontal_margin,
-        dialogue_bottom - dialogue_height,
+        dialogue_top,
         panel_width,
         dialogue_height,
     );
@@ -513,6 +530,19 @@ mod tests {
         assert_eq!(dock.min_x(), 20.0);
         assert_eq!(dialogue.min_x(), 20.0);
         assert_eq!(dock.size.width, dialogue.size.width);
+    }
+
+    #[test]
+    fn vn_panel_rects_use_fate_style_fullscreen_proportions() {
+        let stage = euclid::rect(0.0, 0.0, 1920.0, 1080.0);
+        let rects = vn_panel_rects(stage, 60, 8.0, 18.0);
+
+        assert_eq!(rects.len(), 2);
+        let dialogue = rects[1];
+        assert!((dialogue.min_x() - 63.36).abs() < 0.1);
+        assert!((dialogue.min_y() - 91.8).abs() < 0.1);
+        assert!((dialogue.size.width - 1793.28).abs() < 0.1);
+        assert!((dialogue.max_y() - 967.68).abs() < 0.1);
     }
 
     #[test]

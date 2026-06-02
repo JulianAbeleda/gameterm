@@ -2216,11 +2216,31 @@ impl SceneRuntime {
     fn render_staged_scene(&self, cols: usize, rows: usize) -> String {
         let cols = cols.max(1);
         let rows = rows.max(1);
-        let box_width = cols.saturating_sub(4).max(20);
-        let box_height = if rows >= 18 { 7 } else { 4 }.min(rows);
         let dock_height = if rows >= 10 { 1 } else { 0 };
-        let bottom_height = box_height + dock_height;
-        let top_budget = rows.saturating_sub(bottom_height);
+        let fullscreen_vn_layout = rows >= 40;
+        let box_margin = if fullscreen_vn_layout {
+            ((cols as f32) * 0.033).round() as usize
+        } else {
+            3
+        }
+        .min(cols.saturating_sub(1));
+        let box_width = cols.saturating_sub(box_margin * 2).max(20);
+        let box_height = if fullscreen_vn_layout {
+            let panel_top = ((rows as f32) * 0.085).round() as usize;
+            let panel_bottom = ((rows as f32) * 0.896).round() as usize;
+            panel_bottom.saturating_sub(panel_top).max(7)
+        } else if rows >= 18 {
+            7
+        } else {
+            4
+        }
+        .min(rows.saturating_sub(dock_height).max(1));
+        let top_budget = if fullscreen_vn_layout {
+            ((rows as f32) * 0.085).round() as usize
+        } else {
+            rows.saturating_sub(box_height + dock_height)
+        }
+        .min(rows.saturating_sub(box_height + dock_height));
         let mut top = Vec::new();
 
         top.push(self.scene.title.clone());
@@ -2273,17 +2293,18 @@ impl SceneRuntime {
             frame.push_str("\r\n");
         }
 
-        frame.push_str(&self.render_vn_dialogue_box(box_width, box_height));
+        frame.push_str(&self.render_vn_dialogue_box(box_margin, box_width, box_height));
         if dock_height > 0 {
-            frame.push_str(&self.render_vn_dock(cols));
+            frame.push_str(&self.render_vn_dock(cols, box_margin));
         }
         truncate_to_screen(frame, cols, rows)
     }
 
-    fn render_vn_dialogue_box(&self, width: usize, height: usize) -> String {
+    fn render_vn_dialogue_box(&self, margin: usize, width: usize, height: usize) -> String {
         let width = width.max(6);
         let height = height.max(1);
         let inner_width = width.saturating_sub(6);
+        let indent = " ".repeat(margin);
         let dialogue = self.active_dialogue_line();
         let mut lines = Vec::new();
         lines.push(format!("{}:", dialogue.speaker));
@@ -2311,12 +2332,15 @@ impl SceneRuntime {
         let mut out = String::new();
         for idx in 0..height {
             let line = lines.get(idx).map(String::as_str).unwrap_or("");
-            out.push_str(&format!("   {:<inner_width$}\r\n", clip_text(line, inner_width)));
+            out.push_str(&format!(
+                "{indent}   {:<inner_width$}\r\n",
+                clip_text(line, inner_width)
+            ));
         }
         out
     }
 
-    fn render_vn_dock(&self, cols: usize) -> String {
+    fn render_vn_dock(&self, cols: usize, margin: usize) -> String {
         let choice_count = self.scene.choices.len();
         let selected_choice = if choice_count == 0 {
             "none".to_string()
@@ -2331,7 +2355,9 @@ impl SceneRuntime {
                 .map(|idx| (idx + 1).to_string())
                 .unwrap_or_else(|| "static".to_string())
         );
-        format!("{}\r\n", clip_text(&dock, cols.max(1)))
+        let indent = " ".repeat(margin);
+        let width = cols.saturating_sub(margin).max(1);
+        format!("{indent}{}\r\n", clip_text(&dock, width))
     }
 
     fn render_command_selection(&self, cols: usize, rows: usize) -> String {
