@@ -2041,7 +2041,7 @@ impl SceneRuntime {
     fn render_staged_scene(&self, cols: usize, rows: usize) -> String {
         let cols = cols.max(1);
         let rows = rows.max(1);
-        let dock_height = if rows >= 10 { 1 } else { 0 };
+        let dock_height = if rows >= 10 { 2 } else { 0 };
         let fullscreen_vn_layout = rows >= 40;
         let box_margin = if fullscreen_vn_layout {
             ((cols as f32) * 0.033).round() as usize
@@ -2120,14 +2120,25 @@ impl SceneRuntime {
             frame.push_str("\r\n");
         }
 
-        frame.push_str(&self.render_vn_dialogue_box(box_margin, box_width, box_height));
+        frame.push_str(&self.render_vn_dialogue_box(
+            box_margin,
+            box_width,
+            box_height,
+            fullscreen_vn_layout,
+        ));
         if dock_height > 0 {
             frame.push_str(&self.render_vn_dock(cols, box_margin));
         }
         truncate_to_screen(frame, cols, rows)
     }
 
-    fn render_vn_dialogue_box(&self, margin: usize, width: usize, height: usize) -> String {
+    fn render_vn_dialogue_box(
+        &self,
+        margin: usize,
+        width: usize,
+        height: usize,
+        fullscreen_vn_layout: bool,
+    ) -> String {
         const VN_PANEL_TEXT_INSET: usize = 3;
 
         let width = width.max(6);
@@ -2136,6 +2147,9 @@ impl SceneRuntime {
         let indent = " ".repeat(margin + VN_PANEL_TEXT_INSET);
         let dialogue = self.active_dialogue_line();
         let mut lines = Vec::new();
+        if fullscreen_vn_layout && height >= 4 {
+            lines.push(String::new());
+        }
         lines.push(format!("{}:", dialogue.speaker));
         lines.extend(wrap_text(&dialogue.text, inner_width));
 
@@ -2173,27 +2187,8 @@ impl SceneRuntime {
         out
     }
 
-    fn render_vn_dock(&self, cols: usize, margin: usize) -> String {
-        const VN_PANEL_TEXT_INSET: usize = 3;
-
-        let choice_count = self.scene.choices.len();
-        let selected_choice = if choice_count == 0 {
-            "none".to_string()
-        } else {
-            format!("{}/{}", self.selected_choice + 1, choice_count)
-        };
-        let dock = format!(
-            " Compose: _ | scene={} | choice={} | dialogue={} | controls=enter/tab/r/esc ",
-            self.scene.mode.mode_id,
-            selected_choice,
-            dialogue_index(&self.scene, self.dialogue_index)
-                .map(|idx| (idx + 1).to_string())
-                .unwrap_or_else(|| "static".to_string())
-        );
-        let indent_width = margin + VN_PANEL_TEXT_INSET;
-        let width = cols.saturating_sub(indent_width * 2).max(1);
-        let indent = " ".repeat(indent_width);
-        format!("{indent}{:<width$}\r\n", clip_text(&dock, width))
+    fn render_vn_dock(&self, _cols: usize, _margin: usize) -> String {
+        "\r\n\r\n".to_string()
     }
 
     fn render_command_selection(&self, cols: usize, rows: usize) -> String {
@@ -3698,7 +3693,8 @@ mod tests {
         assert!(!frame.contains("| Codex:"));
         assert!(frame.contains("Codex:"));
         assert!(frame.contains("transparent VN overlay"));
-        assert!(frame.contains("Compose: _"));
+        assert!(!frame.contains("Compose: _"));
+        assert!(frame.ends_with("\r\n\r\n"));
     }
 
     #[test]

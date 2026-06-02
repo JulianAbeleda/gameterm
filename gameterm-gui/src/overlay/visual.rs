@@ -1717,10 +1717,11 @@ fn render_runtime_with_compose(
     frame.push_str(&runtime.render_text_frame(size.cols, size.rows));
     if !runtime.render_snapshot().stage.is_empty() {
         let margin = scene_stage_margin(size.cols, size.rows);
-        frame = replace_last_screen_line(
+        frame = replace_screen_line_from_bottom(
             frame,
             size.cols,
             size.rows,
+            1,
             &compose_dock.render_staged_dock_line(size.cols, margin),
         );
     } else {
@@ -1739,14 +1740,39 @@ fn render_runtime_with_compose(
     Ok(())
 }
 
+fn replace_screen_line_from_bottom(
+    frame: String,
+    cols: usize,
+    rows: usize,
+    row_offset_from_bottom: usize,
+    replacement: &str,
+) -> String {
+    let rows = rows.max(1);
+    let target_row = rows
+        .saturating_sub(1)
+        .saturating_sub(row_offset_from_bottom);
+    replace_screen_line(frame, cols, rows, target_row, replacement)
+}
+
 fn replace_last_screen_line(frame: String, cols: usize, rows: usize, replacement: &str) -> String {
+    let rows = rows.max(1);
+    replace_screen_line(frame, cols, rows, rows - 1, replacement)
+}
+
+fn replace_screen_line(
+    frame: String,
+    cols: usize,
+    rows: usize,
+    target_row: usize,
+    replacement: &str,
+) -> String {
     let rows = rows.max(1);
     let mut lines = frame.lines().map(str::to_string).collect::<Vec<_>>();
     while lines.len() < rows {
         lines.push(String::new());
     }
     lines.truncate(rows);
-    lines[rows - 1] = clip_text(replacement, cols.max(1));
+    lines[target_row.min(rows - 1)] = clip_text(replacement, cols.max(1));
     let mut out = lines.join("\r\n");
     out.push_str("\r\n");
     out
@@ -2472,6 +2498,22 @@ mod tests {
         assert_eq!(lines.len(), 4);
         assert_eq!(lines[0], "one");
         assert_eq!(lines[3], "Compose:");
+    }
+
+    #[test]
+    fn replace_screen_line_from_bottom_places_staged_compose_inside_dock() {
+        let frame = replace_screen_line_from_bottom(
+            "one\r\ntwo\r\nthree\r\nfour\r\n".to_string(),
+            16,
+            4,
+            1,
+            "Compose: hello",
+        );
+
+        let lines = frame.lines().collect::<Vec<_>>();
+        assert_eq!(lines.len(), 4);
+        assert_eq!(lines[2], "Compose: hello");
+        assert_eq!(lines[3], "four");
     }
 }
 
