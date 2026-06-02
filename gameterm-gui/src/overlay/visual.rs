@@ -1706,9 +1706,12 @@ fn render_runtime_with_compose(
     compose_dock: &SceneComposeDock,
 ) -> anyhow::Result<()> {
     let size = term.get_screen_size()?;
+    let mut snapshot = runtime.render_snapshot();
+    snapshot.overlay_cols = Some(size.cols);
+    snapshot.overlay_rows = Some(size.rows);
     term.set_metadata(
         "gameterm_visual_snapshot",
-        Value::String(serde_json::to_string(&runtime.render_snapshot())?),
+        Value::String(serde_json::to_string(&snapshot)?),
     );
     term.set_metadata(
         "gameterm_visual_sprites",
@@ -1721,8 +1724,7 @@ fn render_runtime_with_compose(
         frame.push_str("\r\n\r\n");
     }
     frame.push_str(&runtime.render_text_frame(size.cols, size.rows));
-    if !runtime.render_snapshot().stage.is_empty() {
-        let snapshot = runtime.render_snapshot();
+    if !snapshot.stage.is_empty() {
         let layout =
             vn_overlay_layout(size.cols, size.rows, &snapshot.dialogue_speaker, "Composer");
         if let Some(nameplate) = layout.composer_nameplate {

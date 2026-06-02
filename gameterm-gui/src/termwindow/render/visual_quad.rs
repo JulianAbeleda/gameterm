@@ -8,8 +8,9 @@ use ::window::RectF;
 use anyhow::Context;
 use config::HsbTransform;
 use gameterm_visual::{
-    vn_overlay_layout, VisualRenderEntity, VisualRenderSnapshot, VisualRenderStageDisplayable,
-    VisualRenderTile, VisualStagePlacement, VnOverlayRect,
+    vn_overlay_layout, SceneRuntime, VisualRenderEntity, VisualRenderSnapshot,
+    VisualRenderStageDisplayable, VisualRenderTile, VisualScene, VisualStagePlacement,
+    VnOverlayRect,
 };
 use std::sync::{Arc, LazyLock};
 use termwiz::color::LinearRgba;
@@ -17,6 +18,8 @@ use termwiz::image::ImageData;
 
 const VN_PANEL_ALPHA: f32 = 0.38;
 const VN_PANEL_BORDER_ALPHA: f32 = 0.18;
+const VN_NAMEPLATE_ALPHA: f32 = 0.58;
+const VN_NAMEPLATE_BORDER_ALPHA: f32 = 0.30;
 const VN_PANEL_CORNER_SEGMENTS: usize = 8;
 const VN_PANEL_SLICE_PX: f32 = 32.0;
 static VN_PANEL_IMAGE_DATA: LazyLock<Arc<ImageData>> = LazyLock::new(|| {
@@ -101,21 +104,37 @@ impl TermWindow {
             .visual_snapshot
             .map(|snapshot| snapshot.dialogue_speaker.as_str())
             .unwrap_or("Codex");
-        let layout = vn_overlay_layout(
+        let (layout_cols, layout_rows) = vn_overlay_layout_dims(
+            params.visual_snapshot,
             params.dims.cols,
             params.dims.viewport_rows,
-            speaker,
-            "Composer",
         );
+        let layout = vn_overlay_layout(layout_cols, layout_rows, speaker, "Composer");
         let panel_rects = vn_panel_rects(&layout, stage_rect, cell_width, cell_height);
         for rect in &panel_rects {
             if !self.populate_vn_panel_texture(layers, 1, *rect, cell_width, params, hsv)? {
-                self.populate_rounded_vn_panel(layers, 1, *rect, cell_width, hsv)?;
+                self.populate_rounded_vn_panel(
+                    layers,
+                    1,
+                    *rect,
+                    cell_width,
+                    VN_PANEL_ALPHA,
+                    VN_PANEL_BORDER_ALPHA,
+                    hsv,
+                )?;
             }
         }
         for rect in vn_panel_nameplate_rects(&layout, stage_rect, cell_width, cell_height) {
             if !self.populate_vn_panel_texture(layers, 1, rect, cell_width, params, hsv)? {
-                self.populate_rounded_vn_panel(layers, 1, rect, cell_width, hsv)?;
+                self.populate_rounded_vn_panel(
+                    layers,
+                    1,
+                    rect,
+                    cell_width,
+                    VN_NAMEPLATE_ALPHA,
+                    VN_NAMEPLATE_BORDER_ALPHA,
+                    hsv,
+                )?;
             }
         }
         Ok(())
@@ -184,6 +203,8 @@ impl TermWindow {
         layer_num: usize,
         rect: RectF,
         cell_width: f32,
+        fill_alpha: f32,
+        border_alpha: f32,
         hsv: Option<HsbTransform>,
     ) -> anyhow::Result<()> {
         let radius = (cell_width * 2.2)
@@ -191,7 +212,7 @@ impl TermWindow {
             .min(rect.size.width / 3.0)
             .min(rect.size.height / 2.0);
         let border = 1.5;
-        let border_color = LinearRgba::with_components(0.92, 0.96, 1.0, VN_PANEL_BORDER_ALPHA);
+        let border_color = LinearRgba::with_components(0.92, 0.96, 1.0, border_alpha);
         for panel_rect in rounded_panel_rects(rect, radius) {
             let mut quad = self.filled_rectangle(layers, layer_num, panel_rect, border_color)?;
             quad.set_hsv(hsv);
@@ -199,7 +220,7 @@ impl TermWindow {
 
         let inner = inset_rect(rect, border);
         let inner_radius = (radius - border).max(1.0);
-        let fill_color = LinearRgba::with_components(0.025, 0.028, 0.034, VN_PANEL_ALPHA);
+        let fill_color = LinearRgba::with_components(0.025, 0.028, 0.034, fill_alpha);
         for panel_rect in rounded_panel_rects(inner, inner_radius) {
             let mut quad = self.filled_rectangle(layers, layer_num, panel_rect, fill_color)?;
             quad.set_hsv(hsv);
@@ -379,6 +400,27 @@ fn stage_viewport_rect(params: &RenderScreenLineParams, cell_height: f32) -> Rec
         params.pixel_width,
         params.dims.viewport_rows as f32 * cell_height,
     )
+}
+
+fn vn_overlay_layout_dims(
+    snapshot: Option<&VisualRenderSnapshot>,
+    fallback_cols: usize,
+    fallback_rows: usize,
+) -> (usize, usize) {
+    let Some((cols, rows)) = snapshot.and_then(VisualRenderSnapshot::overlay_layout_dims) else {
+        return (fallback_cols.max(1), fallback_rows.max(1));
+    };
+
+    debug_assert_eq!(
+        fallback_cols, cols,
+        "Mismatch in VN layout columns between text and visual layers"
+    );
+    debug_assert_eq!(
+        fallback_rows, rows,
+        "Mismatch in VN layout rows between text and visual layers",
+    );
+
+    (cols.max(1), rows.max(1))
 }
 
 fn vn_panel_rects(
@@ -727,9 +769,26 @@ mod tests {
             assert!(nameplate.min_y() <= panel.min_y());
             assert!(nameplate.max_y() > panel.min_y());
         }
-        assert!((nameplates[0].max_y() - rects[0].min_y() - 18.0).abs() < 0.1);
-        assert!((nameplates[1].max_y() - rects[1].min_y() - 18.0).abs() < 0.1);
+        let expected_overlap_px = 18.0;
+        assert!((nameplates[0].max_y() - rects[0].min_y() - expected_overlap_px).abs() < 0.1);
+        assert!((nameplates[1].max_y() - rects[1].min_y() - expected_overlap_px).abs() < 0.1);
         assert!(nameplates[1].min_y() > stage.min_y());
+    }
+
+    #[test]
+    fn vn_panel_nameplate_and_panel_layout_uses_overlay_snapshot_rows() {
+        let runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        let mut snapshot = runtime.render_snapshot();
+        snapshot.overlay_cols = Some(120);
+        snapshot.overlay_rows = Some(24);
+
+        let (cols, rows) = vn_overlay_layout_dims(Some(&snapshot), 120, 24);
+        let layout = vn_overlay_layout(cols, rows, &snapshot.dialogue_speaker, "Composer");
+
+        assert_eq!(cols, 120);
+        assert_eq!(rows, 24);
+        assert_eq!(layout.composer_panel.unwrap().row, 19);
+        assert_eq!(layout.composer_panel.unwrap().height, 4);
     }
 
     #[test]
