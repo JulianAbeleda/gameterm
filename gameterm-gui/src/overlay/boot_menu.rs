@@ -22,6 +22,13 @@ impl BootChoice {
             BootChoice::Native => "2. Native Terminal Mode",
         }
     }
+
+    fn assignment(self) -> Option<KeyAssignment> {
+        match self {
+            BootChoice::Scene => Some(KeyAssignment::ShowGameTermScene),
+            BootChoice::Native => None,
+        }
+    }
 }
 
 struct BootMenuState {
@@ -61,10 +68,10 @@ impl BootMenuState {
     }
 
     fn choose(&self, choice: BootChoice) {
-        if matches!(choice, BootChoice::Scene) {
+        if let Some(assignment) = choice.assignment() {
             self.window.notify(TermWindowNotif::PerformAssignment {
                 pane_id: self.pane_id,
-                assignment: KeyAssignment::ShowGameTermScene,
+                assignment,
                 tx: None,
             });
         }
@@ -150,4 +157,25 @@ pub fn boot_menu(mut term: TermWizTerminal, window: ::window::Window) -> anyhow:
     term.render(&[Change::Title("GameTerm Boot Menu".to_string())])?;
     state.render(&mut term)?;
     state.run_loop(&mut term)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::BootChoice;
+    use config::keyassignment::KeyAssignment;
+
+    #[test]
+    fn boot_menu_scene_choice_routes_to_configured_scene_mode() {
+        assert_eq!(BootChoice::Scene.label(), "1. Scene Mode");
+        assert!(matches!(
+            BootChoice::Scene.assignment(),
+            Some(KeyAssignment::ShowGameTermScene)
+        ));
+    }
+
+    #[test]
+    fn boot_menu_native_choice_exits_without_overlay_assignment() {
+        assert_eq!(BootChoice::Native.label(), "2. Native Terminal Mode");
+        assert!(BootChoice::Native.assignment().is_none());
+    }
 }
