@@ -485,19 +485,21 @@ mod tests {
             .iter()
             .any(|entry| entry.key == "pane_context"
                 && entry.value == VisualStateValue::Text("provided".to_string())));
-        assert!(scene
-            .variables
-            .iter()
-            .any(|entry| entry.key == "active_pane_id"
-                && entry.value == VisualStateValue::Number(7)));
+        assert!(scene.variables.iter().any(
+            |entry| entry.key == "active_pane_id" && entry.value == VisualStateValue::Number(7)
+        ));
         assert!(scene
             .entities
             .iter()
             .any(|entity| entity.id == "discovered-pane" && entity.label == "Pane 7"));
-        assert!(scene.entities.iter().any(|entity| entity.id == "discovered-process"
-            && entity
-                .metadata
-                .contains(&("foreground_process_path".to_string(), "/bin/zsh".to_string()))));
+        assert!(scene
+            .entities
+            .iter()
+            .any(|entity| entity.id == "discovered-process"
+                && entity.metadata.contains(&(
+                    "foreground_process_path".to_string(),
+                    "/bin/zsh".to_string()
+                ))));
     }
 
     #[test]

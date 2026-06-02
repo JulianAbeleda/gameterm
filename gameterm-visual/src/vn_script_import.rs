@@ -904,10 +904,9 @@ label start:
     #[test]
     fn vn_script_import_uses_initial_scene_and_show_for_stage() {
         let mut guide = VnAssetBindingCharacter::default();
-        guide.expressions.insert(
-            "happy".to_string(),
-            "vn.character.guide.happy".to_string(),
-        );
+        guide
+            .expressions
+            .insert("happy".to_string(), "vn.character.guide.happy".to_string());
         let mut bindings = VnAssetBindings::default();
         bindings.characters.insert("guide".to_string(), guide);
 
