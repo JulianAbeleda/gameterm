@@ -785,6 +785,43 @@ window, typed `look at roadmap` into the compose dock, and captured a
 `1920x1080` PNG. This validates the current GUI smoke path for Scene changes
 without depending on shortcut automation to enter Scene Mode.
 
+### vn-demo-stage
+
+Command:
+
+```sh
+cargo build -p gameterm-gui
+ci/gameterm-scene-smoke.sh --launch --scenario vn-demo \
+  --wait-before-capture 3 \
+  --capture-timeout 8 \
+  --output /tmp/gameterm-scene-vn-demo-stage.png
+```
+
+Result: PASS.
+
+Capture:
+
+```text
+/tmp/gameterm-scene-vn-demo-stage.png
+```
+
+Smoke report:
+
+```text
+scenario: vn-demo
+fixture: vn-demo
+GameTerm class: org.gameterm.scene-smoke.24842
+native Scene open: 1
+output: /tmp/gameterm-scene-vn-demo-stage.png
+bytes: 284194
+```
+
+Observation: the smoke harness opened the staged VN demo through the native
+Scene smoke hook, sent the deterministic `enter,j,enter` sequence, and captured
+a `1920x1080` PNG. This records the first-pass VN presentation evidence for
+large background/character staging with the transparent dialogue and compose
+panels visible.
+
 ## Follow-Up
 
 1. Keep deterministic smoke registry and asset checks in
