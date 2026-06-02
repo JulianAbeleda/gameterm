@@ -5,7 +5,10 @@ use crate::termwindow::TermWindow;
 use ::window::RectF;
 use anyhow::Context;
 use config::HsbTransform;
-use gameterm_visual::{VisualRenderEntity, VisualRenderTile};
+use gameterm_visual::{
+    VisualRenderEntity, VisualRenderSnapshot, VisualRenderStageDisplayable, VisualRenderTile,
+    VisualStagePlacement,
+};
 use std::sync::Arc;
 use termwiz::color::LinearRgba;
 use termwiz::image::ImageData;
@@ -29,6 +32,49 @@ fn visual_selection_color(alpha: f32) -> LinearRgba {
 }
 
 impl TermWindow {
+    pub(super) fn populate_visual_stage(
+        &self,
+        snapshot: &VisualRenderSnapshot,
+        layers: &mut TripleLayerQuadAllocator,
+        params: &RenderScreenLineParams,
+        cell_height: f32,
+        hsv: Option<HsbTransform>,
+    ) -> anyhow::Result<()> {
+        if snapshot.stage.is_empty() {
+            return Ok(());
+        }
+
+        let stage_rect = stage_viewport_rect(params, cell_height);
+        for displayable in &snapshot.stage {
+            let rect = stage_displayable_rect(displayable, stage_rect);
+            let layer_num = match displayable.placement {
+                VisualStagePlacement::Fullscreen => 0,
+                VisualStagePlacement::Left
+                | VisualStagePlacement::Center
+                | VisualStagePlacement::Right => 1,
+            };
+            if self.populate_visual_sprite_quad(
+                &displayable.sprite,
+                layers,
+                layer_num,
+                rect,
+                params,
+                hsv,
+            )? {
+                continue;
+            }
+            let mut quad = self.filled_rectangle(
+                layers,
+                layer_num,
+                rect,
+                visual_placeholder_color(&displayable.sprite, 0.42, 0.24),
+            )?;
+            quad.set_hsv(hsv);
+        }
+
+        Ok(())
+    }
+
     pub(super) fn populate_visual_tile(
         &self,
         tile: &VisualRenderTile,
@@ -194,6 +240,42 @@ impl TermWindow {
     }
 }
 
+fn stage_viewport_rect(params: &RenderScreenLineParams, cell_height: f32) -> RectF {
+    euclid::rect(
+        params.left_pixel_x,
+        params.top_pixel_y,
+        params.pixel_width,
+        params.dims.viewport_rows as f32 * cell_height,
+    )
+}
+
+fn stage_displayable_rect(
+    displayable: &VisualRenderStageDisplayable,
+    stage_rect: RectF,
+) -> RectF {
+    match displayable.placement {
+        VisualStagePlacement::Fullscreen => stage_rect,
+        VisualStagePlacement::Left | VisualStagePlacement::Center | VisualStagePlacement::Right => {
+            let height = (stage_rect.size.height * 0.78).max(1.0);
+            let width = height;
+            let center_x = match displayable.placement {
+                VisualStagePlacement::Left => stage_rect.min_x() + stage_rect.size.width * 0.28,
+                VisualStagePlacement::Center => {
+                    stage_rect.min_x() + stage_rect.size.width * 0.50
+                }
+                VisualStagePlacement::Right => stage_rect.min_x() + stage_rect.size.width * 0.72,
+                VisualStagePlacement::Fullscreen => unreachable!(),
+            };
+            euclid::rect(
+                center_x - width / 2.0,
+                stage_rect.max_y() - height,
+                width,
+                height,
+            )
+        }
+    }
+}
+
 fn visual_sprite_image_data<'a>(
     sprite_id: &str,
     allow_images: AllowImage,
@@ -253,5 +335,44 @@ mod tests {
         let images = VisualSpriteImages { sprites };
 
         assert!(visual_sprite_image_data("task_tile", AllowImage::Yes, Some(&images)).is_some());
+    }
+
+    #[test]
+    fn stage_displayable_rect_places_fullscreen_background() {
+        let rect = euclid::rect(10.0, 20.0, 800.0, 600.0);
+        let displayable = VisualRenderStageDisplayable {
+            layer_id: "background".to_string(),
+            tag: "background".to_string(),
+            sprite: "vn.background.school_classroom".to_string(),
+            placement: VisualStagePlacement::Fullscreen,
+            layer_zorder: 0,
+            zorder: 0,
+        };
+
+        assert_eq!(stage_displayable_rect(&displayable, rect), rect);
+    }
+
+    #[test]
+    fn stage_displayable_rect_places_character_slots() {
+        let stage = euclid::rect(0.0, 0.0, 1000.0, 800.0);
+        let make_displayable = |placement| VisualRenderStageDisplayable {
+            layer_id: "characters".to_string(),
+            tag: "guide".to_string(),
+            sprite: "vn.character.guide.neutral".to_string(),
+            placement,
+            layer_zorder: 10,
+            zorder: 0,
+        };
+
+        let left = stage_displayable_rect(&make_displayable(VisualStagePlacement::Left), stage);
+        let center =
+            stage_displayable_rect(&make_displayable(VisualStagePlacement::Center), stage);
+        let right = stage_displayable_rect(&make_displayable(VisualStagePlacement::Right), stage);
+
+        assert_eq!(left.size.height, 624.0);
+        assert_eq!(left.size.width, 624.0);
+        assert_eq!(left.max_y(), stage.max_y());
+        assert!(left.min_x() < center.min_x());
+        assert!(center.min_x() < right.min_x());
     }
 }

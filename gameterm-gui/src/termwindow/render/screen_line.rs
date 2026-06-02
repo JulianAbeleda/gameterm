@@ -188,6 +188,10 @@ impl crate::TermWindow {
         }
 
         if let (Some(snapshot), Some(row)) = (params.visual_snapshot, params.visual_row) {
+            if row == 0 {
+                self.populate_visual_stage(snapshot, layers, &params, cell_height, hsv)
+                    .context("populate_visual_stage")?;
+            }
             for tile in visible_tiles_for_row(snapshot, row, 0..num_cols) {
                 self.populate_visual_tile(tile, layers, &params, cell_width, cell_height, hsv)
                     .context("populate_visual_tile")?;
