@@ -587,6 +587,26 @@ condition_json() {
     } | with_entries(select(.value != null))]'
 }
 
+optional_conditions_json() {
+  if [[ -n "${condition_variable}" ]]; then
+    condition_json
+  else
+    printf '[]\n'
+  fi
+}
+
+mode_default_filter() {
+  cat <<'EOF'
+(.mode // {
+  mode_id: "workspace",
+  label: "Workspace",
+  description: "",
+  scene_profile: "scene",
+  allowed_actions: []
+})
+EOF
+}
+
 validate_scene_file() {
   cargo run -q -p gameterm-visual --example scene_validate -- "$1"
 }
@@ -1382,11 +1402,7 @@ add_layer_transition() {
   require_value "--input" "${transition_input}"
   require_value "--target-state" "${transition_target_state}"
 
-  if [[ -n "${condition_variable}" ]]; then
-    conditions_json="$(condition_json)"
-  else
-    conditions_json="[]"
-  fi
+  conditions_json="$(optional_conditions_json)"
 
   jq \
     --arg layer_id "${layer_id}" \
@@ -1412,59 +1428,47 @@ add_layer_transition() {
 add_mode_input() {
   local target="$1"
   local conditions_json
+  local mode_default
   require_value "--input" "${transition_input}"
   require_value "--action" "${mode_action}"
 
-  if [[ -n "${condition_variable}" ]]; then
-    conditions_json="$(condition_json)"
-  else
-    conditions_json="[]"
-  fi
+  conditions_json="$(optional_conditions_json)"
+  mode_default="$(mode_default_filter)"
 
   jq \
     --arg input "${transition_input}" \
     --arg action "${mode_action}" \
-    --argjson conditions "${conditions_json}" '
-    .mode = (.mode // {
-      mode_id: "workspace",
-      label: "Workspace",
-      description: "",
-      scene_profile: "scene",
-      allowed_actions: []
-    })
+    --argjson conditions "${conditions_json}" "
+    .mode = ${mode_default}
     | .mode.input_map = ((.mode.input_map // []) + [{
-      input: $input,
-      action: $action,
-      conditions: $conditions
+      input: \$input,
+      action: \$action,
+      conditions: \$conditions
     }])
-  ' "${target}" | write_json "${target}"
+  " "${target}" | write_json "${target}"
   validate_scene_file "${target}" >/dev/null
   echo "Added mode input ${transition_input}->${mode_action} to ${target}"
 }
 
 set_lifecycle() {
   local target="$1"
+  local mode_default
   if [[ -z "${lifecycle_enter_status}" && -z "${lifecycle_update_status}" && -z "${lifecycle_exit_status}" ]]; then
     echo "provide at least one of --enter-status, --update-status, or --exit-status" >&2
     exit 2
   fi
+  mode_default="$(mode_default_filter)"
 
   jq \
     --arg enter_status "${lifecycle_enter_status}" \
     --arg update_status "${lifecycle_update_status}" \
-    --arg exit_status "${lifecycle_exit_status}" '
-    .mode = (.mode // {
-      mode_id: "workspace",
-      label: "Workspace",
-      description: "",
-      scene_profile: "scene",
-      allowed_actions: []
-    })
+    --arg exit_status "${lifecycle_exit_status}" "
+    .mode = ${mode_default}
     | .mode.lifecycle = (.mode.lifecycle // {})
-    | if $enter_status != "" then .mode.lifecycle.enter_status = $enter_status else . end
-    | if $update_status != "" then .mode.lifecycle.update_status = $update_status else . end
-    | if $exit_status != "" then .mode.lifecycle.exit_status = $exit_status else . end
-  ' "${target}" | write_json "${target}"
+    | if \$enter_status != \"\" then .mode.lifecycle.enter_status = \$enter_status else . end
+    | if \$update_status != \"\" then .mode.lifecycle.update_status = \$update_status else . end
+    | if \$exit_status != \"\" then .mode.lifecycle.exit_status = \$exit_status else . end
+  " "${target}" | write_json "${target}"
   validate_scene_file "${target}" >/dev/null
   echo "Updated mode lifecycle in ${target}"
 }
