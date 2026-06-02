@@ -39,6 +39,7 @@ Entry acceptance:
 Scope owner:
 
 - [Scene Agent TTS Scope](gameterm-scene-agent-tts-scope.md)
+- [Scene TTS Setup](gameterm-scene-tts-setup.md)
 
 ### End Goal
 
@@ -363,4 +364,3 @@ This product stack reaches the next meaningful checkpoint when:
 - Codex/agent text can become speakable dialogue through TTS
 - explicit user speech can become compose text through STT
 - the VN demo can render a stage background and character at readable scale
-

@@ -23,16 +23,20 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
-use termwiz::input::{InputEvent, KeyCode, KeyEvent};
+use termwiz::input::{InputEvent, KeyCode, KeyEvent, Modifiers};
 use termwiz::surface::Change;
 use termwiz::terminal::Terminal;
 use window::{Window, WindowOps};
 
+#[cfg(test)]
+use super::visual_compose::ComposeBackendLabel;
 use super::visual_compose::{
     compose_running_status, spawn_compose_backend, ComposeBackendRequest, ComposeBackendResult,
 };
-#[cfg(test)]
-use super::visual_compose::ComposeBackendLabel;
+use super::visual_tts::{
+    extract_speakable_segments, spawn_tts_backend, SceneTtsRequest, SceneTtsResult, SceneTtsState,
+    SpeakableSegment, SpeakableSource,
+};
 
 pub fn show_visual_scene_overlay(
     term: TermWizTerminal,
@@ -132,6 +136,8 @@ fn show_visual_scene_overlay_with_source(
     let mut compose_dock = SceneComposeDock::default();
     let (compose_tx, compose_rx) = mpsc::channel();
     let mut compose_backend_running = false;
+    let (tts_tx, tts_rx) = mpsc::channel();
+    let mut tts_state = SceneTtsState::default();
 
     loop {
         let mut needs_render = false;
@@ -159,7 +165,18 @@ fn show_visual_scene_overlay_with_source(
         while let Ok(result) = compose_rx.try_recv() {
             compose_backend_running = false;
             if let Some(runtime) = runtime.as_mut() {
-                apply_compose_backend_result(runtime, result);
+                let speakable_segments = apply_compose_backend_result(runtime, result);
+                if !tts_state.is_muted() {
+                    for segment in speakable_segments {
+                        spawn_tts_backend(SceneTtsRequest { segment }, tts_tx.clone());
+                    }
+                }
+                needs_render = true;
+            }
+        }
+        while let Ok(result) = tts_rx.try_recv() {
+            if let Some(runtime) = runtime.as_mut() {
+                apply_tts_result(runtime, &mut tts_state, result);
                 needs_render = true;
             }
         }
@@ -202,8 +219,18 @@ fn show_visual_scene_overlay_with_source(
             continue;
         };
         match input {
-            InputEvent::Key(KeyEvent { key, .. }) => {
+            InputEvent::Key(KeyEvent { key, modifiers }) => {
                 if let Some(runtime) = runtime.as_mut() {
+                    if is_tts_toggle_key(key, modifiers) {
+                        runtime.mark_action_status(tts_state.toggle_muted());
+                        render_runtime_with_compose(
+                            &mut term,
+                            runtime,
+                            &sprite_manifest,
+                            &compose_dock,
+                        )?;
+                        continue;
+                    }
                     if !runtime.scene().stage.is_empty() {
                         match compose_dock.handle_key(key) {
                             SceneComposeAction::Consumed => {
@@ -1073,6 +1100,10 @@ fn visual_input_from_key(key: KeyCode) -> VisualInput {
     }
 }
 
+fn is_tts_toggle_key(key: KeyCode, modifiers: Modifiers) -> bool {
+    matches!(key, KeyCode::Char('m') | KeyCode::Char('M')) && modifiers.contains(Modifiers::ALT)
+}
+
 const COMPOSE_OUTPUT_LIMIT: usize = 1200;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1084,7 +1115,10 @@ enum StructuredComposeOutcome {
     },
 }
 
-fn apply_compose_backend_result(runtime: &mut SceneRuntime, result: ComposeBackendResult) {
+fn apply_compose_backend_result(
+    runtime: &mut SceneRuntime,
+    result: ComposeBackendResult,
+) -> Vec<SpeakableSegment> {
     if result.succeeded() {
         match apply_structured_compose_backend_result(runtime, &result) {
             Some(StructuredComposeOutcome::WithReply {
@@ -1092,11 +1126,15 @@ fn apply_compose_backend_result(runtime: &mut SceneRuntime, result: ComposeBacke
                 dialogue_text,
             }) => {
                 runtime.mark_compose_succeeded(&speaker, &dialogue_text);
-                return;
+                return extract_speakable_segments(
+                    Some(&speaker),
+                    &dialogue_text,
+                    SpeakableSource::ComposeReply,
+                );
             }
             Some(StructuredComposeOutcome::NoReply) => {
                 runtime.mark_compose_succeeded("Scene", "");
-                return;
+                return Vec::new();
             }
             None => {}
         }
@@ -1124,11 +1162,32 @@ fn apply_compose_backend_result(runtime: &mut SceneRuntime, result: ComposeBacke
             runtime.mark_action_status(format!("Compose reply failed: {err}"));
         } else {
             runtime.mark_compose_succeeded("Codex", &reply);
+            return extract_speakable_segments(
+                Some("Codex"),
+                &reply,
+                SpeakableSource::ComposeReply,
+            );
         }
-        return;
+        return Vec::new();
     }
 
     apply_compose_backend_failure_result(runtime, &result);
+    Vec::new()
+}
+
+fn apply_tts_result(
+    runtime: &mut SceneRuntime,
+    tts_state: &mut SceneTtsState,
+    result: SceneTtsResult,
+) {
+    let status = tts_state.apply_result(&result);
+    if result.succeeded() {
+        runtime.mark_action_status(status);
+    } else if let Some(error) = result.error {
+        runtime.mark_action_status(format!("{status}: {error}"));
+    } else {
+        runtime.mark_action_status(status);
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -2054,7 +2113,7 @@ mod tests {
     #[test]
     fn compose_backend_success_updates_dialogue() {
         let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
-        apply_compose_backend_result(
+        let segments = apply_compose_backend_result(
             &mut runtime,
             ComposeBackendResult {
                 prompt: "status".to_string(),
@@ -2069,6 +2128,9 @@ mod tests {
         assert_eq!(snapshot.dialogue_speaker, "Codex");
         assert_eq!(snapshot.dialogue, "Workspace is ready.");
         assert_eq!(snapshot.status, "Compose succeeded");
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].text, "Workspace is ready.");
+        assert_eq!(segments[0].speaker.as_deref(), Some("Codex"));
     }
 
     #[test]
@@ -2121,7 +2183,7 @@ mod tests {
     #[test]
     fn compose_backend_failure_updates_error_dialogue() {
         let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
-        apply_compose_backend_result(
+        let segments = apply_compose_backend_result(
             &mut runtime,
             ComposeBackendResult {
                 prompt: "status".to_string(),
@@ -2136,6 +2198,14 @@ mod tests {
         assert_eq!(snapshot.dialogue_speaker, "Scene");
         assert_eq!(snapshot.dialogue, "backend unavailable");
         assert_eq!(snapshot.status, "Compose failed");
+        assert!(segments.is_empty());
+    }
+
+    #[test]
+    fn scene_tts_toggle_uses_alt_m_without_consuming_plain_m() {
+        assert!(is_tts_toggle_key(KeyCode::Char('m'), Modifiers::ALT));
+        assert!(is_tts_toggle_key(KeyCode::Char('M'), Modifiers::ALT));
+        assert!(!is_tts_toggle_key(KeyCode::Char('m'), Modifiers::NONE));
     }
 
     #[test]
