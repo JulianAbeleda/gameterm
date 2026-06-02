@@ -1,6 +1,6 @@
 # GameTerm Scene Mode Codex Compose Bridge Scope
 
-Status: SCOPED.
+Status: FIRST PASS IMPLEMENTED.
 
 This document scopes the first pass for using a Codex-like assistant inside
 Scene Mode through the staged VN compose dock.
@@ -13,6 +13,13 @@ background and character remain visible.
 This is not a full replacement for the terminal pane or a direct Codex protocol
 implementation yet. The first pass should prove the input/output loop with a
 small Rust-owned process bridge, then leave room for a direct Codex backend.
+
+First-pass implementation note: Scene Mode now supports structured compose
+submit events, a local explicit process backend configured through
+`GAMETERM_SCENE_COMPOSE_BACKEND`, a deterministic built-in backend when no
+command is configured, sanitized/clipped backend output, dialogue patch replies,
+and a `vn-compose` fullscreen smoke scenario. Direct Codex/API integration,
+persistent sessions, streaming, and network backends remain deferred.
 
 ## Reference Repos
 

@@ -669,6 +669,36 @@ strict-validated demo with local school backgrounds and captured the fullscreen
 terminal render. The downloaded source files remain under ignored `.cache`
 paths and are not committed.
 
+### vn-compose
+
+Command:
+
+```sh
+ci/gameterm-scene-smoke.sh \
+  --launch \
+  --scenario vn-compose \
+  --vn-asset-source-root .cache/gameterm-scene/vn-assets \
+  --allow-ai-assisted-vn-assets \
+  --wait-before-capture 3 \
+  --capture-timeout 8 \
+  --output /tmp/gameterm-scene-vn-compose-fullscreen-final.png
+```
+
+Result: PASS.
+
+Capture:
+
+```text
+/tmp/gameterm-scene-vn-compose-fullscreen-final.png
+```
+
+Observation: the smoke harness generated the VN demo, opened Scene Mode,
+typed `look at roadmap` into the bottom compose dock, submitted it, waited for
+the deterministic local compose backend, and captured the reply rendered as
+`Codex` dialogue. The capture also shows the compose dock still mounted with
+the last prompt while the staged classroom background and character sprite
+remain visible.
+
 ## Follow-Up
 
 1. Keep deterministic smoke registry and asset checks in
