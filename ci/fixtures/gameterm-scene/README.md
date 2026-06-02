@@ -18,6 +18,7 @@ These fixtures exercise Scene Mode without touching user config.
 - `renpy-demo.json`: generated Scene Mode import of the `.rpy` fixture source.
 - `renpy-demo-attribution.json`: attribution/provenance manifest generated beside the imported demo scene.
 - `renpy-demo-open-assets.json`: curated open-license VN asset source policy for DDLC-adjacent demo art.
+- `smoke-scenarios.psv`: pipe-delimited smoke scenario metadata consumed by `ci/gameterm-scene-smoke.sh`.
 - `mux-context-active.json`: deterministic active pane/process context for live mux discovery helper checks.
 - `mux-context-missing.json`: deterministic unavailable mux context for fallback checks.
 - `mux-context-invalid-pane.json`: invalid pane id fixture for mux context validation.
@@ -45,6 +46,7 @@ These fixtures exercise Scene Mode without touching user config.
 | `multi-agent-coordination.json` | Multi-agent coordination across two agents, two tasks, relationship ownership, waiting, blocking, and completion state. | `scene_fixture_multi_agent_coordination_updates_independently`, fixture `multi-agent-coordination` |
 | `renpy-demo.json` | VN script import path for labels, dialogue, menu choices, guards, policy metadata, and attribution. | `scene_fixture_renpy_demo_import_loads_story_choices`, importer check, fixture `renpy-demo` |
 | `renpy-demo-open-assets.json` | Open-license asset source policy for optional VN demo art, including repo-safe and local-only boundaries. | script import and asset intake checks |
+| `smoke-scenarios.psv` | Smoke scenario names, default fixtures/input, descriptions, expected statuses, and audit messages. | `run_smoke_asset_check`, `ci/gameterm-scene-smoke.sh --list-scenarios`, `--describe-scenario` |
 | `mux-context-active.json` | Normalized active mux pane/process metadata for helper-driven workspace discovery. | mux context helper check |
 | `mux-context-missing.json` | Safe fallback when mux context is unavailable. | mux context helper check |
 | `mux-context-invalid-pane.json` | Rejection of malformed pane identity before forwarding workspace metadata. | mux context helper negative check |

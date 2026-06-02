@@ -318,7 +318,7 @@ Commit lanes:
 1. `[docs] document Scene fixture scenario ownership` ✅ done
    - Map each fixture to the feature it proves and the focused tests that load
      it.
-2. `[visual] NFC - table-drive Scene smoke scenarios`
+2. `[test] NFC - table-drive Scene smoke scenarios` ✅ done
    - Keep existing scenario names valid.
 3. `[test] add Scene verifier summary mode`
    - Optional, only if verifier output becomes hard to scan.
@@ -334,9 +334,11 @@ Acceptance:
 Current status:
 
 - Completed fixture ownership documentation.
-- Deferred smoke scenario registry/table-drive work and verifier summary mode.
-  The current scenario names remain valid and the verifier output is still
-  acceptable for the first maintainable pass.
+- Completed a narrow smoke scenario catalog extraction to
+  `ci/fixtures/gameterm-scene/smoke-scenarios.psv`, preserving existing
+  scenario names and smoke helper behavior.
+- Deferred verifier summary mode. The verifier output is still acceptable for
+  the first maintainable pass.
 
 ## Priority 5: Test Layout
 
