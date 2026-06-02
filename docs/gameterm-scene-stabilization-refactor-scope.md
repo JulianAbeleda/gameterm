@@ -88,7 +88,7 @@ Acceptance:
 
 Only continue if a small module move is clearer than the current shape.
 
-Status: planned.
+Status: complete.
 
 Candidate areas:
 
@@ -107,12 +107,31 @@ Acceptance:
 After deterministic refactors, run the documented onboarding/smoke path and
 record any product issues separately from NFC cleanup.
 
-Status: planned.
+Status: complete.
 
 Acceptance:
 
 - smoke report updated only when live smoke actually runs
 - issues become scoped follow-up work, not mixed into refactor commits
+
+### 4.x Completion Evidence
+
+Latest stabilization smoke pass (2026-06-02):
+
+Command:
+
+```sh
+cargo build -p gameterm-gui
+ci/gameterm-scene-smoke.sh --launch --scenario workspace-discovery --output /tmp/gameterm-scene-smoke-workspace-discovery-lane5.png --allow-background-capture --no-fullscreen-window --wait-before-capture 2 --post-action-wait 1 --capture-timeout 2
+```
+
+Result: PASS.
+
+Capture:
+
+```text
+/tmp/gameterm-scene-smoke-workspace-discovery-lane5.png
+```
 
 ## First Implementation Slice
 

@@ -61,6 +61,27 @@ Validated named scenarios:
 
 ## Live Results
 
+### stabilization-refactor-lane4-lane5-smoke-pass-20260602-0132
+
+Command:
+
+```sh
+cargo build -p gameterm-gui
+ci/gameterm-scene-smoke.sh --launch --scenario workspace-discovery --output /tmp/gameterm-scene-smoke-workspace-discovery-lane5.png --allow-background-capture --no-fullscreen-window --wait-before-capture 2 --post-action-wait 1 --capture-timeout 2
+```
+
+Result: PASS.
+
+Capture:
+
+```text
+/tmp/gameterm-scene-smoke-workspace-discovery-lane5.png
+```
+
+Observation: the smoke helper installed a `workspace-discovery` scene into
+temporary config, launched `gameterm-gui`, foregrounded it, opened Scene Mode with
+the configured shortcut, and captured a non-empty 1920x1080 PNG.
+
 ### active-pane-workflow-pass-20260531-2140
 
 Command:
