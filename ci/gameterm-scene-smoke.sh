@@ -21,8 +21,8 @@ Options:
   --fixture NAME           Fixture to install when --launch is used: basic,
                            navigate, invalid, sprites, missing-sprite,
                            run-command-targets, layered-mode, vertical-slice,
-                           workspace-agent, workspace-discovery, authoring-loop,
-                           vn-demo, or renderer-rows. Default:
+                           workspace-agent, workspace-discovery, dogfood,
+                           authoring-loop, vn-demo, or renderer-rows. Default:
                            renderer-rows.
   --vn-asset-source-root PATH
                            Local VN asset source root for the vn-demo scenario.
@@ -436,6 +436,15 @@ install_scene_fixture() {
         discover \
         --cwd "${repo_root}" \
         --scene-output "${scene_dir}/default.json" \
+        --force >/dev/null
+      install_sprite_manifest "${scene_dir}/sprites.json"
+      ;;
+    dogfood)
+      "${repo_root}/ci/gameterm-scene-workspace.sh" \
+        dogfood \
+        --cwd "${repo_root}" \
+        --scene-output "${scene_dir}/default.json" \
+        --brief-output "${scene_dir}/dogfood-task-brief.json" \
         --force >/dev/null
       install_sprite_manifest "${scene_dir}/sprites.json"
       ;;
