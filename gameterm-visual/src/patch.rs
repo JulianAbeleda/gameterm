@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 use crate::{
-    validate_state_entries, VisualPosition, VisualProcessState, VisualStateEntry,
-    VisualStateEntryError,
+    validate_state_entries, VisualDialogueLine, VisualPosition, VisualProcessState,
+    VisualStateEntry, VisualStateEntryError,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -18,7 +18,17 @@ pub struct VisualScenePatch {
     #[serde(default)]
     pub process_state: Option<VisualProcessState>,
     #[serde(default)]
+    pub dialogue: Option<VisualSceneDialoguePatch>,
+    #[serde(default)]
     pub status: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VisualSceneDialoguePatch {
+    pub speaker: String,
+    pub text: String,
+    #[serde(default)]
+    pub append_history: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -46,7 +56,7 @@ pub enum VisualScenePatchError {
     File { path: String, message: String },
     #[error("unsupported scene patch version `{0}`")]
     UnsupportedVersion(u32),
-    #[error("scene patch must contain at least one entity update or a status")]
+    #[error("scene patch must contain at least one entity update, variable update, process state, dialogue update, or status")]
     EmptyPatch,
     #[error("scene patch entity id must be non-empty")]
     EmptyEntityId,
@@ -78,6 +88,10 @@ pub enum VisualScenePatchError {
     EmptyProcessMessage,
     #[error("scene patch process references unknown entity id `{0}`")]
     UnknownProcessEntityId(String),
+    #[error("scene patch dialogue speaker must be non-empty")]
+    EmptyDialogueSpeaker,
+    #[error("scene patch dialogue text must be non-empty")]
+    EmptyDialogueText,
 }
 
 impl VisualScenePatch {
@@ -108,6 +122,7 @@ impl VisualScenePatch {
         if self.updates.is_empty()
             && self.variables.is_empty()
             && self.process_state.is_none()
+            && self.dialogue.is_none()
             && self.status.is_none()
         {
             return Err(VisualScenePatchError::EmptyPatch);
@@ -154,6 +169,14 @@ impl VisualScenePatch {
             if matches!(process_state.message.as_ref(), Some(message) if message.trim().is_empty())
             {
                 return Err(VisualScenePatchError::EmptyProcessMessage);
+            }
+        }
+        if let Some(dialogue) = &self.dialogue {
+            if dialogue.speaker.trim().is_empty() {
+                return Err(VisualScenePatchError::EmptyDialogueSpeaker);
+            }
+            if dialogue.text.trim().is_empty() {
+                return Err(VisualScenePatchError::EmptyDialogueText);
             }
         }
         Ok(())
@@ -225,6 +248,7 @@ impl crate::SceneRuntime {
         let update_count = patch.updates.len();
         let variable_count = patch.variables.len();
         let process_state = patch.process_state;
+        let dialogue = patch.dialogue;
         for update in patch.updates {
             if let Some(entity) = self
                 .scene
@@ -268,6 +292,27 @@ impl crate::SceneRuntime {
         }
         if let Some(process_state) = process_state {
             self.last_process_state = Some(process_state);
+        }
+        if let Some(dialogue) = dialogue {
+            let dialogue_line = VisualDialogueLine {
+                speaker: dialogue.speaker.trim().to_string(),
+                text: dialogue.text.trim().to_string(),
+                portrait: None,
+                metadata: Vec::new(),
+            };
+            self.scene.dialogue_speaker = dialogue_line.speaker.clone();
+            self.scene.dialogue = dialogue_line.text.clone();
+            if dialogue.append_history {
+                self.scene.dialogue_lines.push(dialogue_line.clone());
+                self.dialogue_index = self.scene.dialogue_lines.len().saturating_sub(1);
+                self.dialogue_history.push(dialogue_line);
+            } else if self.scene.dialogue_lines.is_empty() {
+                self.dialogue_index = 0;
+            } else {
+                let dialogue_index = self.dialogue_index.min(self.scene.dialogue_lines.len() - 1);
+                self.scene.dialogue_lines[dialogue_index] = dialogue_line;
+                self.dialogue_index = dialogue_index;
+            }
         }
 
         self.status = patch.status.unwrap_or_else(|| {

@@ -17,7 +17,9 @@ mod workspace_scene;
 use actions::{action_kind_name, action_policy_summary, derived_action_policy};
 use conditions::{condition_guard_detail, conditions_match};
 pub use debug::VisualSceneDebugReport;
-pub use patch::{VisualSceneEntityPatch, VisualScenePatch, VisualScenePatchError};
+pub use patch::{
+    VisualSceneDialoguePatch, VisualSceneEntityPatch, VisualScenePatch, VisualScenePatchError,
+};
 pub use render::{intersecting_entities_for_row, visible_tiles_for_row};
 #[cfg(test)]
 pub(crate) use schema::default_scene_mode;
@@ -3835,6 +3837,7 @@ mod tests {
                     exit_code: Some(0),
                     message: Some("Vertical slice process succeeded".to_string()),
                 }),
+                dialogue: None,
                 status: Some("Vertical slice complete".to_string()),
             })
             .unwrap();
@@ -4019,6 +4022,7 @@ mod tests {
                     exit_code: None,
                     message: Some("Waiting for build output".to_string()),
                 }),
+                dialogue: None,
                 status: Some("agent-audit blocked for task-review".to_string()),
             })
             .unwrap();
@@ -6288,6 +6292,7 @@ mod tests {
             variables: vec![],
             selected_entity_id: None,
             process_state: None,
+            dialogue: None,
             status: Some("Verification passed".to_string()),
         };
 
@@ -6318,6 +6323,7 @@ mod tests {
             variables: vec![],
             selected_entity_id: None,
             process_state: None,
+            dialogue: None,
             status: Some("Source tracked".to_string()),
         };
 
@@ -6335,6 +6341,100 @@ mod tests {
     }
 
     #[test]
+    fn scene_patch_updates_active_dialogue() {
+        let mut runtime = SceneRuntime::new(branching_dialogue_scene()).unwrap();
+        let patch = VisualScenePatch {
+            scene_patch_version: VisualScenePatch::VERSION,
+            updates: vec![],
+            variables: vec![],
+            selected_entity_id: None,
+            process_state: None,
+            dialogue: Some(VisualSceneDialoguePatch {
+                speaker: "Codex".to_string(),
+                text: "I can inspect the workspace from Scene Mode.".to_string(),
+                append_history: false,
+            }),
+            status: Some("Compose succeeded".to_string()),
+        };
+
+        runtime.apply_scene_patch(patch).unwrap();
+
+        let snapshot = runtime.render_snapshot();
+        assert_eq!(snapshot.dialogue_speaker, "Codex");
+        assert_eq!(
+            snapshot.dialogue,
+            "I can inspect the workspace from Scene Mode."
+        );
+        assert_eq!(snapshot.status, "Compose succeeded");
+    }
+
+    #[test]
+    fn scene_patch_appends_dialogue_history_when_requested() {
+        let mut runtime = SceneRuntime::new(branching_dialogue_scene()).unwrap();
+        let initial_history_len = runtime.render_snapshot().dialogue_history.len();
+        let patch = VisualScenePatch {
+            scene_patch_version: VisualScenePatch::VERSION,
+            updates: vec![],
+            variables: vec![],
+            selected_entity_id: None,
+            process_state: None,
+            dialogue: Some(VisualSceneDialoguePatch {
+                speaker: "Codex".to_string(),
+                text: "The next reply is now part of the conversation.".to_string(),
+                append_history: true,
+            }),
+            status: None,
+        };
+
+        runtime.apply_scene_patch(patch).unwrap();
+
+        let snapshot = runtime.render_snapshot();
+        assert_eq!(snapshot.dialogue_speaker, "Codex");
+        assert_eq!(
+            snapshot.dialogue,
+            "The next reply is now part of the conversation."
+        );
+        assert_eq!(snapshot.dialogue_history.len(), initial_history_len + 1);
+        assert_eq!(snapshot.dialogue_history.last().unwrap().speaker, "Codex");
+    }
+
+    #[test]
+    fn scene_patch_rejects_empty_dialogue_fields() {
+        let patch = VisualScenePatch {
+            scene_patch_version: VisualScenePatch::VERSION,
+            updates: vec![],
+            variables: vec![],
+            selected_entity_id: None,
+            process_state: None,
+            dialogue: Some(VisualSceneDialoguePatch {
+                speaker: " ".to_string(),
+                text: "reply".to_string(),
+                append_history: false,
+            }),
+            status: None,
+        };
+
+        assert!(matches!(
+            patch.validate(),
+            Err(VisualScenePatchError::EmptyDialogueSpeaker)
+        ));
+
+        let patch = VisualScenePatch {
+            dialogue: Some(VisualSceneDialoguePatch {
+                speaker: "Codex".to_string(),
+                text: " ".to_string(),
+                append_history: false,
+            }),
+            ..patch
+        };
+
+        assert!(matches!(
+            patch.validate(),
+            Err(VisualScenePatchError::EmptyDialogueText)
+        ));
+    }
+
+    #[test]
     fn scene_patch_updates_process_state() {
         let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
         let patch = VisualScenePatch {
@@ -6349,6 +6449,7 @@ mod tests {
                 exit_code: None,
                 message: Some("checking workspace".to_string()),
             }),
+            dialogue: None,
             status: Some("Process running: cargo check".to_string()),
         };
 
@@ -6388,6 +6489,7 @@ mod tests {
                 exit_code: None,
                 message: None,
             }),
+            dialogue: None,
             status: Some("Should not apply".to_string()),
         };
 
@@ -6423,6 +6525,7 @@ mod tests {
             ],
             selected_entity_id: None,
             process_state: None,
+            dialogue: None,
             status: None,
         };
 
@@ -6464,6 +6567,7 @@ mod tests {
             ],
             selected_entity_id: None,
             process_state: None,
+            dialogue: None,
             status: None,
         };
 
@@ -6506,6 +6610,7 @@ mod tests {
             variables: vec![],
             selected_entity_id: None,
             process_state: None,
+            dialogue: None,
             status: Some("Should not apply".to_string()),
         };
 
@@ -6536,6 +6641,7 @@ mod tests {
             variables: vec![],
             selected_entity_id: None,
             process_state: None,
+            dialogue: None,
             status: Some("Visual state patched".to_string()),
         };
 
@@ -6571,6 +6677,7 @@ mod tests {
             variables: vec![],
             selected_entity_id: None,
             process_state: None,
+            dialogue: None,
             status: Some("Should not apply".to_string()),
         };
 
@@ -6593,6 +6700,7 @@ mod tests {
             variables: vec![],
             selected_entity_id: Some(" ".to_string()),
             process_state: None,
+            dialogue: None,
             status: Some("Should not apply".to_string()),
         };
 
@@ -6619,6 +6727,7 @@ mod tests {
             variables: vec![],
             selected_entity_id: Some("agent-audit".to_string()),
             process_state: None,
+            dialogue: None,
             status: Some("Visibility patched".to_string()),
         };
 
