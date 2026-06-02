@@ -699,6 +699,36 @@ the deterministic local compose backend, and captured the reply rendered as
 the last prompt while the staged classroom background and character sprite
 remain visible.
 
+### vn-compose-codex
+
+Command:
+
+```sh
+ci/gameterm-scene-smoke.sh \
+  --launch \
+  --scenario vn-compose-codex \
+  --vn-asset-source-root .cache/gameterm-scene/vn-assets \
+  --allow-ai-assisted-vn-assets \
+  --wait-before-capture 3 \
+  --capture-timeout 8 \
+  --output /tmp/gameterm-scene-vn-compose-codex-fullscreen.png
+```
+
+Result: PASS.
+
+Capture:
+
+```text
+/tmp/gameterm-scene-vn-compose-codex-fullscreen.png
+```
+
+Observation: the smoke harness generated the VN demo, configured
+`GAMETERM_SCENE_COMPOSE_BACKEND_KIND=codex`, pointed Scene Mode at a temporary
+fake Codex CLI helper, typed `look at roadmap`, and captured the reply rendered
+as `Codex` dialogue. The capture shows `Status: Codex succeeded`, the staged
+classroom background, the character sprite, and the compose dock still mounted
+with the last prompt.
+
 ## Follow-Up
 
 1. Keep deterministic smoke registry and asset checks in

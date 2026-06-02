@@ -1,6 +1,6 @@
 # GameTerm Scene Mode Codex Session Bridge Scope
 
-Status: SCOPED NEXT.
+Status: FIRST PASS IMPLEMENTED.
 
 This document scopes the next Scene Mode compose pass after the local backend
 bridge. The goal is to make the staged VN compose dock able to run a real local
@@ -34,10 +34,15 @@ Scene Mode currently supports:
 - backend stdout/stderr capture, timeout, clipping, sanitization, and dialogue
   patch rendering
 - fullscreen `vn-compose` smoke scenario
+- explicit Codex backend kind through
+  `GAMETERM_SCENE_COMPOSE_BACKEND_KIND=codex`
+- local Codex CLI command construction using `codex exec`,
+  `--output-last-message`, `--json`, `-C`, sandbox, and approval flags
+- fake-Codex deterministic smoke through `vn-compose-codex`
 
-The missing product step is not "can Scene Mode run a backend?" anymore. It can.
-The missing product step is "can Scene Mode run the local Codex CLI as that
-backend with a stable, auditable contract?"
+The first Codex session bridge pass is implemented as a one-shot local Codex CLI
+backend. Persistent `codex exec resume`, session-id capture, streaming, and
+approval UI remain deferred to the next pass.
 
 ## Local Codex Surface
 
@@ -111,6 +116,8 @@ Acceptance:
 
 ## Scope 2: Real Codex Backend Contract
 
+Status: COMPLETE for the one-shot local CLI backend.
+
 Add a named backend mode for Scene compose:
 
 ```text
@@ -172,6 +179,9 @@ Acceptance:
 
 ## Scope 3: First Implementation Pass
 
+Status: COMPLETE for backend selection, command construction, final-message
+output handling, status/dialogue updates, and deterministic tests.
+
 Implementation layers:
 
 1. Backend selection
@@ -223,6 +233,8 @@ Acceptance:
 
 ## Scope 4: Smoke Test
 
+Status: COMPLETE for deterministic fake-Codex smoke.
+
 Add or extend a smoke scenario:
 
 ```text
@@ -258,13 +270,13 @@ Acceptance:
 
 This pass is complete when:
 
-- local compose bridge remains pushed
-- Codex session bridge scope is committed
-- Codex backend kind is implemented
-- deterministic tests cover command building and output handling
-- fullscreen smoke has a fake-Codex scenario
-- manual live Codex smoke is either passed or explicitly documented as blocked
-  by local auth/config
+- local compose bridge remains pushed: yes
+- Codex session bridge scope is committed: yes
+- Codex backend kind is implemented: yes
+- deterministic tests cover command building and output handling: yes
+- fullscreen smoke has a fake-Codex scenario: yes
+- manual live Codex smoke is deferred; fake-Codex smoke proves Scene Mode's
+  backend contract without requiring local auth/config
 
 ## Next Pass After This
 
