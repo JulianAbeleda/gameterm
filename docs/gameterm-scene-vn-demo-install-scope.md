@@ -271,8 +271,8 @@ Use separate commits:
 
 1. `[docs] scope Scene VN demo install flow`
 2. `[visual] add Scene VN script bindings`
-3. `[tools] add Scene VN demo install helper`
-4. `[tools] verify Scene VN demo install`
+3. `[visual] add Scene VN demo install helper`
+4. `[test] verify Scene VN demo install`
 5. `[docs] document Scene VN demo install workflow`
 
 Do not combine bindings implementation, helper wiring, verifier wiring, and

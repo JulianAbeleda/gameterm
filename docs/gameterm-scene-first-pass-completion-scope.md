@@ -162,7 +162,7 @@ First-pass decision:
 
 Commit:
 
-- `[tools] consolidate active pane Scene generator path`
+- `[visual] consolidate active pane Scene generator path`
 
 ## 5. Consolidate Roadmap And Status Docs
 

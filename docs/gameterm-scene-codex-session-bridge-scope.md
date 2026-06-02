@@ -21,7 +21,7 @@ Completed and pushed:
 
 - `9ca0eaca5` `[visual] add Scene dialogue patch support`
 - `cc655beda` `[gui] add Scene compose backend`
-- `01a355fe8` `[tools] add Scene compose smoke`
+- `01a355fe8` `[test] add Scene compose smoke`
 - `9ef53badc` `[docs] record Scene compose bridge pass`
 
 Scene Mode currently supports:

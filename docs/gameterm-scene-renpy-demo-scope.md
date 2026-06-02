@@ -532,10 +532,10 @@ If assets are committed:
 Use separate commits:
 
 1. `[docs] scope Scene RenPy demo import`
-2. `[tools] add Scene RenPy import helper`
+2. `[visual] add Scene RenPy import helper`
 3. `[visual] add Scene RenPy import policy origin`
 4. `[test] add Scene RenPy demo fixture`
-5. `[tools] verify Scene RenPy demo import`
+5. `[test] verify Scene RenPy demo import`
 6. `[docs] document Scene RenPy demo workflow`
 
 If runtime changes are unnecessary, skip commit 3.

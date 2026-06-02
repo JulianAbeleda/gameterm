@@ -151,7 +151,7 @@ Acceptance:
 
 Commit:
 
-- `[tools] validate Scene sprite image files`
+- `[test] validate Scene sprite image files`
 
 Verification:
 

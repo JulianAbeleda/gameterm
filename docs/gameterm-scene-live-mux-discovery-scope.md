@@ -304,7 +304,7 @@ Verification:
 
 Commit:
 
-- `[tools] add Scene mux context helper`
+- `[visual] add Scene mux context helper`
 
 ### Lane 4: Live Context Source
 
@@ -321,7 +321,7 @@ Verification:
 
 Commit:
 
-- `[tools] add Scene live mux context collection`
+- `[visual] add Scene live mux context collection`
 
 ### Lane 5: Verifier Coverage
 

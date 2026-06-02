@@ -281,9 +281,9 @@ Use separate commits:
 2. `[visual] add Scene VN script import model`
 3. `[visual] add Scene VN script import example`
 4. `[test] regenerate Scene VN demo fixture`
-5. `[tools] verify Scene VN script import path`
+5. `[test] verify Scene VN script import path`
 6. `[docs] document Scene VN script import workflow`
-7. `[tools] remove Python VN script importer` if not already deleted in the tools
+7. `[visual] remove Python VN script importer` if not already deleted in the tools
    commit
 
 If commits 2 and 3 are tightly coupled, they can be combined, but do not mix

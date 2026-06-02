@@ -374,7 +374,7 @@ Use separate commits:
 2. `[visual] add Scene VN asset intake model`
 3. `[visual] add Scene VN asset intake example`
 4. `[test] add Scene VN asset intake fixtures`
-5. `[tools] verify Scene VN asset intake`
+5. `[test] verify Scene VN asset intake`
 6. `[docs] document Scene VN asset workflow`
 
 Do not combine downloaded third-party art with code changes. If third-party art
