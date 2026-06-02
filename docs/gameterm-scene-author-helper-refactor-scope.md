@@ -58,6 +58,8 @@ This pass must follow the coding principles already captured in
 
 ### Lane 1: Extract Author Catalog Data
 
+Status: complete.
+
 Commit:
 
 ```text
@@ -88,6 +90,12 @@ ci/gameterm-scene-verify.sh --all
 ```
 
 ### Lane 2: Extract Reusable jq Filters
+
+Status: complete.
+
+Implemented as named shell helpers for the repeated optional-condition
+construction and default mode jq fragment. A larger external jq library was not
+added because it would make this helper harder to inspect.
 
 Commit:
 
@@ -121,6 +129,8 @@ ci/gameterm-scene-verify.sh --all
 
 ### Lane 3: Normalize Typed Value Parsing
 
+Status: complete.
+
 Commit:
 
 ```text
@@ -150,6 +160,12 @@ ci/gameterm-scene-verify.sh --all
 ```
 
 ### Lane 4: Centralize Mutation Pipeline
+
+Status: complete.
+
+Implemented by renaming the shared mutation writer to
+`write_validated_json` and removing redundant post-write validations. The
+temporary-file validation and atomic replace behavior are preserved.
 
 Commit:
 
@@ -182,6 +198,11 @@ ci/gameterm-scene-verify.sh --all
 
 ### Lane 5: Table-Drive Help Text
 
+Status: complete.
+
+Implemented for the command summary section. The rendered `--help` output was
+kept byte-for-byte identical to the previous commit.
+
 Commit:
 
 ```text
@@ -204,6 +225,8 @@ ci/gameterm-scene-verify.sh --all
 ```
 
 ### Lane 6: Documentation Closeout
+
+Status: complete.
 
 Commit:
 
@@ -228,14 +251,14 @@ rg -n "gameterm-scene-author.sh" docs/gameterm-scene-mode.md docs/gameterm-scene
 
 The pass is complete when:
 
-- `ci/gameterm-scene-author.sh` still exposes the same commands.
-- `list-fixtures` and `list-templates` keep the same names and order.
-- Existing generated templates validate.
-- Existing docs examples still run.
-- Failed mutations still leave the original scene file unchanged.
-- `ci/gameterm-scene-verify.sh --all` passes after each behavior-sensitive
+- [x] `ci/gameterm-scene-author.sh` still exposes the same commands.
+- [x] `list-fixtures` and `list-templates` keep the same names and order.
+- [x] Existing generated templates validate.
+- [x] Existing docs examples still run through the same command surface.
+- [x] Failed mutations still leave the original scene file unchanged.
+- [x] `ci/gameterm-scene-verify.sh --all` passes after each behavior-sensitive
   lane.
-- Each lane has its own commit.
+- [x] Each lane has its own commit.
 
 ## Stop Conditions
 
@@ -257,5 +280,4 @@ Stop and reassess if:
 5. Lane 5: help text.
 6. Lane 6: docs closeout.
 
-If any lane turns out to have low value or high churn, defer it explicitly in
-this document and continue with the next safe lane.
+All lanes completed without needing a deferral.

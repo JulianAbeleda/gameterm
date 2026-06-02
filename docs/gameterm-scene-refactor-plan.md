@@ -261,7 +261,7 @@ Current status:
 Current pressure: `ci/gameterm-scene-author.sh` is useful but growing through
 large case blocks and jq snippets.
 
-Principle fit: this is `[visual]` work. Avoid replacing the helper with a new
+Principle fit: this is `[test]` work. Avoid replacing the helper with a new
 language or framework unless shell/jq becomes a demonstrated blocker.
 
 Detailed execution scope:
@@ -271,22 +271,33 @@ Detailed execution scope:
 Target:
 
 - Keep the shell entrypoint for local ergonomics.
-- Move reusable jq filters into files or a generated helper script.
+- Move reusable jq filters into named shell helpers where that reduces
+  duplication without hiding behavior.
 - Make command option validation consistent.
 - Add one shared mutation path that validates before replacing files.
 
 Commit lanes:
 
-1. `[visual] NFC - extract Scene author jq filters`
+Guardrail already complete:
+
+- `[test] cover Scene author mutation rollback` ✅ done
+  - Add regression checks for failed mutations leaving files unchanged.
+
+Follow-up cleanup lanes:
+
+1. `[test] NFC - table-drive Scene author catalogs` ✅ done
+   - Centralize fixture/template names used by help and list commands.
+2. `[test] NFC - extract Scene author jq filters` ✅ done
    - Move reusable jq snippets without changing command output.
-2. `[visual] NFC - table-drive Scene author help`
-   - Keep command names and examples stable.
-3. `[visual] normalize Scene author typed values`
-   - Behavior change only if tests prove existing examples still work.
-4. `[test] cover Scene author mutation rollback` ✅ done
-   - Add regression checks for failed mutations leaving files unchanged.
-5. `[docs] update Scene authoring examples if output changes`
-   - Docs only after any intentional output change.
+3. `[test] normalize Scene author typed values` ✅ done
+   - Share boolean/number/text parsing for state and condition values.
+4. `[test] NFC - centralize Scene author mutations` ✅ done
+   - Rename the validated write path and remove redundant post-write
+     validation calls.
+5. `[test] NFC - table-drive Scene author help` ✅ done
+   - Keep rendered help output byte-for-byte stable.
+6. `[docs] update Scene author refactor status` ✅ done
+   - Docs only; no user-facing example changes needed.
 
 Acceptance:
 
@@ -298,9 +309,10 @@ Current status:
 
 - Completed the guardrail slice: failed author mutations are now verified to
   leave the scene file unchanged.
-- Dedicated follow-up scope now exists for the author-helper cleanup pass:
+- Completed the scoped author-helper cleanup pass:
   [Scene Author Helper Refactor Scope](gameterm-scene-author-helper-refactor-scope.md).
-  The next pass should run the scoped lanes back-to-back with separate commits.
+  The shell entrypoint, command names, option names, help output, generated JSON
+  shape, and rollback behavior remain stable.
 
 ## Priority 4: Fixture And Smoke Organization
 
