@@ -40,6 +40,8 @@ Normalize current Scene refactor docs around the active coding principles.
 Remove outdated `[tools]` guidance in Scene planning docs where it conflicts
 with the current commit discipline.
 
+Status: complete.
+
 Acceptance:
 
 - this scope exists
@@ -49,6 +51,8 @@ Acceptance:
 ### Lane 2: Verification Structure
 
 Make the verifier easier to extend without changing what it checks.
+
+Status: complete.
 
 Targeted cleanup:
 
@@ -64,6 +68,8 @@ Acceptance:
 ### Lane 3: Helper Common Patterns
 
 Reduce duplicated shell patterns only where the move is obvious and low-risk.
+
+Status: complete.
 
 Candidate patterns:
 
@@ -82,6 +88,8 @@ Acceptance:
 
 Only continue if a small module move is clearer than the current shape.
 
+Status: planned.
+
 Candidate areas:
 
 - relationship display helpers
@@ -98,6 +106,8 @@ Acceptance:
 
 After deterministic refactors, run the documented onboarding/smoke path and
 record any product issues separately from NFC cleanup.
+
+Status: planned.
 
 Acceptance:
 
