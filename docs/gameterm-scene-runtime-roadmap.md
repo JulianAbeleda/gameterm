@@ -152,7 +152,8 @@ The live mux discovery layer is scoped in
 [GameTerm Scene Live Mux Discovery Scope](gameterm-scene-live-mux-discovery-scope.md).
 The first pass adds a normalized mux-context helper, fixture-backed verifier
 coverage, caller/env collection, and `gameterm cli list --format json`
-collection; live overlay smoke remains the next validation step.
+collection. The live-mux smoke scenario is now wired and recorded in live
+smoke runs.
 
 The named live mux smoke scenario follow-up is scoped in
 [GameTerm Scene Live Mux Smoke Scenario Scope](gameterm-scene-live-mux-smoke-scope.md).

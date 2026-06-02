@@ -53,6 +53,8 @@ Latest verification baseline:
   [GameTerm Scene Mode Smoke Report](gameterm-scene-smoke-report.md)
 - Live smoke: PASS for `active-pane-gui`, recorded in
   [GameTerm Scene Mode Smoke Report](gameterm-scene-smoke-report.md)
+- Live smoke: PASS for `live-mux-discovery`, recorded in
+  [GameTerm Scene Mode Smoke Report](gameterm-scene-smoke-report.md)
 - Live smoke: PASS for `vn-demo` with repo fixture PNGs and with local
   downloaded PSD/school assets, recorded in
   [GameTerm Scene Mode Smoke Report](gameterm-scene-smoke-report.md)
@@ -75,7 +77,7 @@ implementation details.
 | Runtime history and lower-level feature roadmap | [Runtime Roadmap](gameterm-scene-runtime-roadmap.md) | Mostly historical; keep for design context |
 | Broad product completion stack | [Product Completion Scope](gameterm-scene-product-completion-scope.md) | Active planning source |
 | Command policy second pass | [Command Policy Second-Pass Scope](gameterm-scene-command-policy-second-pass-scope.md) | Complete |
-| Live mux discovery | [Live Mux Discovery Scope](gameterm-scene-live-mux-discovery-scope.md) | Scoped next |
+| Live mux discovery | [Live Mux Discovery Scope](gameterm-scene-live-mux-discovery-scope.md) | Complete |
 | Active-pane GUI entrypoint | [Active Pane GUI Entrypoint Scope](gameterm-scene-active-pane-gui-entrypoint-scope.md) | Complete |
 | Ren'Py demo import | [Ren'Py Demo Scope](gameterm-scene-renpy-demo-scope.md) | Prototype implemented |
 | VN script importer | [VN Script Import Scope](gameterm-scene-vn-script-import-scope.md) | First-pass implemented |
@@ -287,8 +289,7 @@ Scope owner:
 
 ### Priority 1: Live Pane And Process Context
 
-Status: complete for explicit metadata input; live mux auto-discovery is scoped
-next.
+Status: complete for explicit metadata input and live mux auto-discovery.
 
 Goal: connect Workspace Discovery to the active GameTerm session.
 
