@@ -16,6 +16,7 @@ pub mod prompt;
 pub mod quickselect;
 pub mod selector;
 pub mod visual;
+mod visual_compose;
 
 pub use boot_menu::boot_menu;
 pub use confirm_close_pane::{

@@ -101,7 +101,12 @@ impl TermWindow {
         hsv: Option<HsbTransform>,
     ) -> anyhow::Result<()> {
         let cell_width = params.render_metrics.cell_size.width as f32;
-        for rect in vn_panel_rects(stage_rect, params.dims.viewport_rows, cell_width, cell_height) {
+        for rect in vn_panel_rects(
+            stage_rect,
+            params.dims.viewport_rows,
+            cell_width,
+            cell_height,
+        ) {
             if !self.populate_vn_panel_texture(layers, 1, rect, cell_width, params, hsv)? {
                 self.populate_rounded_vn_panel(layers, 1, rect, cell_width, hsv)?;
             }
@@ -122,7 +127,9 @@ impl TermWindow {
             return Ok(false);
         }
 
-        let gl_state = self.render_state.as_ref().unwrap();
+        let Some(gl_state) = self.render_state.as_ref() else {
+            return Ok(false);
+        };
         let padding = params
             .render_metrics
             .cell_size
@@ -538,10 +545,7 @@ fn inset_rect(rect: RectF, inset: f32) -> RectF {
     )
 }
 
-fn stage_displayable_rect(
-    displayable: &VisualRenderStageDisplayable,
-    stage_rect: RectF,
-) -> RectF {
+fn stage_displayable_rect(displayable: &VisualRenderStageDisplayable, stage_rect: RectF) -> RectF {
     match displayable.placement {
         VisualStagePlacement::Fullscreen => stage_rect,
         VisualStagePlacement::Left | VisualStagePlacement::Center | VisualStagePlacement::Right => {
@@ -549,9 +553,7 @@ fn stage_displayable_rect(
             let width = height;
             let center_x = match displayable.placement {
                 VisualStagePlacement::Left => stage_rect.min_x() + stage_rect.size.width * 0.28,
-                VisualStagePlacement::Center => {
-                    stage_rect.min_x() + stage_rect.size.width * 0.50
-                }
+                VisualStagePlacement::Center => stage_rect.min_x() + stage_rect.size.width * 0.50,
                 VisualStagePlacement::Right => stage_rect.min_x() + stage_rect.size.width * 0.72,
                 VisualStagePlacement::Fullscreen => unreachable!(),
             };
@@ -654,8 +656,7 @@ mod tests {
         };
 
         let left = stage_displayable_rect(&make_displayable(VisualStagePlacement::Left), stage);
-        let center =
-            stage_displayable_rect(&make_displayable(VisualStagePlacement::Center), stage);
+        let center = stage_displayable_rect(&make_displayable(VisualStagePlacement::Center), stage);
         let right = stage_displayable_rect(&make_displayable(VisualStagePlacement::Right), stage);
 
         assert_eq!(left.size.height, 624.0);
