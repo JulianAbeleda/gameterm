@@ -13,6 +13,9 @@ use std::sync::Arc;
 use termwiz::color::LinearRgba;
 use termwiz::image::ImageData;
 
+const VN_PANEL_ALPHA: f32 = 0.80;
+const VN_PANEL_BORDER_ALPHA: f32 = 0.34;
+
 fn visual_placeholder_color(sprite: &str, alpha: f32, floor: f32) -> LinearRgba {
     let mut hash = 0xcbf29ce484222325u64;
     for byte in sprite.bytes() {
@@ -71,7 +74,52 @@ impl TermWindow {
             )?;
             quad.set_hsv(hsv);
         }
+        self.populate_visual_vn_panels(layers, stage_rect, params, cell_height, hsv)?;
 
+        Ok(())
+    }
+
+    fn populate_visual_vn_panels(
+        &self,
+        layers: &mut TripleLayerQuadAllocator,
+        stage_rect: RectF,
+        params: &RenderScreenLineParams,
+        cell_height: f32,
+        hsv: Option<HsbTransform>,
+    ) -> anyhow::Result<()> {
+        let cell_width = params.render_metrics.cell_size.width as f32;
+        for rect in vn_panel_rects(stage_rect, params.dims.viewport_rows, cell_width, cell_height) {
+            self.populate_rounded_vn_panel(layers, 1, rect, cell_width, hsv)?;
+        }
+        Ok(())
+    }
+
+    fn populate_rounded_vn_panel(
+        &self,
+        layers: &mut TripleLayerQuadAllocator,
+        layer_num: usize,
+        rect: RectF,
+        cell_width: f32,
+        hsv: Option<HsbTransform>,
+    ) -> anyhow::Result<()> {
+        let radius = (cell_width * 1.4)
+            .max(4.0)
+            .min(rect.size.width / 3.0)
+            .min(rect.size.height / 2.0);
+        let border = 1.5;
+        let border_color = LinearRgba::with_components(0.92, 0.96, 1.0, VN_PANEL_BORDER_ALPHA);
+        for panel_rect in rounded_panel_rects(rect, radius) {
+            let mut quad = self.filled_rectangle(layers, layer_num, panel_rect, border_color)?;
+            quad.set_hsv(hsv);
+        }
+
+        let inner = inset_rect(rect, border);
+        let inner_radius = (radius - border).max(1.0);
+        let fill_color = LinearRgba::with_components(0.025, 0.028, 0.034, VN_PANEL_ALPHA);
+        for panel_rect in rounded_panel_rects(inner, inner_radius) {
+            let mut quad = self.filled_rectangle(layers, layer_num, panel_rect, fill_color)?;
+            quad.set_hsv(hsv);
+        }
         Ok(())
     }
 
@@ -249,6 +297,82 @@ fn stage_viewport_rect(params: &RenderScreenLineParams, cell_height: f32) -> Rec
     )
 }
 
+fn vn_panel_rects(
+    stage_rect: RectF,
+    viewport_rows: usize,
+    cell_width: f32,
+    cell_height: f32,
+) -> Vec<RectF> {
+    let horizontal_margin = (cell_width * 2.0).max(12.0);
+    let gap = (cell_height * 0.35).max(4.0);
+    let dock_rows = if viewport_rows >= 10 { 2.0 } else { 0.0 };
+    let dialogue_rows = if viewport_rows >= 18 { 7.0 } else { 4.0 };
+    let mut rects = Vec::new();
+    let panel_width = (stage_rect.size.width - horizontal_margin * 2.0).max(cell_width * 10.0);
+
+    if dock_rows > 0.0 {
+        let dock_height = (cell_height * dock_rows).max(cell_height);
+        let dock_rect = euclid::rect(
+            stage_rect.min_x() + horizontal_margin,
+            stage_rect.max_y() - dock_height,
+            panel_width,
+            dock_height,
+        );
+        rects.push(dock_rect);
+    }
+
+    let dialogue_height = (cell_height * dialogue_rows - gap).max(cell_height * 3.0);
+    let dialogue_bottom = rects
+        .first()
+        .map(|dock_rect| dock_rect.min_y() - gap)
+        .unwrap_or(stage_rect.max_y() - gap);
+    let dialogue_rect = euclid::rect(
+        stage_rect.min_x() + horizontal_margin,
+        dialogue_bottom - dialogue_height,
+        panel_width,
+        dialogue_height,
+    );
+    rects.push(dialogue_rect);
+    rects
+}
+
+fn rounded_panel_rects(rect: RectF, radius: f32) -> Vec<RectF> {
+    let radius = radius
+        .max(0.0)
+        .min(rect.size.width / 2.0)
+        .min(rect.size.height / 2.0);
+    if radius <= 0.0 {
+        return vec![rect];
+    }
+    vec![
+        euclid::rect(
+            rect.min_x() + radius,
+            rect.min_y(),
+            (rect.size.width - radius * 2.0).max(1.0),
+            rect.size.height,
+        ),
+        euclid::rect(
+            rect.min_x(),
+            rect.min_y() + radius,
+            rect.size.width,
+            (rect.size.height - radius * 2.0).max(1.0),
+        ),
+    ]
+}
+
+fn inset_rect(rect: RectF, inset: f32) -> RectF {
+    let inset = inset
+        .max(0.0)
+        .min(rect.size.width / 2.0)
+        .min(rect.size.height / 2.0);
+    euclid::rect(
+        rect.min_x() + inset,
+        rect.min_y() + inset,
+        (rect.size.width - inset * 2.0).max(1.0),
+        (rect.size.height - inset * 2.0).max(1.0),
+    )
+}
+
 fn stage_displayable_rect(
     displayable: &VisualRenderStageDisplayable,
     stage_rect: RectF,
@@ -374,5 +498,32 @@ mod tests {
         assert_eq!(left.max_y(), stage.max_y());
         assert!(left.min_x() < center.min_x());
         assert!(center.min_x() < right.min_x());
+    }
+
+    #[test]
+    fn vn_panel_rects_include_dialogue_and_dock_for_large_viewports() {
+        let stage = euclid::rect(0.0, 0.0, 1000.0, 800.0);
+        let rects = vn_panel_rects(stage, 30, 10.0, 20.0);
+
+        assert_eq!(rects.len(), 2);
+        let dock = rects[0];
+        let dialogue = rects[1];
+        assert!(dialogue.min_y() < dock.min_y());
+        assert!(dialogue.max_y() < dock.min_y());
+        assert_eq!(dock.min_x(), 20.0);
+        assert_eq!(dialogue.min_x(), 20.0);
+        assert_eq!(dock.size.width, dialogue.size.width);
+    }
+
+    #[test]
+    fn rounded_panel_rects_leave_corner_cutouts() {
+        let rect = euclid::rect(10.0, 20.0, 100.0, 40.0);
+        let rects = rounded_panel_rects(rect, 8.0);
+
+        assert_eq!(rects.len(), 2);
+        assert_eq!(rects[0].min_x(), 18.0);
+        assert_eq!(rects[0].size.width, 84.0);
+        assert_eq!(rects[1].min_y(), 28.0);
+        assert_eq!(rects[1].size.height, 24.0);
     }
 }

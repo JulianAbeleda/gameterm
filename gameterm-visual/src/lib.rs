@@ -2280,9 +2280,8 @@ impl SceneRuntime {
 
     fn render_vn_dialogue_box(&self, width: usize, height: usize) -> String {
         let width = width.max(6);
-        let height = height.max(3);
+        let height = height.max(1);
         let inner_width = width.saturating_sub(6);
-        let border_width = inner_width + 2;
         let dialogue = self.active_dialogue_line();
         let mut lines = Vec::new();
         lines.push(format!("{}:", dialogue.speaker));
@@ -2308,12 +2307,10 @@ impl SceneRuntime {
         }
 
         let mut out = String::new();
-        out.push_str(&format!("  +{}+\r\n", "-".repeat(border_width)));
-        for idx in 0..height.saturating_sub(2) {
+        for idx in 0..height {
             let line = lines.get(idx).map(String::as_str).unwrap_or("");
-            out.push_str(&format!("  | {:<inner_width$} |\r\n", clip_text(line, inner_width)));
+            out.push_str(&format!("   {:<inner_width$}\r\n", clip_text(line, inner_width)));
         }
-        out.push_str(&format!("  +{}+\r\n", "-".repeat(border_width)));
         out
     }
 
@@ -4145,7 +4142,8 @@ mod tests {
 
         let frame = runtime.render_text_frame(80, 24);
         assert!(frame.contains("Stage: 1 layer(s), 1 displayable(s)"));
-        assert!(frame.contains("+"));
+        assert!(!frame.contains("+---"));
+        assert!(!frame.contains("| Codex:"));
         assert!(frame.contains("Codex:"));
         assert!(frame.contains("transparent VN overlay"));
         assert!(frame.contains("Compose: _"));
