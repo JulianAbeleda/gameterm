@@ -75,7 +75,7 @@ implementation details.
 | First shippable Scene Mode pass | [First-Pass Scope](gameterm-scene-first-pass-scope.md) | Complete |
 | First-pass closure items | [First-Pass Completion Scope](gameterm-scene-first-pass-completion-scope.md) | Complete |
 | Runtime history and lower-level feature roadmap | [Runtime Roadmap](gameterm-scene-runtime-roadmap.md) | Mostly historical; keep for design context |
-| Broad product completion stack | [Product Completion Scope](gameterm-scene-product-completion-scope.md) | Active planning source |
+| Broad product completion stack | [Product Completion Scope](gameterm-scene-product-completion-scope.md) | First-pass complete; refactor backlog active |
 | Command policy second pass | [Command Policy Second-Pass Scope](gameterm-scene-command-policy-second-pass-scope.md) | Complete |
 | Live mux discovery | [Live Mux Discovery Scope](gameterm-scene-live-mux-discovery-scope.md) | Complete |
 | Active-pane GUI entrypoint | [Active Pane GUI Entrypoint Scope](gameterm-scene-active-pane-gui-entrypoint-scope.md) | Complete |

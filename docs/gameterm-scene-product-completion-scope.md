@@ -485,14 +485,17 @@ The broader Scene Mode product pass is complete when:
 
 ## Current Recommendation
 
-Current status for this slice is complete:
+Current status for this slice is first-pass complete:
 
-- The explicit-metadata pane/process first pass is implemented.
-- Live mux context is collected, normalized, and forwarded through the
-  `ci/gameterm-scene-mux-context.sh` helper.
-- Deterministic fixture coverage and live-mux smoke capture are complete.
-- No known blocker remains in this slice.
+- Product Layers 1–10 have first-pass implementations recorded in their scope
+  documents and corresponding commit history.
+- The broad stack now includes pane/process metadata wiring, relationship
+  rendering, multi-agent fixtures/helpers, task bootstrap briefs, generated
+  layout validation, and onboarding/documentation recovery flow.
+- Deterministic verification is complete (`ci/gameterm-scene-verify.sh --all`).
+- Live smoke is passing for active-pane, workspace discovery, live mux discovery,
+  `workspace-agent`, and VN scenes.
+- No blocking defects remain in the first-pass product stack.
 
-This completed slice removed a major product dependency by connecting generated
-workspace state to the active GameTerm session while reusing the existing
-pane/process metadata contract.
+The remaining work is now the refactor backlog: reducing complexity debt and
+hardening the product surface without changing existing behavior.
