@@ -417,9 +417,9 @@ Acceptance:
 Current status:
 
 - Completed lifecycle method grouping.
-- Deferred input, selection, and status helper grouping. Those methods still
-  touch central runtime fields, and splitting them further should wait until it
-  clearly improves reviewability without exposing internals.
+- Completed input-method grouping.
+- Completed selection-method grouping.
+- Completed status-helper grouping.
 
 ## Full Refactor Definition
 
