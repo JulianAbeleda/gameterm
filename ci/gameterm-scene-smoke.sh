@@ -244,6 +244,7 @@ mux-patch
 process-state
 active-pane-gui
 vn-demo
+vn-compose
 EOF
 }
 
@@ -384,6 +385,15 @@ Checks: imported VN dialogue, choices, bindings, and copied VN sprite assets ren
 Expected status: VN Script Demo Import is visible.
 EOF
       ;;
+    vn-compose)
+      cat <<'EOF'
+Scenario: vn-compose
+Fixture: generated VN demo
+Setup: generate the VN demo, launch Scene Mode, type a prompt into the compose dock, submit it, and wait for the deterministic local compose backend.
+Checks: compose input remains docked, backend output renders as Codex dialogue, and VN background/sprites remain visible.
+Expected status: Compose succeeded.
+EOF
+      ;;
     *)
       echo "unknown smoke scenario: $1" >&2
       list_smoke_scenarios >&2
@@ -473,6 +483,12 @@ apply_smoke_scenario_defaults() {
       fixture="vn-demo"
       if [[ -z "${key_sequence}" ]]; then
         key_sequence="enter,j,enter"
+      fi
+      ;;
+    vn-compose)
+      fixture="vn-demo"
+      if [[ -z "${key_sequence}" ]]; then
+        key_sequence="text:look at roadmap,enter,delay:1"
       fi
       ;;
     *)
@@ -845,6 +861,12 @@ on sendNamedKey(keyName)
   end tell
 end sendNamedKey
 
+on sendText(valueText)
+  tell application "System Events"
+    keystroke valueText
+  end tell
+end sendText
+
 on run argv
   set targetPid to (item 1 of argv) as integer
   set keySequence to item 2 of argv
@@ -867,6 +889,10 @@ on run argv
     if keyName starts with "delay:" then
       set delaySeconds to text 7 thru -1 of keyName as real
       delay delaySeconds
+    else if keyName starts with "text:" then
+      set textValue to text 6 thru -1 of keyName
+      sendText(textValue)
+      delay 0.35
     else if keyName is not "" then
       sendNamedKey(keyName)
       delay 0.35
@@ -1147,8 +1173,11 @@ EOF
   if [[ "${scenario}" == "authoring-loop" ]]; then
     echo "Authoring loop audit: save story state, mutate draft state, then reload the saved state."
   fi
-  if [[ "${scenario}" == "vn-demo" ]]; then
+  if [[ "${scenario}" == "vn-demo" || "${scenario}" == "vn-compose" ]]; then
     echo "VN demo audit: launch imported VN script with strict-validated local PNG assets."
+  fi
+  if [[ "${scenario}" == "vn-compose" ]]; then
+    echo "VN compose audit: type a prompt and render the deterministic compose backend reply."
   fi
   if [[ -n "${submit_mux_patch}" ]]; then
     echo "Mux patch audit: open Scene Mode before the wait expires; the script will submit:"

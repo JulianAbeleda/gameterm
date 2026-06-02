@@ -645,6 +645,7 @@ run_vn_demo_install_check() {
   "${repo_root}/ci/gameterm-scene-vn-demo.sh" generate \
     --output-dir "${generated_dir}" \
     --asset-source-root "${fixture_root}/vn-asset-source" \
+    --allow-ai-assisted-assets \
     --force \
     >/tmp/gameterm-scene-vn-demo-generate.out \
     2>/tmp/gameterm-scene-vn-demo-generate.err
@@ -652,7 +653,7 @@ run_vn_demo_install_check() {
   cargo run -q -p gameterm-visual --example scene_validate -- \
     "${generated_dir}/default.json" >/dev/null
   jq -e '
-    .background == "workspace-map"
+    .background == "vn.background.school_classroom"
     and any(.entities[]; .id == "vn-script-narrator"
       and .sprite == "vn.character.guide.neutral")
   ' "${generated_dir}/default.json" >/dev/null
@@ -679,7 +680,12 @@ run_vn_demo_install_check() {
   jq -e '.generated_by == "scene_vn_asset_intake"' \
     "${generated_dir}/vn-demo-asset-attribution.json" >/dev/null
   test -f "${generated_dir}/assets/vn-demo/characters/guide-neutral.png"
-  grep -q "AI-assisted source skipped" /tmp/gameterm-scene-vn-demo-generate.err
+  test -f "${generated_dir}/assets/vn-demo/backgrounds/school-classroom.png"
+  jq -e '
+    any(.sources[]; .id == "tainara_p_school_backgrounds"
+      and .repo_policy == "allowed_only_if_ai_assisted_assets_are_accepted"
+      and (.used_assets | length) == 2)
+  ' "${generated_dir}/vn-demo-asset-attribution.json" >/dev/null
 
   "${repo_root}/ci/gameterm-scene-vn-demo.sh" doctor \
     --output-dir "${generated_dir}" \
@@ -713,6 +719,7 @@ run_vn_demo_install_check() {
   "${repo_root}/ci/gameterm-scene-vn-demo.sh" install \
     --config-home "${config_home}" \
     --asset-source-root "${fixture_root}/vn-asset-source" \
+    --allow-ai-assisted-assets \
     --force \
     >/tmp/gameterm-scene-vn-demo-install.out \
     2>/tmp/gameterm-scene-vn-demo-install.err
@@ -724,6 +731,7 @@ run_vn_demo_install_check() {
   "${repo_root}/ci/gameterm-scene-vn-demo.sh" install \
     --config-home "${config_home}" \
     --asset-source-root "${fixture_root}/vn-asset-source" \
+    --allow-ai-assisted-assets \
     >/tmp/gameterm-scene-vn-demo-overwrite.out \
     2>/tmp/gameterm-scene-vn-demo-overwrite.err
   overwrite_rc=$?
@@ -1682,7 +1690,9 @@ run_smoke_asset_check() {
     authoring-loop \
     patch-inbox \
     mux-patch \
-    process-state
+    process-state \
+    vn-demo \
+    vn-compose
   do
     grep -qx "${scenario}" <<<"${scenarios}"
     "${repo_root}/ci/gameterm-scene-smoke.sh" \
@@ -1700,6 +1710,8 @@ run_smoke_asset_check() {
     --describe-scenario workspace-discovery | grep -q "generated workspace"
   "${repo_root}/ci/gameterm-scene-smoke.sh" \
     --describe-scenario live-mux-discovery | grep -q "active mux pane"
+  "${repo_root}/ci/gameterm-scene-smoke.sh" \
+    --describe-scenario vn-compose | grep -q "Codex dialogue"
   echo "smoke assets: ok"
 }
 
