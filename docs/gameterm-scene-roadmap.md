@@ -11,7 +11,8 @@ complete; VN asset intake, VN script import, VN demo install, real asset run,
 strict image validation, fullscreen smoke capture, local PSD/image export, and
 native active-pane GUI first-pass closure complete. Staged VN text presentation
 and compose dock input are implemented; the Codex compose bridge local-backend
-first pass is implemented.
+first pass is implemented. The next scoped layer is the local Codex CLI session
+bridge.
 
 Scene Mode currently has:
 
@@ -81,6 +82,7 @@ implementation details.
 | VN local PSD/image export | [VN Real Assets Run Scope](gameterm-scene-vn-real-assets-run-scope.md) | Complete |
 | VN staged presentation | [VN Presentation Scope](gameterm-scene-vn-presentation-scope.md) | First-pass implemented |
 | Codex compose bridge | [Codex Compose Bridge Scope](gameterm-scene-codex-compose-bridge-scope.md) | First-pass implemented |
+| Codex session bridge | [Codex Session Bridge Scope](gameterm-scene-codex-session-bridge-scope.md) | Scoped next |
 | Live pane/process context | [Pane And Process Discovery Scope](gameterm-scene-pane-process-discovery-scope.md) | Implemented through explicit metadata |
 | Agent/Workspace authored model | [Agent And Workspace Scope](gameterm-scene-agent-workspace-scope.md) | First-pass implemented |
 | Workspace Discovery | [Workspace Discovery Scope](gameterm-scene-workspace-discovery-scope.md) | First-pass implemented |
