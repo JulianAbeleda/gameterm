@@ -13,8 +13,9 @@ use std::sync::Arc;
 use termwiz::color::LinearRgba;
 use termwiz::image::ImageData;
 
-const VN_PANEL_ALPHA: f32 = 0.62;
-const VN_PANEL_BORDER_ALPHA: f32 = 0.30;
+const VN_PANEL_ALPHA: f32 = 0.42;
+const VN_PANEL_BORDER_ALPHA: f32 = 0.22;
+const VN_PANEL_CORNER_SEGMENTS: usize = 8;
 const VN_FULLSCREEN_PANEL_MIN_ROWS: usize = 40;
 const VN_FULLSCREEN_PANEL_SIDE_MARGIN: f32 = 0.033;
 const VN_FULLSCREEN_PANEL_TOP: f32 = 0.085;
@@ -106,7 +107,7 @@ impl TermWindow {
         cell_width: f32,
         hsv: Option<HsbTransform>,
     ) -> anyhow::Result<()> {
-        let radius = (cell_width * 1.4)
+        let radius = (cell_width * 2.2)
             .max(4.0)
             .min(rect.size.width / 3.0)
             .min(rect.size.height / 2.0);
@@ -361,20 +362,48 @@ fn rounded_panel_rects(rect: RectF, radius: f32) -> Vec<RectF> {
     if radius <= 0.0 {
         return vec![rect];
     }
-    vec![
-        euclid::rect(
-            rect.min_x() + radius,
-            rect.min_y(),
-            (rect.size.width - radius * 2.0).max(1.0),
-            rect.size.height,
-        ),
-        euclid::rect(
+
+    let mut rects = Vec::new();
+    let middle_height = (rect.size.height - radius * 2.0).max(0.0);
+    if middle_height > 0.0 {
+        rects.push(euclid::rect(
             rect.min_x(),
             rect.min_y() + radius,
             rect.size.width,
-            (rect.size.height - radius * 2.0).max(1.0),
-        ),
-    ]
+            middle_height,
+        ));
+    }
+
+    let strip_height = (radius / VN_PANEL_CORNER_SEGMENTS as f32).max(1.0);
+    for segment in 0..VN_PANEL_CORNER_SEGMENTS {
+        let y0 = segment as f32 * strip_height;
+        if y0 >= radius {
+            break;
+        }
+        let y1 = ((segment + 1) as f32 * strip_height).min(radius);
+        let height = (y1 - y0).max(1.0);
+        let sample_y = y0 + height * 0.5;
+        let distance_from_center = radius - sample_y;
+        let x_extent = (radius * radius - distance_from_center * distance_from_center)
+            .max(0.0)
+            .sqrt();
+        let inset = (radius - x_extent).max(0.0);
+        let width = (rect.size.width - inset * 2.0).max(1.0);
+        rects.push(euclid::rect(
+            rect.min_x() + inset,
+            rect.min_y() + y0,
+            width,
+            height,
+        ));
+        rects.push(euclid::rect(
+            rect.min_x() + inset,
+            rect.max_y() - y1,
+            width,
+            height,
+        ));
+    }
+
+    rects
 }
 
 fn inset_rect(rect: RectF, inset: f32) -> RectF {
@@ -546,14 +575,16 @@ mod tests {
     }
 
     #[test]
-    fn rounded_panel_rects_leave_corner_cutouts() {
+    fn rounded_panel_rects_approximate_corner_radius() {
         let rect = euclid::rect(10.0, 20.0, 100.0, 40.0);
         let rects = rounded_panel_rects(rect, 8.0);
 
-        assert_eq!(rects.len(), 2);
-        assert_eq!(rects[0].min_x(), 18.0);
-        assert_eq!(rects[0].size.width, 84.0);
-        assert_eq!(rects[1].min_y(), 28.0);
-        assert_eq!(rects[1].size.height, 24.0);
+        assert_eq!(rects.len(), 17);
+        assert_eq!(rects[0].min_y(), 28.0);
+        assert_eq!(rects[0].size.height, 24.0);
+        assert!(rects[1].min_x() > rect.min_x());
+        assert!(rects[1].size.width < rect.size.width);
+        assert!(rects[15].min_x() < rects[1].min_x());
+        assert!(rects[15].size.width > rects[1].size.width);
     }
 }
