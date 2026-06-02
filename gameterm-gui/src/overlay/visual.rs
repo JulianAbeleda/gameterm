@@ -2,27 +2,28 @@ use crate::termwindow::TermWindowNotif;
 use anyhow::Context;
 use config::keyassignment::SpawnTabDomain;
 use gameterm_dynamic::Value;
-use gameterm_term::color::ColorAttribute;
 use gameterm_term::TerminalSize;
+use gameterm_term::color::ColorAttribute;
 use gameterm_visual::{
-    truncate_to_screen, RunCommandTarget, SceneRuntime, VisualActionRequest, VisualInput,
-    VisualMode, VisualModeOutcome, VisualResolvedSprite, VisualScene, VisualSceneDialoguePatch,
+    RunCommandTarget, SceneRuntime, VisualActionRequest, VisualInput, VisualMode,
+    VisualModeOutcome, VisualResolvedSprite, VisualScene, VisualSceneDialoguePatch,
     VisualSceneLoadStatus, VisualScenePatch, VisualSceneSource, VisualSpriteManifest,
-    VisualSpriteManifestStatus, VisualStoryState,
+    VisualSpriteManifestStatus, VisualStoryState, truncate_to_screen,
 };
 use mux::domain::SplitSource;
 use mux::tab::{SplitDirection, SplitRequest, SplitSize};
 use mux::termwiztermtab::TermWizTerminal;
 use mux::{Mux, MuxNotification};
 use portable_pty::CommandBuilder;
+use serde::Deserialize;
 use std::collections::HashSet;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
-use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use termwiz::input::{InputEvent, KeyCode, KeyEvent};
@@ -1508,26 +1509,163 @@ fn codex_output_text(output_file: &Path, stdout: &[u8]) -> String {
 }
 
 fn apply_compose_backend_result(runtime: &mut SceneRuntime, result: ComposeBackendResult) {
-    let (speaker, text, status) = if result.succeeded() {
+    if result.succeeded() {
+        if apply_structured_compose_backend_result(runtime, &result) {
+            return;
+        }
+
         let reply = sanitize_compose_output(&result.stdout);
         let reply = if reply.is_empty() {
             "The compose backend returned no output.".to_string()
         } else {
             reply
         };
-        ("Codex", reply, result.label.succeeded_status().to_string())
-    } else {
-        let diagnostic = sanitize_compose_output(&result.stderr);
-        let diagnostic = if diagnostic.is_empty() {
-            format!("Compose backend failed for: {}", result.prompt)
-        } else {
-            diagnostic
+        let patch = VisualScenePatch {
+            scene_patch_version: VisualScenePatch::VERSION,
+            updates: vec![],
+            variables: vec![],
+            selected_entity_id: None,
+            process_state: None,
+            dialogue: Some(VisualSceneDialoguePatch {
+                speaker: "Codex".to_string(),
+                text: reply,
+                append_history: true,
+            }),
+            status: Some(result.label.succeeded_status().to_string()),
         };
-        (
-            "Scene",
-            diagnostic,
-            result.label.failed_status().to_string(),
-        )
+        if let Err(err) = runtime.apply_scene_patch(patch) {
+            runtime.mark_action_status(format!("Compose reply failed: {err}"));
+        }
+        return;
+    }
+
+    apply_compose_backend_failure_result(runtime, &result);
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+struct StructuredComposePayload {
+    #[serde(default)]
+    speaker: Option<String>,
+    #[serde(default)]
+    text: Option<String>,
+    #[serde(default)]
+    append_history: Option<bool>,
+    #[serde(default)]
+    status: Option<String>,
+    #[serde(default)]
+    patch: Option<serde_json::Value>,
+}
+
+impl StructuredComposePayload {
+    fn meaningful(&self) -> bool {
+        self.speaker.is_some()
+            || self
+                .text
+                .as_ref()
+                .is_some_and(|text| !text.trim().is_empty())
+            || self.append_history.is_some()
+            || self.status.is_some()
+            || self.patch.is_some()
+    }
+
+    fn text_or_default(&self) -> String {
+        sanitize_compose_output(self.text.as_deref().unwrap_or(""))
+    }
+
+    fn dialogue_text_is_present(&self) -> bool {
+        self.text
+            .as_ref()
+            .is_some_and(|text| !text.trim().is_empty())
+    }
+}
+
+fn parse_structured_payload(raw: &str) -> Option<StructuredComposePayload> {
+    serde_json::from_str::<StructuredComposePayload>(raw)
+        .ok()
+        .filter(|payload| payload.meaningful())
+}
+
+fn parse_structured_compose_payload(raw: &str) -> Option<StructuredComposePayload> {
+    parse_structured_payload(raw.trim()).or_else(|| {
+        raw.lines()
+            .rev()
+            .find_map(|line| parse_structured_payload(line.trim()))
+    })
+}
+
+fn parse_structured_compose_patch(value: serde_json::Value) -> Result<VisualScenePatch, String> {
+    let patch: VisualScenePatch = serde_json::from_value(value)
+        .map_err(|err| format!("invalid compose patch json: {err}"))?;
+    patch
+        .validate()
+        .map_err(|err| format!("compose patch invalid: {err}"))?;
+    Ok(patch)
+}
+
+fn apply_structured_compose_backend_result(
+    runtime: &mut SceneRuntime,
+    result: &ComposeBackendResult,
+) -> bool {
+    let mut payload = match parse_structured_compose_payload(&result.stdout) {
+        Some(payload) => payload,
+        None => return false,
+    };
+
+    let mut patch = match payload.patch.take() {
+        Some(value) => match parse_structured_compose_patch(value) {
+            Ok(patch) => patch,
+            Err(err) => {
+                runtime.mark_action_status(format!("Compose patch parse failed: {err}"));
+                return false;
+            }
+        },
+        None => VisualScenePatch {
+            scene_patch_version: VisualScenePatch::VERSION,
+            updates: vec![],
+            variables: vec![],
+            selected_entity_id: None,
+            process_state: None,
+            dialogue: None,
+            status: None,
+        },
+    };
+
+    if patch.dialogue.is_none() && payload.dialogue_text_is_present() {
+        let speaker = payload
+            .speaker
+            .take()
+            .filter(|speaker| !speaker.trim().is_empty())
+            .unwrap_or_else(|| "Codex".to_string());
+
+        patch.dialogue = Some(VisualSceneDialoguePatch {
+            speaker,
+            text: payload.text_or_default(),
+            append_history: payload.append_history.unwrap_or(true),
+        });
+    }
+
+    if patch.status.is_none() {
+        patch.status = Some(
+            payload
+                .status
+                .unwrap_or_else(|| result.label.succeeded_status().to_string()),
+        );
+    }
+
+    if let Err(err) = runtime.apply_scene_patch(patch) {
+        runtime.mark_action_status(format!("Compose patch failed: {err}"));
+        return false;
+    }
+
+    true
+}
+
+fn apply_compose_backend_failure_result(runtime: &mut SceneRuntime, result: &ComposeBackendResult) {
+    let diagnostic = sanitize_compose_output(&result.stderr);
+    let diagnostic = if diagnostic.is_empty() {
+        format!("Compose backend failed for: {}", result.prompt)
+    } else {
+        diagnostic
     };
     let patch = VisualScenePatch {
         scene_patch_version: VisualScenePatch::VERSION,
@@ -1536,11 +1674,11 @@ fn apply_compose_backend_result(runtime: &mut SceneRuntime, result: ComposeBacke
         selected_entity_id: None,
         process_state: None,
         dialogue: Some(VisualSceneDialoguePatch {
-            speaker: speaker.to_string(),
-            text,
+            speaker: "Scene".to_string(),
+            text: diagnostic,
             append_history: true,
         }),
-        status: Some(status),
+        status: Some(result.label.failed_status().to_string()),
     };
     if let Err(err) = runtime.apply_scene_patch(patch) {
         runtime.mark_action_status(format!("Compose reply failed: {err}"));
@@ -1686,7 +1824,9 @@ impl SceneComposeDock {
                 line.push_str("  type here; enter submits");
             }
         }
-        let content_width = cols.saturating_sub((margin + VN_PANEL_TEXT_INSET) * 2).max(1);
+        let content_width = cols
+            .saturating_sub((margin + VN_PANEL_TEXT_INSET) * 2)
+            .max(1);
         let indent = " ".repeat(margin + VN_PANEL_TEXT_INSET);
         format!(
             "{indent}{:<content_width$}",
@@ -1954,10 +2094,12 @@ mod tests {
         let status = load_sprite_manifest_status(&path);
 
         assert!(status.warnings.is_empty());
-        assert!(status
-            .sprites
-            .iter()
-            .any(|sprite| sprite.id == "project_core"));
+        assert!(
+            status
+                .sprites
+                .iter()
+                .any(|sprite| sprite.id == "project_core")
+        );
     }
 
     #[test]
@@ -2098,10 +2240,12 @@ mod tests {
             runtime.debug_report().last_story_state_action.as_deref(),
             Some("export")
         );
-        assert!(runtime
-            .render_snapshot()
-            .status
-            .starts_with("Story state exported: "));
+        assert!(
+            runtime
+                .render_snapshot()
+                .status
+                .starts_with("Story state exported: ")
+        );
     }
 
     #[test]
@@ -2160,12 +2304,14 @@ mod tests {
 
         let report = runtime.debug_report();
         assert_eq!(report.last_story_state_action.as_deref(), Some("import"));
-        assert!(report
-            .variables
-            .contains(&gameterm_visual::VisualStateEntry {
-                key: "loaded_from_gui".to_string(),
-                value: gameterm_visual::VisualStateValue::Bool(true),
-            }));
+        assert!(
+            report
+                .variables
+                .contains(&gameterm_visual::VisualStateEntry {
+                    key: "loaded_from_gui".to_string(),
+                    value: gameterm_visual::VisualStateValue::Bool(true),
+                })
+        );
     }
 
     #[test]
@@ -2324,6 +2470,53 @@ mod tests {
         assert_eq!(snapshot.dialogue_speaker, "Codex");
         assert_eq!(snapshot.dialogue, "Workspace is ready.");
         assert_eq!(snapshot.status, "Compose succeeded");
+    }
+
+    #[test]
+    fn compose_backend_structured_output_applies_patch_and_reply() {
+        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        let raw_output = r#"{"speaker":"Guide","text":"The task now tracks progress","append_history":true,"status":"Task updated","patch":{"scene_patch_version":1,"updates":[{"entity_id":"task-render","label":"Task Render"}]}}"#;
+        apply_compose_backend_result(
+            &mut runtime,
+            ComposeBackendResult {
+                prompt: "status".to_string(),
+                stdout: raw_output.to_string(),
+                stderr: String::new(),
+                exit_code: Some(0),
+                label: ComposeBackendLabel::Codex,
+            },
+        );
+
+        let snapshot = runtime.render_snapshot();
+        let task = snapshot
+            .entities
+            .iter()
+            .find(|entity| entity.id == "task-render")
+            .expect("task-render entity exists");
+
+        assert_eq!(task.label, "Task Render");
+        assert_eq!(snapshot.dialogue_speaker, "Guide");
+        assert_eq!(snapshot.dialogue, "The task now tracks progress");
+        assert_eq!(snapshot.status, "Task updated");
+    }
+
+    #[test]
+    fn compose_backend_structured_output_without_reply_uses_status() {
+        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        let raw_output = r#"{"status":"Scene status patch only","patch":{"scene_patch_version":1,"status":"Scene status patch only"}}"#;
+        apply_compose_backend_result(
+            &mut runtime,
+            ComposeBackendResult {
+                prompt: "status".to_string(),
+                stdout: raw_output.to_string(),
+                stderr: String::new(),
+                exit_code: Some(0),
+                label: ComposeBackendLabel::Codex,
+            },
+        );
+
+        let snapshot = runtime.render_snapshot();
+        assert_eq!(snapshot.status, "Scene status patch only");
     }
 
     #[test]
