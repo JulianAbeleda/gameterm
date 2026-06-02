@@ -68,6 +68,147 @@ pub struct VisualPosition {
     pub y: usize,
 }
 
+pub const VN_OVERLAY_FULLSCREEN_MIN_ROWS: usize = 40;
+pub const VN_OVERLAY_SIDE_MARGIN_RATIO: f32 = 0.033;
+pub const VN_OVERLAY_DIALOGUE_TOP_RATIO: f32 = 0.13;
+pub const VN_OVERLAY_DIALOGUE_BOTTOM_RATIO: f32 = 0.76;
+pub const VN_OVERLAY_TEXT_INSET_COLS: usize = 3;
+pub const VN_OVERLAY_DIALOGUE_TEXT_INSET_ROWS: usize = 2;
+pub const VN_OVERLAY_COMPOSER_TEXT_INSET_ROWS: usize = 1;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VnOverlayRect {
+    pub col: usize,
+    pub row: usize,
+    pub width: usize,
+    pub height: usize,
+}
+
+impl VnOverlayRect {
+    pub fn right(self) -> usize {
+        self.col.saturating_add(self.width)
+    }
+
+    pub fn bottom(self) -> usize {
+        self.row.saturating_add(self.height)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VnOverlayLayout {
+    pub fullscreen: bool,
+    pub dialogue_panel: VnOverlayRect,
+    pub dialogue_nameplate: VnOverlayRect,
+    pub composer_panel: Option<VnOverlayRect>,
+    pub composer_nameplate: Option<VnOverlayRect>,
+    pub text_inset_cols: usize,
+    pub dialogue_text_row: usize,
+    pub composer_text_row: Option<usize>,
+}
+
+pub fn vn_overlay_layout(
+    cols: usize,
+    rows: usize,
+    dialogue_label: &str,
+    composer_label: &str,
+) -> VnOverlayLayout {
+    let cols = cols.max(1);
+    let rows = rows.max(1);
+    let fullscreen = rows >= VN_OVERLAY_FULLSCREEN_MIN_ROWS;
+    let margin = vn_overlay_side_margin(cols, rows);
+    let panel_width = cols.saturating_sub(margin * 2).max(1);
+    let composer_height = if rows >= 40 {
+        7
+    } else if rows >= 18 {
+        4
+    } else if rows >= 10 {
+        2
+    } else {
+        0
+    };
+    let composer_gap = usize::from(composer_height > 0);
+    let composer_panel = if composer_height > 0 {
+        Some(VnOverlayRect {
+            col: margin,
+            row: rows.saturating_sub(composer_height + 1),
+            width: panel_width,
+            height: composer_height,
+        })
+    } else {
+        None
+    };
+
+    let dialogue_panel = if fullscreen {
+        let top = ((rows as f32) * VN_OVERLAY_DIALOGUE_TOP_RATIO).round() as usize;
+        let bottom = ((rows as f32) * VN_OVERLAY_DIALOGUE_BOTTOM_RATIO).round() as usize;
+        let reserved_bottom = composer_panel
+            .map(|panel| panel.row.saturating_sub(composer_gap))
+            .unwrap_or(rows);
+        let bottom = bottom.min(reserved_bottom).max(top + 4);
+        VnOverlayRect {
+            col: margin,
+            row: top.min(rows.saturating_sub(1)),
+            width: panel_width,
+            height: bottom.saturating_sub(top).max(4),
+        }
+    } else {
+        let height = if rows >= 18 { 7 } else { 4 };
+        let bottom = composer_panel
+            .map(|panel| panel.row.saturating_sub(composer_gap))
+            .unwrap_or(rows.saturating_sub(1))
+            .max(1);
+        let row = bottom.saturating_sub(height);
+        VnOverlayRect {
+            col: margin,
+            row,
+            width: panel_width,
+            height: height.min(rows.saturating_sub(row).max(1)),
+        }
+    };
+
+    let dialogue_nameplate = vn_overlay_nameplate_rect(&dialogue_panel, dialogue_label);
+    let composer_nameplate =
+        composer_panel.map(|panel| vn_overlay_nameplate_rect(&panel, composer_label));
+
+    VnOverlayLayout {
+        fullscreen,
+        dialogue_text_row: dialogue_panel
+            .row
+            .saturating_add(VN_OVERLAY_DIALOGUE_TEXT_INSET_ROWS),
+        composer_text_row: composer_panel.map(|panel| {
+            panel
+                .row
+                .saturating_add(VN_OVERLAY_COMPOSER_TEXT_INSET_ROWS)
+                .min(panel.bottom().saturating_sub(1))
+        }),
+        dialogue_panel,
+        dialogue_nameplate,
+        composer_panel,
+        composer_nameplate,
+        text_inset_cols: VN_OVERLAY_TEXT_INSET_COLS,
+    }
+}
+
+pub fn vn_overlay_side_margin(cols: usize, rows: usize) -> usize {
+    let margin = if rows >= VN_OVERLAY_FULLSCREEN_MIN_ROWS {
+        ((cols as f32) * VN_OVERLAY_SIDE_MARGIN_RATIO).round() as usize
+    } else {
+        3
+    };
+    margin.min(cols.saturating_sub(1))
+}
+
+fn vn_overlay_nameplate_rect(panel: &VnOverlayRect, label: &str) -> VnOverlayRect {
+    let label_width = label.chars().count().max(1);
+    let width = (label_width + 4).clamp(8, panel.width.max(1).min(28));
+    VnOverlayRect {
+        col: panel.col.saturating_add(VN_OVERLAY_TEXT_INSET_COLS),
+        row: panel.row.saturating_sub(1),
+        width,
+        height: 2,
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum VisualEntityKind {
     Agent,
@@ -2041,31 +2182,8 @@ impl SceneRuntime {
     fn render_staged_scene(&self, cols: usize, rows: usize) -> String {
         let cols = cols.max(1);
         let rows = rows.max(1);
-        let dock_height = if rows >= 10 { 2 } else { 0 };
-        let fullscreen_vn_layout = rows >= 40;
-        let box_margin = if fullscreen_vn_layout {
-            ((cols as f32) * 0.033).round() as usize
-        } else {
-            3
-        }
-        .min(cols.saturating_sub(1));
-        let box_width = cols.saturating_sub(box_margin * 2).max(20);
-        let box_height = if fullscreen_vn_layout {
-            let panel_top = ((rows as f32) * 0.085).round() as usize;
-            let panel_bottom = ((rows as f32) * 0.896).round() as usize;
-            panel_bottom.saturating_sub(panel_top).max(7)
-        } else if rows >= 18 {
-            7
-        } else {
-            4
-        }
-        .min(rows.saturating_sub(dock_height).max(1));
-        let top_budget = if fullscreen_vn_layout {
-            ((rows as f32) * 0.085).round() as usize
-        } else {
-            rows.saturating_sub(box_height + dock_height)
-        }
-        .min(rows.saturating_sub(box_height + dock_height));
+        let dialogue = self.active_dialogue_line();
+        let layout = vn_overlay_layout(cols, rows, &dialogue.speaker, "Composer");
         let mut top = Vec::new();
 
         top.push(self.scene.title.clone());
@@ -2110,58 +2228,32 @@ impl SceneRuntime {
             top.push(format!("Status: {}", self.status));
         }
 
-        let nameplate_rows = usize::from(top_budget > 0);
-        let top_content_budget = top_budget.saturating_sub(nameplate_rows);
-        let mut frame = String::new();
-        for line in top.into_iter().take(top_content_budget) {
-            frame.push_str(&line);
-            frame.push_str("\r\n");
+        let mut screen = vec![String::new(); rows];
+        let top_limit = layout.dialogue_nameplate.row.min(rows);
+        for (idx, line) in top.into_iter().take(top_limit).enumerate() {
+            place_vn_overlay_text(&mut screen, cols, idx, 0, cols, &line);
         }
-        let used_top_rows = frame.lines().count();
-        for _ in used_top_rows..top_content_budget {
-            frame.push_str("\r\n");
-        }
-        if nameplate_rows > 0 {
-            frame.push_str(
-                &self.render_vn_nameplate_line(&self.active_dialogue_line().speaker, box_margin),
-            );
-        }
+        place_vn_overlay_text(
+            &mut screen,
+            cols,
+            layout.dialogue_nameplate.row,
+            layout.dialogue_nameplate.col.saturating_add(1),
+            layout.dialogue_nameplate.width.saturating_sub(2).max(1),
+            &dialogue.speaker,
+        );
 
-        frame.push_str(&self.render_vn_dialogue_box(
-            box_margin,
-            box_width,
-            box_height,
-            fullscreen_vn_layout,
-        ));
-        if dock_height > 0 {
-            frame.push_str(&self.render_vn_dock(cols, box_margin));
-        }
-        truncate_to_screen(frame, cols, rows)
-    }
-
-    fn render_vn_dialogue_box(
-        &self,
-        margin: usize,
-        width: usize,
-        height: usize,
-        fullscreen_vn_layout: bool,
-    ) -> String {
-        const VN_PANEL_TEXT_INSET: usize = 3;
-
-        let width = width.max(6);
-        let height = height.max(1);
-        let inner_width = width.saturating_sub(VN_PANEL_TEXT_INSET * 2);
-        let indent = " ".repeat(margin + VN_PANEL_TEXT_INSET);
-        let dialogue = self.active_dialogue_line();
-        let mut lines = Vec::new();
-        if fullscreen_vn_layout && height >= 4 {
-            lines.push(String::new());
-            lines.push(String::new());
-        }
-        lines.extend(wrap_text(&dialogue.text, inner_width));
-
-        if !self.scene.choices.is_empty() && height >= 6 {
-            lines.push(String::new());
+        let dialogue_col = layout
+            .dialogue_panel
+            .col
+            .saturating_add(layout.text_inset_cols);
+        let dialogue_width = layout
+            .dialogue_panel
+            .width
+            .saturating_sub(layout.text_inset_cols * 2)
+            .max(1);
+        let mut dialogue_lines = wrap_text(&dialogue.text, dialogue_width);
+        if !self.scene.choices.is_empty() && layout.dialogue_panel.height >= 6 {
+            dialogue_lines.push(String::new());
             for (idx, choice) in self.scene.choices.iter().take(2).enumerate() {
                 let marker = if idx == self.selected_choice {
                     ">"
@@ -2179,34 +2271,26 @@ impl SceneRuntime {
                 } else {
                     " [locked]"
                 };
-                lines.push(format!("{marker} {}{guard}", choice.label));
+                dialogue_lines.push(format!("{marker} {}{guard}", choice.label));
             }
         }
-
-        let mut out = String::new();
-        for idx in 0..height {
-            let line = lines.get(idx).map(String::as_str).unwrap_or("");
-            out.push_str(&format!(
-                "{indent}{:<inner_width$}\r\n",
-                clip_text(line, inner_width)
-            ));
+        let dialogue_rows = layout
+            .dialogue_panel
+            .bottom()
+            .saturating_sub(layout.dialogue_text_row);
+        for (idx, line) in dialogue_lines.into_iter().take(dialogue_rows).enumerate() {
+            place_vn_overlay_text(
+                &mut screen,
+                cols,
+                layout.dialogue_text_row.saturating_add(idx),
+                dialogue_col,
+                dialogue_width,
+                &line,
+            );
         }
-        out
-    }
 
-    fn render_vn_nameplate_line(&self, label: &str, margin: usize) -> String {
-        const VN_PANEL_TEXT_INSET: usize = 3;
-        const VN_NAMEPLATE_WIDTH: usize = 12;
-
-        let indent = " ".repeat(margin + VN_PANEL_TEXT_INSET);
-        format!(
-            "{indent}{:<VN_NAMEPLATE_WIDTH$}\r\n",
-            clip_text(label, VN_NAMEPLATE_WIDTH)
-        )
-    }
-
-    fn render_vn_dock(&self, _cols: usize, _margin: usize) -> String {
-        "\r\n\r\n".to_string()
+        let frame = screen.join("\r\n") + "\r\n";
+        truncate_to_screen(frame, cols, rows)
     }
 
     fn render_command_selection(&self, cols: usize, rows: usize) -> String {
@@ -2627,6 +2711,25 @@ pub fn truncate_to_screen(text: String, cols: usize, rows: usize) -> String {
             clipped
         })
         .collect()
+}
+
+fn place_vn_overlay_text(
+    screen: &mut [String],
+    cols: usize,
+    row: usize,
+    col: usize,
+    width: usize,
+    text: &str,
+) {
+    let Some(line) = screen.get_mut(row) else {
+        return;
+    };
+    let col = col.min(cols.saturating_sub(1));
+    let width = width.min(cols.saturating_sub(col)).max(1);
+    let mut output = String::new();
+    output.push_str(&" ".repeat(col));
+    output.push_str(&format!("{:<width$}", clip_text(text, width)));
+    *line = clip_text(&output, cols);
 }
 
 #[cfg(test)]
@@ -3714,6 +3817,25 @@ mod tests {
         assert!(frame.contains("transparent VN overlay"));
         assert!(!frame.contains("Compose: _"));
         assert!(frame.ends_with("\r\n\r\n"));
+    }
+
+    #[test]
+    fn vn_overlay_layout_derives_panels_and_nameplates() {
+        let layout = vn_overlay_layout(240, 60, "Codex", "Composer");
+        let composer = layout.composer_panel.unwrap();
+        let composer_nameplate = layout.composer_nameplate.unwrap();
+
+        assert!(layout.fullscreen);
+        assert_eq!(layout.dialogue_panel.col, composer.col);
+        assert_eq!(layout.dialogue_panel.width, composer.width);
+        assert!(layout.dialogue_panel.row < composer.row);
+        assert!(layout.dialogue_panel.bottom() < composer.row);
+        assert_eq!(layout.dialogue_nameplate.col, layout.dialogue_panel.col + 3);
+        assert_eq!(layout.dialogue_nameplate.row, layout.dialogue_panel.row - 1);
+        assert_eq!(composer_nameplate.col, composer.col + 3);
+        assert_eq!(composer_nameplate.row, composer.row - 1);
+        assert!(layout.composer_text_row.unwrap() > composer.row);
+        assert!(layout.composer_text_row.unwrap() < composer.bottom());
     }
 
     #[test]

@@ -8,8 +8,8 @@ use ::window::RectF;
 use anyhow::Context;
 use config::HsbTransform;
 use gameterm_visual::{
-    VisualRenderEntity, VisualRenderSnapshot, VisualRenderStageDisplayable, VisualRenderTile,
-    VisualStagePlacement,
+    vn_overlay_layout, VisualRenderEntity, VisualRenderSnapshot, VisualRenderStageDisplayable,
+    VisualRenderTile, VisualStagePlacement, VnOverlayRect,
 };
 use std::sync::{Arc, LazyLock};
 use termwiz::color::LinearRgba;
@@ -19,10 +19,6 @@ const VN_PANEL_ALPHA: f32 = 0.38;
 const VN_PANEL_BORDER_ALPHA: f32 = 0.18;
 const VN_PANEL_CORNER_SEGMENTS: usize = 8;
 const VN_PANEL_SLICE_PX: f32 = 32.0;
-const VN_FULLSCREEN_PANEL_MIN_ROWS: usize = 40;
-const VN_FULLSCREEN_PANEL_SIDE_MARGIN: f32 = 0.033;
-const VN_FULLSCREEN_PANEL_TOP: f32 = 0.085;
-const VN_FULLSCREEN_PANEL_BOTTOM: f32 = 0.896;
 static VN_PANEL_IMAGE_DATA: LazyLock<Arc<ImageData>> = LazyLock::new(|| {
     Arc::new(ImageData::with_raw_data(
         include_bytes!("../../../../assets/gameterm-scene/vn-panel.png").to_vec(),
@@ -101,18 +97,23 @@ impl TermWindow {
         hsv: Option<HsbTransform>,
     ) -> anyhow::Result<()> {
         let cell_width = params.render_metrics.cell_size.width as f32;
-        let panel_rects = vn_panel_rects(
-            stage_rect,
+        let speaker = params
+            .visual_snapshot
+            .map(|snapshot| snapshot.dialogue_speaker.as_str())
+            .unwrap_or("Codex");
+        let layout = vn_overlay_layout(
+            params.dims.cols,
             params.dims.viewport_rows,
-            cell_width,
-            cell_height,
+            speaker,
+            "Composer",
         );
+        let panel_rects = vn_panel_rects(&layout, stage_rect, cell_width, cell_height);
         for rect in &panel_rects {
             if !self.populate_vn_panel_texture(layers, 1, *rect, cell_width, params, hsv)? {
                 self.populate_rounded_vn_panel(layers, 1, *rect, cell_width, hsv)?;
             }
         }
-        for rect in vn_panel_nameplate_rects(&panel_rects, stage_rect, cell_width, cell_height) {
+        for rect in vn_panel_nameplate_rects(&layout, stage_rect, cell_width, cell_height) {
             if !self.populate_vn_panel_texture(layers, 1, rect, cell_width, params, hsv)? {
                 self.populate_rounded_vn_panel(layers, 1, rect, cell_width, hsv)?;
             }
@@ -381,83 +382,65 @@ fn stage_viewport_rect(params: &RenderScreenLineParams, cell_height: f32) -> Rec
 }
 
 fn vn_panel_rects(
+    layout: &gameterm_visual::VnOverlayLayout,
     stage_rect: RectF,
-    viewport_rows: usize,
     cell_width: f32,
     cell_height: f32,
 ) -> Vec<RectF> {
-    let gap = (cell_height * 0.35).max(4.0);
-    let dock_rows = if viewport_rows >= 10 { 2.0 } else { 0.0 };
-    let fullscreen_vn_layout = viewport_rows >= VN_FULLSCREEN_PANEL_MIN_ROWS;
-    let horizontal_margin = if fullscreen_vn_layout {
-        (stage_rect.size.width * VN_FULLSCREEN_PANEL_SIDE_MARGIN).max(cell_width)
-    } else {
-        (cell_width * 2.0).max(12.0)
-    };
     let mut rects = Vec::new();
-    let panel_width = (stage_rect.size.width - horizontal_margin * 2.0).max(cell_width * 10.0);
-
-    if dock_rows > 0.0 {
-        let dock_height = (cell_height * dock_rows).max(cell_height);
-        let dock_rect = euclid::rect(
-            stage_rect.min_x() + horizontal_margin,
-            stage_rect.max_y() - dock_height,
-            panel_width,
-            dock_height,
-        );
-        rects.push(dock_rect);
+    if let Some(composer_panel) = layout.composer_panel {
+        rects.push(vn_overlay_rect_to_pixels(
+            composer_panel,
+            stage_rect,
+            cell_width,
+            cell_height,
+        ));
     }
-
-    let (dialogue_top, dialogue_bottom) = if fullscreen_vn_layout {
-        let top = stage_rect.min_y() + stage_rect.size.height * VN_FULLSCREEN_PANEL_TOP;
-        let bottom = stage_rect.min_y() + stage_rect.size.height * VN_FULLSCREEN_PANEL_BOTTOM;
-        (top, bottom)
-    } else {
-        let dialogue_rows = if viewport_rows >= 18 { 7.0 } else { 4.0 };
-        let bottom = rects
-            .first()
-            .map(|dock_rect| dock_rect.min_y() - gap)
-            .unwrap_or(stage_rect.max_y() - gap);
-        let height = (cell_height * dialogue_rows - gap).max(cell_height * 3.0);
-        (bottom - height, bottom)
-    };
-    let dialogue_height = (dialogue_bottom - dialogue_top).max(cell_height * 3.0);
-    let dialogue_rect = euclid::rect(
-        stage_rect.min_x() + horizontal_margin,
-        dialogue_top,
-        panel_width,
-        dialogue_height,
-    );
-    rects.push(dialogue_rect);
+    rects.push(vn_overlay_rect_to_pixels(
+        layout.dialogue_panel,
+        stage_rect,
+        cell_width,
+        cell_height,
+    ));
     rects
 }
 
 fn vn_panel_nameplate_rects(
-    panel_rects: &[RectF],
+    layout: &gameterm_visual::VnOverlayLayout,
     stage_rect: RectF,
     cell_width: f32,
     cell_height: f32,
 ) -> Vec<RectF> {
-    panel_rects
-        .iter()
-        .enumerate()
-        .map(|(idx, panel)| {
-            let label_cols = if idx == 0 { 18.0 } else { 16.0 };
-            let width = (cell_width * label_cols).max(cell_width * 8.0);
-            let height = (cell_height * 2.25).max(cell_height);
-            let x = panel.min_x() + (cell_width * 2.4).min(panel.size.width * 0.2);
-            let panel_overlap = if idx == 0 {
-                cell_height * 0.25
-            } else {
-                height * 0.55
-            };
-            let desired_y = panel.min_y() - (height - panel_overlap);
-            let y = desired_y
-                .max(stage_rect.min_y())
-                .min(panel.max_y() - height);
-            euclid::rect(x, y, width.min(panel.size.width * 0.45), height)
-        })
-        .collect()
+    let mut rects = Vec::new();
+    if let Some(composer_nameplate) = layout.composer_nameplate {
+        rects.push(vn_overlay_rect_to_pixels(
+            composer_nameplate,
+            stage_rect,
+            cell_width,
+            cell_height,
+        ));
+    }
+    rects.push(vn_overlay_rect_to_pixels(
+        layout.dialogue_nameplate,
+        stage_rect,
+        cell_width,
+        cell_height,
+    ));
+    rects
+}
+
+fn vn_overlay_rect_to_pixels(
+    rect: VnOverlayRect,
+    stage_rect: RectF,
+    cell_width: f32,
+    cell_height: f32,
+) -> RectF {
+    euclid::rect(
+        stage_rect.min_x() + rect.col as f32 * cell_width,
+        stage_rect.min_y() + rect.row as f32 * cell_height,
+        (rect.width as f32 * cell_width).max(cell_width),
+        (rect.height as f32 * cell_height).max(cell_height),
+    )
 }
 
 fn rounded_panel_rects(rect: RectF, radius: f32) -> Vec<RectF> {
@@ -703,36 +686,39 @@ mod tests {
     #[test]
     fn vn_panel_rects_include_dialogue_and_dock_for_large_viewports() {
         let stage = euclid::rect(0.0, 0.0, 1000.0, 800.0);
-        let rects = vn_panel_rects(stage, 30, 10.0, 20.0);
+        let layout = vn_overlay_layout(100, 30, "Codex", "Composer");
+        let rects = vn_panel_rects(&layout, stage, 10.0, 20.0);
 
         assert_eq!(rects.len(), 2);
         let dock = rects[0];
         let dialogue = rects[1];
         assert!(dialogue.min_y() < dock.min_y());
         assert!(dialogue.max_y() < dock.min_y());
-        assert_eq!(dock.min_x(), 20.0);
-        assert_eq!(dialogue.min_x(), 20.0);
+        assert_eq!(dock.min_x(), 30.0);
+        assert_eq!(dialogue.min_x(), 30.0);
         assert_eq!(dock.size.width, dialogue.size.width);
     }
 
     #[test]
-    fn vn_panel_rects_use_fate_style_fullscreen_proportions() {
+    fn vn_panel_rects_use_shared_fullscreen_proportions() {
         let stage = euclid::rect(0.0, 0.0, 1920.0, 1080.0);
-        let rects = vn_panel_rects(stage, 60, 8.0, 18.0);
+        let layout = vn_overlay_layout(240, 60, "Codex", "Composer");
+        let rects = vn_panel_rects(&layout, stage, 8.0, 18.0);
 
         assert_eq!(rects.len(), 2);
         let dialogue = rects[1];
-        assert!((dialogue.min_x() - 63.36).abs() < 0.1);
-        assert!((dialogue.min_y() - 91.8).abs() < 0.1);
-        assert!((dialogue.size.width - 1793.28).abs() < 0.1);
-        assert!((dialogue.max_y() - 967.68).abs() < 0.1);
+        assert!((dialogue.min_x() - 64.0).abs() < 0.1);
+        assert!((dialogue.min_y() - 144.0).abs() < 0.1);
+        assert!((dialogue.size.width - 1792.0).abs() < 0.1);
+        assert!((dialogue.max_y() - 828.0).abs() < 0.1);
     }
 
     #[test]
     fn vn_panel_nameplate_rects_attach_to_dialogue_and_dock() {
         let stage = euclid::rect(0.0, 0.0, 1920.0, 1080.0);
-        let rects = vn_panel_rects(stage, 60, 8.0, 18.0);
-        let nameplates = vn_panel_nameplate_rects(&rects, stage, 8.0, 18.0);
+        let layout = vn_overlay_layout(240, 60, "Codex", "Composer");
+        let rects = vn_panel_rects(&layout, stage, 8.0, 18.0);
+        let nameplates = vn_panel_nameplate_rects(&layout, stage, 8.0, 18.0);
 
         assert_eq!(nameplates.len(), 2);
         for (nameplate, panel) in nameplates.iter().zip(rects.iter()) {
@@ -741,8 +727,8 @@ mod tests {
             assert!(nameplate.min_y() <= panel.min_y());
             assert!(nameplate.max_y() > panel.min_y());
         }
-        assert!(nameplates[0].max_y() - rects[0].min_y() < 6.0);
-        assert!(nameplates[1].max_y() - rects[1].min_y() > 20.0);
+        assert!((nameplates[0].max_y() - rects[0].min_y() - 18.0).abs() < 0.1);
+        assert!((nameplates[1].max_y() - rects[1].min_y() - 18.0).abs() < 0.1);
         assert!(nameplates[1].min_y() > stage.min_y());
     }
 

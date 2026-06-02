@@ -5,10 +5,10 @@ use gameterm_dynamic::Value;
 use gameterm_term::color::ColorAttribute;
 use gameterm_term::TerminalSize;
 use gameterm_visual::{
-    truncate_to_screen, RunCommandTarget, SceneRuntime, VisualActionRequest, VisualInput,
-    VisualMode, VisualModeOutcome, VisualResolvedSprite, VisualScene, VisualSceneDialoguePatch,
-    VisualSceneLoadStatus, VisualScenePatch, VisualSceneSource, VisualSpriteManifest,
-    VisualSpriteManifestStatus, VisualStoryState,
+    truncate_to_screen, vn_overlay_layout, RunCommandTarget, SceneRuntime, VisualActionRequest,
+    VisualInput, VisualMode, VisualModeOutcome, VisualResolvedSprite, VisualScene,
+    VisualSceneDialoguePatch, VisualSceneLoadStatus, VisualScenePatch, VisualSceneSource,
+    VisualSpriteManifest, VisualSpriteManifestStatus, VisualStoryState, VnOverlayRect,
 };
 use mux::domain::SplitSource;
 use mux::tab::{SplitDirection, SplitRequest, SplitSize};
@@ -1575,9 +1575,7 @@ impl SceneComposeDock {
         clip_text(&line, cols.max(1))
     }
 
-    fn render_staged_dock_line(&self, cols: usize, margin: usize) -> String {
-        const VN_PANEL_TEXT_INSET: usize = 3;
-
+    fn render_staged_dock_line(&self, cols: usize, rect: VnOverlayRect) -> String {
         let mut line = String::from(" ");
         line.push_str(&self.buffer_with_cursor());
         if self.buffer.is_empty() {
@@ -1588,28 +1586,18 @@ impl SceneComposeDock {
                 line.push_str(" type here; enter submits");
             }
         }
-        let content_width = cols
-            .saturating_sub((margin + VN_PANEL_TEXT_INSET) * 2)
-            .max(1);
-        let indent = " ".repeat(margin + VN_PANEL_TEXT_INSET);
+        let content_width = rect.width.min(cols.saturating_sub(rect.col)).max(1);
+        let indent = " ".repeat(rect.col.min(cols.saturating_sub(1)));
         format!(
             "{indent}{:<content_width$}",
             clip_text(&line, content_width)
         )
     }
 
-    fn render_staged_nameplate_line(&self, cols: usize, margin: usize) -> String {
-        const VN_PANEL_TEXT_INSET: usize = 3;
-        const VN_NAMEPLATE_WIDTH: usize = 14;
-
-        let content_width = cols
-            .saturating_sub((margin + VN_PANEL_TEXT_INSET) * 2)
-            .max(1);
-        let indent = " ".repeat(margin + VN_PANEL_TEXT_INSET);
-        let label = format!(
-            "{:<VN_NAMEPLATE_WIDTH$}",
-            clip_text("Composer", VN_NAMEPLATE_WIDTH)
-        );
+    fn render_staged_nameplate_line(&self, cols: usize, rect: VnOverlayRect) -> String {
+        let content_width = rect.width.min(cols.saturating_sub(rect.col)).max(1);
+        let indent = " ".repeat(rect.col.min(cols.saturating_sub(1)));
+        let label = format!("{:<content_width$}", clip_text("Composer", content_width));
         format!(
             "{indent}{:<content_width$}",
             clip_text(&label, content_width)
@@ -1734,21 +1722,33 @@ fn render_runtime_with_compose(
     }
     frame.push_str(&runtime.render_text_frame(size.cols, size.rows));
     if !runtime.render_snapshot().stage.is_empty() {
-        let margin = scene_stage_margin(size.cols, size.rows);
-        frame = replace_screen_line_from_bottom(
-            frame,
-            size.cols,
-            size.rows,
-            2,
-            &compose_dock.render_staged_nameplate_line(size.cols, margin),
-        );
-        frame = replace_screen_line_from_bottom(
-            frame,
-            size.cols,
-            size.rows,
-            1,
-            &compose_dock.render_staged_dock_line(size.cols, margin),
-        );
+        let snapshot = runtime.render_snapshot();
+        let layout =
+            vn_overlay_layout(size.cols, size.rows, &snapshot.dialogue_speaker, "Composer");
+        if let Some(nameplate) = layout.composer_nameplate {
+            frame = replace_screen_line(
+                frame,
+                size.cols,
+                size.rows,
+                nameplate.row,
+                &compose_dock.render_staged_nameplate_line(size.cols, nameplate),
+            );
+        }
+        if let (Some(panel), Some(text_row)) = (layout.composer_panel, layout.composer_text_row) {
+            let input_rect = VnOverlayRect {
+                col: panel.col.saturating_add(layout.text_inset_cols),
+                row: text_row,
+                width: panel.width.saturating_sub(layout.text_inset_cols * 2),
+                height: 1,
+            };
+            frame = replace_screen_line(
+                frame,
+                size.cols,
+                size.rows,
+                text_row,
+                &compose_dock.render_staged_dock_line(size.cols, input_rect),
+            );
+        }
     } else {
         frame = replace_last_screen_line(
             frame,
@@ -1763,20 +1763,6 @@ fn render_runtime_with_compose(
     ])?;
     term.flush()?;
     Ok(())
-}
-
-fn replace_screen_line_from_bottom(
-    frame: String,
-    cols: usize,
-    rows: usize,
-    row_offset_from_bottom: usize,
-    replacement: &str,
-) -> String {
-    let rows = rows.max(1);
-    let target_row = rows
-        .saturating_sub(1)
-        .saturating_sub(row_offset_from_bottom);
-    replace_screen_line(frame, cols, rows, target_row, replacement)
 }
 
 fn replace_last_screen_line(frame: String, cols: usize, rows: usize, replacement: &str) -> String {
@@ -1805,16 +1791,6 @@ fn replace_screen_line(
 
 fn clip_text(text: &str, max_chars: usize) -> String {
     text.chars().take(max_chars).collect()
-}
-
-fn scene_stage_margin(cols: usize, rows: usize) -> usize {
-    let fullscreen_vn_layout = rows >= 40;
-    let margin = if fullscreen_vn_layout {
-        ((cols as f32) * 0.033).round() as usize
-    } else {
-        3
-    };
-    margin.min(cols.saturating_sub(1))
 }
 
 #[cfg(test)]
@@ -2280,9 +2256,18 @@ mod tests {
     fn scene_compose_dock_staged_nameplate_and_input_are_separate() {
         let mut dock = SceneComposeDock::default();
         dock.mark_submitted("say hi");
+        let layout = vn_overlay_layout(80, 24, "Codex", "Composer");
+        let nameplate = layout.composer_nameplate.unwrap();
+        let panel = layout.composer_panel.unwrap();
+        let input_rect = VnOverlayRect {
+            col: panel.col.saturating_add(layout.text_inset_cols),
+            row: layout.composer_text_row.unwrap(),
+            width: panel.width.saturating_sub(layout.text_inset_cols * 2),
+            height: 1,
+        };
 
-        let nameplate = dock.render_staged_nameplate_line(80, 2);
-        let input = dock.render_staged_dock_line(80, 2);
+        let nameplate = dock.render_staged_nameplate_line(80, nameplate);
+        let input = dock.render_staged_dock_line(80, input_rect);
 
         assert!(nameplate.contains("Composer"));
         assert!(!nameplate.contains("last:"));
@@ -2538,22 +2523,6 @@ mod tests {
         assert_eq!(lines.len(), 4);
         assert_eq!(lines[0], "one");
         assert_eq!(lines[3], "Compose:");
-    }
-
-    #[test]
-    fn replace_screen_line_from_bottom_places_staged_compose_inside_dock() {
-        let frame = replace_screen_line_from_bottom(
-            "one\r\ntwo\r\nthree\r\nfour\r\n".to_string(),
-            16,
-            4,
-            1,
-            "Compose: hello",
-        );
-
-        let lines = frame.lines().collect::<Vec<_>>();
-        assert_eq!(lines.len(), 4);
-        assert_eq!(lines[2], "Compose: hello");
-        assert_eq!(lines[3], "four");
     }
 }
 
