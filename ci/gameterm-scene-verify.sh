@@ -657,8 +657,19 @@ run_vn_demo_install_check() {
       and .sprite == "vn.character.guide.neutral")
   ' "${generated_dir}/default.json" >/dev/null
   jq -e '
+    any(.stage.layers[]?; .layer_id == "background"
+      and any(.displayables[]; .tag == "background"
+        and .sprite == "vn.background.school_classroom"
+        and .placement == "fullscreen"))
+    and any(.stage.layers[]?; .layer_id == "characters"
+      and any(.displayables[]; .tag == "guide"
+        and .sprite == "vn.character.guide.neutral"
+        and .placement == "center"))
+  ' "${generated_dir}/default.json" >/dev/null
+  jq -e '
     any(.sprites[]; .id == "workspace-map")
     and any(.sprites[]; .id == "vn.character.guide.neutral")
+    and any(.sprites[]; .id == "vn.background.school_classroom")
   ' "${generated_dir}/sprites.json" >/dev/null
   jq -e '
     .characters.guide.expressions.neutral == "vn.character.guide.neutral"

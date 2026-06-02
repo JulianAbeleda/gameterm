@@ -12,6 +12,6 @@
     "When importing upstream visual-novel script material, preserve upstream credits and license files before vendoring assets."
   ],
   "warnings": [
-    "line 19: non-menu jump is recorded as source flow only: ending"
+    "line 22: non-menu jump is recorded as source flow only: ending"
   ]
 }

@@ -5,6 +5,8 @@
 default met_guide = True
 
 label start:
+    scene school_classroom
+    show guide neutral at center
     "A terminal window glows like a tiny stage."
     guide "Scene Mode can read a Ren'Py-shaped script."
 
@@ -15,9 +17,11 @@ label start:
             jump ending
 
 label explain:
+    show guide happy at right
     guide "Labels become dialogue targets, and menu items become Scene Mode choices."
     jump ending
 
 label ending:
+    hide guide
     "The imported demo is ready."
     return

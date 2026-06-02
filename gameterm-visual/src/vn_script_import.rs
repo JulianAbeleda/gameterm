@@ -1,7 +1,8 @@
 use crate::{
     SceneAction, SceneActionKind, SceneActionPolicy, VisualCondition, VisualDialogueLine,
-    VisualEntity, VisualEntityKind, VisualModeDescriptor, VisualPosition, VisualScene,
-    VisualStateEntry, VisualStateValue, VnAssetBindings,
+    VisualEntity, VisualEntityKind, VisualModeDescriptor, VisualPosition, VisualScene, VisualStage,
+    VisualStageDisplayable, VisualStageLayer, VisualStagePlacement, VisualStateEntry,
+    VisualStateValue, VnAssetBindings,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
@@ -113,9 +114,23 @@ struct ParsedChoice {
 struct ParsedScript {
     dialogue: Vec<VisualDialogueLine>,
     choices: Vec<ParsedChoice>,
+    presentation: ParsedPresentation,
     variables: BTreeMap<String, VisualStateValue>,
     warnings: Vec<VnScriptImportWarning>,
     label_targets: HashMap<String, usize>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct ParsedPresentation {
+    initial_background: Option<String>,
+    initial_character: Option<ParsedStageCharacter>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ParsedStageCharacter {
+    tag: String,
+    expression: String,
+    placement: VisualStagePlacement,
 }
 
 pub fn import_vn_script_scene(
@@ -134,6 +149,7 @@ pub fn import_vn_script_scene(
         &options,
         parsed.dialogue,
         choices,
+        &parsed.presentation,
         &parsed.variables,
         &parsed.warnings,
     );
@@ -152,6 +168,7 @@ pub fn import_vn_script_scene(
 fn parse_rpy_subset(source: &str) -> ParsedScript {
     let mut dialogue = Vec::new();
     let mut choices = Vec::new();
+    let mut presentation = ParsedPresentation::default();
     let mut variables = BTreeMap::new();
     let mut warnings = Vec::new();
     let mut label_targets = HashMap::new();
@@ -190,6 +207,22 @@ fn parse_rpy_subset(source: &str) -> ParsedScript {
 
         if is_menu_start(stripped) {
             pending_choice = None;
+            continue;
+        }
+
+        if let Some(background) = parse_scene_statement(stripped) {
+            presentation
+                .initial_background
+                .get_or_insert_with(|| background.to_string());
+            continue;
+        }
+
+        if let Some(character) = parse_show_statement(stripped) {
+            presentation.initial_character.get_or_insert(character);
+            continue;
+        }
+
+        if parse_hide_statement(stripped).is_some() {
             continue;
         }
 
@@ -258,6 +291,7 @@ fn parse_rpy_subset(source: &str) -> ParsedScript {
     ParsedScript {
         dialogue,
         choices,
+        presentation,
         variables,
         warnings,
         label_targets,
@@ -311,6 +345,7 @@ fn build_scene(
     options: &VnScriptImportOptions,
     mut dialogue: Vec<VisualDialogueLine>,
     choices: Vec<SceneAction>,
+    presentation: &ParsedPresentation,
     variables: &BTreeMap<String, VisualStateValue>,
     warnings: &[VnScriptImportWarning],
 ) -> VisualScene {
@@ -374,6 +409,7 @@ fn build_scene(
             input_map: Vec::new(),
         },
         layers: Vec::new(),
+        stage: build_stage(options, presentation),
         variables: scene_variables,
         rpg: Default::default(),
         entities: vec![
@@ -422,6 +458,59 @@ fn build_scene(
         dialogue_lines: dialogue,
         choices,
     }
+}
+
+fn build_stage(options: &VnScriptImportOptions, presentation: &ParsedPresentation) -> VisualStage {
+    let mut layers = Vec::new();
+    let background = presentation
+        .initial_background
+        .as_deref()
+        .filter(|_| options.bindings.is_some())
+        .map(background_sprite_id)
+        .unwrap_or_else(|| binding_background(options));
+    if background != "workspace-map" {
+        layers.push(VisualStageLayer {
+            layer_id: "background".to_string(),
+            zorder: 0,
+            displayables: vec![VisualStageDisplayable {
+                tag: "background".to_string(),
+                sprite: background,
+                placement: VisualStagePlacement::Fullscreen,
+                zorder: 0,
+                visible: true,
+            }],
+        });
+    }
+
+    let character = presentation
+        .initial_character
+        .clone()
+        .unwrap_or(ParsedStageCharacter {
+            tag: "guide".to_string(),
+            expression: "neutral".to_string(),
+            placement: VisualStagePlacement::Center,
+        });
+    let character_sprite =
+        binding_character_sprite(options, &character.tag, &character.expression, "");
+    if !character_sprite.is_empty() {
+        layers.push(VisualStageLayer {
+            layer_id: "characters".to_string(),
+            zorder: 10,
+            displayables: vec![VisualStageDisplayable {
+                tag: character.tag,
+                sprite: character_sprite,
+                placement: character.placement,
+                zorder: 0,
+                visible: true,
+            }],
+        });
+    }
+
+    VisualStage { layers }
+}
+
+fn background_sprite_id(name: &str) -> String {
+    format!("vn.background.{name}")
 }
 
 fn binding_background(options: &VnScriptImportOptions) -> String {
@@ -544,6 +633,51 @@ fn parse_choice(line: &str) -> Option<(String, Option<String>)> {
 fn parse_jump(line: &str) -> Option<&str> {
     let target = line.strip_prefix("jump ")?.trim();
     is_identifier(target).then_some(target)
+}
+
+fn parse_scene_statement(line: &str) -> Option<&str> {
+    let name = line.strip_prefix("scene ")?.trim();
+    is_identifier(name).then_some(name)
+}
+
+fn parse_show_statement(line: &str) -> Option<ParsedStageCharacter> {
+    let rest = line.strip_prefix("show ")?.trim();
+    let mut parts = rest.split_whitespace();
+    let tag = parts.next()?;
+    if !is_identifier(tag) {
+        return None;
+    }
+    let expression = parts.next()?;
+    if !is_identifier(expression) {
+        return None;
+    }
+    let mut placement = VisualStagePlacement::Center;
+    let remaining: Vec<&str> = parts.collect();
+    if remaining.len() == 2 && remaining[0] == "at" {
+        placement = parse_stage_placement(remaining[1])?;
+    } else if !remaining.is_empty() {
+        return None;
+    }
+    Some(ParsedStageCharacter {
+        tag: tag.to_string(),
+        expression: expression.to_string(),
+        placement,
+    })
+}
+
+fn parse_hide_statement(line: &str) -> Option<&str> {
+    let tag = line.strip_prefix("hide ")?.trim();
+    is_identifier(tag).then_some(tag)
+}
+
+fn parse_stage_placement(value: &str) -> Option<VisualStagePlacement> {
+    match value {
+        "left" => Some(VisualStagePlacement::Left),
+        "center" | "centre" => Some(VisualStagePlacement::Center),
+        "right" => Some(VisualStagePlacement::Right),
+        "fullscreen" => Some(VisualStagePlacement::Fullscreen),
+        _ => None,
+    }
 }
 
 fn parse_say(line: &str) -> Option<(String, String)> {
@@ -750,5 +884,61 @@ label start:
                 .sprite,
             "vn.character.guide.neutral"
         );
+        assert!(report.scene.stage.layers.iter().any(|layer| {
+            layer.layer_id == "background"
+                && layer.displayables.iter().any(|displayable| {
+                    displayable.sprite == "vn.background.school_classroom"
+                        && displayable.placement == VisualStagePlacement::Fullscreen
+                })
+        }));
+        assert!(report.scene.stage.layers.iter().any(|layer| {
+            layer.layer_id == "characters"
+                && layer.displayables.iter().any(|displayable| {
+                    displayable.tag == "guide"
+                        && displayable.sprite == "vn.character.guide.neutral"
+                        && displayable.placement == VisualStagePlacement::Center
+                })
+        }));
+    }
+
+    #[test]
+    fn vn_script_import_uses_initial_scene_and_show_for_stage() {
+        let mut guide = VnAssetBindingCharacter::default();
+        guide.expressions.insert(
+            "happy".to_string(),
+            "vn.character.guide.happy".to_string(),
+        );
+        let mut bindings = VnAssetBindings::default();
+        bindings.characters.insert("guide".to_string(), guide);
+
+        let report = import_vn_script_scene(
+            r#"
+label start:
+    scene clubroom
+    show guide happy at right
+    guide "The stage is set."
+"#,
+            VnScriptImportOptions {
+                bindings: Some(bindings),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        assert!(report.scene.stage.layers.iter().any(|layer| {
+            layer.layer_id == "background"
+                && layer.displayables.iter().any(|displayable| {
+                    displayable.sprite == "vn.background.clubroom"
+                        && displayable.placement == VisualStagePlacement::Fullscreen
+                })
+        }));
+        assert!(report.scene.stage.layers.iter().any(|layer| {
+            layer.layer_id == "characters"
+                && layer.displayables.iter().any(|displayable| {
+                    displayable.tag == "guide"
+                        && displayable.sprite == "vn.character.guide.happy"
+                        && displayable.placement == VisualStagePlacement::Right
+                })
+        }));
     }
 }
