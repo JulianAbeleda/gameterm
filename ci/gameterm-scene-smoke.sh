@@ -51,6 +51,9 @@ Options:
                            instead of using the native smoke launch hook.
   --no-fullscreen-window   Do not resize the launched GameTerm window to fill
                            the visible desktop before capture.
+  --window-size SIZE       Set a fixed window size in the form WIDTHxHEIGHT when
+                           auto-opening Scene Mode. If omitted, defaults to the
+                           existing fullscreen/non-fullscreen behavior.
   --allow-background-capture
                            Warn instead of failing when the launched GameTerm
                            process is not frontmost before capture.
@@ -89,6 +92,9 @@ wait_before_capture=10
 auto_open_scene=1
 native_scene_open=1
 fullscreen_window=1
+window_width=""
+window_height=""
+window_size=""
 require_frontmost=1
 post_action_wait=1
 focus_timeout=10
@@ -171,6 +177,10 @@ while [[ $# -gt 0 ]]; do
       fullscreen_window=0
       shift
       ;;
+    --window-size)
+      window_size="$2"
+      shift 2
+      ;;
     --allow-background-capture)
       require_frontmost=0
       shift
@@ -238,6 +248,7 @@ declare -a SCENARIO_SCENE_SHORTCUT
 declare -a SCENARIO_DESCRIBE_SETUP
 declare -a SCENARIO_DESCRIBE_CHECKS
 declare -a SCENARIO_DESCRIBE_STATUS
+declare -a SCENARIO_WINDOW_SIZE
 declare -a SCENARIO_AUDIT
 
 init_smoke_scenario_catalog() {
@@ -246,7 +257,7 @@ init_smoke_scenario_catalog() {
     echo "smoke scenario catalog does not exist: ${scenario_catalog}" >&2
     exit 2
   fi
-  while IFS='|' read -r scenario_name fixture_name default_key_sequence default_patch_inbox default_submit_patch default_scene_shortcut describe_setup describe_checks describe_status audit_message; do
+  while IFS='|' read -r scenario_name fixture_name default_key_sequence default_patch_inbox default_submit_patch default_scene_shortcut describe_setup describe_checks describe_status audit_message scenario_window_size; do
     if [[ -z "${scenario_name}" || "${scenario_name}" == \#* ]]; then
       continue
     fi
@@ -260,6 +271,7 @@ init_smoke_scenario_catalog() {
     SCENARIO_DESCRIBE_SETUP["${catalog_index}"]="${describe_setup}"
     SCENARIO_DESCRIBE_CHECKS["${catalog_index}"]="${describe_checks}"
     SCENARIO_DESCRIBE_STATUS["${catalog_index}"]="${describe_status}"
+    SCENARIO_WINDOW_SIZE["${catalog_index}"]="${scenario_window_size}"
     SCENARIO_AUDIT["${catalog_index}"]="${audit_message//__REPO_ROOT__/${repo_root}}"
   done <"${scenario_catalog}"
 }
@@ -291,6 +303,7 @@ describe_smoke_scenario() {
   local scenario_setup
   local scenario_checks
   local scenario_status
+  local scenario_window_size
   local scenario_fixture
 
   if ! index="$(scenario_catalog_index "${scenario_name}")"; then
@@ -303,12 +316,16 @@ describe_smoke_scenario() {
   scenario_setup="${SCENARIO_DESCRIBE_SETUP[${index}]}"
   scenario_checks="${SCENARIO_DESCRIBE_CHECKS[${index}]}"
   scenario_status="${SCENARIO_DESCRIBE_STATUS[${index}]}"
+  scenario_window_size="${SCENARIO_WINDOW_SIZE[${index}]:-}"
 
   printf 'Scenario: %s\n' "${scenario_name}"
   printf 'Fixture: %s\n' "${scenario_fixture}"
   printf 'Setup: %s\n' "${scenario_setup}"
   printf 'Checks: %s\n' "${scenario_checks}"
   printf 'Expected status: %s\n' "${scenario_status}"
+  if [[ -n "${scenario_window_size}" ]]; then
+    printf 'Window size: %s\n' "${scenario_window_size}"
+  fi
 }
 
 apply_smoke_scenario_defaults() {
@@ -339,6 +356,26 @@ apply_smoke_scenario_defaults() {
   if [[ -n "${SCENARIO_SCENE_SHORTCUT[${active_scenario_index}]:-}" ]]; then
     scene_open_shortcut="${SCENARIO_SCENE_SHORTCUT[${active_scenario_index}]}"
   fi
+  if [[ -z "${window_size}" && -n "${SCENARIO_WINDOW_SIZE[${active_scenario_index}]:-}" ]]; then
+    window_size="${SCENARIO_WINDOW_SIZE[${active_scenario_index}]}"
+  fi
+}
+
+parse_window_size() {
+  window_width="0"
+  window_height="0"
+
+  if [[ -z "${window_size}" ]]; then
+    return 0
+  fi
+
+  if [[ ! "${window_size}" =~ ^[1-9][0-9]*x[1-9][0-9]*$ ]]; then
+    echo "--window-size must be WIDTHxHEIGHT, got: ${window_size}" >&2
+    exit 8
+  fi
+
+  window_width="${window_size%x*}"
+  window_height="${window_size#*x}"
 }
 
 init_smoke_scenario_catalog
@@ -354,6 +391,7 @@ if [[ -n "${describe_scenario}" ]]; then
 fi
 
 apply_smoke_scenario_defaults
+parse_window_size
 
 resolve_ffmpeg() {
   if [[ -n "${ffmpeg_bin}" ]]; then
@@ -631,6 +669,8 @@ foreground_gui_window() {
   local pid="$1"
   local timeout="$2"
   local resize_window="$3"
+  local fixed_width="${4:-0}"
+  local fixed_height="${5:-0}"
 
   if [[ "$(uname -s)" != "Darwin" ]]; then
     echo "Automatic GameTerm foregrounding is only supported on macOS." >&2
@@ -642,7 +682,7 @@ foreground_gui_window() {
   fi
 
   echo "Foregrounding GameTerm pid ${pid} for capture..."
-  if ! osascript - "${pid}" "${timeout}" "${resize_window}" <<'EOF'
+  if ! osascript - "${pid}" "${timeout}" "${resize_window}" "${fixed_width}" "${fixed_height}" <<'EOF'
 on visibleDesktopFrame()
   tell application "Finder"
     set desktopBounds to bounds of window of desktop
@@ -658,6 +698,8 @@ on run argv
   set targetPid to (item 1 of argv) as integer
   set timeoutSeconds to (item 2 of argv) as integer
   set resizeWindow to item 3 of argv
+  set requestedWidth to item 4 of argv as integer
+  set requestedHeight to item 5 of argv as integer
   set deadline to (current date) + timeoutSeconds
 
   tell application "System Events"
@@ -669,7 +711,11 @@ on run argv
         if resizeWindow is "1" then
           set frame to my visibleDesktopFrame()
           set windowPosition to {item 1 of frame, item 2 of frame}
-          set windowSize to {item 3 of frame, item 4 of frame}
+          if requestedWidth > 0 and requestedHeight > 0 then
+            set windowSize to {requestedWidth, requestedHeight}
+          else
+            set windowSize to {item 3 of frame, item 4 of frame}
+          end if
           if exists window 1 of targetProcess then
             set position of window 1 of targetProcess to windowPosition
             set size of window 1 of targetProcess to windowSize
@@ -709,6 +755,8 @@ foreground_gui_and_open_scene() {
   local timeout="$2"
   local shortcut="$3"
   local resize_window="$4"
+  local fixed_width="${5:-0}"
+  local fixed_height="${6:-0}"
   local shortcut_label="Ctrl+Shift+G"
 
   if [[ "${shortcut}" == "active-pane" ]]; then
@@ -725,7 +773,7 @@ foreground_gui_and_open_scene() {
   fi
 
   echo "Foregrounding GameTerm pid ${pid} and opening Scene Mode with ${shortcut_label}..."
-  if ! osascript - "${pid}" "${timeout}" "${shortcut}" "${resize_window}" <<'EOF'
+  if ! osascript - "${pid}" "${timeout}" "${shortcut}" "${resize_window}" "${fixed_width}" "${fixed_height}" <<'EOF'
 on visibleDesktopFrame()
   tell application "Finder"
     set desktopBounds to bounds of window of desktop
@@ -742,6 +790,8 @@ on run argv
   set timeoutSeconds to (item 2 of argv) as integer
   set shortcutName to item 3 of argv
   set resizeWindow to item 4 of argv
+  set requestedWidth to item 5 of argv as integer
+  set requestedHeight to item 6 of argv as integer
   set deadline to (current date) + timeoutSeconds
 
   tell application "System Events"
@@ -753,7 +803,11 @@ on run argv
         if resizeWindow is "1" then
           set frame to my visibleDesktopFrame()
           set windowPosition to {item 1 of frame, item 2 of frame}
-          set windowSize to {item 3 of frame, item 4 of frame}
+          if requestedWidth > 0 and requestedHeight > 0 then
+            set windowSize to {requestedWidth, requestedHeight}
+          else
+            set windowSize to {item 3 of frame, item 4 of frame}
+          end if
           if exists window 1 of targetProcess then
             set position of window 1 of targetProcess to windowPosition
             set size of window 1 of targetProcess to windowSize
@@ -1167,13 +1221,17 @@ EOF
       foreground_gui_window \
         "${gui_pid}" \
         "${focus_timeout}" \
-        "${fullscreen_window}"
+        "${fullscreen_window}" \
+        "${window_width}" \
+        "${window_height}"
     else
       foreground_gui_and_open_scene \
         "${gui_pid}" \
         "${focus_timeout}" \
         "${scene_open_shortcut}" \
-        "${fullscreen_window}"
+        "${fullscreen_window}" \
+        "${window_width}" \
+        "${window_height}"
     fi
   else
     if [[ "${scene_open_shortcut}" == "active-pane" ]]; then
@@ -1181,7 +1239,9 @@ EOF
     else
       echo "Press Ctrl+Shift+G in the GameTerm window to open Scene Mode."
     fi
-    if [[ "${fullscreen_window}" -eq 1 ]]; then
+    if [[ "${window_width}" -gt 0 && "${window_height}" -gt 0 ]]; then
+      echo "Resize the GameTerm window to ${window_width}x${window_height} before capture."
+    elif [[ "${fullscreen_window}" -eq 1 ]]; then
       echo "Resize the GameTerm window to fill the screen before capture."
     fi
   fi
