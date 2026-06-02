@@ -2110,14 +2110,21 @@ impl SceneRuntime {
             top.push(format!("Status: {}", self.status));
         }
 
+        let nameplate_rows = usize::from(top_budget > 0);
+        let top_content_budget = top_budget.saturating_sub(nameplate_rows);
         let mut frame = String::new();
-        for line in top.into_iter().take(top_budget) {
+        for line in top.into_iter().take(top_content_budget) {
             frame.push_str(&line);
             frame.push_str("\r\n");
         }
         let used_top_rows = frame.lines().count();
-        for _ in used_top_rows..top_budget {
+        for _ in used_top_rows..top_content_budget {
             frame.push_str("\r\n");
+        }
+        if nameplate_rows > 0 {
+            frame.push_str(
+                &self.render_vn_nameplate_line(&self.active_dialogue_line().speaker, box_margin),
+            );
         }
 
         frame.push_str(&self.render_vn_dialogue_box(
@@ -2150,7 +2157,6 @@ impl SceneRuntime {
         if fullscreen_vn_layout && height >= 4 {
             lines.push(String::new());
         }
-        lines.push(format!("{}:", dialogue.speaker));
         lines.extend(wrap_text(&dialogue.text, inner_width));
 
         if !self.scene.choices.is_empty() && height >= 6 {
@@ -2185,6 +2191,17 @@ impl SceneRuntime {
             ));
         }
         out
+    }
+
+    fn render_vn_nameplate_line(&self, label: &str, margin: usize) -> String {
+        const VN_PANEL_TEXT_INSET: usize = 3;
+        const VN_NAMEPLATE_WIDTH: usize = 12;
+
+        let indent = " ".repeat(margin + VN_PANEL_TEXT_INSET);
+        format!(
+            "{indent}{:<VN_NAMEPLATE_WIDTH$}\r\n",
+            clip_text(label, VN_NAMEPLATE_WIDTH)
+        )
     }
 
     fn render_vn_dock(&self, _cols: usize, _margin: usize) -> String {
@@ -3691,7 +3708,8 @@ mod tests {
         assert!(frame.contains("Stage: 1 layer(s), 1 displayable(s)"));
         assert!(!frame.contains("+---"));
         assert!(!frame.contains("| Codex:"));
-        assert!(frame.contains("Codex:"));
+        assert!(frame.contains("Codex"));
+        assert!(!frame.contains("Codex:"));
         assert!(frame.contains("transparent VN overlay"));
         assert!(!frame.contains("Compose: _"));
         assert!(frame.ends_with("\r\n\r\n"));

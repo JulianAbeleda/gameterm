@@ -101,12 +101,18 @@ impl TermWindow {
         hsv: Option<HsbTransform>,
     ) -> anyhow::Result<()> {
         let cell_width = params.render_metrics.cell_size.width as f32;
-        for rect in vn_panel_rects(
+        let panel_rects = vn_panel_rects(
             stage_rect,
             params.dims.viewport_rows,
             cell_width,
             cell_height,
-        ) {
+        );
+        for rect in &panel_rects {
+            if !self.populate_vn_panel_texture(layers, 1, *rect, cell_width, params, hsv)? {
+                self.populate_rounded_vn_panel(layers, 1, *rect, cell_width, hsv)?;
+            }
+        }
+        for rect in vn_panel_nameplate_rects(&panel_rects, stage_rect, cell_width, cell_height) {
             if !self.populate_vn_panel_texture(layers, 1, rect, cell_width, params, hsv)? {
                 self.populate_rounded_vn_panel(layers, 1, rect, cell_width, hsv)?;
             }
@@ -426,6 +432,29 @@ fn vn_panel_rects(
     rects
 }
 
+fn vn_panel_nameplate_rects(
+    panel_rects: &[RectF],
+    stage_rect: RectF,
+    cell_width: f32,
+    cell_height: f32,
+) -> Vec<RectF> {
+    panel_rects
+        .iter()
+        .enumerate()
+        .map(|(idx, panel)| {
+            let label_cols = if idx == 0 { 14.0 } else { 12.0 };
+            let width = (cell_width * label_cols).max(cell_width * 8.0);
+            let height = (cell_height * 1.85).max(cell_height);
+            let x = panel.min_x() + (cell_width * 2.4).min(panel.size.width * 0.2);
+            let desired_y = panel.min_y() - height * 0.72;
+            let y = desired_y
+                .max(stage_rect.min_y())
+                .min(panel.max_y() - height);
+            euclid::rect(x, y, width.min(panel.size.width * 0.45), height)
+        })
+        .collect()
+}
+
 fn rounded_panel_rects(rect: RectF, radius: f32) -> Vec<RectF> {
     let radius = radius
         .max(0.0)
@@ -692,6 +721,22 @@ mod tests {
         assert!((dialogue.min_y() - 91.8).abs() < 0.1);
         assert!((dialogue.size.width - 1793.28).abs() < 0.1);
         assert!((dialogue.max_y() - 967.68).abs() < 0.1);
+    }
+
+    #[test]
+    fn vn_panel_nameplate_rects_attach_to_dialogue_and_dock() {
+        let stage = euclid::rect(0.0, 0.0, 1920.0, 1080.0);
+        let rects = vn_panel_rects(stage, 60, 8.0, 18.0);
+        let nameplates = vn_panel_nameplate_rects(&rects, stage, 8.0, 18.0);
+
+        assert_eq!(nameplates.len(), 2);
+        for (nameplate, panel) in nameplates.iter().zip(rects.iter()) {
+            assert!(nameplate.min_x() > panel.min_x());
+            assert!(nameplate.max_x() < panel.max_x());
+            assert!(nameplate.min_y() <= panel.min_y());
+            assert!(nameplate.max_y() > panel.min_y());
+        }
+        assert!(nameplates[1].min_y() > stage.min_y());
     }
 
     #[test]

@@ -1578,14 +1578,14 @@ impl SceneComposeDock {
     fn render_staged_dock_line(&self, cols: usize, margin: usize) -> String {
         const VN_PANEL_TEXT_INSET: usize = 3;
 
-        let mut line = String::from(" Compose: ");
+        let mut line = String::from(" ");
         line.push_str(&self.buffer_with_cursor());
         if self.buffer.is_empty() {
             if let Some(last_submitted) = &self.last_submitted {
-                line.push_str("  last: ");
+                line.push_str(" last: ");
                 line.push_str(last_submitted);
             } else {
-                line.push_str("  type here; enter submits");
+                line.push_str(" type here; enter submits");
             }
         }
         let content_width = cols
@@ -1595,6 +1595,24 @@ impl SceneComposeDock {
         format!(
             "{indent}{:<content_width$}",
             clip_text(&line, content_width)
+        )
+    }
+
+    fn render_staged_nameplate_line(&self, cols: usize, margin: usize) -> String {
+        const VN_PANEL_TEXT_INSET: usize = 3;
+        const VN_NAMEPLATE_WIDTH: usize = 14;
+
+        let content_width = cols
+            .saturating_sub((margin + VN_PANEL_TEXT_INSET) * 2)
+            .max(1);
+        let indent = " ".repeat(margin + VN_PANEL_TEXT_INSET);
+        let label = format!(
+            "{:<VN_NAMEPLATE_WIDTH$}",
+            clip_text("Composer", VN_NAMEPLATE_WIDTH)
+        );
+        format!(
+            "{indent}{:<content_width$}",
+            clip_text(&label, content_width)
         )
     }
 
@@ -1717,6 +1735,13 @@ fn render_runtime_with_compose(
     frame.push_str(&runtime.render_text_frame(size.cols, size.rows));
     if !runtime.render_snapshot().stage.is_empty() {
         let margin = scene_stage_margin(size.cols, size.rows);
+        frame = replace_screen_line_from_bottom(
+            frame,
+            size.cols,
+            size.rows,
+            2,
+            &compose_dock.render_staged_nameplate_line(size.cols, margin),
+        );
         frame = replace_screen_line_from_bottom(
             frame,
             size.cols,
@@ -2249,6 +2274,21 @@ mod tests {
 
         dock.insert_transcript("and summarize it");
         assert_eq!(dock.buffer, "open the roadmap and summarize it");
+    }
+
+    #[test]
+    fn scene_compose_dock_staged_nameplate_and_input_are_separate() {
+        let mut dock = SceneComposeDock::default();
+        dock.mark_submitted("say hi");
+
+        let nameplate = dock.render_staged_nameplate_line(80, 2);
+        let input = dock.render_staged_dock_line(80, 2);
+
+        assert!(nameplate.contains("Composer"));
+        assert!(!nameplate.contains("last:"));
+        assert!(input.contains("last: say hi"));
+        assert!(!input.contains("Compose:"));
+        assert!(!input.contains("Composer"));
     }
 
     #[test]
