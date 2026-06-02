@@ -371,11 +371,15 @@ parse_window_size() {
 
   if [[ ! "${window_size}" =~ ^[1-9][0-9]*x[1-9][0-9]*$ ]]; then
     echo "--window-size must be WIDTHxHEIGHT, got: ${window_size}" >&2
-    exit 8
+    exit 2
   fi
 
   window_width="${window_size%x*}"
   window_height="${window_size#*x}"
+
+  if [[ "${fullscreen_window}" -eq 0 ]]; then
+    echo "Warning: --window-size has no effect when --no-fullscreen-window is set; window will not be resized." >&2
+  fi
 }
 
 init_smoke_scenario_catalog
@@ -1446,6 +1450,7 @@ if [[ "${launch}" -eq 1 ]]; then
   echo "Smoke report:"
   echo "  scenario: ${scenario:-default}"
   echo "  fixture: ${fixture}"
+  echo "  window size: ${window_size:-fullscreen}"
   echo "  GameTerm pid: ${gui_pid}"
   echo "  GameTerm class: ${gui_class}"
   echo "  native Scene open: ${native_scene_open}"
