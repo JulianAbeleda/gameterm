@@ -1615,46 +1615,75 @@ run_onboarding_check() {
 
 run_smoke_asset_check() {
   local scenarios
+  local scenario
+  local scenario_output
+  local scenario_count=0
+  local duplicate_count=0
+  local duplicate_scenarios
+
   "${repo_root}/ci/gameterm-scene-smoke.sh" --check-assets >/dev/null
   scenarios="$("${repo_root}/ci/gameterm-scene-smoke.sh" --list-scenarios)"
-  for scenario in \
-    renderer-rows \
-    guarded-input \
-    run-command-targets \
-    overlay-cleanup \
-    vertical-slice \
-    workspace-agent \
-    workspace-discovery \
-    live-mux-discovery \
-    agent-lifecycle \
-    authoring-loop \
-    patch-inbox \
-    mux-patch \
-    process-state \
-    vn-demo \
-    vn-compose \
-    vn-compose-codex
-  do
-    grep -qx "${scenario}" <<<"${scenarios}"
-    "${repo_root}/ci/gameterm-scene-smoke.sh" \
-      --describe-scenario "${scenario}" | grep -q "Expected status:"
-  done
-  "${repo_root}/ci/gameterm-scene-smoke.sh" \
-    --describe-scenario guarded-input | grep -q "Layer story transitioned"
-  "${repo_root}/ci/gameterm-scene-smoke.sh" \
-    --describe-scenario authoring-loop | grep -q "Story state imported"
-  "${repo_root}/ci/gameterm-scene-smoke.sh" \
-    --describe-scenario process-state | grep -q "typed process state"
-  "${repo_root}/ci/gameterm-scene-smoke.sh" \
-    --describe-scenario workspace-agent | grep -q "Agent/Workspace"
-  "${repo_root}/ci/gameterm-scene-smoke.sh" \
-    --describe-scenario workspace-discovery | grep -q "generated workspace"
-  "${repo_root}/ci/gameterm-scene-smoke.sh" \
-    --describe-scenario live-mux-discovery | grep -q "active mux pane"
-  "${repo_root}/ci/gameterm-scene-smoke.sh" \
-    --describe-scenario vn-compose | grep -q "Codex dialogue"
-  "${repo_root}/ci/gameterm-scene-smoke.sh" \
-    --describe-scenario vn-compose-codex | grep -q "Codex succeeded"
+
+  if [[ -z "${scenarios}" ]]; then
+    echo "no smoke scenarios returned" >&2
+    exit 1
+  fi
+
+  duplicate_scenarios="$(printf '%s\n' "${scenarios}" | grep -v '^$' | sort | uniq -d || true)"
+  if [[ -n "${duplicate_scenarios}" ]]; then
+    duplicate_count=1
+    echo "duplicate smoke scenarios found:" >&2
+    printf '%s\n' "${duplicate_scenarios}" >&2
+  fi
+
+  while IFS= read -r scenario; do
+    [[ -z "${scenario}" ]] && continue
+    scenario_count=$((scenario_count + 1))
+
+    scenario_output="$("${repo_root}/ci/gameterm-scene-smoke.sh" --describe-scenario "${scenario}")"
+    grep -q "^Scenario: ${scenario}$" <<<"${scenario_output}"
+    grep -Eq '^Fixture: .+$' <<<"${scenario_output}"
+    grep -Eq '^Setup: .+$' <<<"${scenario_output}"
+    grep -Eq '^Checks: .+$' <<<"${scenario_output}"
+    grep -Eq '^Expected status: .+$' <<<"${scenario_output}"
+    "${repo_root}/ci/gameterm-scene-smoke.sh" --scenario "${scenario}" --check-assets >/dev/null
+
+    case "${scenario}" in
+      guarded-input)
+        grep -q "Layer story transitioned" <<<"${scenario_output}"
+        ;;
+      authoring-loop)
+        grep -q "Story state imported" <<<"${scenario_output}"
+        ;;
+      process-state)
+        grep -q "typed process state" <<<"${scenario_output}"
+        ;;
+      workspace-agent)
+        grep -q "Agent/Workspace" <<<"${scenario_output}"
+        ;;
+      workspace-discovery)
+        grep -q "generated workspace" <<<"${scenario_output}"
+        ;;
+      live-mux-discovery)
+        grep -q "active mux pane" <<<"${scenario_output}"
+        ;;
+      vn-compose)
+        grep -q "Codex dialogue" <<<"${scenario_output}"
+        ;;
+      vn-compose-codex)
+        grep -q "Codex succeeded" <<<"${scenario_output}"
+        ;;
+    esac
+  done <<<"${scenarios}"
+
+  if ((duplicate_count != 0)); then
+    echo "smoke scenario registry has duplicates" >&2
+    exit 1
+  fi
+  if ((scenario_count == 0)); then
+    echo "smoke scenario registry is unexpectedly empty" >&2
+    exit 1
+  fi
   echo "smoke assets: ok"
 }
 
