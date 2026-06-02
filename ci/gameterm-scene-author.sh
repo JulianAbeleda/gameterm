@@ -8,35 +8,9 @@ Usage: ci/gameterm-scene-author.sh COMMAND [OPTIONS]
 Authoring helper for GameTerm Scene Mode JSON files.
 
 Commands:
-  validate PATH                 Validate a scene file with the Rust scene parser.
-  new-scene PATH                Create a minimal editable scene file.
-  new-template PATH             Create a guided template scene.
-  add-entity PATH               Add an entity to a scene file.
-  add-choice PATH               Add a choice to a scene file.
-  remove-choice PATH            Remove a choice by zero-based index.
-  update-choice PATH            Replace a choice by zero-based index.
-  remove-entity PATH            Remove an entity by id.
-  move-entity PATH              Move an entity by id.
-  set-dialogue PATH             Set dialogue speaker and text.
-  set-variable PATH             Set or add a typed variable.
-  clear-variable PATH           Remove a variable by key.
-  add-layer PATH                Add a Scene Mode layer.
-  set-layer PATH                Update a layer state.
-  add-layer-transition PATH     Add a guarded layer transition.
-  add-mode-input PATH           Add a guarded mode input binding.
-  set-lifecycle PATH            Set Scene Mode lifecycle status hooks.
-  add-inventory PATH            Add or replace an RPG inventory item.
-  remove-inventory PATH         Remove an RPG inventory item.
-  set-stat PATH                 Add or replace an RPG stat.
-  adjust-stat PATH              Adjust a numeric RPG stat.
-  add-quest PATH                Add or replace an RPG quest.
-  advance-quest PATH            Set an RPG quest stage.
-  complete-quest PATH           Mark an RPG quest complete.
-  append-quest-journal PATH     Append RPG quest journal text.
-  format PATH                   Rewrite a scene file with stable JSON format.
-  install-fixture NAME          Install a fixture into the Scene Mode config dir.
-  list-fixtures                 List available authoring fixtures.
-  list-templates                List available guided templates.
+EOF
+  print_author_command_help
+  cat <<'EOF'
 
 Common options:
   --config-home PATH            Use PATH instead of XDG_CONFIG_HOME or ~/.config.
@@ -202,6 +176,43 @@ print_catalog_csv() {
 
 print_catalog_lines() {
   printf '%s\n' "$@"
+}
+
+print_author_command_help() {
+  while IFS='|' read -r command_name description; do
+    [[ -z "${command_name}" ]] && continue
+    printf '  %-29s %s\n' "${command_name}" "${description}"
+  done <<'EOF'
+validate PATH|Validate a scene file with the Rust scene parser.
+new-scene PATH|Create a minimal editable scene file.
+new-template PATH|Create a guided template scene.
+add-entity PATH|Add an entity to a scene file.
+add-choice PATH|Add a choice to a scene file.
+remove-choice PATH|Remove a choice by zero-based index.
+update-choice PATH|Replace a choice by zero-based index.
+remove-entity PATH|Remove an entity by id.
+move-entity PATH|Move an entity by id.
+set-dialogue PATH|Set dialogue speaker and text.
+set-variable PATH|Set or add a typed variable.
+clear-variable PATH|Remove a variable by key.
+add-layer PATH|Add a Scene Mode layer.
+set-layer PATH|Update a layer state.
+add-layer-transition PATH|Add a guarded layer transition.
+add-mode-input PATH|Add a guarded mode input binding.
+set-lifecycle PATH|Set Scene Mode lifecycle status hooks.
+add-inventory PATH|Add or replace an RPG inventory item.
+remove-inventory PATH|Remove an RPG inventory item.
+set-stat PATH|Add or replace an RPG stat.
+adjust-stat PATH|Adjust a numeric RPG stat.
+add-quest PATH|Add or replace an RPG quest.
+advance-quest PATH|Set an RPG quest stage.
+complete-quest PATH|Mark an RPG quest complete.
+append-quest-journal PATH|Append RPG quest journal text.
+format PATH|Rewrite a scene file with stable JSON format.
+install-fixture NAME|Install a fixture into the Scene Mode config dir.
+list-fixtures|List available authoring fixtures.
+list-templates|List available guided templates.
+EOF
 }
 
 command="${1:-}"
