@@ -280,8 +280,8 @@ pub(super) fn codex_compose_argv(
         config.workspace.display().to_string(),
         "-s".to_string(),
         config.sandbox.clone(),
-        "-a".to_string(),
-        config.approval.clone(),
+        "-c".to_string(),
+        format!("approval_policy=\"{}\"", config.approval),
     ];
     if config.json {
         argv.push("--json".to_string());
@@ -603,8 +603,8 @@ mod tests {
                 "/workspace with spaces",
                 "-s",
                 "read-only",
-                "-a",
-                "never",
+                "-c",
+                "approval_policy=\"never\"",
                 "--json",
                 "inspect roadmap && do not shell split"
             ]

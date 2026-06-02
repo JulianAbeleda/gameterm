@@ -2205,8 +2205,8 @@ mod tests {
                 "/workspace with spaces",
                 "-s",
                 "read-only",
-                "-a",
-                "never",
+                "-c",
+                "approval_policy=\"never\"",
                 "--json",
                 "inspect roadmap && do not shell split"
             ]
