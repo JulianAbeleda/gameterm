@@ -60,6 +60,31 @@ cleanup() {
   done
   set -u
 }
+
+assert_failing_command() {
+  local message="$1"
+  local out_file="$2"
+  local err_file="$3"
+  shift 3
+  local rc
+
+  set +e
+  "$@" >"${out_file}" 2>"${err_file}"
+  rc=$?
+  set -e
+  if [[ "${rc}" -eq 0 ]]; then
+    echo "${message}" >&2
+    exit 1
+  fi
+}
+
+assert_json_valid_files() {
+  local file
+  for file in "$@"; do
+    jq empty "${file}"
+  done
+}
+
 trap cleanup EXIT
 
 while [[ $# -gt 0 ]]; do
@@ -157,12 +182,12 @@ run_fixture_setup_check() {
     cp "${sprite_file}" "${scene_dir}/sprites.json"
   fi
 
-  jq empty "${scene_dir}/default.json"
+  assert_json_valid_files "${scene_dir}/default.json"
   if [[ -f "${scene_dir}/memory.json" ]]; then
-    jq empty "${scene_dir}/memory.json"
+    assert_json_valid_files "${scene_dir}/memory.json"
   fi
   if [[ -f "${scene_dir}/sprites.json" ]]; then
-    jq empty "${scene_dir}/sprites.json"
+    assert_json_valid_files "${scene_dir}/sprites.json"
   fi
   echo "fixture ${fixture}: setup ok"
 }
@@ -179,7 +204,7 @@ run_static_checks() {
         ;;
     esac
   done
-  jq empty "${fixture_root}"/*.json
+  assert_json_valid_files "${fixture_root}"/*.json
   git -C "${repo_root}" diff --check
 }
 
@@ -188,24 +213,20 @@ run_init_helper_check() {
   tmp_home="$(mktemp -d /tmp/gameterm-scene-init-verify.XXXXXX)"
   tmp_paths+=("${tmp_home}")
   "${repo_root}/ci/gameterm-scene-init.sh" --config-home "${tmp_home}" >/dev/null
-  jq empty "${tmp_home}/gameterm/scenes/default.json"
+  assert_json_valid_files "${tmp_home}/gameterm/scenes/default.json"
 
-  set +e
-  "${repo_root}/ci/gameterm-scene-init.sh" --config-home "${tmp_home}" \
-    >/tmp/gameterm-scene-init-verify.out \
-    2>/tmp/gameterm-scene-init-verify.err
-  overwrite_rc=$?
-  set -e
-  if [[ "${overwrite_rc}" -eq 0 ]]; then
-    echo "expected init helper overwrite protection to fail" >&2
-    exit 1
-  fi
+  assert_failing_command \
+    "expected init helper overwrite protection to fail" \
+    /tmp/gameterm-scene-init-verify.out \
+    /tmp/gameterm-scene-init-verify.err \
+    "${repo_root}/ci/gameterm-scene-init.sh" \
+    --config-home "${tmp_home}"
 
   "${repo_root}/ci/gameterm-scene-init.sh" \
     --config-home "${tmp_home}" \
     --force \
     --with-sprites >/dev/null
-  jq empty \
+  assert_json_valid_files \
     "${tmp_home}/gameterm/scenes/default.json" \
     "${tmp_home}/gameterm/scenes/sprites.json"
   echo "init helper: ok"
@@ -320,20 +341,15 @@ run_author_helper_check() {
     "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
   cp "${tmp_home}/gameterm/scenes/authored.json" \
     "${tmp_home}/gameterm/scenes/authored-before-failed-mutation.json"
-  set +e
-  "${repo_root}/ci/gameterm-scene-author.sh" \
+  assert_failing_command \
+    "expected duplicate layer mutation to fail" \
+    /tmp/gameterm-scene-author-rollback.out \
+    /tmp/gameterm-scene-author-rollback.err \
+    "${repo_root}/ci/gameterm-scene-author.sh" \
     add-layer \
     --layer-id verify \
     --state duplicate \
-    "${tmp_home}/gameterm/scenes/authored.json" \
-    >/tmp/gameterm-scene-author-rollback.out \
-    2>/tmp/gameterm-scene-author-rollback.err
-  duplicate_layer_rc=$?
-  set -e
-  if [[ "${duplicate_layer_rc}" -eq 0 ]]; then
-    echo "expected duplicate layer mutation to fail" >&2
-    exit 1
-  fi
+    "${tmp_home}/gameterm/scenes/authored.json"
   cmp \
     "${tmp_home}/gameterm/scenes/authored-before-failed-mutation.json" \
     "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
@@ -451,17 +467,12 @@ run_author_helper_check() {
   "${repo_root}/ci/gameterm-scene-author.sh" \
     validate "${tmp_home}/gameterm/scenes/authored.json" >/dev/null
 
-  set +e
-  "${repo_root}/ci/gameterm-scene-author.sh" \
-    validate "${fixture_root}/invalid.json" \
-    >/tmp/gameterm-scene-author-verify.out \
-    2>/tmp/gameterm-scene-author-verify.err
-  invalid_rc=$?
-  set -e
-  if [[ "${invalid_rc}" -eq 0 ]]; then
-    echo "expected author validate to reject invalid fixture" >&2
-    exit 1
-  fi
+  assert_failing_command \
+    "expected author validate to reject invalid fixture" \
+    /tmp/gameterm-scene-author-verify.out \
+    /tmp/gameterm-scene-author-verify.err \
+    "${repo_root}/ci/gameterm-scene-author.sh" \
+    validate "${fixture_root}/invalid.json"
 
   echo "author helper: ok"
 }
@@ -502,18 +513,14 @@ run_doctor_check() {
   grep -q "SUGGEST: create" \
     /tmp/gameterm-scene-doctor-verify-warn.out
 
-  set +e
-  "${repo_root}/ci/gameterm-scene-doctor.sh" \
+  assert_failing_command \
+    "expected doctor --strict to fail on warning fixture" \
+    /tmp/gameterm-scene-doctor-verify-strict.out \
+    /tmp/gameterm-scene-doctor-verify-strict.err \
+    "${repo_root}/ci/gameterm-scene-doctor.sh" \
     --scene "${fixture_root}/default.json" \
     --sprites "${fixture_root}/sprites-missing.json" \
-    --strict \
-    >/tmp/gameterm-scene-doctor-verify-strict.out
-  strict_rc=$?
-  set -e
-  if [[ "${strict_rc}" -eq 0 ]]; then
-    echo "expected doctor --strict to fail on warning fixture" >&2
-    exit 1
-  fi
+    --strict
 
   echo "doctor: ok"
 }
@@ -701,18 +708,14 @@ run_vn_demo_install_check() {
   cp -R "${generated_dir}" "${fake_image_dir}"
   printf 'not a png\n' \
     >"${fake_image_dir}/assets/vn-demo/characters/guide-neutral.png"
-  set +e
-  "${repo_root}/ci/gameterm-scene-vn-demo.sh" doctor \
+  assert_failing_command \
+    "expected strict VN image doctor to reject text placeholder PNG" \
+    /tmp/gameterm-scene-vn-demo-fake-image.out \
+    /tmp/gameterm-scene-vn-demo-fake-image.err \
+    "${repo_root}/ci/gameterm-scene-vn-demo.sh" \
+    doctor \
     --output-dir "${fake_image_dir}" \
-    --strict-images \
-    >/tmp/gameterm-scene-vn-demo-fake-image.out \
-    2>/tmp/gameterm-scene-vn-demo-fake-image.err
-  fake_image_rc=$?
-  set -e
-  if [[ "${fake_image_rc}" -eq 0 ]]; then
-    echo "expected strict VN image doctor to reject text placeholder PNG" >&2
-    exit 1
-  fi
+    --strict-images
   grep -q "sprite asset is not PNG image data: vn.character.guide.neutral" \
     /tmp/gameterm-scene-vn-demo-fake-image.out
 
@@ -727,19 +730,15 @@ run_vn_demo_install_check() {
     "${installed_dir}/default.json" >/dev/null
 
   cp "${installed_dir}/default.json" "${tmp_dir}/default.before.json"
-  set +e
-  "${repo_root}/ci/gameterm-scene-vn-demo.sh" install \
+  assert_failing_command \
+    "expected vn demo install to refuse overwrite without --force" \
+    /tmp/gameterm-scene-vn-demo-overwrite.out \
+    /tmp/gameterm-scene-vn-demo-overwrite.err \
+    "${repo_root}/ci/gameterm-scene-vn-demo.sh" \
+    install \
     --config-home "${config_home}" \
     --asset-source-root "${fixture_root}/vn-asset-source" \
-    --allow-ai-assisted-assets \
-    >/tmp/gameterm-scene-vn-demo-overwrite.out \
-    2>/tmp/gameterm-scene-vn-demo-overwrite.err
-  overwrite_rc=$?
-  set -e
-  if [[ "${overwrite_rc}" -eq 0 ]]; then
-    echo "expected vn demo install to refuse overwrite without --force" >&2
-    exit 1
-  fi
+    --allow-ai-assisted-assets
   cmp -s "${tmp_dir}/default.before.json" "${installed_dir}/default.json"
   grep -q "refusing to overwrite existing file without --force" \
     /tmp/gameterm-scene-vn-demo-overwrite.err
@@ -761,18 +760,13 @@ run_vn_image_export_check() {
   output_root="${tmp_dir}/source-root"
   generated_dir="${tmp_dir}/generated"
 
-  set +e
-  "${repo_root}/ci/gameterm-scene-vn-image-export.sh" \
+  assert_failing_command \
+    "expected VN image export to reject a missing source image" \
+    /tmp/gameterm-scene-vn-image-export-missing.out \
+    /tmp/gameterm-scene-vn-image-export-missing.err \
+    "${repo_root}/ci/gameterm-scene-vn-image-export.sh" \
     --source "${tmp_dir}/missing.psd" \
-    --output-source-root "${output_root}" \
-    >/tmp/gameterm-scene-vn-image-export-missing.out \
-    2>/tmp/gameterm-scene-vn-image-export-missing.err
-  missing_rc=$?
-  set -e
-  if [[ "${missing_rc}" -eq 0 ]]; then
-    echo "expected VN image export to reject a missing source image" >&2
-    exit 1
-  fi
+    --output-source-root "${output_root}"
   grep -q "source image not found" \
     /tmp/gameterm-scene-vn-image-export-missing.err
 
@@ -821,18 +815,13 @@ run_patch_check() {
   grep -q "metadata.status=patched" \
     /tmp/gameterm-scene-patch-verify-ok.out
 
-  set +e
-  cargo run -q -p gameterm-visual --example scene_patch_apply -- \
+  assert_failing_command \
+    "expected scene patch apply to reject unknown entity" \
+    /tmp/gameterm-scene-patch-verify-bad.out \
+    /tmp/gameterm-scene-patch-verify-bad.err \
+    cargo run -q -p gameterm-visual --example scene_patch_apply -- \
     "${fixture_root}/default.json" \
-    "${fixture_root}/patch-unknown-entity.json" \
-    >/tmp/gameterm-scene-patch-verify-bad.out \
-    2>/tmp/gameterm-scene-patch-verify-bad.err
-  patch_rc=$?
-  set -e
-  if [[ "${patch_rc}" -eq 0 ]]; then
-    echo "expected scene patch apply to reject unknown entity" >&2
-    exit 1
-  fi
+    "${fixture_root}/patch-unknown-entity.json"
   grep -q 'unknown entity id `missing-entity`' \
     /tmp/gameterm-scene-patch-verify-bad.err
 
@@ -892,21 +881,17 @@ run_patch_check() {
     any(.updates[]; .entity_id == "project-harness" and .visible == false)
   ' "${hidden_patch}" >/dev/null
 
-  set +e
-  "${repo_root}/ci/gameterm-scene-patch.sh" \
+  assert_failing_command \
+    "expected scene patch authoring to reject conflicting visibility flags" \
+    /tmp/gameterm-scene-patch-conflict.out \
+    /tmp/gameterm-scene-patch-conflict.err \
+    "${repo_root}/ci/gameterm-scene-patch.sh" \
     set-entity \
     --output "${tmp_home}/patches/conflict.json" \
     --entity-id project-harness \
     --status "Conflicting visibility" \
     --visible \
-    --hidden >/tmp/gameterm-scene-patch-conflict.out \
-    2>/tmp/gameterm-scene-patch-conflict.err
-  patch_rc=$?
-  set -e
-  if [[ "${patch_rc}" -eq 0 ]]; then
-    echo "expected scene patch authoring to reject conflicting visibility flags" >&2
-    exit 1
-  fi
+    --hidden
   grep -q -- '--visible and --hidden are mutually exclusive' \
     /tmp/gameterm-scene-patch-conflict.err
 
@@ -1055,20 +1040,15 @@ run_agent_check() {
       and (.metadata | any(.[0] == "blocked_by" and .[1] == "task-build")))
   ' "${multi_patch}" >/dev/null
 
-  set +e
-  "${repo_root}/ci/gameterm-scene-agent.sh" \
+  assert_failing_command \
+    "expected agent helper to reject unknown phase" \
+    /tmp/gameterm-scene-agent-bad.out \
+    /tmp/gameterm-scene-agent-bad.err \
+    "${repo_root}/ci/gameterm-scene-agent.sh" \
     status \
     --entity-id project-harness \
     --phase paused \
-    --patch "${tmp_home}/patches/bad.json" \
-    >/tmp/gameterm-scene-agent-bad.out \
-    2>/tmp/gameterm-scene-agent-bad.err
-  agent_rc=$?
-  set -e
-  if [[ "${agent_rc}" -eq 0 ]]; then
-    echo "expected agent helper to reject unknown phase" >&2
-    exit 1
-  fi
+    --patch "${tmp_home}/patches/bad.json"
   grep -q -- '--phase must be idle, planning, running, waiting, blocked, complete, completed, failed, or cancelled' \
     /tmp/gameterm-scene-agent-bad.err
 
@@ -1110,19 +1090,14 @@ run_workspace_discovery_check() {
     and (.constraints | index("do not run commands automatically"))
     and (.constraints | index("do not start agents automatically"))
   ' "${brief_path}" >/dev/null
-  set +e
-  "${repo_root}/ci/gameterm-scene-workspace.sh" \
+  assert_failing_command \
+    "expected task brief overwrite protection to fail" \
+    /tmp/gameterm-scene-brief-overwrite.out \
+    /tmp/gameterm-scene-brief-overwrite.err \
+    "${repo_root}/ci/gameterm-scene-workspace.sh" \
     brief \
     --cwd "${repo_root}" \
-    --brief-output "${brief_path}" \
-    >/tmp/gameterm-scene-brief-overwrite.out \
-    2>/tmp/gameterm-scene-brief-overwrite.err
-  brief_rc=$?
-  set -e
-  if [[ "${brief_rc}" -eq 0 ]]; then
-    echo "expected task brief overwrite protection to fail" >&2
-    exit 1
-  fi
+    --brief-output "${brief_path}"
   jq -e '
     (.entities | map(select(.visible // true)) | length) as $visible_count
     | (.entities
@@ -1270,39 +1245,29 @@ run_workspace_discovery_check() {
     validate "${install_home}/gameterm/scenes/default.json" >/dev/null
   cp "${install_home}/gameterm/scenes/default.json" \
     "${tmp_home}/installed-before-overwrite.json"
-  set +e
-  "${repo_root}/ci/gameterm-scene-workspace.sh" \
+  assert_failing_command \
+    "expected workspace discovery install overwrite protection to fail" \
+    /tmp/gameterm-scene-workspace-overwrite.out \
+    /tmp/gameterm-scene-workspace-overwrite.err \
+    "${repo_root}/ci/gameterm-scene-workspace.sh" \
     discover \
     --cwd "${repo_root}" \
     --install \
-    --config-home "${install_home}" \
-    >/tmp/gameterm-scene-workspace-overwrite.out \
-    2>/tmp/gameterm-scene-workspace-overwrite.err
-  overwrite_rc=$?
-  set -e
-  if [[ "${overwrite_rc}" -eq 0 ]]; then
-    echo "expected workspace discovery install overwrite protection to fail" >&2
-    exit 1
-  fi
+    --config-home "${install_home}"
   cmp \
     "${tmp_home}/installed-before-overwrite.json" \
     "${install_home}/gameterm/scenes/default.json" >/dev/null
 
-  set +e
-  "${repo_root}/ci/gameterm-scene-workspace.sh" \
+  assert_failing_command \
+    "expected workspace discovery strict missing file to fail" \
+    /tmp/gameterm-scene-workspace-strict.out \
+    /tmp/gameterm-scene-workspace-strict.err \
+    "${repo_root}/ci/gameterm-scene-workspace.sh" \
     discover \
     --cwd "${repo_root}" \
     --open missing-workspace-file.md \
     --strict \
-    --scene-output "${tmp_home}/strict.json" \
-    >/tmp/gameterm-scene-workspace-strict.out \
-    2>/tmp/gameterm-scene-workspace-strict.err
-  strict_rc=$?
-  set -e
-  if [[ "${strict_rc}" -eq 0 ]]; then
-    echo "expected workspace discovery strict missing file to fail" >&2
-    exit 1
-  fi
+    --scene-output "${tmp_home}/strict.json"
   grep -q "important file does not exist" \
     /tmp/gameterm-scene-workspace-strict.err
 
@@ -1459,20 +1424,15 @@ run_mux_context_check() {
   cp "${install_home}/gameterm/scenes/default.json" \
     "${tmp_home}/installed-active-pane-before-overwrite.json"
 
-  set +e
-  "${repo_root}/ci/gameterm-scene-mux-context.sh" \
+  assert_failing_command \
+    "expected active pane install overwrite protection to fail" \
+    /tmp/gameterm-scene-mux-install-overwrite.out \
+    /tmp/gameterm-scene-mux-install-overwrite.err \
+    "${repo_root}/ci/gameterm-scene-mux-context.sh" \
     discover \
     --fixture-context "${fixture_root}/mux-context-active.json" \
     --install \
-    --config-home "${install_home}" \
-    >/tmp/gameterm-scene-mux-install-overwrite.out \
-    2>/tmp/gameterm-scene-mux-install-overwrite.err
-  install_overwrite_rc=$?
-  set -e
-  if [[ "${install_overwrite_rc}" -eq 0 ]]; then
-    echo "expected active pane install overwrite protection to fail" >&2
-    exit 1
-  fi
+    --config-home "${install_home}"
   cmp \
     "${tmp_home}/installed-active-pane-before-overwrite.json" \
     "${install_home}/gameterm/scenes/default.json" >/dev/null
@@ -1492,21 +1452,16 @@ run_mux_context_check() {
     and any(.variables[]; .key == "discovery_source" and .value == {"Text": "cwd"})
   ' "${fallback_install_home}/gameterm/scenes/default.json" >/dev/null
 
-  set +e
-  "${repo_root}/ci/gameterm-scene-mux-context.sh" \
+  assert_failing_command \
+    "expected active pane install with invalid cwd to fail" \
+    /tmp/gameterm-scene-mux-invalid-install.out \
+    /tmp/gameterm-scene-mux-invalid-install.err \
+    "${repo_root}/ci/gameterm-scene-mux-context.sh" \
     discover \
     --fixture-context "${fixture_root}/mux-context-invalid-cwd.json" \
     --install \
     --config-home "${invalid_install_home}" \
-    --force \
-    >/tmp/gameterm-scene-mux-invalid-install.out \
-    2>/tmp/gameterm-scene-mux-invalid-install.err
-  invalid_install_rc=$?
-  set -e
-  if [[ "${invalid_install_rc}" -eq 0 ]]; then
-    echo "expected active pane install with invalid cwd to fail" >&2
-    exit 1
-  fi
+    --force
   if [[ -e "${invalid_install_home}/gameterm/scenes/default.json" ]]; then
     echo "invalid active pane cwd should not install a default scene" >&2
     exit 1
@@ -1538,33 +1493,23 @@ run_mux_context_check() {
     and .mux_window_id == 7
   ' "${tmp_home}/caller-context.json" >/dev/null
 
-  set +e
-  "${repo_root}/ci/gameterm-scene-mux-context.sh" \
+  assert_failing_command \
+    "expected mux context helper to reject invalid pane id" \
+    /tmp/gameterm-scene-mux-invalid-pane.out \
+    /tmp/gameterm-scene-mux-invalid-pane.err \
+    "${repo_root}/ci/gameterm-scene-mux-context.sh" \
     collect \
-    --fixture-context "${fixture_root}/mux-context-invalid-pane.json" \
-    >/tmp/gameterm-scene-mux-invalid-pane.out \
-    2>/tmp/gameterm-scene-mux-invalid-pane.err
-  invalid_pane_rc=$?
-  set -e
-  if [[ "${invalid_pane_rc}" -eq 0 ]]; then
-    echo "expected mux context helper to reject invalid pane id" >&2
-    exit 1
-  fi
+    --fixture-context "${fixture_root}/mux-context-invalid-pane.json"
   grep -q "pane_id must be a non-negative integer" \
     /tmp/gameterm-scene-mux-invalid-pane.err
 
-  set +e
-  "${repo_root}/ci/gameterm-scene-mux-context.sh" \
+  assert_failing_command \
+    "expected mux context helper to reject invalid pane cwd" \
+    /tmp/gameterm-scene-mux-invalid-cwd.out \
+    /tmp/gameterm-scene-mux-invalid-cwd.err \
+    "${repo_root}/ci/gameterm-scene-mux-context.sh" \
     collect \
-    --fixture-context "${fixture_root}/mux-context-invalid-cwd.json" \
-    >/tmp/gameterm-scene-mux-invalid-cwd.out \
-    2>/tmp/gameterm-scene-mux-invalid-cwd.err
-  invalid_cwd_rc=$?
-  set -e
-  if [[ "${invalid_cwd_rc}" -eq 0 ]]; then
-    echo "expected mux context helper to reject invalid pane cwd" >&2
-    exit 1
-  fi
+    --fixture-context "${fixture_root}/mux-context-invalid-cwd.json"
   grep -q "pane cwd does not exist or is not a directory" \
     /tmp/gameterm-scene-mux-invalid-cwd.err
 
@@ -1643,20 +1588,15 @@ run_workspace_session_check() {
     "${restored_path}" >/dev/null
   cmp "${scene_path}" "${before_path}" >/dev/null
 
-  set +e
-  "${repo_root}/ci/gameterm-scene-session.sh" \
+  assert_failing_command \
+    "expected workspace session overwrite protection to fail" \
+    /tmp/gameterm-scene-session-overwrite.out \
+    /tmp/gameterm-scene-session-overwrite.err \
+    "${repo_root}/ci/gameterm-scene-session.sh" \
     save \
     --scene "${scene_path}" \
     --workspace-root "${repo_root}" \
-    --output "${session_path}" \
-    >/tmp/gameterm-scene-session-overwrite.out \
-    2>/tmp/gameterm-scene-session-overwrite.err
-  overwrite_rc=$?
-  set -e
-  if [[ "${overwrite_rc}" -eq 0 ]]; then
-    echo "expected workspace session overwrite protection to fail" >&2
-    exit 1
-  fi
+    --output "${session_path}"
 
   echo "workspace session: ok"
 }
