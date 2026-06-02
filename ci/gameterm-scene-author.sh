@@ -514,29 +514,33 @@ require_value() {
   fi
 }
 
-state_value_json() {
+typed_value_json() {
   local bool_value="$1"
   local number_value="$2"
   local text_value="$3"
+  local one_of_message="$4"
+  local bool_error="$5"
+  local number_error="$6"
   local count=0
+
   [[ -n "${bool_value}" ]] && count=$((count + 1))
   [[ -n "${number_value}" ]] && count=$((count + 1))
   [[ -n "${text_value}" ]] && count=$((count + 1))
   if [[ "${count}" -ne 1 ]]; then
-    echo "provide exactly one of --value-bool, --value-number, or --value-text" >&2
+    echo "${one_of_message}" >&2
     exit 2
   fi
   if [[ -n "${bool_value}" ]]; then
     case "${bool_value}" in
       true|false) jq -n --argjson value "${bool_value}" '{Bool: $value}' ;;
       *)
-        echo "--value-bool must be true or false" >&2
+        echo "${bool_error}" >&2
         exit 2
         ;;
     esac
   elif [[ -n "${number_value}" ]]; then
     if [[ ! "${number_value}" =~ ^-?[0-9]+$ ]]; then
-      echo "--value-number must be an integer" >&2
+      echo "${number_error}" >&2
       exit 2
     fi
     jq -n --argjson value "${number_value}" '{Number: $value}'
@@ -545,32 +549,24 @@ state_value_json() {
   fi
 }
 
+state_value_json() {
+  typed_value_json \
+    "$1" \
+    "$2" \
+    "$3" \
+    "provide exactly one of --value-bool, --value-number, or --value-text" \
+    "--value-bool must be true or false" \
+    "--value-number must be an integer"
+}
+
 condition_value_json() {
-  local count=0
-  [[ -n "${condition_bool}" ]] && count=$((count + 1))
-  [[ -n "${condition_number}" ]] && count=$((count + 1))
-  [[ -n "${condition_text}" ]] && count=$((count + 1))
-  if [[ "${count}" -ne 1 ]]; then
-    echo "condition requires exactly one of --condition-bool, --condition-number, or --condition-text" >&2
-    exit 2
-  fi
-  if [[ -n "${condition_bool}" ]]; then
-    case "${condition_bool}" in
-      true|false) jq -n --argjson value "${condition_bool}" '{Bool: $value}' ;;
-      *)
-        echo "--condition-bool must be true or false" >&2
-        exit 2
-        ;;
-    esac
-  elif [[ -n "${condition_number}" ]]; then
-    if [[ ! "${condition_number}" =~ ^-?[0-9]+$ ]]; then
-      echo "--condition-number must be an integer" >&2
-      exit 2
-    fi
-    jq -n --argjson value "${condition_number}" '{Number: $value}'
-  else
-    jq -n --arg value "${condition_text}" '{Text: $value}'
-  fi
+  typed_value_json \
+    "${condition_bool}" \
+    "${condition_number}" \
+    "${condition_text}" \
+    "condition requires exactly one of --condition-bool, --condition-number, or --condition-text" \
+    "--condition-bool must be true or false" \
+    "--condition-number must be an integer"
 }
 
 condition_json() {
