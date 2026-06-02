@@ -442,11 +442,16 @@ fn vn_panel_nameplate_rects(
         .iter()
         .enumerate()
         .map(|(idx, panel)| {
-            let label_cols = if idx == 0 { 14.0 } else { 12.0 };
+            let label_cols = if idx == 0 { 18.0 } else { 16.0 };
             let width = (cell_width * label_cols).max(cell_width * 8.0);
-            let height = (cell_height * 1.85).max(cell_height);
+            let height = (cell_height * 2.25).max(cell_height);
             let x = panel.min_x() + (cell_width * 2.4).min(panel.size.width * 0.2);
-            let desired_y = panel.min_y() - height * 0.72;
+            let panel_overlap = if idx == 0 {
+                cell_height * 0.25
+            } else {
+                height * 0.55
+            };
+            let desired_y = panel.min_y() - (height - panel_overlap);
             let y = desired_y
                 .max(stage_rect.min_y())
                 .min(panel.max_y() - height);
@@ -736,6 +741,8 @@ mod tests {
             assert!(nameplate.min_y() <= panel.min_y());
             assert!(nameplate.max_y() > panel.min_y());
         }
+        assert!(nameplates[0].max_y() - rects[0].min_y() < 6.0);
+        assert!(nameplates[1].max_y() - rects[1].min_y() > 20.0);
         assert!(nameplates[1].min_y() > stage.min_y());
     }
 

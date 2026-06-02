@@ -2156,6 +2156,7 @@ impl SceneRuntime {
         let mut lines = Vec::new();
         if fullscreen_vn_layout && height >= 4 {
             lines.push(String::new());
+            lines.push(String::new());
         }
         lines.extend(wrap_text(&dialogue.text, inner_width));
 
