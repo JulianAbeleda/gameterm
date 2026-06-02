@@ -81,6 +81,7 @@ launch=0
 check_assets=0
 fixture="renderer-rows"
 scenario=""
+active_scenario_index=-1
 describe_scenario=""
 list_scenarios=0
 wait_before_capture=10
@@ -233,11 +234,14 @@ declare -a SCENARIO_KEY_SEQUENCE
 declare -a SCENARIO_PATCH_INBOX
 declare -a SCENARIO_SUBMIT_PATCH
 declare -a SCENARIO_SCENE_SHORTCUT
+declare -a SCENARIO_DESCRIBE_SETUP
+declare -a SCENARIO_DESCRIBE_CHECKS
+declare -a SCENARIO_DESCRIBE_STATUS
 declare -a SCENARIO_AUDIT
 
 init_smoke_scenario_catalog() {
   SCENARIO_ORDER=()
-  while IFS='|' read -r scenario_name fixture_name default_key_sequence default_patch_inbox default_submit_patch default_scene_shortcut audit_message; do
+  while IFS='|' read -r scenario_name fixture_name default_key_sequence default_patch_inbox default_submit_patch default_scene_shortcut describe_setup describe_checks describe_status audit_message; do
     if [[ -z "${scenario_name}" || "${scenario_name}" == \#* ]]; then
       continue
     fi
@@ -248,25 +252,28 @@ init_smoke_scenario_catalog() {
     SCENARIO_PATCH_INBOX["${catalog_index}"]="${default_patch_inbox}"
     SCENARIO_SUBMIT_PATCH["${catalog_index}"]="${default_submit_patch}"
     SCENARIO_SCENE_SHORTCUT["${catalog_index}"]="${default_scene_shortcut}"
+    SCENARIO_DESCRIBE_SETUP["${catalog_index}"]="${describe_setup}"
+    SCENARIO_DESCRIBE_CHECKS["${catalog_index}"]="${describe_checks}"
+    SCENARIO_DESCRIBE_STATUS["${catalog_index}"]="${describe_status}"
     SCENARIO_AUDIT["${catalog_index}"]="${audit_message}"
   done <<EOF
-renderer-rows|renderer-rows|||||
-guarded-input|layered-mode|space,enter||||Guarded input audit: exercise layer-owned update and guarded transition inputs.
-run-command-targets|run-command-targets|enter,j,enter,j,enter||||RunCommand audit: activate tab, split_right, and split_down choices.
-overlay-cleanup|basic|escape||||Overlay cleanup audit: close Scene Mode before capture.
-vertical-slice|vertical-slice|enter,j,enter,j,enter,j,enter||||Vertical slice audit: complete the playable brief, launch kit, loop, and ending path.
-workspace-agent|workspace-agent||auto|||Agent/Workspace audit: emit process and agent lifecycle patches into the workspace fixture.
-workspace-discovery|workspace-discovery|||||Workspace discovery audit: launch a scene generated from ${repo_root}.
-live-mux-discovery|live-mux-discovery|||||Live mux discovery audit: launch a scene generated from active mux context.
-agent-lifecycle|basic||auto|||Agent lifecycle audit: emit planning, blocked, and complete patches before capture.
-authoring-loop|authoring-loop|enter,j,enter,j,enter||||Authoring loop audit: save story state, mutate draft state, then reload the saved state.
-patch-inbox|basic||auto|||Patch-inbox audit: apply patch from inbox transport before capture.
-mux-patch|basic|||__PATCH_STATUS__||Mux patch audit: open Scene Mode before the wait expires; the script will submit the patch file.
-process-state|basic||auto|||Process-state audit: the script will run a true command through ci/gameterm-scene-process.sh before capture.
-active-pane-gui|renderer-rows||||active-pane|Active-pane GUI audit: open a transient generated workspace scene through the native shortcut.
-vn-demo|vn-demo|enter,j,enter||||VN demo audit: launch imported VN script with strict-validated local PNG assets.
-vn-compose|vn-demo|text:look at roadmap,enter,delay:1||||VN compose audit: type a prompt and render the deterministic compose backend reply.
-vn-compose-codex|vn-demo|text:look at roadmap,enter,delay:1||||VN Codex compose audit: type a prompt and render the fake Codex backend reply.
+renderer-rows|renderer-rows|||||launch Scene Mode renderer row fixture.|Rows remain visually aligned; sprite/entity layers do not shift.|Ready.|Smoke: renderer-rows scenario.
+guarded-input|layered-mode|space,enter||||Launch layered state fixture.|Automated input exercises a layer-owned update and guarded transition without closing Scene Mode.|Layer story transitioned: dialogue -> choice.|Guarded input audit: exercise layer-owned update and guarded transition inputs.
+run-command-targets|run-command-targets|enter,j,enter,j,enter||||Launch RunCommand target fixture.|Automated input activates tab, split_right, and split_down RunCommand choices.|RunCommand opened split_down pane.|RunCommand audit: activate tab, split_right, and split_down choices.
+overlay-cleanup|basic|escape||||Launch Scene Mode and send Escape before capture.|Overlay cleanup returns to the underlying terminal without crashing the GUI.|Scene Mode overlay closed.|Overlay cleanup audit: close Scene Mode before capture.
+vertical-slice|vertical-slice|enter,j,enter,j,enter,j,enter||||Launch playable vertical slice fixture.|Automated input accepts the brief, prepares the launch kit, completes the scene loop, and keeps Scene Mode open.|Dialogue advanced: Guide.|Vertical slice audit: complete the playable brief, launch kit, loop, and ending path.
+workspace-agent|workspace-agent||auto|||Launch Agent/Workspace fixture with auto patch inbox, then emit real process and agent lifecycle patches.|Scene Mode renders workspace, project, task, agent, process, and file entities while external helpers drive lifecycle state.|Agent complete: Workspace slice ready.|Agent/Workspace audit: emit process and agent lifecycle patches into the workspace fixture.
+workspace-discovery|workspace-discovery|||||Generate a Scene Mode scene from the current repository with ci/gameterm-scene-workspace.sh, then launch it.|Scene Mode renders generated workspace, project, task, process, and file entities from cwd/git state.|Discovered workspace scene is visible.|Workspace discovery audit: launch a scene generated from ${repo_root}.
+live-mux-discovery|live-mux-discovery|||||Generate a Scene Mode scene from the active mux pane with ci/gameterm-scene-mux-context.sh, then launch it.|Scene Mode renders generated workspace, pane, and process entities from active mux context, or falls back to cwd discovery when mux context is unavailable.|Discovered live mux workspace scene is visible.|Live mux discovery audit: launch a scene generated from active mux context.
+agent-lifecycle|basic||auto|||Launch with auto patch inbox and emit planning, blocked, and complete agent phases.|Scene Mode receives structured agent lifecycle patches and renders the final completed agent state.|Agent complete: Finished visual slice.|Agent lifecycle audit: emit planning, blocked, and complete patches before capture.
+authoring-loop|authoring-loop|enter,j,enter,j,enter||||Launch story-state authoring fixture.|Automated input saves story state, mutates draft state, reloads the saved state, and keeps Scene Mode open.|Story state imported: /tmp/gameterm-scene-authoring-loop.story.json.|Authoring loop audit: save story state, mutate draft state, then reload the saved state.
+patch-inbox|basic||auto|||Launch with GAMETERM_SCENE_PATCH_FILE auto-inbox.|Write-inbox patch updates visible entity state and keeps Scene Mode open.|Fixture patch applied.|Patch-inbox audit: apply patch from inbox transport before capture.
+mux-patch|basic|||__PATCH_STATUS__||Launch, open Scene Mode, and submit ci/fixtures/gameterm-scene/patch-status.json through mux.|Mux patch updates visible entity state and reports patch source.|Fixture patch applied.|Mux patch audit: open Scene Mode before the wait expires; the script will submit the patch file.
+process-state|basic||auto|||Launch with auto patch inbox, then run the process helper before capture.|Entity transitions running -> succeeded/failed and Tile Debugger shows typed process state.|Process succeeded: true.|Process-state audit: the script will run a true command through ci/gameterm-scene-process.sh before capture.
+active-pane-gui|renderer-rows||||active-pane|Launch GameTerm from the current build and use macOS automation to send Ctrl+Alt+Shift+G.|Native active-pane Scene action opens a transient generated workspace scene without writing the configured scene file.|Generated active pane scene is visible; Esc/q closes it cleanly.|Active-pane GUI audit: open a transient generated workspace scene through the native shortcut.
+vn-demo|vn-demo|enter,j,enter||||Generate the VN demo into a temporary Scene config, validate sprite files as real PNG images, then launch Scene Mode.|Imported VN dialogue, choices, bindings, and copied VN sprite assets render through the normal Scene Mode path.|VN Script Demo Import is visible.|VN demo audit: launch imported VN script with strict-validated local PNG assets.
+vn-compose|vn-demo|text:look at roadmap,enter,delay:1||||Generate the VN demo, launch Scene Mode, type a prompt into the compose dock, submit it, and wait for the deterministic local compose backend.|Compose input remains docked, backend output renders as Codex dialogue, and VN background/sprites remain visible.|Compose succeeded.|VN compose audit: type a prompt and render the deterministic compose backend reply.
+vn-compose-codex|vn-demo|text:look at roadmap,enter,delay:1||||Generate the VN demo, launch Scene Mode, type a prompt into the compose dock, submit it, and wait for a fake local Codex CLI backend.|Codex backend kind is selected; fake Codex output renders as Codex dialogue, and VN background/sprites remain visible.|Codex succeeded.|VN Codex compose audit: type a prompt and render the fake Codex backend reply.
 EOF
 }
 
@@ -292,197 +299,58 @@ scenario_catalog_index() {
 }
 
 describe_smoke_scenario() {
-  case "$1" in
-    renderer-rows)
-      cat <<'EOF'
-Scenario: renderer-rows
-Fixture: renderer-rows
-Setup: launch Scene Mode renderer row fixture.
-Checks: rows remain visually aligned; sprite/entity layers do not shift.
-Expected status: Ready.
-EOF
-      ;;
-    guarded-input)
-      cat <<'EOF'
-Scenario: guarded-input
-Fixture: layered-mode
-Setup: launch layered state fixture.
-Checks: automated input exercises a layer-owned update and guarded transition without closing Scene Mode.
-Expected status: Layer story transitioned: dialogue -> choice.
-EOF
-      ;;
-    run-command-targets)
-      cat <<'EOF'
-Scenario: run-command-targets
-Fixture: run-command-targets
-Setup: launch RunCommand target fixture.
-Checks: automated input activates tab, split_right, and split_down RunCommand choices.
-Expected status: RunCommand opened split_down pane.
-EOF
-      ;;
-    overlay-cleanup)
-      cat <<'EOF'
-Scenario: overlay-cleanup
-Fixture: basic
-Setup: launch Scene Mode and send Escape before capture.
-Checks: overlay cleanup returns to the underlying terminal without crashing the GUI.
-Expected status: Scene Mode overlay closed.
-EOF
-      ;;
-    vertical-slice)
-      cat <<'EOF'
-Scenario: vertical-slice
-Fixture: vertical-slice
-Setup: launch playable vertical slice fixture.
-Checks: automated input accepts the brief, prepares the launch kit, completes the scene loop, and keeps Scene Mode open.
-Expected status: Dialogue advanced: Guide.
-EOF
-      ;;
-    workspace-agent)
-      cat <<'EOF'
-Scenario: workspace-agent
-Fixture: workspace-agent
-Setup: launch Agent/Workspace fixture with auto patch inbox, then emit real process and agent lifecycle patches.
-Checks: Scene Mode renders workspace, project, task, agent, process, and file entities while external helpers drive lifecycle state.
-Expected status: Agent complete: Workspace slice ready.
-EOF
-      ;;
-    workspace-discovery)
-      cat <<'EOF'
-Scenario: workspace-discovery
-Fixture: generated workspace scene
-Setup: generate a Scene Mode scene from the current repository with ci/gameterm-scene-workspace.sh, then launch it.
-Checks: Scene Mode renders generated workspace, project, task, process, and file entities from cwd/git state.
-Expected status: Discovered workspace scene is visible.
-EOF
-      ;;
-    live-mux-discovery)
-      cat <<'EOF'
-Scenario: live-mux-discovery
-Fixture: generated live mux workspace scene
-Setup: generate a Scene Mode scene from the active mux pane with ci/gameterm-scene-mux-context.sh, then launch it.
-Checks: Scene Mode renders generated workspace, pane, and process entities from active mux context, or falls back to cwd discovery when mux context is unavailable.
-Expected status: Discovered live mux workspace scene is visible.
-EOF
-      ;;
-    agent-lifecycle)
-      cat <<'EOF'
-Scenario: agent-lifecycle
-Fixture: basic
-Setup: launch with auto patch inbox and emit planning, blocked, and complete agent phases.
-Checks: Scene Mode receives structured agent lifecycle patches and renders the final completed agent state.
-Expected status: Agent complete: Finished visual slice.
-EOF
-      ;;
-    authoring-loop)
-      cat <<'EOF'
-Scenario: authoring-loop
-Fixture: authoring-loop
-Setup: launch story-state authoring fixture.
-Checks: automated input saves story state, mutates draft state, reloads the saved state, and keeps Scene Mode open.
-Expected status: Story state imported: /tmp/gameterm-scene-authoring-loop.story.json.
-EOF
-      ;;
-    patch-inbox)
-      cat <<'EOF'
-Scenario: patch-inbox
-Fixture: basic
-Setup: launch with GAMETERM_SCENE_PATCH_FILE auto-inbox.
-Checks: write-inbox patch updates visible entity state and keeps Scene Mode open.
-Expected status: Fixture patch applied.
-EOF
-      ;;
-    mux-patch)
-      cat <<'EOF'
-Scenario: mux-patch
-Fixture: basic
-Setup: launch, open Scene Mode, submit ci/fixtures/gameterm-scene/patch-status.json through mux.
-Checks: mux patch updates visible entity state and reports patch source.
-Expected status: Fixture patch applied.
-EOF
-      ;;
-    process-state)
-      cat <<'EOF'
-Scenario: process-state
-Fixture: basic
-Setup: launch with auto patch inbox, then run the process helper before capture.
-Checks: entity transitions running -> succeeded/failed and Tile Debugger shows typed process state.
-Expected status: Process succeeded: true.
-EOF
-      ;;
-    active-pane-gui)
-      cat <<'EOF'
-Scenario: active-pane-gui
-Fixture: renderer-rows
-Setup: launch GameTerm from the current build and use macOS automation to send Ctrl+Alt+Shift+G.
-Checks: native active-pane Scene action opens a transient generated workspace scene without writing the configured scene file.
-Expected status: generated active pane scene is visible; Esc/q closes it cleanly.
-EOF
-      ;;
-    vn-demo)
-      cat <<'EOF'
-Scenario: vn-demo
-Fixture: generated VN demo
-Setup: generate the VN demo into a temporary Scene config, validate sprite files as real PNG images, then launch Scene Mode.
-Checks: imported VN dialogue, choices, bindings, and copied VN sprite assets render through the normal Scene Mode path.
-Expected status: VN Script Demo Import is visible.
-EOF
-      ;;
-    vn-compose)
-      cat <<'EOF'
-Scenario: vn-compose
-Fixture: generated VN demo
-Setup: generate the VN demo, launch Scene Mode, type a prompt into the compose dock, submit it, and wait for the deterministic local compose backend.
-Checks: compose input remains docked, backend output renders as Codex dialogue, and VN background/sprites remain visible.
-Expected status: Compose succeeded.
-EOF
-      ;;
-    vn-compose-codex)
-      cat <<'EOF'
-Scenario: vn-compose-codex
-Fixture: generated VN demo
-Setup: generate the VN demo, launch Scene Mode, type a prompt into the compose dock, submit it, and wait for a fake local Codex CLI backend.
-Checks: Codex backend kind is selected, fake Codex output renders as Codex dialogue, and VN background/sprites remain visible.
-Expected status: Codex succeeded.
-EOF
-      ;;
-    *)
-      echo "unknown smoke scenario: $1" >&2
-      list_smoke_scenarios >&2
-      exit 2
-      ;;
-  esac
+  local scenario_name="$1"
+  local index
+  local scenario_setup
+  local scenario_checks
+  local scenario_status
+  local scenario_fixture
+
+  if ! index="$(scenario_catalog_index "${scenario_name}")"; then
+    echo "unknown smoke scenario: ${scenario_name}" >&2
+    list_smoke_scenarios >&2
+    exit 2
+  fi
+
+  scenario_fixture="${SCENARIO_FIXTURE[${index}]}"
+  scenario_setup="${SCENARIO_DESCRIBE_SETUP[${index}]}"
+  scenario_checks="${SCENARIO_DESCRIBE_CHECKS[${index}]}"
+  scenario_status="${SCENARIO_DESCRIBE_STATUS[${index}]}"
+
+  printf 'Scenario: %s\n' "${scenario_name}"
+  printf 'Fixture: %s\n' "${scenario_fixture}"
+  printf 'Setup: %s\n' "${scenario_setup}"
+  printf 'Checks: %s\n' "${scenario_checks}"
+  printf 'Expected status: %s\n' "${scenario_status}"
 }
 
 apply_smoke_scenario_defaults() {
-  local catalog_index
-
   if [[ -z "${scenario}" ]]; then
     return
   fi
-  if ! catalog_index="$(scenario_catalog_index "${scenario}")"; then
+  if ! active_scenario_index="$(scenario_catalog_index "${scenario}")"; then
     echo "unknown smoke scenario: ${scenario}" >&2
     list_smoke_scenarios >&2
     exit 2
   fi
 
-  fixture="${SCENARIO_FIXTURE[${catalog_index}]}"
+  fixture="${SCENARIO_FIXTURE[${active_scenario_index}]}"
 
-  if [[ -z "${key_sequence}" && -n "${SCENARIO_KEY_SEQUENCE[${catalog_index}]:-}" ]]; then
-    key_sequence="${SCENARIO_KEY_SEQUENCE[${catalog_index}]}"
+  if [[ -z "${key_sequence}" && -n "${SCENARIO_KEY_SEQUENCE[${active_scenario_index}]:-}" ]]; then
+    key_sequence="${SCENARIO_KEY_SEQUENCE[${active_scenario_index}]}"
   fi
-  if [[ -z "${patch_inbox}" && -n "${SCENARIO_PATCH_INBOX[${catalog_index}]:-}" ]]; then
-    patch_inbox="${SCENARIO_PATCH_INBOX[${catalog_index}]}"
+  if [[ -z "${patch_inbox}" && -n "${SCENARIO_PATCH_INBOX[${active_scenario_index}]:-}" ]]; then
+    patch_inbox="${SCENARIO_PATCH_INBOX[${active_scenario_index}]}"
   fi
-  if [[ -z "${submit_mux_patch}" && -n "${SCENARIO_SUBMIT_PATCH[${catalog_index}]:-}" ]]; then
-    if [[ "${SCENARIO_SUBMIT_PATCH[${catalog_index}]}" == "__PATCH_STATUS__" ]]; then
+  if [[ -z "${submit_mux_patch}" && -n "${SCENARIO_SUBMIT_PATCH[${active_scenario_index}]:-}" ]]; then
+    if [[ "${SCENARIO_SUBMIT_PATCH[${active_scenario_index}]}" == "__PATCH_STATUS__" ]]; then
       submit_mux_patch="${fixture_root}/patch-status.json"
     else
-      submit_mux_patch="${SCENARIO_SUBMIT_PATCH[${catalog_index}]}"
+      submit_mux_patch="${SCENARIO_SUBMIT_PATCH[${active_scenario_index}]}"
     fi
   fi
-  if [[ -n "${SCENARIO_SCENE_SHORTCUT[${catalog_index}]:-}" ]]; then
-    scene_open_shortcut="${SCENARIO_SCENE_SHORTCUT[${catalog_index}]}"
+  if [[ -n "${SCENARIO_SCENE_SHORTCUT[${active_scenario_index}]:-}" ]]; then
+    scene_open_shortcut="${SCENARIO_SCENE_SHORTCUT[${active_scenario_index}]}"
   fi
 }
 
@@ -1154,51 +1022,14 @@ EOF
       echo "Resize the GameTerm window to fill the screen before capture."
     fi
   fi
-  if [[ "${fixture}" == "run-command-targets" ]]; then
-    echo "RunCommand audit: activate tab, split_right, and split_down choices."
-  fi
-  if [[ "${scenario}" == "guarded-input" ]]; then
-    echo "Guarded input audit: exercise layer-owned update and guarded transition inputs."
-  fi
-  if [[ "${scenario}" == "overlay-cleanup" ]]; then
-    echo "Overlay cleanup audit: close Scene Mode before capture."
-  fi
-  if [[ "${scenario}" == "vertical-slice" ]]; then
-    echo "Vertical slice audit: complete the playable brief, launch kit, loop, and ending path."
-  fi
-  if [[ "${scenario}" == "workspace-agent" ]]; then
-    echo "Agent/Workspace audit: emit process and agent lifecycle patches into the workspace fixture."
-  fi
-  if [[ "${scenario}" == "workspace-discovery" ]]; then
-    echo "Workspace discovery audit: launch a scene generated from ${repo_root}."
-  fi
   if [[ "${scenario}" == "live-mux-discovery" ]]; then
-    echo "Live mux discovery audit: launch a scene generated from active mux context."
     run_mux_context_helper collect --allow-missing || true
   fi
   if [[ -n "${patch_inbox}" ]]; then
     echo "Patch audit: inbox transport is enabled at ${patch_inbox}"
   fi
-  if [[ "${scenario}" == "process-state" ]]; then
-    echo "Process-state audit: the script will run a true command through ci/gameterm-scene-process.sh before capture."
-  fi
-  if [[ "${scenario}" == "active-pane-gui" ]]; then
-    echo "Active-pane GUI audit: open a transient generated workspace scene through the native shortcut."
-  fi
-  if [[ "${scenario}" == "agent-lifecycle" ]]; then
-    echo "Agent lifecycle audit: the script will emit planning, blocked, and complete patches before capture."
-  fi
-  if [[ "${scenario}" == "authoring-loop" ]]; then
-    echo "Authoring loop audit: save story state, mutate draft state, then reload the saved state."
-  fi
-  if [[ "${scenario}" == "vn-demo" || "${scenario}" == "vn-compose" || "${scenario}" == "vn-compose-codex" ]]; then
-    echo "VN demo audit: launch imported VN script with strict-validated local PNG assets."
-  fi
-  if [[ "${scenario}" == "vn-compose" ]]; then
-    echo "VN compose audit: type a prompt and render the deterministic compose backend reply."
-  fi
-  if [[ "${scenario}" == "vn-compose-codex" ]]; then
-    echo "VN Codex compose audit: type a prompt and render the fake Codex backend reply."
+  if [[ "${active_scenario_index}" -ge 0 && -n "${SCENARIO_AUDIT[${active_scenario_index}]:-}" ]]; then
+    echo "${SCENARIO_AUDIT[${active_scenario_index}]}"
   fi
   if [[ -n "${submit_mux_patch}" ]]; then
     echo "Mux patch audit: open Scene Mode before the wait expires; the script will submit:"
