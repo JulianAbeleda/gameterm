@@ -1673,6 +1673,27 @@ impl SceneComposeDock {
         clip_text(&line, cols.max(1))
     }
 
+    fn render_staged_dock_line(&self, cols: usize, margin: usize) -> String {
+        const VN_PANEL_TEXT_INSET: usize = 3;
+
+        let mut line = String::from(" Compose: ");
+        line.push_str(&self.buffer_with_cursor());
+        if self.buffer.is_empty() {
+            if let Some(last_submitted) = &self.last_submitted {
+                line.push_str("  last: ");
+                line.push_str(last_submitted);
+            } else {
+                line.push_str("  type here; enter submits");
+            }
+        }
+        let content_width = cols.saturating_sub((margin + VN_PANEL_TEXT_INSET) * 2).max(1);
+        let indent = " ".repeat(margin + VN_PANEL_TEXT_INSET);
+        format!(
+            "{indent}{:<content_width$}",
+            clip_text(&line, content_width)
+        )
+    }
+
     fn insert_char(&mut self, ch: char) {
         let byte_idx = self.cursor_byte_idx();
         self.buffer.insert(byte_idx, ch);
@@ -1791,6 +1812,14 @@ fn render_runtime_with_compose(
     }
     frame.push_str(&runtime.render_text_frame(size.cols, size.rows));
     if !runtime.render_snapshot().stage.is_empty() {
+        let margin = scene_stage_margin(size.cols, size.rows);
+        frame = replace_last_screen_line(
+            frame,
+            size.cols,
+            size.rows,
+            &compose_dock.render_staged_dock_line(size.cols, margin),
+        );
+    } else {
         frame = replace_last_screen_line(
             frame,
             size.cols,
@@ -1821,6 +1850,16 @@ fn replace_last_screen_line(frame: String, cols: usize, rows: usize, replacement
 
 fn clip_text(text: &str, max_chars: usize) -> String {
     text.chars().take(max_chars).collect()
+}
+
+fn scene_stage_margin(cols: usize, rows: usize) -> usize {
+    let fullscreen_vn_layout = rows >= 40;
+    let margin = if fullscreen_vn_layout {
+        ((cols as f32) * 0.033).round() as usize
+    } else {
+        3
+    };
+    margin.min(cols.saturating_sub(1))
 }
 
 #[cfg(test)]

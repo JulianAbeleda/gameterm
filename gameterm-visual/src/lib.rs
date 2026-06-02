@@ -2301,10 +2301,12 @@ impl SceneRuntime {
     }
 
     fn render_vn_dialogue_box(&self, margin: usize, width: usize, height: usize) -> String {
+        const VN_PANEL_TEXT_INSET: usize = 3;
+
         let width = width.max(6);
         let height = height.max(1);
-        let inner_width = width.saturating_sub(6);
-        let indent = " ".repeat(margin);
+        let inner_width = width.saturating_sub(VN_PANEL_TEXT_INSET * 2);
+        let indent = " ".repeat(margin + VN_PANEL_TEXT_INSET);
         let dialogue = self.active_dialogue_line();
         let mut lines = Vec::new();
         lines.push(format!("{}:", dialogue.speaker));
@@ -2333,7 +2335,7 @@ impl SceneRuntime {
         for idx in 0..height {
             let line = lines.get(idx).map(String::as_str).unwrap_or("");
             out.push_str(&format!(
-                "{indent}   {:<inner_width$}\r\n",
+                "{indent}{:<inner_width$}\r\n",
                 clip_text(line, inner_width)
             ));
         }
@@ -2341,6 +2343,8 @@ impl SceneRuntime {
     }
 
     fn render_vn_dock(&self, cols: usize, margin: usize) -> String {
+        const VN_PANEL_TEXT_INSET: usize = 3;
+
         let choice_count = self.scene.choices.len();
         let selected_choice = if choice_count == 0 {
             "none".to_string()
@@ -2355,9 +2359,10 @@ impl SceneRuntime {
                 .map(|idx| (idx + 1).to_string())
                 .unwrap_or_else(|| "static".to_string())
         );
-        let indent = " ".repeat(margin);
-        let width = cols.saturating_sub(margin).max(1);
-        format!("{indent}{}\r\n", clip_text(&dock, width))
+        let indent_width = margin + VN_PANEL_TEXT_INSET;
+        let width = cols.saturating_sub(indent_width * 2).max(1);
+        let indent = " ".repeat(indent_width);
+        format!("{indent}{:<width$}\r\n", clip_text(&dock, width))
     }
 
     fn render_command_selection(&self, cols: usize, rows: usize) -> String {
