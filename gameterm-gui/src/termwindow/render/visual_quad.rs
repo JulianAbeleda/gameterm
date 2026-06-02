@@ -750,9 +750,9 @@ mod tests {
         assert_eq!(rects.len(), 2);
         let dialogue = rects[1];
         assert!((dialogue.min_x() - 64.0).abs() < 0.1);
-        assert!((dialogue.min_y() - 144.0).abs() < 0.1);
+        assert!((dialogue.min_y() - 126.0).abs() < 0.1);
         assert!((dialogue.size.width - 1792.0).abs() < 0.1);
-        assert!((dialogue.max_y() - 828.0).abs() < 0.1);
+        assert!((dialogue.max_y() - 900.0).abs() < 0.1);
     }
 
     #[test]
@@ -786,7 +786,7 @@ mod tests {
 
         assert_eq!(cols, 120);
         assert_eq!(rows, 24);
-        assert_eq!(layout.composer_panel.unwrap().row, 19);
+        assert_eq!(layout.composer_panel.unwrap().row, 18);
         assert_eq!(layout.composer_panel.unwrap().height, 4);
     }
 

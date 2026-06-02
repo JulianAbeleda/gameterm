@@ -70,8 +70,8 @@ pub struct VisualPosition {
 
 pub const VN_OVERLAY_FULLSCREEN_MIN_ROWS: usize = 40;
 pub const VN_OVERLAY_SIDE_MARGIN_RATIO: f32 = 0.033;
-pub const VN_OVERLAY_DIALOGUE_TOP_RATIO: f32 = 0.13;
-pub const VN_OVERLAY_DIALOGUE_BOTTOM_RATIO: f32 = 0.76;
+pub const VN_OVERLAY_DIALOGUE_TOP_RATIO: f32 = 0.11;
+pub const VN_OVERLAY_DIALOGUE_BOTTOM_RATIO: f32 = 0.84;
 pub const VN_OVERLAY_TEXT_INSET_COLS: usize = 4;
 pub const VN_OVERLAY_DIALOGUE_TEXT_INSET_ROWS: usize = 2;
 pub const VN_OVERLAY_COMPOSER_TEXT_INSET_ROWS: usize = 1;
@@ -132,7 +132,7 @@ pub fn vn_overlay_layout(
     let composer_panel = if composer_height > 0 {
         Some(VnOverlayRect {
             col: margin,
-            row: rows.saturating_sub(composer_height + 1),
+            row: rows.saturating_sub(composer_height + 2),
             width: panel_width,
             height: composer_height,
         })
@@ -3894,8 +3894,8 @@ mod tests {
         assert_eq!(large_composer.height, 4);
         assert_eq!(compact.composer_text_row, Some(compact_composer.row + 1));
         assert_eq!(large_window.composer_text_row, Some(large_composer.row + 1));
-        assert_eq!(compact_composer.row, 19);
-        assert_eq!(large_composer.row, 25);
+        assert_eq!(compact_composer.row, 18);
+        assert_eq!(large_composer.row, 24);
     }
 
     #[test]
