@@ -1054,11 +1054,12 @@ run_agent_check() {
 }
 
 run_workspace_discovery_check() {
-  local tmp_home git_scene pane_scene non_git_dir non_git_scene empty_dir empty_scene patch_path pane_patch_path brief_path install_home
+  local tmp_home git_scene pane_scene dogfood_scene non_git_dir non_git_scene empty_dir empty_scene patch_path pane_patch_path brief_path dogfood_brief_path install_home dogfood_install_home
   tmp_home="$(mktemp -d /tmp/gameterm-scene-workspace-verify.XXXXXX)"
   tmp_paths+=("${tmp_home}")
   git_scene="${tmp_home}/git-workspace.json"
   pane_scene="${tmp_home}/pane-workspace.json"
+  dogfood_scene="${tmp_home}/dogfood-workspace.json"
   non_git_dir="${tmp_home}/non-git"
   non_git_scene="${tmp_home}/non-git-workspace.json"
   empty_dir="${tmp_home}/empty-workspace"
@@ -1066,7 +1067,9 @@ run_workspace_discovery_check() {
   patch_path="${tmp_home}/workspace.patch.json"
   pane_patch_path="${tmp_home}/workspace-pane.patch.json"
   brief_path="${tmp_home}/task-brief.json"
+  dogfood_brief_path="${tmp_home}/dogfood-task-brief.json"
   install_home="${tmp_home}/config"
+  dogfood_install_home="${tmp_home}/dogfood-config"
 
   "${repo_root}/ci/gameterm-scene-workspace.sh" \
     inspect \
@@ -1138,6 +1141,42 @@ run_workspace_discovery_check() {
       and .policy.requires_confirmation == true)
     and all(.choices[]; .policy.origin == "workspace_discovery")
   ' "${git_scene}" >/dev/null
+
+  "${repo_root}/ci/gameterm-scene-workspace.sh" \
+    dogfood \
+    --cwd "${repo_root}" \
+    --brief-output "${dogfood_brief_path}" \
+    --scene-output "${dogfood_scene}" \
+    --force >/dev/null
+  "${repo_root}/ci/gameterm-scene-author.sh" validate "${dogfood_scene}" >/dev/null
+  jq -e '
+    .title == "GameTerm Dogfood Workspace"
+    and any(.variables[]; .key == "dogfood_profile" and .value == {"Text": "true"})
+    and any(.variables[]; .key == "discovered_file_count" and .value.Number >= 5)
+    and any(.entities[]; .id == "discovered-workspace"
+      and (.metadata | any(.[0] == "dogfood_profile" and .[1] == "true")))
+    and any(.entities[]; .id == "task-brief"
+      and (.metadata | any(.[0] == "path" and .[1] == "'"${dogfood_brief_path}"'")))
+    and any(.choices[]; .label == "Open gameterm-scene-roadmap.md")
+    and any(.choices[]; .label == "Open gameterm-scene-dogfood-workspace-scope.md")
+    and any(.choices[]; .label == "Open gameterm-scene-onboarding.md")
+    and any(.choices[]; .label == "Open gameterm-scene-smoke-report.md")
+    and any(.choices[]; .label == "Open gameterm-scene-refactor-plan.md")
+    and any(.choices[]; .label == "Run verification"
+      and .kind.RunCommand.argv == ["ci/gameterm-scene-verify.sh", "--all"]
+      and .policy.requires_confirmation == true)
+    and any(.choices[]; .label == "Run git status"
+      and .kind.RunCommand.argv == ["git", "status", "--short"]
+      and .policy.requires_confirmation == true)
+    and any(.choices[]; .label == "Run dogfood smoke"
+      and .kind.RunCommand.argv == ["ci/gameterm-scene-smoke.sh", "--scenario", "dogfood", "--check-assets"]
+      and .policy.requires_confirmation == true)
+  ' "${dogfood_scene}" >/dev/null
+  jq -e '
+    .objective == "Dogfood Scene Mode daily workspace"
+    and .verification == ["ci/gameterm-scene-verify.sh", "--all"]
+    and (.context_files | index("docs/gameterm-scene-dogfood-workspace-scope.md"))
+  ' "${dogfood_brief_path}" >/dev/null
 
   "${repo_root}/ci/gameterm-scene-workspace.sh" \
     discover \
@@ -1255,6 +1294,38 @@ run_workspace_discovery_check() {
   cmp \
     "${tmp_home}/installed-before-overwrite.json" \
     "${install_home}/gameterm/scenes/default.json" >/dev/null
+
+  "${repo_root}/ci/gameterm-scene-workspace.sh" \
+    dogfood \
+    --cwd "${repo_root}" \
+    --install \
+    --config-home "${dogfood_install_home}" \
+    --force >/dev/null
+  "${repo_root}/ci/gameterm-scene-author.sh" \
+    validate "${dogfood_install_home}/gameterm/scenes/default.json" >/dev/null
+  jq -e '
+    .title == "GameTerm Dogfood Workspace"
+    and any(.variables[]; .key == "dogfood_profile" and .value == {"Text": "true"})
+    and any(.choices[]; .label == "Open task brief")
+  ' "${dogfood_install_home}/gameterm/scenes/default.json" >/dev/null
+  jq -e '
+    .objective == "Dogfood Scene Mode daily workspace"
+    and .verification == ["ci/gameterm-scene-verify.sh", "--all"]
+  ' "${dogfood_install_home}/gameterm/scenes/dogfood-task-brief.json" >/dev/null
+  cp "${dogfood_install_home}/gameterm/scenes/default.json" \
+    "${tmp_home}/installed-dogfood-before-overwrite.json"
+  assert_failing_command \
+    "expected dogfood workspace install overwrite protection to fail" \
+    /tmp/gameterm-scene-dogfood-overwrite.out \
+    /tmp/gameterm-scene-dogfood-overwrite.err \
+    "${repo_root}/ci/gameterm-scene-workspace.sh" \
+    dogfood \
+    --cwd "${repo_root}" \
+    --install \
+    --config-home "${dogfood_install_home}"
+  cmp \
+    "${tmp_home}/installed-dogfood-before-overwrite.json" \
+    "${dogfood_install_home}/gameterm/scenes/default.json" >/dev/null
 
   assert_failing_command \
     "expected workspace discovery strict missing file to fail" \
