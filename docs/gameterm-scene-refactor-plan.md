@@ -264,6 +264,10 @@ large case blocks and jq snippets.
 Principle fit: this is `[visual]` work. Avoid replacing the helper with a new
 language or framework unless shell/jq becomes a demonstrated blocker.
 
+Detailed execution scope:
+
+- [Scene Author Helper Refactor Scope](gameterm-scene-author-helper-refactor-scope.md)
+
 Target:
 
 - Keep the shell entrypoint for local ergonomics.
@@ -294,9 +298,9 @@ Current status:
 
 - Completed the guardrail slice: failed author mutations are now verified to
   leave the scene file unchanged.
-- Deferred jq-filter extraction and table-driven help. The helper is large, but
-  behavior is stable and now better protected; extracting shell/jq snippets can
-  happen later behind the rollback test when it removes real duplication.
+- Dedicated follow-up scope now exists for the author-helper cleanup pass:
+  [Scene Author Helper Refactor Scope](gameterm-scene-author-helper-refactor-scope.md).
+  The next pass should run the scoped lanes back-to-back with separate commits.
 
 ## Priority 4: Fixture And Smoke Organization
 
