@@ -148,18 +148,62 @@ Options for update-choice:
   --target TARGET
 
 Fixtures:
-  basic, navigate, invalid, sprites, missing-sprite, vertical-slice,
-  authoring-loop, game-states, chained-transitions, workspace-agent,
-  multi-agent-coordination
+EOF
+  print_catalog_csv "${AUTHOR_FIXTURES[@]}"
+  cat <<'EOF'
 
 Templates:
-  agent-workflow, project-dashboard, visual-novel, layered-mode, rpg-quest,
-  vertical-slice, workspace-agent, multi-agent-coordination
 EOF
+  print_catalog_csv "${AUTHOR_TEMPLATES[@]}"
 }
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fixture_root="${repo_root}/ci/fixtures/gameterm-scene"
+AUTHOR_FIXTURES=(
+  basic
+  navigate
+  invalid
+  sprites
+  missing-sprite
+  vertical-slice
+  authoring-loop
+  game-states
+  chained-transitions
+  workspace-agent
+  multi-agent-coordination
+)
+AUTHOR_TEMPLATES=(
+  agent-workflow
+  project-dashboard
+  visual-novel
+  layered-mode
+  rpg-quest
+  vertical-slice
+  workspace-agent
+  multi-agent-coordination
+)
+
+print_catalog_csv() {
+  local line="  "
+  local item
+  local separator=""
+
+  for item in "$@"; do
+    if [[ $(( ${#line} + ${#separator} + ${#item} )) -gt 78 ]]; then
+      printf '%s\n' "${line},"
+      line="  "
+      separator=""
+    fi
+    line+="${separator}${item}"
+    separator=", "
+  done
+  printf '%s\n' "${line}"
+}
+
+print_catalog_lines() {
+  printf '%s\n' "$@"
+}
+
 command="${1:-}"
 
 if [[ -z "${command}" ]]; then
@@ -1854,14 +1898,14 @@ case "${command}" in
       usage >&2
       exit 2
     fi
-    printf '%s\n' basic navigate invalid sprites missing-sprite vertical-slice authoring-loop game-states chained-transitions workspace-agent multi-agent-coordination
+    print_catalog_lines "${AUTHOR_FIXTURES[@]}"
     ;;
   list-templates)
     if [[ "${#positionals[@]}" -ne 0 ]]; then
       usage >&2
       exit 2
     fi
-    printf '%s\n' agent-workflow project-dashboard visual-novel layered-mode rpg-quest vertical-slice workspace-agent multi-agent-coordination
+    print_catalog_lines "${AUTHOR_TEMPLATES[@]}"
     ;;
   -h|--help)
     usage
