@@ -227,26 +227,68 @@ cleanup() {
 }
 trap cleanup EXIT
 
-list_smoke_scenarios() {
-  cat <<'EOF'
-renderer-rows
-guarded-input
-run-command-targets
-overlay-cleanup
-vertical-slice
-workspace-agent
-workspace-discovery
-live-mux-discovery
-agent-lifecycle
-authoring-loop
-patch-inbox
-mux-patch
-process-state
-active-pane-gui
-vn-demo
-vn-compose
-vn-compose-codex
+declare -a SCENARIO_ORDER
+declare -a SCENARIO_FIXTURE
+declare -a SCENARIO_KEY_SEQUENCE
+declare -a SCENARIO_PATCH_INBOX
+declare -a SCENARIO_SUBMIT_PATCH
+declare -a SCENARIO_SCENE_SHORTCUT
+declare -a SCENARIO_AUDIT
+
+init_smoke_scenario_catalog() {
+  SCENARIO_ORDER=()
+  while IFS='|' read -r scenario_name fixture_name default_key_sequence default_patch_inbox default_submit_patch default_scene_shortcut audit_message; do
+    if [[ -z "${scenario_name}" || "${scenario_name}" == \#* ]]; then
+      continue
+    fi
+    local catalog_index="${#SCENARIO_ORDER[@]}"
+    SCENARIO_ORDER+=("${scenario_name}")
+    SCENARIO_FIXTURE["${catalog_index}"]="${fixture_name}"
+    SCENARIO_KEY_SEQUENCE["${catalog_index}"]="${default_key_sequence}"
+    SCENARIO_PATCH_INBOX["${catalog_index}"]="${default_patch_inbox}"
+    SCENARIO_SUBMIT_PATCH["${catalog_index}"]="${default_submit_patch}"
+    SCENARIO_SCENE_SHORTCUT["${catalog_index}"]="${default_scene_shortcut}"
+    SCENARIO_AUDIT["${catalog_index}"]="${audit_message}"
+  done <<EOF
+renderer-rows|renderer-rows|||||
+guarded-input|layered-mode|space,enter||||Guarded input audit: exercise layer-owned update and guarded transition inputs.
+run-command-targets|run-command-targets|enter,j,enter,j,enter||||RunCommand audit: activate tab, split_right, and split_down choices.
+overlay-cleanup|basic|escape||||Overlay cleanup audit: close Scene Mode before capture.
+vertical-slice|vertical-slice|enter,j,enter,j,enter,j,enter||||Vertical slice audit: complete the playable brief, launch kit, loop, and ending path.
+workspace-agent|workspace-agent||auto|||Agent/Workspace audit: emit process and agent lifecycle patches into the workspace fixture.
+workspace-discovery|workspace-discovery|||||Workspace discovery audit: launch a scene generated from ${repo_root}.
+live-mux-discovery|live-mux-discovery|||||Live mux discovery audit: launch a scene generated from active mux context.
+agent-lifecycle|basic||auto|||Agent lifecycle audit: emit planning, blocked, and complete patches before capture.
+authoring-loop|authoring-loop|enter,j,enter,j,enter||||Authoring loop audit: save story state, mutate draft state, then reload the saved state.
+patch-inbox|basic||auto|||Patch-inbox audit: apply patch from inbox transport before capture.
+mux-patch|basic|||__PATCH_STATUS__||Mux patch audit: open Scene Mode before the wait expires; the script will submit the patch file.
+process-state|basic||auto|||Process-state audit: the script will run a true command through ci/gameterm-scene-process.sh before capture.
+active-pane-gui|renderer-rows||||active-pane|Active-pane GUI audit: open a transient generated workspace scene through the native shortcut.
+vn-demo|vn-demo|enter,j,enter||||VN demo audit: launch imported VN script with strict-validated local PNG assets.
+vn-compose|vn-demo|text:look at roadmap,enter,delay:1||||VN compose audit: type a prompt and render the deterministic compose backend reply.
+vn-compose-codex|vn-demo|text:look at roadmap,enter,delay:1||||VN Codex compose audit: type a prompt and render the fake Codex backend reply.
 EOF
+}
+
+list_smoke_scenarios() {
+  local scenario_name
+  for scenario_name in "${SCENARIO_ORDER[@]}"; do
+    printf '%s\n' "${scenario_name}"
+  done
+}
+
+scenario_catalog_index() {
+  local lookup="$1"
+  local index
+  local name
+  for index in "${!SCENARIO_ORDER[@]}"; do
+    name="${SCENARIO_ORDER[${index}]}"
+    if [[ "${name}" == "${lookup}" ]]; then
+      printf '%s\n' "${index}"
+      return 0
+    fi
+  done
+  return 1
 }
 
 describe_smoke_scenario() {
@@ -413,107 +455,38 @@ EOF
 }
 
 apply_smoke_scenario_defaults() {
-  case "${scenario}" in
-    "")
-      ;;
-    renderer-rows)
-      fixture="renderer-rows"
-      ;;
-    guarded-input)
-      fixture="layered-mode"
-      if [[ -z "${key_sequence}" ]]; then
-        key_sequence="space,enter"
-      fi
-      ;;
-    run-command-targets)
-      fixture="run-command-targets"
-      if [[ -z "${key_sequence}" ]]; then
-        key_sequence="enter,j,enter,j,enter"
-      fi
-      ;;
-    overlay-cleanup)
-      fixture="basic"
-      if [[ -z "${key_sequence}" ]]; then
-        key_sequence="escape"
-      fi
-      ;;
-    vertical-slice)
-      fixture="vertical-slice"
-      if [[ -z "${key_sequence}" ]]; then
-        key_sequence="enter,j,enter,j,enter,j,enter"
-      fi
-      ;;
-    workspace-agent)
-      fixture="workspace-agent"
-      if [[ -z "${patch_inbox}" ]]; then
-        patch_inbox="auto"
-      fi
-      ;;
-    workspace-discovery)
-      fixture="workspace-discovery"
-      ;;
-    live-mux-discovery)
-      fixture="live-mux-discovery"
-      ;;
-    agent-lifecycle)
-      fixture="basic"
-      if [[ -z "${patch_inbox}" ]]; then
-        patch_inbox="auto"
-      fi
-      ;;
-    authoring-loop)
-      fixture="authoring-loop"
-      if [[ -z "${key_sequence}" ]]; then
-        key_sequence="enter,j,enter,j,enter"
-      fi
-      ;;
-    patch-inbox)
-      fixture="basic"
-      if [[ -z "${patch_inbox}" ]]; then
-        patch_inbox="auto"
-      fi
-      ;;
-    mux-patch)
-      fixture="basic"
-      if [[ -z "${submit_mux_patch}" ]]; then
-        submit_mux_patch="${fixture_root}/patch-status.json"
-      fi
-      ;;
-    process-state)
-      fixture="basic"
-      if [[ -z "${patch_inbox}" ]]; then
-        patch_inbox="auto"
-      fi
-      ;;
-    active-pane-gui)
-      fixture="renderer-rows"
-      scene_open_shortcut="active-pane"
-      ;;
-    vn-demo)
-      fixture="vn-demo"
-      if [[ -z "${key_sequence}" ]]; then
-        key_sequence="enter,j,enter"
-      fi
-      ;;
-    vn-compose)
-      fixture="vn-demo"
-      if [[ -z "${key_sequence}" ]]; then
-        key_sequence="text:look at roadmap,enter,delay:1"
-      fi
-      ;;
-    vn-compose-codex)
-      fixture="vn-demo"
-      if [[ -z "${key_sequence}" ]]; then
-        key_sequence="text:look at roadmap,enter,delay:1"
-      fi
-      ;;
-    *)
-      echo "unknown smoke scenario: ${scenario}" >&2
-      list_smoke_scenarios >&2
-      exit 2
-      ;;
-  esac
+  local catalog_index
+
+  if [[ -z "${scenario}" ]]; then
+    return
+  fi
+  if ! catalog_index="$(scenario_catalog_index "${scenario}")"; then
+    echo "unknown smoke scenario: ${scenario}" >&2
+    list_smoke_scenarios >&2
+    exit 2
+  fi
+
+  fixture="${SCENARIO_FIXTURE[${catalog_index}]}"
+
+  if [[ -z "${key_sequence}" && -n "${SCENARIO_KEY_SEQUENCE[${catalog_index}]:-}" ]]; then
+    key_sequence="${SCENARIO_KEY_SEQUENCE[${catalog_index}]}"
+  fi
+  if [[ -z "${patch_inbox}" && -n "${SCENARIO_PATCH_INBOX[${catalog_index}]:-}" ]]; then
+    patch_inbox="${SCENARIO_PATCH_INBOX[${catalog_index}]}"
+  fi
+  if [[ -z "${submit_mux_patch}" && -n "${SCENARIO_SUBMIT_PATCH[${catalog_index}]:-}" ]]; then
+    if [[ "${SCENARIO_SUBMIT_PATCH[${catalog_index}]}" == "__PATCH_STATUS__" ]]; then
+      submit_mux_patch="${fixture_root}/patch-status.json"
+    else
+      submit_mux_patch="${SCENARIO_SUBMIT_PATCH[${catalog_index}]}"
+    fi
+  fi
+  if [[ -n "${SCENARIO_SCENE_SHORTCUT[${catalog_index}]:-}" ]]; then
+    scene_open_shortcut="${SCENARIO_SCENE_SHORTCUT[${catalog_index}]}"
+  fi
 }
+
+init_smoke_scenario_catalog
 
 if [[ "${list_scenarios}" -eq 1 ]]; then
   list_smoke_scenarios
