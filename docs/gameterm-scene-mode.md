@@ -838,13 +838,14 @@ ci/gameterm-scene-smoke.sh --launch --scenario mux-patch
 Use `--min-bytes N` to make capture output checks stricter for local visual
 regression runs.
 
-On macOS, `--launch` now foregrounds the launched GameTerm process and sends
-`Ctrl+Shift+G` before capture. Use `--no-auto-open-scene` to disable that
-automation and open Scene Mode manually. The script prints the frontmost macOS
-process before capture and fails if the launched GameTerm process is not
-frontmost, so missed-focus captures do not silently pass. Use
-`--allow-background-capture` only when intentionally collecting a best-effort
-capture.
+On macOS, `--launch` opens Scene Mode through the native smoke launch hook,
+foregrounds the launched GameTerm process, and captures the launched window.
+Use `--open-scene-via-shortcut` when explicitly testing the configured
+`Ctrl+Shift+G` shortcut path. Use `--no-auto-open-scene` to disable automation
+and open Scene Mode manually. The script prints the frontmost macOS process
+before capture and fails if the launched GameTerm process is not frontmost, so
+missed-focus captures do not silently pass. Use `--allow-background-capture`
+only when intentionally collecting a best-effort capture.
 Use `--key-sequence` with comma-separated keys such as `space,enter` or
 `delay:1,escape` to automate post-launch Scene Mode interaction.
 Use `--post-action-wait N` to give patch writes or key sequences more time to

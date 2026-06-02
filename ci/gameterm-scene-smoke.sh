@@ -49,6 +49,9 @@ Options:
                            Default: 10.
   --no-auto-open-scene     Do not use macOS automation to foreground GameTerm
                            and press the Scene shortcut after launch.
+  --open-scene-via-shortcut
+                           Open Scene Mode by sending the configured shortcut
+                           instead of using the native smoke launch hook.
   --no-fullscreen-window   Do not resize the launched GameTerm window to fill
                            the visible desktop before capture.
   --allow-background-capture
@@ -86,6 +89,7 @@ describe_scenario=""
 list_scenarios=0
 wait_before_capture=10
 auto_open_scene=1
+native_scene_open=1
 fullscreen_window=1
 require_frontmost=1
 post_action_wait=1
@@ -164,6 +168,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --no-auto-open-scene)
       auto_open_scene=0
+      shift
+      ;;
+    --open-scene-via-shortcut)
+      native_scene_open=0
       shift
       ;;
     --no-fullscreen-window)
@@ -551,7 +559,16 @@ check_bundled_assets() {
 }
 
 frontmost_process() {
-  osascript <<'EOF' 2>/dev/null
+  local timeout="${1:-3}"
+  local out
+  local err
+  local pid
+  local deadline
+  local rc
+
+  out="$(mktemp /tmp/gameterm-scene-frontmost.XXXXXX)"
+  err="$(mktemp /tmp/gameterm-scene-frontmost.err.XXXXXX)"
+  osascript >"${out}" 2>"${err}" <<'EOF' &
 tell application "System Events"
   set frontProcess to first application process whose frontmost is true
   set frontName to name of frontProcess
@@ -559,6 +576,147 @@ tell application "System Events"
   return frontName & " " & frontPid
 end tell
 EOF
+  pid=$!
+  deadline=$((SECONDS + timeout))
+  while kill -0 "${pid}" 2>/dev/null; do
+    if ((SECONDS >= deadline)); then
+      kill "${pid}" 2>/dev/null || true
+      wait "${pid}" 2>/dev/null || true
+      cat "${err}" >&2 || true
+      rm -f "${out}" "${err}"
+      return 124
+    fi
+    sleep 0.2
+  done
+
+  set +e
+  wait "${pid}"
+  rc=$?
+  set -e
+  if [[ "${rc}" -eq 0 ]]; then
+    cat "${out}"
+  else
+    cat "${err}" >&2 || true
+  fi
+  rm -f "${out}" "${err}"
+  return "${rc}"
+}
+
+macos_automation_failure_message() {
+  cat >&2 <<'EOF'
+macOS automation is unavailable.
+
+Most likely cause:
+  - Accessibility permission is not granted to the terminal/host app running
+    this script.
+
+Fix:
+  1. Open System Settings -> Privacy & Security -> Accessibility.
+  2. Enable the terminal/host app that runs this script.
+  3. Fully quit and reopen that app.
+  4. Rerun this script, or use --no-auto-open-scene and open Scene Mode manually.
+EOF
+}
+
+check_macos_automation_preflight() {
+  if [[ "$(uname -s)" != "Darwin" ]]; then
+    return 0
+  fi
+  if [[ "${auto_open_scene}" -ne 1 ]]; then
+    return 0
+  fi
+  if ! command -v osascript >/dev/null 2>&1; then
+    echo "osascript is unavailable; open Scene Mode manually." >&2
+    exit 7
+  fi
+
+  local front
+  if ! front="$(frontmost_process 3)"; then
+    macos_automation_failure_message
+    exit 7
+  fi
+  if [[ -z "${front}" ]]; then
+    macos_automation_failure_message
+    exit 7
+  fi
+  echo "macOS automation preflight: frontmost process is ${front}"
+}
+
+foreground_gui_window() {
+  local pid="$1"
+  local timeout="$2"
+  local resize_window="$3"
+
+  if [[ "$(uname -s)" != "Darwin" ]]; then
+    echo "Automatic GameTerm foregrounding is only supported on macOS." >&2
+    return 0
+  fi
+  if ! command -v osascript >/dev/null 2>&1; then
+    echo "osascript is unavailable; foreground GameTerm manually." >&2
+    return 0
+  fi
+
+  echo "Foregrounding GameTerm pid ${pid} for capture..."
+  if ! osascript - "${pid}" "${timeout}" "${resize_window}" <<'EOF'
+on visibleDesktopFrame()
+  tell application "Finder"
+    set desktopBounds to bounds of window of desktop
+  end tell
+  set leftEdge to item 1 of desktopBounds
+  set topEdge to item 2 of desktopBounds
+  set rightEdge to item 3 of desktopBounds
+  set bottomEdge to item 4 of desktopBounds
+  return {leftEdge, topEdge + 24, rightEdge - leftEdge, bottomEdge - topEdge - 24}
+end visibleDesktopFrame
+
+on run argv
+  set targetPid to (item 1 of argv) as integer
+  set timeoutSeconds to (item 2 of argv) as integer
+  set resizeWindow to item 3 of argv
+  set deadline to (current date) + timeoutSeconds
+
+  tell application "System Events"
+    repeat while (current date) is less than deadline
+      if exists (first application process whose unix id is targetPid) then
+        set targetProcess to first application process whose unix id is targetPid
+        set frontmost of targetProcess to true
+        delay 0.5
+        if resizeWindow is "1" then
+          set frame to my visibleDesktopFrame()
+          set windowPosition to {item 1 of frame, item 2 of frame}
+          set windowSize to {item 3 of frame, item 4 of frame}
+          if exists window 1 of targetProcess then
+            set position of window 1 of targetProcess to windowPosition
+            set size of window 1 of targetProcess to windowSize
+            delay 0.5
+          end if
+        end if
+        return
+      end if
+      delay 0.2
+    end repeat
+  end tell
+
+  error "GameTerm GUI process was not visible to System Events before timeout"
+end run
+EOF
+  then
+    cat >&2 <<'EOF'
+Failed to foreground GameTerm through macOS automation.
+
+Most likely causes:
+  - Accessibility permission is not granted to the terminal/host app running
+    this script.
+  - GameTerm did not create a GUI application process before the focus timeout.
+
+Fix:
+  1. Open System Settings -> Privacy & Security -> Accessibility.
+  2. Enable the terminal/host app that runs this script.
+  3. Fully quit and reopen that app.
+  4. Rerun this script, or use --no-auto-open-scene and open Scene Mode manually.
+EOF
+    exit 7
+  fi
 }
 
 foreground_gui_and_open_scene() {
@@ -791,6 +949,9 @@ Frontmost process: ${front}
 This would likely capture another app instead of Scene Mode. Rerun after
 closing/defocusing the conflicting app, or pass --allow-background-capture if
 you intentionally want a best-effort capture.
+
+Manual fallback:
+  ci/gameterm-scene-smoke.sh --launch --scenario ${scenario:-renderer-rows} --no-auto-open-scene --output ${output}
 EOF
       exit 9
     fi
@@ -955,6 +1116,7 @@ EOF
     exit 1
   fi
   assert_gui_binary_current "${gui_bin}"
+  check_macos_automation_preflight
 
   tmp_home="$(mktemp -d /tmp/gameterm-scene-smoke.XXXXXX)"
   gui_class="org.gameterm.scene-smoke.$$"
@@ -986,6 +1148,15 @@ EOF
   launch_env=(
     XDG_CONFIG_HOME="${tmp_home}"
   )
+  if [[ "${auto_open_scene}" -eq 1 && "${native_scene_open}" -eq 1 ]]; then
+    if [[ "${scene_open_shortcut}" == "active-pane" ]]; then
+      launch_env+=(GAMETERM_SCENE_SMOKE_OPEN="active-pane")
+      echo "Scene open: native smoke hook (active-pane)"
+    else
+      launch_env+=(GAMETERM_SCENE_SMOKE_OPEN="scene")
+      echo "Scene open: native smoke hook"
+    fi
+  fi
   if [[ -n "${compose_backend_kind}" ]]; then
     launch_env+=(
       GAMETERM_SCENE_COMPOSE_BACKEND_KIND="${compose_backend_kind}"
@@ -1007,11 +1178,18 @@ EOF
   echo "GameTerm pid: ${gui_pid}"
   echo "GameTerm class: ${gui_class}"
   if [[ "${auto_open_scene}" -eq 1 ]]; then
-    foreground_gui_and_open_scene \
-      "${gui_pid}" \
-      "${focus_timeout}" \
-      "${scene_open_shortcut}" \
-      "${fullscreen_window}"
+    if [[ "${native_scene_open}" -eq 1 ]]; then
+      foreground_gui_window \
+        "${gui_pid}" \
+        "${focus_timeout}" \
+        "${fullscreen_window}"
+    else
+      foreground_gui_and_open_scene \
+        "${gui_pid}" \
+        "${focus_timeout}" \
+        "${scene_open_shortcut}" \
+        "${fullscreen_window}"
+    fi
   else
     if [[ "${scene_open_shortcut}" == "active-pane" ]]; then
       echo "Press Ctrl+Alt+Shift+G in the GameTerm window to open active-pane Scene Mode."
@@ -1219,4 +1397,14 @@ fi
 
 file "${output}"
 ls -lh "${output}"
+if [[ "${launch}" -eq 1 ]]; then
+  echo "Smoke report:"
+  echo "  scenario: ${scenario:-default}"
+  echo "  fixture: ${fixture}"
+  echo "  GameTerm pid: ${gui_pid}"
+  echo "  GameTerm class: ${gui_class}"
+  echo "  native Scene open: ${native_scene_open}"
+  echo "  output: ${output}"
+  echo "  bytes: ${actual_bytes}"
+fi
 echo "Smoke capture succeeded."

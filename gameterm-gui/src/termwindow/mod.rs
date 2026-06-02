@@ -38,6 +38,11 @@ use config::{
     configuration, AudibleBell, ConfigHandle, Dimension, DimensionContext, FrontEndSelection,
     GeometryOrigin, GuiPosition, TermConfig, WindowCloseConfirmation,
 };
+use gameterm_dynamic::Value;
+use gameterm_font::FontConfiguration;
+use gameterm_term::color::ColorPalette;
+use gameterm_term::input::LastMouseClick;
+use gameterm_term::{Alert, Progress, StableRowIndex, TerminalConfiguration, TerminalSize};
 use gameterm_visual::{
     generate_workspace_context_error_scene, generate_workspace_scene, ScenePaneContext,
     SceneWorkspaceContext,
@@ -67,11 +72,6 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use termwiz::hyperlink::Hyperlink;
 use termwiz::surface::SequenceNo;
-use gameterm_dynamic::Value;
-use gameterm_font::FontConfiguration;
-use gameterm_term::color::ColorPalette;
-use gameterm_term::input::LastMouseClick;
-use gameterm_term::{Alert, Progress, StableRowIndex, TerminalConfiguration, TerminalSize};
 
 pub mod background;
 pub mod box_model;
@@ -99,8 +99,32 @@ lazy_static::lazy_static! {
 }
 
 static BOOT_MENU_SHOWN: AtomicBool = AtomicBool::new(false);
+const SCENE_SMOKE_OPEN_ENV: &str = "GAMETERM_SCENE_SMOKE_OPEN";
 
 pub const ICON_DATA: &'static [u8] = include_bytes!("../../../assets/icon/terminal.png");
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SceneSmokeOpenRequest {
+    Scene,
+    ActivePane,
+}
+
+impl SceneSmokeOpenRequest {
+    fn from_env() -> Option<Self> {
+        let value = std::env::var(SCENE_SMOKE_OPEN_ENV).ok()?;
+        match value.trim().to_ascii_lowercase().as_str() {
+            "" | "0" | "false" | "off" | "none" => None,
+            "scene" | "configured" | "default" => Some(Self::Scene),
+            "active-pane" | "active_pane" | "active" => Some(Self::ActivePane),
+            other => {
+                log::warn!(
+                    "ignoring unsupported {SCENE_SMOKE_OPEN_ENV} value `{other}`; expected `scene` or `active-pane`"
+                );
+                None
+            }
+        }
+    }
+}
 
 pub fn set_window_position(pos: GuiPosition) {
     POSITION.lock().unwrap().replace(pos);
@@ -897,6 +921,16 @@ impl TermWindow {
             myself.emit_window_event("window-config-reloaded", None);
             myself.emit_status_event();
             myself.show_boot_menu_once();
+            if let Some(request) = SceneSmokeOpenRequest::from_env() {
+                if let Err(err) = myself.show_scene_for_smoke(request) {
+                    let message = format!("while opening Scene Mode for smoke: {err:#}");
+                    log::error!("{message}");
+                    gameterm_toast_notification::persistent_toast_notification(
+                        "Scene Mode",
+                        &message,
+                    );
+                }
+            }
         }
 
         crate::update::start_update_checker();
@@ -2615,6 +2649,92 @@ impl TermWindow {
         self.move_tab(tab)
     }
 
+    fn show_game_term_scene_overlay(&mut self) -> anyhow::Result<()> {
+        let tab = match Mux::get().get_active_tab_for_window(self.mux_window_id) {
+            Some(tab) => tab,
+            None => anyhow::bail!("no active tab!?"),
+        };
+        let route_pane_id = tab.get_active_pane().map(|pane| pane.pane_id());
+        let gui_window = self.window.clone();
+        let (overlay, future) = start_overlay(self, &tab, move |_tab_id, term| {
+            crate::overlay::show_visual_scene_overlay(term, route_pane_id, gui_window.clone())
+        });
+        self.assign_overlay(tab.tab_id(), overlay);
+        promise::spawn::spawn(future).detach();
+        Ok(())
+    }
+
+    fn show_game_term_active_pane_scene_overlay(&mut self) -> anyhow::Result<()> {
+        let tab = match Mux::get().get_active_tab_for_window(self.mux_window_id) {
+            Some(tab) => tab,
+            None => anyhow::bail!("no active tab!?"),
+        };
+        let pane = tab.get_active_pane();
+        let route_pane_id = pane.as_ref().map(|pane| pane.pane_id());
+        let fallback_cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let (scene, action_base_dir, source_label) = match pane {
+            Some(pane) => {
+                let pane_cwd = pane
+                    .get_current_working_dir(CachePolicy::AllowStale)
+                    .and_then(|url| url.to_file_path().ok());
+                let cwd = pane_cwd.clone().unwrap_or_else(|| fallback_cwd.clone());
+                let process_info = pane.get_foreground_process_info(CachePolicy::AllowStale);
+                let foreground_process_path =
+                    process_info.as_ref().map(|info| info.executable.clone());
+                let foreground_process_name = pane
+                    .get_foreground_process_name(CachePolicy::AllowStale)
+                    .or_else(|| process_info.as_ref().map(|info| info.name.clone()));
+                let pane_context = ScenePaneContext {
+                    pane_id: pane.pane_id(),
+                    mux_window_id: self.mux_window_id,
+                    cwd: pane_cwd,
+                    foreground_process_name,
+                    foreground_process_path,
+                    progress: Some(format!("{:?}", pane.get_progress())),
+                };
+                let (scene, report) = generate_workspace_scene(SceneWorkspaceContext {
+                    cwd,
+                    pane: Some(pane_context),
+                    max_files: 24,
+                });
+                (
+                    scene,
+                    report.root.clone(),
+                    format!("generated active pane scene: {}", report.root.display()),
+                )
+            }
+            None => {
+                let message = "Active pane Scene requires an active pane".to_string();
+                (
+                    generate_workspace_context_error_scene(message.clone(), fallback_cwd.clone()),
+                    fallback_cwd,
+                    format!("generated active pane scene error: {message}"),
+                )
+            }
+        };
+        let gui_window = self.window.clone();
+        let (overlay, future) = start_overlay(self, &tab, move |_tab_id, term| {
+            crate::overlay::show_generated_visual_scene_overlay(
+                term,
+                route_pane_id,
+                gui_window.clone(),
+                scene.clone(),
+                action_base_dir.clone(),
+                source_label.clone(),
+            )
+        });
+        self.assign_overlay(tab.tab_id(), overlay);
+        promise::spawn::spawn(future).detach();
+        Ok(())
+    }
+
+    fn show_scene_for_smoke(&mut self, request: SceneSmokeOpenRequest) -> anyhow::Result<()> {
+        match request {
+            SceneSmokeOpenRequest::Scene => self.show_game_term_scene_overlay(),
+            SceneSmokeOpenRequest::ActivePane => self.show_game_term_active_pane_scene_overlay(),
+        }
+    }
+
     pub fn perform_key_assignment(
         &mut self,
         pane: &Arc<dyn Pane>,
@@ -2813,92 +2933,20 @@ impl TermWindow {
             ShowTabNavigator => self.show_tab_navigator(),
             ShowDebugOverlay => self.show_debug_overlay(),
             ShowGameTermScene => {
-                let tab = match Mux::get().get_active_tab_for_window(self.mux_window_id) {
-                    Some(tab) => tab,
-                    None => anyhow::bail!("no active tab!?"),
-                };
-                let route_pane_id = tab.get_active_pane().map(|pane| pane.pane_id());
-                let gui_window = self.window.clone();
-                let (overlay, future) = start_overlay(self, &tab, move |_tab_id, term| {
-                    crate::overlay::show_visual_scene_overlay(
-                        term,
-                        route_pane_id,
-                        gui_window.clone(),
-                    )
-                });
-                self.assign_overlay(tab.tab_id(), overlay);
-                promise::spawn::spawn(future).detach();
+                self.show_game_term_scene_overlay()?;
             }
             ShowGameTermActivePaneScene => {
-                let tab = match Mux::get().get_active_tab_for_window(self.mux_window_id) {
-                    Some(tab) => tab,
-                    None => {
-                        gameterm_toast_notification::persistent_toast_notification(
-                            "Scene Mode",
-                            "Active pane Scene requires an active tab",
-                        );
-                        return Ok(PerformAssignmentResult::Handled);
-                    }
-                };
-                let pane = tab.get_active_pane();
-                let route_pane_id = pane.as_ref().map(|pane| pane.pane_id());
-                let fallback_cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-                let (scene, action_base_dir, source_label) = match pane {
-                    Some(pane) => {
-                        let pane_cwd = pane
-                            .get_current_working_dir(CachePolicy::AllowStale)
-                            .and_then(|url| url.to_file_path().ok());
-                        let cwd = pane_cwd.clone().unwrap_or_else(|| fallback_cwd.clone());
-                        let process_info = pane.get_foreground_process_info(CachePolicy::AllowStale);
-                        let foreground_process_path =
-                            process_info.as_ref().map(|info| info.executable.clone());
-                        let foreground_process_name = pane
-                            .get_foreground_process_name(CachePolicy::AllowStale)
-                            .or_else(|| process_info.as_ref().map(|info| info.name.clone()));
-                        let pane_context = ScenePaneContext {
-                            pane_id: pane.pane_id(),
-                            mux_window_id: self.mux_window_id,
-                            cwd: pane_cwd,
-                            foreground_process_name,
-                            foreground_process_path,
-                            progress: Some(format!("{:?}", pane.get_progress())),
-                        };
-                        let (scene, report) = generate_workspace_scene(SceneWorkspaceContext {
-                            cwd,
-                            pane: Some(pane_context),
-                            max_files: 24,
-                        });
-                        (
-                            scene,
-                            report.root.clone(),
-                            format!("generated active pane scene: {}", report.root.display()),
-                        )
-                    }
-                    None => {
-                        let message = "Active pane Scene requires an active pane".to_string();
-                        (
-                            generate_workspace_context_error_scene(
-                                message.clone(),
-                                fallback_cwd.clone(),
-                            ),
-                            fallback_cwd,
-                            format!("generated active pane scene error: {message}"),
-                        )
-                    }
-                };
-                let gui_window = self.window.clone();
-                let (overlay, future) = start_overlay(self, &tab, move |_tab_id, term| {
-                    crate::overlay::show_generated_visual_scene_overlay(
-                        term,
-                        route_pane_id,
-                        gui_window.clone(),
-                        scene.clone(),
-                        action_base_dir.clone(),
-                        source_label.clone(),
-                    )
-                });
-                self.assign_overlay(tab.tab_id(), overlay);
-                promise::spawn::spawn(future).detach();
+                if Mux::get()
+                    .get_active_tab_for_window(self.mux_window_id)
+                    .is_none()
+                {
+                    gameterm_toast_notification::persistent_toast_notification(
+                        "Scene Mode",
+                        "Active pane Scene requires an active tab",
+                    );
+                    return Ok(PerformAssignmentResult::Handled);
+                }
+                self.show_game_term_active_pane_scene_overlay()?;
             }
             ShowLauncher => self.show_launcher(),
             ShowLauncherArgs(args) => {
