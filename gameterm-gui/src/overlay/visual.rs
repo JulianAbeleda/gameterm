@@ -122,6 +122,7 @@ fn show_visual_scene_overlay_with_source(
     let (scene_patch_tx, scene_patch_rx) = mpsc::channel();
     let _scene_patch_subscription =
         ScenePatchNotificationSubscription::new(pane_id, route_pane_id, scene_patch_tx);
+    let mut compose_dock = SceneComposeDock::default();
 
     loop {
         let mut needs_render = false;
@@ -148,7 +149,7 @@ fn show_visual_scene_overlay_with_source(
         }
         if needs_render {
             if let Some(runtime) = runtime.as_ref() {
-                render_runtime(&mut term, runtime, &sprite_manifest)?;
+                render_runtime_with_compose(&mut term, runtime, &sprite_manifest, &compose_dock)?;
             }
         }
 
@@ -186,6 +187,19 @@ fn show_visual_scene_overlay_with_source(
         };
         match input {
             InputEvent::Key(KeyEvent { key, .. }) => {
+                if let Some(runtime) = runtime.as_mut() {
+                    if !runtime.scene().stage.is_empty() {
+                        if compose_dock.handle_key(key, runtime) {
+                            render_runtime_with_compose(
+                                &mut term,
+                                runtime,
+                                &sprite_manifest,
+                                &compose_dock,
+                            )?;
+                            continue;
+                        }
+                    }
+                }
                 let visual_input = visual_input_from_key(key);
                 if visual_input == VisualInput::Close {
                     break;
@@ -244,12 +258,12 @@ fn show_visual_scene_overlay_with_source(
                     )?;
                     file_watcher.refresh(&scene_path, &sprite_manifest_path);
                     patch_inbox.refresh();
-                    render_runtime(&mut term, runtime, &sprite_manifest)?;
+                    render_runtime_with_compose(&mut term, runtime, &sprite_manifest, &compose_dock)?;
                 }
             }
             InputEvent::Resized { .. } => {
                 if let Some(runtime) = runtime.as_ref() {
-                    render_runtime(&mut term, runtime, &sprite_manifest)?;
+                    render_runtime_with_compose(&mut term, runtime, &sprite_manifest, &compose_dock)?;
                 } else {
                     let error = load_error
                         .as_deref()
@@ -995,10 +1009,71 @@ fn visual_input_from_key(key: KeyCode) -> VisualInput {
     }
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct SceneComposeDock {
+    buffer: String,
+    last_submitted: Option<String>,
+}
+
+impl SceneComposeDock {
+    fn handle_key(&mut self, key: KeyCode, runtime: &mut SceneRuntime) -> bool {
+        match key {
+            KeyCode::Backspace => {
+                self.buffer.pop();
+                true
+            }
+            KeyCode::Delete => {
+                self.buffer.clear();
+                true
+            }
+            KeyCode::Enter if !self.buffer.trim().is_empty() => {
+                let submitted = self.buffer.trim().to_string();
+                self.last_submitted = Some(submitted.clone());
+                self.buffer.clear();
+                runtime.mark_action_status(format!("Composed input ready: {submitted}"));
+                true
+            }
+            KeyCode::Char(ch) if is_compose_char(ch) => {
+                self.buffer.push(ch);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn render_line(&self, cols: usize) -> String {
+        let mut line = String::from(" Compose: ");
+        line.push_str(&self.buffer);
+        line.push('_');
+        if self.buffer.is_empty() {
+            if let Some(last_submitted) = &self.last_submitted {
+                line.push_str("  last: ");
+                line.push_str(last_submitted);
+            } else {
+                line.push_str("  type here; enter submits");
+            }
+        }
+        clip_text(&line, cols.max(1))
+    }
+}
+
+fn is_compose_char(ch: char) -> bool {
+    !ch.is_control()
+}
+
 fn render_runtime(
     term: &mut TermWizTerminal,
     runtime: &SceneRuntime,
     sprite_manifest: &VisualSpriteManifestStatus,
+) -> anyhow::Result<()> {
+    render_runtime_with_compose(term, runtime, sprite_manifest, &SceneComposeDock::default())
+}
+
+fn render_runtime_with_compose(
+    term: &mut TermWizTerminal,
+    runtime: &SceneRuntime,
+    sprite_manifest: &VisualSpriteManifestStatus,
+    compose_dock: &SceneComposeDock,
 ) -> anyhow::Result<()> {
     let size = term.get_screen_size()?;
     term.set_metadata(
@@ -1016,12 +1091,37 @@ fn render_runtime(
         frame.push_str("\r\n\r\n");
     }
     frame.push_str(&runtime.render_text_frame(size.cols, size.rows));
+    if !runtime.render_snapshot().stage.is_empty() {
+        frame = replace_last_screen_line(
+            frame,
+            size.cols,
+            size.rows,
+            &compose_dock.render_line(size.cols),
+        );
+    }
     term.render(&[
         Change::ClearScreen(ColorAttribute::Default),
         Change::Text(truncate_to_screen(frame, size.cols, size.rows)),
     ])?;
     term.flush()?;
     Ok(())
+}
+
+fn replace_last_screen_line(frame: String, cols: usize, rows: usize, replacement: &str) -> String {
+    let rows = rows.max(1);
+    let mut lines = frame.lines().map(str::to_string).collect::<Vec<_>>();
+    while lines.len() < rows {
+        lines.push(String::new());
+    }
+    lines.truncate(rows);
+    lines[rows - 1] = clip_text(replacement, cols.max(1));
+    let mut out = lines.join("\r\n");
+    out.push_str("\r\n");
+    out
+}
+
+fn clip_text(text: &str, max_chars: usize) -> String {
+    text.chars().take(max_chars).collect()
 }
 
 #[cfg(test)]
@@ -1408,6 +1508,36 @@ mod tests {
         assert!(scene_patch_target_matches(None, Some(7), 7, Some(3)));
         assert!(!scene_patch_target_matches(Some(4), None, 7, Some(3)));
         assert!(!scene_patch_target_matches(None, Some(4), 7, Some(3)));
+    }
+
+    #[test]
+    fn scene_compose_dock_edits_and_submits_buffer() {
+        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        let mut dock = SceneComposeDock::default();
+
+        assert!(dock.handle_key(KeyCode::Char('h'), &mut runtime));
+        assert!(dock.handle_key(KeyCode::Char('i'), &mut runtime));
+        assert_eq!(dock.buffer, "hi");
+        assert!(dock.handle_key(KeyCode::Backspace, &mut runtime));
+        assert_eq!(dock.buffer, "h");
+        assert!(dock.handle_key(KeyCode::Enter, &mut runtime));
+
+        assert!(dock.buffer.is_empty());
+        assert_eq!(dock.last_submitted.as_deref(), Some("h"));
+        assert!(runtime
+            .render_snapshot()
+            .status
+            .contains("Composed input ready: h"));
+    }
+
+    #[test]
+    fn replace_last_screen_line_preserves_frame_height() {
+        let frame = replace_last_screen_line("one\r\ntwo\r\n".to_string(), 8, 4, "Compose: hello");
+
+        let lines = frame.lines().collect::<Vec<_>>();
+        assert_eq!(lines.len(), 4);
+        assert_eq!(lines[0], "one");
+        assert_eq!(lines[3], "Compose:");
     }
 }
 
