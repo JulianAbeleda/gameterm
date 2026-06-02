@@ -24,7 +24,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::thread;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use termwiz::input::{InputEvent, KeyCode, KeyEvent};
 use termwiz::surface::Change;
 use termwiz::terminal::Terminal;
@@ -225,7 +225,7 @@ fn show_visual_scene_overlay_with_source(
                                     continue;
                                 }
                                 compose_dock.mark_submitted(&prompt);
-                                runtime.mark_action_status(format!("Compose running: {prompt}"));
+                                runtime.mark_action_status(compose_running_status(&prompt));
                                 compose_backend_running = true;
                                 spawn_compose_backend(
                                     ComposeBackendRequest {
@@ -1067,6 +1067,11 @@ fn visual_input_from_key(key: KeyCode) -> VisualInput {
 }
 
 const COMPOSE_BACKEND_ENV: &str = "GAMETERM_SCENE_COMPOSE_BACKEND";
+const COMPOSE_BACKEND_KIND_ENV: &str = "GAMETERM_SCENE_COMPOSE_BACKEND_KIND";
+const COMPOSE_CODEX_BIN_ENV: &str = "GAMETERM_SCENE_COMPOSE_CODEX_BIN";
+const COMPOSE_CODEX_WORKSPACE_ENV: &str = "GAMETERM_SCENE_COMPOSE_WORKSPACE";
+const COMPOSE_CODEX_SANDBOX_ENV: &str = "GAMETERM_SCENE_COMPOSE_CODEX_SANDBOX";
+const COMPOSE_CODEX_APPROVAL_ENV: &str = "GAMETERM_SCENE_COMPOSE_CODEX_APPROVAL";
 const COMPOSE_OUTPUT_LIMIT: usize = 1200;
 const COMPOSE_BACKEND_TIMEOUT: Duration = Duration::from_secs(15);
 
@@ -1083,11 +1088,50 @@ struct ComposeBackendResult {
     stdout: String,
     stderr: String,
     exit_code: Option<i32>,
+    label: ComposeBackendLabel,
 }
 
 impl ComposeBackendResult {
     fn succeeded(&self) -> bool {
         self.exit_code == Some(0)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ComposeBackendLabel {
+    Compose,
+    Codex,
+}
+
+impl ComposeBackendLabel {
+    fn running_status(self, prompt: &str) -> String {
+        match self {
+            ComposeBackendLabel::Compose => format!("Compose running: {prompt}"),
+            ComposeBackendLabel::Codex => format!("Codex running: {prompt}"),
+        }
+    }
+
+    fn succeeded_status(self) -> &'static str {
+        match self {
+            ComposeBackendLabel::Compose => "Compose succeeded",
+            ComposeBackendLabel::Codex => "Codex succeeded",
+        }
+    }
+
+    fn failed_status(self) -> &'static str {
+        match self {
+            ComposeBackendLabel::Compose => "Compose failed",
+            ComposeBackendLabel::Codex => "Codex failed",
+        }
+    }
+}
+
+fn compose_running_status(prompt: &str) -> String {
+    match compose_backend_config_from_env() {
+        ComposeBackendConfig::Codex(_) => ComposeBackendLabel::Codex.running_status(prompt),
+        ComposeBackendConfig::BuiltIn | ComposeBackendConfig::Command(_) => {
+            ComposeBackendLabel::Compose.running_status(prompt)
+        }
     }
 }
 
@@ -1099,17 +1143,89 @@ fn spawn_compose_backend(request: ComposeBackendRequest, tx: mpsc::Sender<Compos
 }
 
 fn run_compose_backend(request: ComposeBackendRequest) -> ComposeBackendResult {
-    match std::env::var(COMPOSE_BACKEND_ENV) {
-        Ok(command) if !command.trim().is_empty() => {
-            run_configured_compose_backend(request, command)
-        }
-        _ => ComposeBackendResult {
+    match compose_backend_config_from_env() {
+        ComposeBackendConfig::BuiltIn => ComposeBackendResult {
             stdout: deterministic_compose_reply(&request.prompt),
             stderr: String::new(),
             exit_code: Some(0),
             prompt: request.prompt,
+            label: ComposeBackendLabel::Compose,
         },
+        ComposeBackendConfig::Command(command) => run_configured_compose_backend(request, command),
+        ComposeBackendConfig::Codex(config) => run_codex_compose_backend(request, config),
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ComposeBackendConfig {
+    BuiltIn,
+    Command(String),
+    Codex(CodexComposeConfig),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CodexComposeConfig {
+    program: String,
+    workspace: PathBuf,
+    sandbox: String,
+    approval: String,
+    json: bool,
+}
+
+fn compose_backend_config_from_env() -> ComposeBackendConfig {
+    compose_backend_config(
+        std::env::var(COMPOSE_BACKEND_KIND_ENV).ok().as_deref(),
+        std::env::var(COMPOSE_BACKEND_ENV).ok().as_deref(),
+        codex_compose_config_from_env(),
+    )
+}
+
+fn compose_backend_config(
+    kind: Option<&str>,
+    backend: Option<&str>,
+    codex_config: CodexComposeConfig,
+) -> ComposeBackendConfig {
+    if kind
+        .map(|value| value.trim().eq_ignore_ascii_case("codex"))
+        .unwrap_or(false)
+    {
+        return ComposeBackendConfig::Codex(codex_config);
+    }
+    match backend.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(value) if value.eq_ignore_ascii_case("codex") => {
+            ComposeBackendConfig::Codex(codex_config)
+        }
+        Some(value) => ComposeBackendConfig::Command(value.to_string()),
+        None => ComposeBackendConfig::BuiltIn,
+    }
+}
+
+fn codex_compose_config_from_env() -> CodexComposeConfig {
+    CodexComposeConfig {
+        program: std::env::var(COMPOSE_CODEX_BIN_ENV)
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| "codex".to_string()),
+        workspace: compose_workspace_from_env(),
+        sandbox: std::env::var(COMPOSE_CODEX_SANDBOX_ENV)
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| "read-only".to_string()),
+        approval: std::env::var(COMPOSE_CODEX_APPROVAL_ENV)
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| "never".to_string()),
+        json: true,
+    }
+}
+
+fn compose_workspace_from_env() -> PathBuf {
+    std::env::var(COMPOSE_CODEX_WORKSPACE_ENV)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .map(PathBuf::from)
+        .or_else(|| std::env::current_dir().ok())
+        .unwrap_or_else(|| PathBuf::from("."))
 }
 
 fn run_configured_compose_backend(
@@ -1126,6 +1242,7 @@ fn run_configured_compose_backend(
             stdout: String::new(),
             stderr: "empty compose backend command".to_string(),
             exit_code: None,
+            label: ComposeBackendLabel::Compose,
         };
     };
 
@@ -1162,6 +1279,7 @@ fn run_configured_compose_backend(
                 stdout: String::new(),
                 stderr: format!("failed to spawn compose backend: {err}"),
                 exit_code: None,
+                label: ComposeBackendLabel::Compose,
             };
         }
     };
@@ -1186,12 +1304,14 @@ fn run_configured_compose_backend(
                             COMPOSE_BACKEND_TIMEOUT.as_secs()
                         ),
                         exit_code: None,
+                        label: ComposeBackendLabel::Compose,
                     },
                     Err(err) => ComposeBackendResult {
                         prompt: request.prompt,
                         stdout: String::new(),
                         stderr: format!("compose backend timed out and output read failed: {err}"),
                         exit_code: None,
+                        label: ComposeBackendLabel::Compose,
                     },
                 };
             }
@@ -1201,6 +1321,7 @@ fn run_configured_compose_backend(
                     stdout: String::new(),
                     stderr: format!("failed to wait for compose backend: {err}"),
                     exit_code: None,
+                    label: ComposeBackendLabel::Compose,
                 };
             }
         }
@@ -1212,14 +1333,178 @@ fn run_configured_compose_backend(
             stdout: String::from_utf8_lossy(&output.stdout).to_string(),
             stderr: String::from_utf8_lossy(&output.stderr).to_string(),
             exit_code: output.status.code(),
+            label: ComposeBackendLabel::Compose,
         },
         Err(err) => ComposeBackendResult {
             prompt: request.prompt,
             stdout: String::new(),
             stderr: format!("failed to read compose backend output: {err}"),
             exit_code: None,
+            label: ComposeBackendLabel::Compose,
         },
     }
+}
+
+fn run_codex_compose_backend(
+    request: ComposeBackendRequest,
+    config: CodexComposeConfig,
+) -> ComposeBackendResult {
+    let output_file = std::env::temp_dir().join(format!(
+        "gameterm-scene-codex-{}-{}.txt",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or_default()
+    ));
+    let argv = codex_compose_argv(&config, &output_file, &request.prompt);
+    let Some((program, args)) = argv.split_first() else {
+        return ComposeBackendResult {
+            prompt: request.prompt,
+            stdout: String::new(),
+            stderr: "empty Codex backend command".to_string(),
+            exit_code: None,
+            label: ComposeBackendLabel::Codex,
+        };
+    };
+
+    let result = run_codex_command(request.clone(), program, args, &output_file);
+    let _ = std::fs::remove_file(output_file);
+    result
+}
+
+fn codex_compose_argv(
+    config: &CodexComposeConfig,
+    output_file: &Path,
+    prompt: &str,
+) -> Vec<String> {
+    let mut argv = vec![
+        config.program.clone(),
+        "exec".to_string(),
+        "--output-last-message".to_string(),
+        output_file.display().to_string(),
+        "-C".to_string(),
+        config.workspace.display().to_string(),
+        "-s".to_string(),
+        config.sandbox.clone(),
+        "-a".to_string(),
+        config.approval.clone(),
+    ];
+    if config.json {
+        argv.push("--json".to_string());
+    }
+    argv.push(prompt.to_string());
+    argv
+}
+
+fn run_codex_command(
+    request: ComposeBackendRequest,
+    program: &str,
+    args: &[String],
+    output_file: &Path,
+) -> ComposeBackendResult {
+    let mut child = match Command::new(program)
+        .args(args)
+        .env("GAMETERM_SCENE_COMPOSE_PROMPT", &request.prompt)
+        .env(
+            "GAMETERM_SCENE_COMPOSE_SESSION_ID",
+            request
+                .pane_id
+                .map(|pane_id| format!("pane-{pane_id}"))
+                .unwrap_or_else(|| "scene".to_string()),
+        )
+        .env(
+            "GAMETERM_SCENE_PATH",
+            request.scene_path.as_deref().unwrap_or(""),
+        )
+        .env(
+            "GAMETERM_SCENE_PANE_ID",
+            request
+                .pane_id
+                .map(|pane_id| pane_id.to_string())
+                .unwrap_or_default(),
+        )
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(err) => {
+            return ComposeBackendResult {
+                prompt: request.prompt,
+                stdout: String::new(),
+                stderr: format!("failed to spawn Codex compose backend `{program}`: {err}"),
+                exit_code: None,
+                label: ComposeBackendLabel::Codex,
+            };
+        }
+    };
+
+    let deadline = Instant::now() + COMPOSE_BACKEND_TIMEOUT;
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(25)),
+            Ok(None) => {
+                let _ = child.kill();
+                return match child.wait_with_output() {
+                    Ok(output) => ComposeBackendResult {
+                        prompt: request.prompt,
+                        stdout: codex_output_text(output_file, &output.stdout),
+                        stderr: format!(
+                            "Codex compose backend timed out after {}s",
+                            COMPOSE_BACKEND_TIMEOUT.as_secs()
+                        ),
+                        exit_code: None,
+                        label: ComposeBackendLabel::Codex,
+                    },
+                    Err(err) => ComposeBackendResult {
+                        prompt: request.prompt,
+                        stdout: String::new(),
+                        stderr: format!(
+                            "Codex compose backend timed out and output read failed: {err}"
+                        ),
+                        exit_code: None,
+                        label: ComposeBackendLabel::Codex,
+                    },
+                };
+            }
+            Err(err) => {
+                return ComposeBackendResult {
+                    prompt: request.prompt,
+                    stdout: String::new(),
+                    stderr: format!("failed to wait for Codex compose backend: {err}"),
+                    exit_code: None,
+                    label: ComposeBackendLabel::Codex,
+                };
+            }
+        }
+    }
+
+    match child.wait_with_output() {
+        Ok(output) => ComposeBackendResult {
+            prompt: request.prompt,
+            stdout: codex_output_text(output_file, &output.stdout),
+            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+            exit_code: output.status.code(),
+            label: ComposeBackendLabel::Codex,
+        },
+        Err(err) => ComposeBackendResult {
+            prompt: request.prompt,
+            stdout: String::new(),
+            stderr: format!("failed to read Codex compose backend output: {err}"),
+            exit_code: None,
+            label: ComposeBackendLabel::Codex,
+        },
+    }
+}
+
+fn codex_output_text(output_file: &Path, stdout: &[u8]) -> String {
+    std::fs::read_to_string(output_file)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| String::from_utf8_lossy(stdout).to_string())
 }
 
 fn apply_compose_backend_result(runtime: &mut SceneRuntime, result: ComposeBackendResult) {
@@ -1230,7 +1515,7 @@ fn apply_compose_backend_result(runtime: &mut SceneRuntime, result: ComposeBacke
         } else {
             reply
         };
-        ("Codex", reply, "Compose succeeded".to_string())
+        ("Codex", reply, result.label.succeeded_status().to_string())
     } else {
         let diagnostic = sanitize_compose_output(&result.stderr);
         let diagnostic = if diagnostic.is_empty() {
@@ -1238,7 +1523,11 @@ fn apply_compose_backend_result(runtime: &mut SceneRuntime, result: ComposeBacke
         } else {
             diagnostic
         };
-        ("Scene", diagnostic, "Compose failed".to_string())
+        (
+            "Scene",
+            diagnostic,
+            result.label.failed_status().to_string(),
+        )
     };
     let patch = VisualScenePatch {
         scene_patch_version: VisualScenePatch::VERSION,
@@ -1988,6 +2277,7 @@ mod tests {
                 stdout: "Workspace is ready.\n".to_string(),
                 stderr: String::new(),
                 exit_code: Some(0),
+                label: ComposeBackendLabel::Compose,
             },
         );
 
@@ -2007,6 +2297,7 @@ mod tests {
                 stdout: String::new(),
                 stderr: "backend unavailable".to_string(),
                 exit_code: Some(2),
+                label: ComposeBackendLabel::Compose,
             },
         );
 
@@ -2024,6 +2315,130 @@ mod tests {
         assert!(!sanitized.contains('\u{1b}'));
         assert!(!sanitized.contains("\n\n"));
         assert!(sanitized.len() <= COMPOSE_OUTPUT_LIMIT + 3);
+    }
+
+    #[test]
+    fn compose_backend_config_selects_codex_explicitly() {
+        let codex_config = CodexComposeConfig {
+            program: "codex".to_string(),
+            workspace: PathBuf::from("/workspace"),
+            sandbox: "read-only".to_string(),
+            approval: "never".to_string(),
+            json: true,
+        };
+
+        assert_eq!(
+            compose_backend_config(None, None, codex_config.clone()),
+            ComposeBackendConfig::BuiltIn
+        );
+        assert_eq!(
+            compose_backend_config(None, Some("helper --flag"), codex_config.clone()),
+            ComposeBackendConfig::Command("helper --flag".to_string())
+        );
+        assert_eq!(
+            compose_backend_config(Some("codex"), None, codex_config.clone()),
+            ComposeBackendConfig::Codex(codex_config.clone())
+        );
+        assert_eq!(
+            compose_backend_config(None, Some("codex"), codex_config.clone()),
+            ComposeBackendConfig::Codex(codex_config)
+        );
+    }
+
+    #[test]
+    fn codex_compose_argv_uses_structured_arguments() {
+        let config = CodexComposeConfig {
+            program: "codex".to_string(),
+            workspace: PathBuf::from("/workspace with spaces"),
+            sandbox: "read-only".to_string(),
+            approval: "never".to_string(),
+            json: true,
+        };
+        let argv = codex_compose_argv(
+            &config,
+            Path::new("/tmp/last-message.txt"),
+            "inspect roadmap && do not shell split",
+        );
+
+        assert_eq!(argv[0], "codex");
+        assert_eq!(argv[1], "exec");
+        assert!(argv.contains(&"--json".to_string()));
+        assert_eq!(
+            argv,
+            vec![
+                "codex",
+                "exec",
+                "--output-last-message",
+                "/tmp/last-message.txt",
+                "-C",
+                "/workspace with spaces",
+                "-s",
+                "read-only",
+                "-a",
+                "never",
+                "--json",
+                "inspect roadmap && do not shell split"
+            ]
+        );
+    }
+
+    #[test]
+    fn codex_output_prefers_last_message_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let output_file = dir.path().join("last.txt");
+        std::fs::write(&output_file, "final Codex reply\n").unwrap();
+
+        assert_eq!(
+            codex_output_text(&output_file, b"{\"event\":\"stdout fallback\"}\n"),
+            "final Codex reply\n"
+        );
+    }
+
+    #[test]
+    fn codex_backend_fake_command_updates_dialogue_status() {
+        let dir = tempfile::tempdir().unwrap();
+        let fake_codex = dir.path().join("fake-codex.sh");
+        std::fs::write(
+            &fake_codex,
+            "#!/usr/bin/env sh\nwhile [ \"$1\" != \"\" ]; do\n  if [ \"$1\" = \"--output-last-message\" ]; then\n    shift\n    printf 'Codex says: %s\\n' \"$GAMETERM_SCENE_COMPOSE_PROMPT\" > \"$1\"\n  fi\n  shift || exit 0\ndone\nprintf '{\"event\":\"done\"}\\n'\n",
+        )
+        .unwrap();
+        let mut permissions = std::fs::metadata(&fake_codex).unwrap().permissions();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            permissions.set_mode(0o755);
+            std::fs::set_permissions(&fake_codex, permissions).unwrap();
+        }
+
+        let request = ComposeBackendRequest {
+            prompt: "look at roadmap".to_string(),
+            scene_path: Some("scene.json".to_string()),
+            pane_id: Some(7),
+        };
+        let config = CodexComposeConfig {
+            program: fake_codex.display().to_string(),
+            workspace: dir.path().to_path_buf(),
+            sandbox: "read-only".to_string(),
+            approval: "never".to_string(),
+            json: true,
+        };
+        let result = run_codex_compose_backend(request, config);
+
+        assert_eq!(result.label, ComposeBackendLabel::Codex);
+        assert_eq!(result.exit_code, Some(0));
+        assert_eq!(
+            sanitize_compose_output(&result.stdout),
+            "Codex says: look at roadmap"
+        );
+
+        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        apply_compose_backend_result(&mut runtime, result);
+        let snapshot = runtime.render_snapshot();
+
+        assert_eq!(snapshot.dialogue_speaker, "Codex");
+        assert_eq!(snapshot.dialogue, "Codex says: look at roadmap");
+        assert_eq!(snapshot.status, "Codex succeeded");
     }
 
     #[test]

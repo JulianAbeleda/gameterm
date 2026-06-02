@@ -245,6 +245,7 @@ process-state
 active-pane-gui
 vn-demo
 vn-compose
+vn-compose-codex
 EOF
 }
 
@@ -394,6 +395,15 @@ Checks: compose input remains docked, backend output renders as Codex dialogue, 
 Expected status: Compose succeeded.
 EOF
       ;;
+    vn-compose-codex)
+      cat <<'EOF'
+Scenario: vn-compose-codex
+Fixture: generated VN demo
+Setup: generate the VN demo, launch Scene Mode, type a prompt into the compose dock, submit it, and wait for a fake local Codex CLI backend.
+Checks: Codex backend kind is selected, fake Codex output renders as Codex dialogue, and VN background/sprites remain visible.
+Expected status: Codex succeeded.
+EOF
+      ;;
     *)
       echo "unknown smoke scenario: $1" >&2
       list_smoke_scenarios >&2
@@ -486,6 +496,12 @@ apply_smoke_scenario_defaults() {
       fi
       ;;
     vn-compose)
+      fixture="vn-demo"
+      if [[ -z "${key_sequence}" ]]; then
+        key_sequence="text:look at roadmap,enter,delay:1"
+      fi
+      ;;
+    vn-compose-codex)
       fixture="vn-demo"
       if [[ -z "${key_sequence}" ]]; then
         key_sequence="text:look at roadmap,enter,delay:1"
@@ -1102,19 +1118,48 @@ EOF
   tmp_home="$(mktemp -d /tmp/gameterm-scene-smoke.XXXXXX)"
   gui_class="org.gameterm.scene-smoke.$$"
   install_scene_fixture "${tmp_home}/gameterm/scenes"
+  compose_backend_kind=""
+  compose_codex_bin=""
+  if [[ "${scenario}" == "vn-compose-codex" ]]; then
+    compose_backend_kind="codex"
+    compose_codex_bin="${tmp_home}/fake-codex"
+    cat >"${compose_codex_bin}" <<'EOF'
+#!/usr/bin/env sh
+while [ "$1" != "" ]; do
+  if [ "$1" = "--output-last-message" ]; then
+    shift
+    printf 'Fake Codex inspected Scene Mode prompt: %s\n' "$GAMETERM_SCENE_COMPOSE_PROMPT" > "$1"
+  fi
+  shift || exit 0
+done
+printf '{"event":"done"}\n'
+EOF
+    chmod +x "${compose_codex_bin}"
+  fi
   if [[ "${patch_inbox}" == "auto" ]]; then
     patch_inbox="${tmp_home}/gameterm/scenes/patch-inbox.json"
   fi
 
   echo "Launching GameTerm with fixture ${fixture}"
   echo "Temporary XDG_CONFIG_HOME=${tmp_home}"
+  launch_env=(
+    XDG_CONFIG_HOME="${tmp_home}"
+  )
+  if [[ -n "${compose_backend_kind}" ]]; then
+    launch_env+=(
+      GAMETERM_SCENE_COMPOSE_BACKEND_KIND="${compose_backend_kind}"
+      GAMETERM_SCENE_COMPOSE_CODEX_BIN="${compose_codex_bin}"
+      GAMETERM_SCENE_COMPOSE_WORKSPACE="${repo_root}"
+    )
+    echo "Compose backend: fake Codex (${compose_codex_bin})"
+  fi
   if [[ -n "${patch_inbox}" ]]; then
     echo "Patch inbox: ${patch_inbox}"
-    XDG_CONFIG_HOME="${tmp_home}" \
+    env "${launch_env[@]}" \
       GAMETERM_SCENE_PATCH_FILE="${patch_inbox}" \
       "${gui_bin}" start --class "${gui_class}" --cwd "${repo_root}" &
   else
-    XDG_CONFIG_HOME="${tmp_home}" "${gui_bin}" start --class "${gui_class}" \
+    env "${launch_env[@]}" "${gui_bin}" start --class "${gui_class}" \
       --cwd "${repo_root}" &
   fi
   gui_pid=$!
@@ -1173,11 +1218,14 @@ EOF
   if [[ "${scenario}" == "authoring-loop" ]]; then
     echo "Authoring loop audit: save story state, mutate draft state, then reload the saved state."
   fi
-  if [[ "${scenario}" == "vn-demo" || "${scenario}" == "vn-compose" ]]; then
+  if [[ "${scenario}" == "vn-demo" || "${scenario}" == "vn-compose" || "${scenario}" == "vn-compose-codex" ]]; then
     echo "VN demo audit: launch imported VN script with strict-validated local PNG assets."
   fi
   if [[ "${scenario}" == "vn-compose" ]]; then
     echo "VN compose audit: type a prompt and render the deterministic compose backend reply."
+  fi
+  if [[ "${scenario}" == "vn-compose-codex" ]]; then
+    echo "VN Codex compose audit: type a prompt and render the fake Codex backend reply."
   fi
   if [[ -n "${submit_mux_patch}" ]]; then
     echo "Mux patch audit: open Scene Mode before the wait expires; the script will submit:"

@@ -1692,7 +1692,8 @@ run_smoke_asset_check() {
     mux-patch \
     process-state \
     vn-demo \
-    vn-compose
+    vn-compose \
+    vn-compose-codex
   do
     grep -qx "${scenario}" <<<"${scenarios}"
     "${repo_root}/ci/gameterm-scene-smoke.sh" \
@@ -1712,6 +1713,8 @@ run_smoke_asset_check() {
     --describe-scenario live-mux-discovery | grep -q "active mux pane"
   "${repo_root}/ci/gameterm-scene-smoke.sh" \
     --describe-scenario vn-compose | grep -q "Codex dialogue"
+  "${repo_root}/ci/gameterm-scene-smoke.sh" \
+    --describe-scenario vn-compose-codex | grep -q "Codex succeeded"
   echo "smoke assets: ok"
 }
 
