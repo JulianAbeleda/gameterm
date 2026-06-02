@@ -94,6 +94,8 @@ pub(super) fn snapshot_for_filtering() -> VisualRenderSnapshot {
         dialogue_history: Vec::new(),
         status: String::new(),
         choices: Vec::new(),
+        overlay_cols: None,
+        overlay_rows: None,
     }
 }
 

@@ -72,9 +72,11 @@ pub const VN_OVERLAY_FULLSCREEN_MIN_ROWS: usize = 40;
 pub const VN_OVERLAY_SIDE_MARGIN_RATIO: f32 = 0.033;
 pub const VN_OVERLAY_DIALOGUE_TOP_RATIO: f32 = 0.13;
 pub const VN_OVERLAY_DIALOGUE_BOTTOM_RATIO: f32 = 0.76;
-pub const VN_OVERLAY_TEXT_INSET_COLS: usize = 3;
+pub const VN_OVERLAY_TEXT_INSET_COLS: usize = 4;
 pub const VN_OVERLAY_DIALOGUE_TEXT_INSET_ROWS: usize = 2;
 pub const VN_OVERLAY_COMPOSER_TEXT_INSET_ROWS: usize = 1;
+pub const VN_OVERLAY_NAMEPLATE_OFFSET_ROWS: usize = 2;
+pub const VN_OVERLAY_NAMEPLATE_HEIGHT_ROWS: usize = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VnOverlayRect {
@@ -200,12 +202,13 @@ pub fn vn_overlay_side_margin(cols: usize, rows: usize) -> usize {
 
 fn vn_overlay_nameplate_rect(panel: &VnOverlayRect, label: &str) -> VnOverlayRect {
     let label_width = label.chars().count().max(1);
-    let width = (label_width + 4).clamp(8, panel.width.max(1).min(28));
+    let width = (label_width + 6).clamp(10, panel.width.max(1).min(32));
+    let row_offset = panel.row.min(VN_OVERLAY_NAMEPLATE_OFFSET_ROWS);
     VnOverlayRect {
         col: panel.col.saturating_add(VN_OVERLAY_TEXT_INSET_COLS),
-        row: panel.row.saturating_sub(1),
+        row: panel.row.saturating_sub(row_offset),
         width,
-        height: 2,
+        height: VN_OVERLAY_NAMEPLATE_HEIGHT_ROWS.min(panel.height.max(1)),
     }
 }
 
@@ -689,6 +692,17 @@ pub struct VisualRenderSnapshot {
     pub dialogue_history: Vec<VisualDialogueLine>,
     pub status: String,
     pub choices: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overlay_cols: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overlay_rows: Option<usize>,
+}
+
+impl VisualRenderSnapshot {
+    pub fn overlay_layout_dims(&self) -> Option<(usize, usize)> {
+        self.overlay_cols
+            .and_then(|cols| self.overlay_rows.map(|rows| (cols, rows)))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1950,6 +1964,8 @@ impl SceneRuntime {
             dialogue_index: dialogue_index(&self.scene, self.dialogue_index),
             dialogue_history: self.dialogue_history.clone(),
             status: self.status.clone(),
+            overlay_cols: None,
+            overlay_rows: None,
             choices: self
                 .scene
                 .choices
@@ -3830,12 +3846,81 @@ mod tests {
         assert_eq!(layout.dialogue_panel.width, composer.width);
         assert!(layout.dialogue_panel.row < composer.row);
         assert!(layout.dialogue_panel.bottom() < composer.row);
-        assert_eq!(layout.dialogue_nameplate.col, layout.dialogue_panel.col + 3);
-        assert_eq!(layout.dialogue_nameplate.row, layout.dialogue_panel.row - 1);
-        assert_eq!(composer_nameplate.col, composer.col + 3);
-        assert_eq!(composer_nameplate.row, composer.row - 1);
+        assert_eq!(
+            layout.dialogue_nameplate.col,
+            layout.dialogue_panel.col + VN_OVERLAY_TEXT_INSET_COLS
+        );
+        assert_eq!(
+            layout.dialogue_nameplate.row,
+            layout
+                .dialogue_panel
+                .row
+                .saturating_sub(VN_OVERLAY_NAMEPLATE_OFFSET_ROWS)
+        );
+        assert_eq!(
+            composer_nameplate.col,
+            composer.col + VN_OVERLAY_TEXT_INSET_COLS
+        );
+        assert_eq!(
+            composer_nameplate.row,
+            composer
+                .row
+                .saturating_sub(VN_OVERLAY_NAMEPLATE_OFFSET_ROWS)
+        );
+        assert_eq!(
+            layout.composer_nameplate.as_ref().unwrap().height,
+            VN_OVERLAY_NAMEPLATE_HEIGHT_ROWS.min(composer.height)
+        );
         assert!(layout.composer_text_row.unwrap() > composer.row);
         assert!(layout.composer_text_row.unwrap() < composer.bottom());
+    }
+
+    #[test]
+    fn vn_overlay_layout_adapts_to_windowed_rows() {
+        let compact = vn_overlay_layout(120, 24, "Codex", "Composer");
+        let large_window = vn_overlay_layout(120, 30, "Codex", "Composer");
+
+        let compact_composer = compact.composer_panel.unwrap();
+        let large_composer = large_window.composer_panel.unwrap();
+
+        assert!(!compact.fullscreen);
+        assert_eq!(compact_composer.height, 4);
+        assert_eq!(large_composer.height, 4);
+        assert_eq!(compact.composer_text_row, Some(compact_composer.row + 1));
+        assert_eq!(large_window.composer_text_row, Some(large_composer.row + 1));
+        assert_eq!(compact_composer.row, 19);
+        assert_eq!(large_composer.row, 25);
+    }
+
+    #[test]
+    fn staged_scene_renders_dialogue_text_on_layout_row() {
+        let mut scene = VisualScene::demo();
+        scene.dialogue = "This is the active layout row.".to_string();
+        scene.dialogue_speaker = "Narrator".to_string();
+        scene.dialogue_lines.clear();
+        scene.choices.clear();
+        let runtime = SceneRuntime::new(scene).unwrap();
+        let cols = 90;
+        let rows = 30;
+        let layout = vn_overlay_layout(cols, rows, "Narrator", "Composer");
+        let frame = runtime.render_text_frame(cols, rows);
+        let lines: Vec<&str> = frame.split("\r\n").collect();
+        assert!(!lines.is_empty());
+        let layout_text_row = layout.dialogue_text_row.min(lines.len().saturating_sub(1));
+        let expected = "This is the active layout row.";
+        let matched_row = lines.iter().position(|line| line.contains(expected));
+        let matched_row = match matched_row {
+            Some(row) => row,
+            None => panic!("expected dialogue text in rendered frame"),
+        };
+        assert!(
+            matched_row == layout_text_row || matched_row + 1 == layout_text_row,
+            "expected dialogue text at layout row {} or {} but found {}",
+            layout_text_row,
+            layout_text_row.saturating_sub(1),
+            matched_row
+        );
+        assert_ne!(layout.dialogue_text_row, 0);
     }
 
     #[test]

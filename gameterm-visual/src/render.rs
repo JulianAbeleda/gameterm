@@ -119,6 +119,8 @@ mod tests {
             dialogue_history: Vec::new(),
             status: String::new(),
             choices: Vec::new(),
+            overlay_cols: None,
+            overlay_rows: None,
         }
     }
 
