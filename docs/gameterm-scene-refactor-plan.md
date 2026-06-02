@@ -354,7 +354,7 @@ Target:
 
 Commit lanes:
 
-1. `[test] NFC - move Scene test helpers` ✅ partial
+1. `[test] NFC - move Scene test helpers` ✅
    - Move helper constructors and fixture path helpers first.
 2. `[test] NFC - group Scene condition tests`
    - Preserve test names where possible for searchability.
@@ -373,10 +373,11 @@ Acceptance:
 
 Current status:
 
-- Completed a narrow fixture-path helper move.
-- Deferred broad test grouping and runtime builders. The tests are still large,
-  but moving many test blocks now would create high review churn while the
-  runtime surface is still settling.
+- Completed a narrow helper extraction to `gameterm-visual/src/tests/test_support.rs`
+  (fixture path, snapshot fixture, branching dialogue scene).
+- Deferred broad test grouping and runtime builders. The tests are still large, but
+  moving many test blocks now would create high review churn while the runtime
+  surface is still settling.
 
 ## Priority 6: Runtime Method Split
 
@@ -467,6 +468,7 @@ Completed commits:
 - `[docs] document Scene fixture ownership`
 - `[test] NFC - move Scene fixture test helper`
 - `[visual] NFC - group Scene runtime lifecycle methods`
+- `[test] NFC - move Scene test helpers`
 
 Final verification:
 
