@@ -2902,18 +2902,6 @@ impl SceneRuntime {
                 place_vn_overlay_text(&mut screen, cols, idx, 0, cols, &line);
             }
         }
-        place_vn_overlay_text(
-            &mut screen,
-            cols,
-            layout
-                .dialogue_nameplate_text
-                .row
-                .min(rows.saturating_sub(1)),
-            layout.dialogue_nameplate_text.col,
-            layout.dialogue_nameplate_text.width,
-            &dialogue.speaker,
-        );
-
         let dialogue_col = layout
             .dialogue_panel
             .col
@@ -2923,34 +2911,32 @@ impl SceneRuntime {
             .width
             .saturating_sub(layout.dialogue_text_inset_cols * 2)
             .max(1);
-        let mut dialogue_lines = self.render_vn_dialogue_lines(&dialogue, dialogue_width);
-        if !self.scene.choices.is_empty() && layout.dialogue_panel.height >= 6 {
-            dialogue_lines.push(String::new());
-            for (idx, choice) in self.scene.choices.iter().take(2).enumerate() {
-                let marker = if idx == self.selected_choice {
-                    ">"
-                } else {
-                    " "
-                };
-                let guard = if conditions_match(
-                    &choice.conditions,
-                    &self.scene.variables,
-                    &self.scene.rpg,
-                    self.selected_entity(),
-                    self.last_process_state.as_ref(),
-                ) {
-                    ""
-                } else {
-                    " [locked]"
-                };
-                dialogue_lines.push(format!("{marker} {}{guard}", choice.label));
-            }
-        }
+        let dialogue_lines = self.render_vn_dialogue_lines(&dialogue, dialogue_width);
         let dialogue_rows = layout
             .dialogue_panel
             .bottom()
             .saturating_sub(layout.dialogue_text_row);
-        for (idx, line) in dialogue_lines.into_iter().take(dialogue_rows).enumerate() {
+        if !dialogue_lines.is_empty() {
+            place_vn_overlay_text(
+                &mut screen,
+                cols,
+                layout
+                    .dialogue_nameplate_text
+                    .row
+                    .min(rows.saturating_sub(1)),
+                layout.dialogue_nameplate_text.col,
+                layout.dialogue_nameplate_text.width,
+                &self.vn_dialogue_nameplate(&dialogue),
+            );
+        }
+        let line_count = dialogue_lines.len();
+        let start = line_count.saturating_sub(dialogue_rows);
+        for (idx, line) in dialogue_lines
+            .into_iter()
+            .skip(start)
+            .take(dialogue_rows)
+            .enumerate()
+        {
             place_vn_overlay_text(
                 &mut screen,
                 cols,
@@ -2965,6 +2951,14 @@ impl SceneRuntime {
         truncate_to_screen(frame, cols, rows)
     }
 
+    fn vn_dialogue_nameplate(&self, dialogue: &VisualDialogueLine) -> String {
+        if self.compose_state.history.is_empty() {
+            dialogue.speaker.clone()
+        } else {
+            "Codex".to_string()
+        }
+    }
+
     fn render_vn_dialogue_lines(
         &self,
         dialogue: &VisualDialogueLine,
@@ -2972,23 +2966,22 @@ impl SceneRuntime {
     ) -> Vec<String> {
         let transcript = self.recent_compose_transcript_lines(dialogue_width);
         if transcript.is_empty() {
-            wrap_text(&dialogue.text, dialogue_width)
+            if self.scene.stage.is_empty() {
+                wrap_text(&dialogue.text, dialogue_width)
+            } else {
+                Vec::new()
+            }
         } else {
             transcript
         }
     }
 
     fn recent_compose_transcript_lines(&self, dialogue_width: usize) -> Vec<String> {
-        let Some(start) = self
-            .compose_state
-            .history
-            .iter()
-            .rposition(|message| message.role == VisualComposeRole::User)
-        else {
+        if self.compose_state.history.is_empty() {
             return Vec::new();
-        };
+        }
         let mut lines = Vec::new();
-        for message in &self.compose_state.history[start..] {
+        for message in &self.compose_state.history {
             match message.role {
                 VisualComposeRole::User => {
                     if !lines.is_empty() {
@@ -4564,7 +4557,9 @@ mod tests {
         };
         scene.dialogue_speaker = "Codex".to_string();
         scene.dialogue = "This line belongs in the transparent VN overlay.".to_string();
-        let runtime = SceneRuntime::new(scene).unwrap();
+        let mut runtime = SceneRuntime::new(scene).unwrap();
+        runtime.mark_compose_running("Compose running", "inspect scene");
+        runtime.mark_compose_succeeded("Codex", "This line belongs in the transparent VN overlay.");
 
         let frame = runtime.render_text_frame(80, 24);
         assert!(frame.contains("Stage: 1 layer(s), 1 displayable(s)"));
@@ -4820,6 +4815,8 @@ mod tests {
             }],
         };
         let mut runtime = SceneRuntime::new(scene).unwrap();
+        runtime.mark_compose_running("Compose running", "debug layout");
+        runtime.mark_compose_succeeded("Codex", "Live tuning line.");
         runtime.toggle_debugger(); // Scene -> TileDebugger
         runtime.toggle_debugger(); // TileDebugger -> VnLayoutDebugger
         assert_eq!(runtime.view(), VisualView::VnLayoutDebugger);
@@ -4829,7 +4826,7 @@ mod tests {
         assert!(frame.contains("VN Layout Debugger"));
         assert!(frame.contains("dialogue_margin_ratio"));
         assert!(frame.contains("Live tuning line."));
-        assert!(frame.contains("Narrator"));
+        assert!(frame.contains("Codex"));
     }
 
     #[test]
@@ -5397,6 +5394,46 @@ mod tests {
         assert!(frame.contains("transition: story dialogue -> choice"));
     }
 
+    fn staged_compose_scene() -> VisualScene {
+        let mut scene = VisualScene::demo();
+        scene.dialogue_speaker = "Narrator".to_string();
+        scene.dialogue = "placeholder narrator line".to_string();
+        scene.dialogue_lines = vec![VisualDialogueLine {
+            speaker: "Narrator".to_string(),
+            text: "placeholder narrator line".to_string(),
+            portrait: None,
+            metadata: Vec::new(),
+        }];
+        scene.choices = vec![
+            SceneAction {
+                label: "Ask about Scene Mode.".to_string(),
+                kind: SceneActionKind::Inspect,
+                policy: None,
+                conditions: Vec::new(),
+            },
+            SceneAction {
+                label: "End the demo.".to_string(),
+                kind: SceneActionKind::Inspect,
+                policy: None,
+                conditions: Vec::new(),
+            },
+        ];
+        scene.stage = VisualStage {
+            layers: vec![VisualStageLayer {
+                layer_id: "background".to_string(),
+                zorder: 0,
+                displayables: vec![VisualStageDisplayable {
+                    tag: "background".to_string(),
+                    sprite: "vn.background.school_classroom".to_string(),
+                    placement: VisualStagePlacement::Fullscreen,
+                    zorder: 0,
+                    visible: true,
+                }],
+            }],
+        };
+        scene
+    }
+
     #[test]
     fn compose_runtime_records_turn_status_and_history() {
         let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
@@ -5443,21 +5480,7 @@ mod tests {
 
     #[test]
     fn staged_scene_renders_compose_prompt_above_reply() {
-        let mut scene = VisualScene::demo();
-        scene.stage = VisualStage {
-            layers: vec![VisualStageLayer {
-                layer_id: "background".to_string(),
-                zorder: 0,
-                displayables: vec![VisualStageDisplayable {
-                    tag: "background".to_string(),
-                    sprite: "vn.background.school_classroom".to_string(),
-                    placement: VisualStagePlacement::Fullscreen,
-                    zorder: 0,
-                    visible: true,
-                }],
-            }],
-        };
-        let mut runtime = SceneRuntime::new(scene).unwrap();
+        let mut runtime = SceneRuntime::new(staged_compose_scene()).unwrap();
 
         runtime.mark_compose_running("Compose running: say hi", "say hi");
         let frame = runtime.render_text_frame(100, 30);
@@ -5471,6 +5494,41 @@ mod tests {
         let reply_idx = frame.find("Hello from Scene Mode.").unwrap();
 
         assert!(prompt_idx < reply_idx);
+    }
+
+    #[test]
+    fn staged_scene_keeps_empty_compose_dialogue_clean() {
+        let runtime = SceneRuntime::new(staged_compose_scene()).unwrap();
+        let frame = runtime.render_text_frame(100, 30);
+
+        assert!(!frame.contains("Narrator"));
+        assert!(!frame.contains("placeholder narrator line"));
+        assert!(!frame.contains("Ask about Scene Mode."));
+        assert!(!frame.contains("End the demo."));
+    }
+
+    #[test]
+    fn staged_scene_compose_transcript_scrolls_to_latest_lines() {
+        let mut runtime = SceneRuntime::new(staged_compose_scene()).unwrap();
+
+        for idx in 0..8 {
+            runtime.mark_compose_running("Compose running", &format!("old prompt {idx}"));
+            runtime.mark_compose_succeeded(
+                "Codex",
+                &format!(
+                    "old reply {idx} {}",
+                    "with enough words to wrap inside the dialogue box ".repeat(2)
+                ),
+            );
+        }
+        runtime.mark_compose_running("Compose running", "latest prompt");
+        runtime.mark_compose_succeeded("Codex", "latest reply should remain visible");
+
+        let frame = runtime.render_text_frame(80, 24);
+
+        assert!(!frame.contains("old prompt 0"));
+        assert!(frame.contains("> latest prompt"));
+        assert!(frame.contains("latest reply should remain visible"));
     }
 
     #[test]

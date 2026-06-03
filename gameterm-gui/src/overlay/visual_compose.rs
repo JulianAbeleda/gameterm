@@ -713,7 +713,7 @@ pub(super) fn codex_output_text(output_file: &Path, stdout: &[u8]) -> String {
 }
 
 fn deterministic_compose_reply(prompt: &str) -> String {
-    format!("I received your Scene Mode prompt: {}", prompt.trim())
+    format!("Built-in compose reply: {}", prompt.trim())
 }
 
 #[cfg(test)]
@@ -780,7 +780,11 @@ mod tests {
         };
 
         assert_eq!(
-            compose_backend_config(Some("built_in"), Some("helper --flag"), codex_config.clone()),
+            compose_backend_config(
+                Some("built_in"),
+                Some("helper --flag"),
+                codex_config.clone()
+            ),
             ComposeBackendConfig::BuiltIn
         );
         assert_eq!(
@@ -1052,7 +1056,10 @@ mod tests {
 
         let config = compose_backend_config_from_sources(&file_config, &SceneComposeEnv::default());
 
-        assert_eq!(config, ComposeBackendConfig::Command("helper --flag".to_string()));
+        assert_eq!(
+            config,
+            ComposeBackendConfig::Command("helper --flag".to_string())
+        );
     }
 
     #[test]

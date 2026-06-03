@@ -133,8 +133,8 @@ backend selected by environment, submitted `say hi`, and captured a non-empty
 1920x1080 PNG. Visual inspection confirmed the dialogue panel shows `> say hi`
 followed by the Codex reply `Hi!`, and the composer dock remains ready for the
 next prompt. This differs from the deterministic built-in reply format
-(`I received your Scene Mode prompt: ...`), so the capture validates the real
-Codex backend path.
+(`Built-in compose reply: ...` in current builds), so the capture validates the
+real Codex backend path.
 
 Earlier direct probe note: before this smoke, a standalone `codex exec
 --output-last-message ... 'Reply exactly: hi'` probe from
