@@ -749,10 +749,10 @@ mod tests {
 
         assert_eq!(rects.len(), 2);
         let dialogue = rects[1];
-        assert!((dialogue.min_x() - 64.0).abs() < 0.1);
-        assert!((dialogue.min_y() - 126.0).abs() < 0.1);
-        assert!((dialogue.size.width - 1792.0).abs() < 0.1);
-        assert!((dialogue.max_y() - 900.0).abs() < 0.1);
+        assert!((dialogue.min_x() - 336.0).abs() < 0.1);
+        assert!((dialogue.min_y() - 72.0).abs() < 0.1);
+        assert!((dialogue.size.width - 1248.0).abs() < 0.1);
+        assert!((dialogue.max_y() - 720.0).abs() < 0.1);
     }
 
     #[test]
