@@ -70,6 +70,7 @@ pub struct VisualPosition {
 
 pub const VN_OVERLAY_FULLSCREEN_MIN_ROWS: usize = 40;
 pub const VN_OVERLAY_SIDE_MARGIN_RATIO: f32 = 0.033;
+pub const VN_OVERLAY_COMPOSER_SIDE_MARGIN_RATIO: f32 = 0.02;
 pub const VN_OVERLAY_DIALOGUE_TOP_RATIO: f32 = 0.11;
 pub const VN_OVERLAY_DIALOGUE_BOTTOM_RATIO: f32 = 0.84;
 pub const VN_OVERLAY_TEXT_INSET_COLS: usize = 4;
@@ -119,6 +120,8 @@ pub fn vn_overlay_layout(
     let fullscreen = rows >= VN_OVERLAY_FULLSCREEN_MIN_ROWS;
     let margin = vn_overlay_side_margin(cols, rows);
     let panel_width = cols.saturating_sub(margin * 2).max(1);
+    let composer_margin = vn_overlay_composer_side_margin(cols, rows);
+    let composer_width = cols.saturating_sub(composer_margin * 2).max(1);
     let composer_height = if rows >= 40 {
         7
     } else if rows >= 18 {
@@ -131,9 +134,9 @@ pub fn vn_overlay_layout(
     let composer_gap = usize::from(composer_height > 0);
     let composer_panel = if composer_height > 0 {
         Some(VnOverlayRect {
-            col: margin,
+            col: composer_margin,
             row: rows.saturating_sub(composer_height + 2),
-            width: panel_width,
+            width: composer_width,
             height: composer_height,
         })
     } else {
@@ -196,6 +199,15 @@ pub fn vn_overlay_side_margin(cols: usize, rows: usize) -> usize {
         ((cols as f32) * VN_OVERLAY_SIDE_MARGIN_RATIO).round() as usize
     } else {
         3
+    };
+    margin.min(cols.saturating_sub(1))
+}
+
+fn vn_overlay_composer_side_margin(cols: usize, rows: usize) -> usize {
+    let margin = if rows >= VN_OVERLAY_FULLSCREEN_MIN_ROWS {
+        ((cols as f32) * VN_OVERLAY_COMPOSER_SIDE_MARGIN_RATIO).round() as usize
+    } else {
+        2
     };
     margin.min(cols.saturating_sub(1))
 }
@@ -3847,8 +3859,8 @@ mod tests {
         let composer_nameplate = layout.composer_nameplate.unwrap();
 
         assert!(layout.fullscreen);
-        assert_eq!(layout.dialogue_panel.col, composer.col);
-        assert_eq!(layout.dialogue_panel.width, composer.width);
+        assert!(composer.col < layout.dialogue_panel.col);
+        assert!(composer.width > layout.dialogue_panel.width);
         assert!(layout.dialogue_panel.row < composer.row);
         assert!(layout.dialogue_panel.bottom() < composer.row);
         assert_eq!(

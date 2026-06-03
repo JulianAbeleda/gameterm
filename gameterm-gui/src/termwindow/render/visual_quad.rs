@@ -736,9 +736,9 @@ mod tests {
         let dialogue = rects[1];
         assert!(dialogue.min_y() < dock.min_y());
         assert!(dialogue.max_y() < dock.min_y());
-        assert_eq!(dock.min_x(), 30.0);
+        assert_eq!(dock.min_x(), 20.0);
         assert_eq!(dialogue.min_x(), 30.0);
-        assert_eq!(dock.size.width, dialogue.size.width);
+        assert!(dock.size.width > dialogue.size.width);
     }
 
     #[test]
