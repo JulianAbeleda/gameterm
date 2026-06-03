@@ -32,10 +32,14 @@ use window::{Window, WindowOps};
 
 const VN_OVERLAY_LAYOUT_CONFIG_FILE: &str = "vn-overlay-layout.json";
 const KIKI_STAGE_TAG: &str = "kiki";
-const KIKI_IDLE_BASE_SPRITE: &str = "vn.character.kiki.neutral";
-const KIKI_IDLE_FRAME_PREFIX: &str = "vn.character.kiki.idle.";
-const KIKI_IDLE_FRAME_COUNT: usize = 6;
-const KIKI_IDLE_FRAME_MS: u128 = 180;
+const KIKI_BASE_SPRITE: &str = "vn.character.kiki.neutral";
+const KIKI_BREATH_FRAME_PREFIX: &str = "vn.character.kiki.breath.";
+const KIKI_BREATH_FRAME_COUNT: usize = 6;
+const KIKI_BREATH_FRAME_MS: u128 = 180;
+const KIKI_BLINK_FRAME_PREFIX: &str = "vn.character.kiki.blink.";
+const KIKI_BLINK_FRAME_COUNT: usize = 6;
+const KIKI_BLINK_FRAME_MS: u128 = 90;
+const KIKI_BLINK_INTERVAL_MS: u128 = 4_200;
 
 #[cfg(test)]
 use super::visual_compose::ComposeBackendLabel;
@@ -175,7 +179,7 @@ fn show_visual_scene_overlay_with_source(
     let (stt_tx, stt_rx) = mpsc::channel();
     let mut stt_state = SceneSttState::default();
     let mut stt_cancel: Option<SceneSttCancel> = None;
-    let mut last_idle_frame: Option<usize> = None;
+    let mut last_idle_sprite: Option<String> = None;
 
     loop {
         let mut needs_render = false;
@@ -282,9 +286,9 @@ fn show_visual_scene_overlay_with_source(
                 }
             }
             if let Some(runtime) = runtime.as_ref() {
-                let idle_frame = current_kiki_idle_frame();
+                let sprite = current_kiki_idle_sprite(&sprite_manifest);
                 if runtime_has_kiki_idle_animation(runtime, &sprite_manifest) {
-                    if last_idle_frame != Some(idle_frame) {
+                    if last_idle_sprite != sprite {
                         render_runtime_with_compose_and_scroll(
                             &mut term,
                             runtime,
@@ -292,10 +296,10 @@ fn show_visual_scene_overlay_with_source(
                             &compose_dock,
                             &dialogue_scroll,
                         )?;
-                        last_idle_frame = Some(idle_frame);
+                        last_idle_sprite = sprite;
                     }
                 } else {
-                    last_idle_frame = None;
+                    last_idle_sprite = None;
                 }
             }
             continue;
@@ -1951,7 +1955,11 @@ fn render_runtime_with_compose_and_scroll(
 ) -> anyhow::Result<()> {
     let size = term.get_screen_size()?;
     let mut snapshot = runtime.render_snapshot();
-    apply_kiki_idle_animation(&mut snapshot, sprite_manifest, current_kiki_idle_frame());
+    apply_kiki_idle_animation(
+        &mut snapshot,
+        sprite_manifest,
+        current_kiki_idle_sprite(sprite_manifest),
+    );
     snapshot.overlay_cols = Some(size.cols);
     snapshot.overlay_rows = Some(size.rows);
     term.set_metadata(
@@ -2026,16 +2034,36 @@ fn render_runtime_with_compose_and_scroll(
     Ok(())
 }
 
-fn current_kiki_idle_frame() -> usize {
+fn current_kiki_idle_sprite(sprite_manifest: &VisualSpriteManifestStatus) -> Option<String> {
     let elapsed_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|elapsed| elapsed.as_millis())
         .unwrap_or(0);
-    kiki_idle_frame_for_elapsed_ms(elapsed_ms)
+    kiki_idle_sprite_for_elapsed_ms(elapsed_ms, sprite_manifest)
 }
 
-fn kiki_idle_frame_for_elapsed_ms(elapsed_ms: u128) -> usize {
-    ((elapsed_ms / KIKI_IDLE_FRAME_MS) % KIKI_IDLE_FRAME_COUNT as u128) as usize
+fn kiki_idle_sprite_for_elapsed_ms(
+    elapsed_ms: u128,
+    sprite_manifest: &VisualSpriteManifestStatus,
+) -> Option<String> {
+    if let Some(frame) = kiki_blink_frame_for_elapsed_ms(elapsed_ms) {
+        let sprite = kiki_blink_sprite_id(frame);
+        if sprite_manifest_has_id(sprite_manifest, &sprite) {
+            return Some(sprite);
+        }
+    }
+    let sprite = kiki_breath_sprite_id(kiki_breath_frame_for_elapsed_ms(elapsed_ms));
+    sprite_manifest_has_id(sprite_manifest, &sprite).then_some(sprite)
+}
+
+fn kiki_breath_frame_for_elapsed_ms(elapsed_ms: u128) -> usize {
+    ((elapsed_ms / KIKI_BREATH_FRAME_MS) % KIKI_BREATH_FRAME_COUNT as u128) as usize
+}
+
+fn kiki_blink_frame_for_elapsed_ms(elapsed_ms: u128) -> Option<usize> {
+    let blink_elapsed = elapsed_ms % KIKI_BLINK_INTERVAL_MS;
+    let frame = (blink_elapsed / KIKI_BLINK_FRAME_MS) as usize;
+    (frame < KIKI_BLINK_FRAME_COUNT).then_some(frame)
 }
 
 fn runtime_has_kiki_idle_animation(
@@ -2054,20 +2082,25 @@ fn snapshot_has_kiki_idle_animation(
             .stage
             .iter()
             .any(|displayable| displayable.tag == KIKI_STAGE_TAG)
-        && kiki_idle_frames_available(sprite_manifest)
+        && kiki_breath_frames_available(sprite_manifest)
 }
 
 fn apply_kiki_idle_animation(
     snapshot: &mut VisualRenderSnapshot,
     sprite_manifest: &VisualSpriteManifestStatus,
-    frame: usize,
+    sprite: Option<String>,
 ) {
     if !snapshot_has_kiki_idle_animation(snapshot, sprite_manifest) {
         return;
     }
-    let sprite = kiki_idle_sprite_id(frame);
+    let Some(sprite) = sprite else {
+        return;
+    };
+    if !sprite_manifest_has_id(sprite_manifest, &sprite) {
+        return;
+    }
     for displayable in &mut snapshot.stage {
-        if displayable.tag == KIKI_STAGE_TAG && displayable.sprite == KIKI_IDLE_BASE_SPRITE {
+        if displayable.tag == KIKI_STAGE_TAG && displayable.sprite == KIKI_BASE_SPRITE {
             displayable.sprite = sprite.clone();
         }
     }
@@ -2080,9 +2113,9 @@ fn kiki_is_speaking(snapshot: &VisualRenderSnapshot) -> bool {
         .eq_ignore_ascii_case(KIKI_STAGE_TAG)
 }
 
-fn kiki_idle_frames_available(sprite_manifest: &VisualSpriteManifestStatus) -> bool {
-    (0..KIKI_IDLE_FRAME_COUNT)
-        .all(|frame| sprite_manifest_has_id(sprite_manifest, &kiki_idle_sprite_id(frame)))
+fn kiki_breath_frames_available(sprite_manifest: &VisualSpriteManifestStatus) -> bool {
+    (0..KIKI_BREATH_FRAME_COUNT)
+        .all(|frame| sprite_manifest_has_id(sprite_manifest, &kiki_breath_sprite_id(frame)))
 }
 
 fn sprite_manifest_has_id(sprite_manifest: &VisualSpriteManifestStatus, sprite_id: &str) -> bool {
@@ -2092,11 +2125,19 @@ fn sprite_manifest_has_id(sprite_manifest: &VisualSpriteManifestStatus, sprite_i
         .any(|sprite| sprite.id == sprite_id)
 }
 
-fn kiki_idle_sprite_id(frame: usize) -> String {
+fn kiki_breath_sprite_id(frame: usize) -> String {
     format!(
         "{}{}",
-        KIKI_IDLE_FRAME_PREFIX,
-        frame.min(KIKI_IDLE_FRAME_COUNT.saturating_sub(1))
+        KIKI_BREATH_FRAME_PREFIX,
+        frame.min(KIKI_BREATH_FRAME_COUNT.saturating_sub(1))
+    )
+}
+
+fn kiki_blink_sprite_id(frame: usize) -> String {
+    format!(
+        "{}{}",
+        KIKI_BLINK_FRAME_PREFIX,
+        frame.min(KIKI_BLINK_FRAME_COUNT.saturating_sub(1))
     )
 }
 
@@ -2151,14 +2192,21 @@ mod tests {
             .join(name)
     }
 
-    fn kiki_idle_sprite_manifest(frame_count: usize) -> VisualSpriteManifestStatus {
+    fn kiki_animation_sprite_manifest(
+        breath_frame_count: usize,
+        blink_frame_count: usize,
+    ) -> VisualSpriteManifestStatus {
         VisualSpriteManifestStatus {
             manifest_path: None,
-            sprites: (0..frame_count)
+            sprites: (0..breath_frame_count)
                 .map(|frame| VisualResolvedSprite {
-                    id: kiki_idle_sprite_id(frame),
-                    path: format!("/tmp/kiki-idle-{frame}.png"),
+                    id: kiki_breath_sprite_id(frame),
+                    path: format!("/tmp/kiki-breath-{frame}.png"),
                 })
+                .chain((0..blink_frame_count).map(|frame| VisualResolvedSprite {
+                    id: kiki_blink_sprite_id(frame),
+                    path: format!("/tmp/kiki-blink-{frame}.png"),
+                }))
                 .collect(),
             warnings: Vec::new(),
         }
@@ -2175,7 +2223,7 @@ mod tests {
                 zorder: 10,
                 displayables: vec![VisualStageDisplayable {
                     tag: KIKI_STAGE_TAG.to_string(),
-                    sprite: KIKI_IDLE_BASE_SPRITE.to_string(),
+                    sprite: KIKI_BASE_SPRITE.to_string(),
                     placement: VisualStagePlacement::Center,
                     zorder: 0,
                     visible: true,
@@ -2186,41 +2234,74 @@ mod tests {
     }
 
     #[test]
-    fn kiki_idle_frame_cycles_over_six_frames() {
-        assert_eq!(kiki_idle_frame_for_elapsed_ms(0), 0);
-        assert_eq!(kiki_idle_frame_for_elapsed_ms(KIKI_IDLE_FRAME_MS), 1);
-        assert_eq!(kiki_idle_frame_for_elapsed_ms(KIKI_IDLE_FRAME_MS * 5), 5);
-        assert_eq!(kiki_idle_frame_for_elapsed_ms(KIKI_IDLE_FRAME_MS * 6), 0);
+    fn kiki_breath_frame_cycles_over_six_frames() {
+        assert_eq!(kiki_breath_frame_for_elapsed_ms(0), 0);
+        assert_eq!(kiki_breath_frame_for_elapsed_ms(KIKI_BREATH_FRAME_MS), 1);
+        assert_eq!(
+            kiki_breath_frame_for_elapsed_ms(KIKI_BREATH_FRAME_MS * 5),
+            5
+        );
+        assert_eq!(
+            kiki_breath_frame_for_elapsed_ms(KIKI_BREATH_FRAME_MS * 6),
+            0
+        );
     }
 
     #[test]
-    fn kiki_idle_animation_replaces_stage_sprite_when_not_speaking() {
-        let mut snapshot = kiki_stage_snapshot("Codex");
-        let sprites = kiki_idle_sprite_manifest(KIKI_IDLE_FRAME_COUNT);
-
-        apply_kiki_idle_animation(&mut snapshot, &sprites, 3);
-
-        assert_eq!(snapshot.stage[0].sprite, "vn.character.kiki.idle.3");
+    fn kiki_blink_frame_only_occupies_start_of_interval() {
+        assert_eq!(kiki_blink_frame_for_elapsed_ms(0), Some(0));
+        assert_eq!(
+            kiki_blink_frame_for_elapsed_ms(KIKI_BLINK_FRAME_MS),
+            Some(1)
+        );
+        assert_eq!(
+            kiki_blink_frame_for_elapsed_ms(KIKI_BLINK_FRAME_MS * 5),
+            Some(5)
+        );
+        assert_eq!(
+            kiki_blink_frame_for_elapsed_ms(KIKI_BLINK_FRAME_MS * 6),
+            None
+        );
     }
 
     #[test]
-    fn kiki_idle_animation_waits_for_all_frames() {
+    fn kiki_idle_animation_uses_breath_when_not_speaking() {
         let mut snapshot = kiki_stage_snapshot("Codex");
-        let sprites = kiki_idle_sprite_manifest(KIKI_IDLE_FRAME_COUNT - 1);
+        let sprites = kiki_animation_sprite_manifest(KIKI_BREATH_FRAME_COUNT, 0);
 
-        apply_kiki_idle_animation(&mut snapshot, &sprites, 3);
+        apply_kiki_idle_animation(&mut snapshot, &sprites, Some(kiki_breath_sprite_id(3)));
 
-        assert_eq!(snapshot.stage[0].sprite, KIKI_IDLE_BASE_SPRITE);
+        assert_eq!(snapshot.stage[0].sprite, "vn.character.kiki.breath.3");
+    }
+
+    #[test]
+    fn kiki_idle_animation_prefers_blink_during_blink_window() {
+        let sprites =
+            kiki_animation_sprite_manifest(KIKI_BREATH_FRAME_COUNT, KIKI_BLINK_FRAME_COUNT);
+        let sprite = kiki_idle_sprite_for_elapsed_ms(KIKI_BLINK_FRAME_MS * 2, &sprites);
+
+        assert_eq!(sprite.as_deref(), Some("vn.character.kiki.blink.2"));
+    }
+
+    #[test]
+    fn kiki_idle_animation_waits_for_breath_frames() {
+        let mut snapshot = kiki_stage_snapshot("Codex");
+        let sprites = kiki_animation_sprite_manifest(KIKI_BREATH_FRAME_COUNT - 1, 0);
+
+        apply_kiki_idle_animation(&mut snapshot, &sprites, Some(kiki_breath_sprite_id(3)));
+
+        assert_eq!(snapshot.stage[0].sprite, KIKI_BASE_SPRITE);
     }
 
     #[test]
     fn kiki_idle_animation_stops_when_kiki_is_speaking() {
         let mut snapshot = kiki_stage_snapshot("Kiki");
-        let sprites = kiki_idle_sprite_manifest(KIKI_IDLE_FRAME_COUNT);
+        let sprites =
+            kiki_animation_sprite_manifest(KIKI_BREATH_FRAME_COUNT, KIKI_BLINK_FRAME_COUNT);
 
-        apply_kiki_idle_animation(&mut snapshot, &sprites, 3);
+        apply_kiki_idle_animation(&mut snapshot, &sprites, Some(kiki_blink_sprite_id(3)));
 
-        assert_eq!(snapshot.stage[0].sprite, KIKI_IDLE_BASE_SPRITE);
+        assert_eq!(snapshot.stage[0].sprite, KIKI_BASE_SPRITE);
     }
 
     #[test]
