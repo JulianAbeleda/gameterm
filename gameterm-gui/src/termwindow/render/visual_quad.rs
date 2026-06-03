@@ -8,7 +8,7 @@ use ::window::RectF;
 use anyhow::Context;
 use config::HsbTransform;
 use gameterm_visual::{
-    vn_overlay_layout, vn_overlay_layout_with_overrides, SceneRuntime, VisualRenderEntity, VisualRenderSnapshot,
+    vn_overlay_layout, vn_overlay_layout_with_overrides, SceneRuntime, VisualRenderEntity, VisualRenderSnapshot, VisualView,
     VisualRenderStageDisplayable, VisualRenderTile, VisualScene, VisualStagePlacement,
     VnOverlayRect,
 };
@@ -56,6 +56,9 @@ impl TermWindow {
         hsv: Option<HsbTransform>,
     ) -> anyhow::Result<()> {
         if snapshot.stage.is_empty() {
+            return Ok(());
+        }
+        if matches!(snapshot.view, VisualView::TileDebugger | VisualView::VnLayoutDebugger) {
             return Ok(());
         }
 
