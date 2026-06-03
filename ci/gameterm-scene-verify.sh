@@ -1756,6 +1756,28 @@ run_smoke_asset_check() {
   echo "smoke assets: ok"
 }
 
+run_panel_style_check() {
+  local output="/tmp/gameterm-scene-panel-style-verify.json"
+
+  cargo run -q -p gameterm-visual --example scene_panel_style -- \
+    "${repo_root}/assets/gameterm-scene/vn-panel.png" \
+    --output "${output}"
+  jq -e '
+    .schema == "gameterm.scene.panel_style.v1"
+    and .recommended_renderer == "procedural_rounded_panel"
+    and .dimensions.width == 128
+    and .dimensions.height == 128
+    and .style.slice_px == 32
+    and (.style.corner_radius_px >= 1)
+    and (.style.fill.alpha > 0)
+    and (.style.border.alpha > 0)
+    and (.trace_tools | has("vtracer"))
+    and (.trace_tools | has("potrace"))
+    and (.trace_tools | has("autotrace"))
+  ' "${output}" >/dev/null
+  echo "panel style helper: ok"
+}
+
 run_cargo_checks() {
   cargo test -p gameterm-visual scene_fixture
   cargo test -p gameterm-visual open_file
@@ -1785,6 +1807,7 @@ run_all() {
   run_workspace_session_check
   run_onboarding_check
   run_smoke_asset_check
+  run_panel_style_check
   for fixture in basic navigate invalid sprites missing-sprite run-command-targets layered-mode vertical-slice authoring-loop game-states chained-transitions workspace-agent multi-agent-coordination renpy-demo; do
     run_fixture_setup_check "${fixture}"
   done

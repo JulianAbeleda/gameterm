@@ -2536,6 +2536,8 @@ dependencies = [
 name = "gameterm-visual"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "image",
  "k9",
  "serde",
  "serde_json",
