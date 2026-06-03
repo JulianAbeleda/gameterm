@@ -30,6 +30,8 @@ const VN_PANEL_MAX_CORNER_SEGMENTS: usize = 32;
 const VN_PANEL_SLICE_PX: f32 = 32.0;
 const VN_STAGE_CHARACTER_HEIGHT_RATIO: f32 = 0.78;
 const VN_STAGE_CHARACTER_TARGET_WIDTH_RATIO: f32 = 0.34;
+const VN_DIALOGUE_SCROLLBAR_TRACK_COLOR: LinearRgba = LinearRgba(0.86, 0.88, 0.94, 0.22);
+const VN_DIALOGUE_SCROLLBAR_THUMB_COLOR: LinearRgba = LinearRgba(0.96, 0.97, 1.0, 0.74);
 static VN_PANEL_TEXTURE_RENDERING: LazyLock<bool> = LazyLock::new(|| {
     std::env::var("GAMETERM_SCENE_VN_PANEL_TEXTURE")
         .map(|value| {
@@ -247,6 +249,16 @@ impl TermWindow {
             .zip(vn_panel_nameplate_styles(&layout))
         {
             self.populate_vn_panel_surface(layers, 1, rect, cell_width, params, style, hsv)?;
+        }
+        if let Some((track, thumb)) = params.visual_snapshot.and_then(|snapshot| {
+            vn_dialogue_scrollbar_rects(&layout, snapshot, stage_rect, cell_width, cell_height)
+        }) {
+            let mut track_quad =
+                self.filled_rectangle(layers, 2, track, VN_DIALOGUE_SCROLLBAR_TRACK_COLOR)?;
+            track_quad.set_hsv(hsv);
+            let mut thumb_quad =
+                self.filled_rectangle(layers, 2, thumb, VN_DIALOGUE_SCROLLBAR_THUMB_COLOR)?;
+            thumb_quad.set_hsv(hsv);
         }
         Ok(())
     }
@@ -634,6 +646,55 @@ fn vn_overlay_rect_to_pixels(
         (rect.width as f32 * cell_width).max(cell_width),
         (rect.height as f32 * cell_height).max(cell_height),
     )
+}
+
+fn vn_dialogue_scrollbar_rects(
+    layout: &gameterm_visual::VnOverlayLayout,
+    snapshot: &VisualRenderSnapshot,
+    stage_rect: RectF,
+    cell_width: f32,
+    cell_height: f32,
+) -> Option<(RectF, RectF)> {
+    let metrics = snapshot.vn_dialogue_scroll?;
+    if metrics.max_scroll_offset == 0 || metrics.visible_rows == 0 {
+        return None;
+    }
+
+    let track_width = (cell_width * 0.32).clamp(3.0, 7.0);
+    let panel =
+        vn_overlay_rect_to_pixels(layout.dialogue_panel, stage_rect, cell_width, cell_height);
+    let track_top = stage_rect.min_y() + layout.dialogue_text_row as f32 * cell_height;
+    let track_height = metrics.visible_rows as f32 * cell_height;
+    if track_height <= 0.0 {
+        return None;
+    }
+    let track = euclid::rect(
+        panel.max_x() - layout.dialogue_text_inset_cols as f32 * cell_width + track_width,
+        track_top,
+        track_width,
+        track_height,
+    );
+
+    let thumb_height = ((track_height * metrics.visible_rows as f32)
+        / metrics.total_lines.max(1) as f32)
+        .max(cell_height)
+        .min(track_height);
+    let travel = (track_height - thumb_height).max(0.0);
+    let distance_from_top = metrics
+        .max_scroll_offset
+        .saturating_sub(metrics.scroll_offset) as f32;
+    let thumb_top = if metrics.max_scroll_offset == 0 {
+        0.0
+    } else {
+        travel * distance_from_top / metrics.max_scroll_offset as f32
+    };
+    let thumb = euclid::rect(
+        track.min_x(),
+        track.min_y() + thumb_top,
+        track.size.width,
+        thumb_height,
+    );
+    Some((track, thumb))
 }
 
 fn vn_panel_styles(layout: &gameterm_visual::VnOverlayLayout) -> Vec<VnPanelStyle> {
@@ -1287,6 +1348,64 @@ mod tests {
         assert_eq!(rows, 24);
         assert_eq!(layout.composer_panel.unwrap().row, 18);
         assert_eq!(layout.composer_panel.unwrap().height, 4);
+    }
+
+    #[test]
+    fn vn_dialogue_scrollbar_rects_track_overflow_metrics() {
+        let runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        let mut snapshot = runtime.render_snapshot();
+        snapshot.vn_dialogue_scroll = Some(gameterm_visual::VnDialogueScrollMetrics {
+            total_lines: 40,
+            visible_rows: 10,
+            scroll_offset: 0,
+            max_scroll_offset: 30,
+        });
+        let stage = euclid::rect(0.0, 0.0, 1000.0, 600.0);
+        let layout = vn_overlay_layout(100, 30, "Codex", "Composer");
+
+        let (track, bottom_thumb) =
+            vn_dialogue_scrollbar_rects(&layout, &snapshot, stage, 10.0, 20.0).unwrap();
+
+        assert!(
+            track.min_x()
+                > vn_overlay_rect_to_pixels(layout.dialogue_panel, stage, 10.0, 20.0).min_x()
+        );
+        assert_eq!(track.size.height, 200.0);
+        assert!(bottom_thumb.min_y() > track.min_y());
+        assert_eq!(bottom_thumb.max_y(), track.max_y());
+
+        snapshot.vn_dialogue_scroll = Some(gameterm_visual::VnDialogueScrollMetrics {
+            total_lines: 40,
+            visible_rows: 10,
+            scroll_offset: 30,
+            max_scroll_offset: 30,
+        });
+        let (_, top_thumb) =
+            vn_dialogue_scrollbar_rects(&layout, &snapshot, stage, 10.0, 20.0).unwrap();
+        assert_eq!(top_thumb.min_y(), track.min_y());
+        assert!(top_thumb.max_y() < bottom_thumb.min_y());
+    }
+
+    #[test]
+    fn vn_dialogue_scrollbar_rects_skip_non_overflowing_dialogue() {
+        let runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        let mut snapshot = runtime.render_snapshot();
+        snapshot.vn_dialogue_scroll = Some(gameterm_visual::VnDialogueScrollMetrics {
+            total_lines: 3,
+            visible_rows: 10,
+            scroll_offset: 0,
+            max_scroll_offset: 0,
+        });
+        let layout = vn_overlay_layout(100, 30, "Codex", "Composer");
+
+        assert!(vn_dialogue_scrollbar_rects(
+            &layout,
+            &snapshot,
+            euclid::rect(0.0, 0.0, 1000.0, 600.0),
+            10.0,
+            20.0,
+        )
+        .is_none());
     }
 
     #[test]

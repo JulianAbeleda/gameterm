@@ -1206,6 +1206,8 @@ pub struct VisualRenderSnapshot {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub overlay_rows: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vn_dialogue_scroll: Option<VnDialogueScrollMetrics>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vn_layout_debug: Option<VnOverlayDebugOverrides>,
 }
 
@@ -2609,6 +2611,7 @@ impl SceneRuntime {
             status: self.status.clone(),
             overlay_cols: None,
             overlay_rows: None,
+            vn_dialogue_scroll: None,
             vn_layout_debug: self.vn_layout_debug.clone(),
             choices: self
                 .scene

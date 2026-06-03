@@ -1969,6 +1969,8 @@ fn render_runtime_with_compose_and_scroll(
     );
     snapshot.overlay_cols = Some(size.cols);
     snapshot.overlay_rows = Some(size.rows);
+    snapshot.vn_dialogue_scroll =
+        Some(runtime.vn_dialogue_scroll_metrics(size.cols, size.rows, dialogue_scroll.offset));
     term.set_metadata(
         "gameterm_visual_snapshot",
         Value::String(serde_json::to_string(&snapshot)?),
