@@ -27,7 +27,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use termwiz::input::{InputEvent, KeyCode, KeyEvent, Modifiers, MouseButtons, MouseEvent};
 use termwiz::surface::Change;
-use termwiz::terminal::Terminal;
+use termwiz::terminal::{ScreenSize, Terminal};
 use window::{Window, WindowOps};
 
 const VN_OVERLAY_LAYOUT_CONFIG_FILE: &str = "vn-overlay-layout.json";
@@ -108,8 +108,16 @@ impl SceneDialogueScrollback {
         self.offset = self.offset.saturating_add(1).min(max_offset);
     }
 
+    fn scroll_up_by(&mut self, lines: usize, max_offset: usize) {
+        self.offset = self.offset.saturating_add(lines).min(max_offset);
+    }
+
     fn scroll_down(&mut self) {
         self.offset = self.offset.saturating_sub(1);
+    }
+
+    fn scroll_down_by(&mut self, lines: usize) {
+        self.offset = self.offset.saturating_sub(lines);
     }
 
     fn clamp(&mut self, max_offset: usize) {
@@ -402,6 +410,25 @@ fn show_visual_scene_overlay_with_source(
                 let in_layout_debug = runtime.as_ref().map_or(false, |runtime| {
                     runtime.view() == VisualView::VnLayoutDebugger
                 });
+                if !in_layout_debug {
+                    if let Some(runtime) = runtime.as_ref() {
+                        if handle_dialogue_scroll_key(
+                            runtime,
+                            &mut dialogue_scroll,
+                            visual_input,
+                            term.get_screen_size()?,
+                        ) {
+                            render_runtime_with_compose_and_scroll(
+                                &mut term,
+                                runtime,
+                                &sprite_manifest,
+                                &compose_dock,
+                                &dialogue_scroll,
+                            )?;
+                            continue;
+                        }
+                    }
+                }
                 if visual_input == VisualInput::Close && !in_layout_debug {
                     break;
                 }
@@ -1343,6 +1370,8 @@ fn visual_input_from_key(key: KeyCode) -> VisualInput {
         KeyCode::UpArrow | KeyCode::Char('k') | KeyCode::Char('K') => VisualInput::Previous,
         KeyCode::RightArrow | KeyCode::Char('l') | KeyCode::Char('L') => VisualInput::Right,
         KeyCode::LeftArrow | KeyCode::Char('h') | KeyCode::Char('H') => VisualInput::Left,
+        KeyCode::PageUp => VisualInput::ScrollDialogueUp,
+        KeyCode::PageDown => VisualInput::ScrollDialogueDown,
         KeyCode::Backspace => VisualInput::Backspace,
         KeyCode::Char(c) => VisualInput::Char(c),
         _ => VisualInput::Other,
@@ -1923,6 +1952,36 @@ fn handle_dialogue_scroll_wheel(
     let metrics = runtime.vn_dialogue_scroll_metrics(cols, rows, scroll.offset);
     apply_dialogue_scroll_wheel(scroll, metrics, mouse_buttons);
     true
+}
+
+fn handle_dialogue_scroll_key(
+    runtime: &SceneRuntime,
+    scroll: &mut SceneDialogueScrollback,
+    input: VisualInput,
+    size: ScreenSize,
+) -> bool {
+    let metrics = runtime.vn_dialogue_scroll_metrics(size.cols, size.rows, scroll.offset);
+    apply_dialogue_scroll_key(scroll, metrics, input)
+}
+
+fn apply_dialogue_scroll_key(
+    scroll: &mut SceneDialogueScrollback,
+    metrics: VnDialogueScrollMetrics,
+    input: VisualInput,
+) -> bool {
+    let page_lines = metrics.visible_rows.saturating_sub(1).max(1);
+    match input {
+        VisualInput::ScrollDialogueUp => {
+            scroll.scroll_up_by(page_lines, metrics.max_scroll_offset);
+            true
+        }
+        VisualInput::ScrollDialogueDown => {
+            scroll.scroll_down_by(page_lines);
+            scroll.clamp(metrics.max_scroll_offset);
+            true
+        }
+        _ => false,
+    }
 }
 
 fn apply_dialogue_scroll_wheel(
@@ -2793,12 +2852,68 @@ mod tests {
     }
 
     #[test]
+    fn scene_dialogue_scrollback_moves_by_page_keys() {
+        let metrics = VnDialogueScrollMetrics {
+            total_lines: 30,
+            visible_rows: 6,
+            scroll_offset: 0,
+            max_scroll_offset: 12,
+        };
+        let mut scroll = SceneDialogueScrollback::default();
+
+        assert!(apply_dialogue_scroll_key(
+            &mut scroll,
+            metrics,
+            VisualInput::ScrollDialogueUp,
+        ));
+        assert_eq!(scroll.offset, 5);
+
+        apply_dialogue_scroll_key(&mut scroll, metrics, VisualInput::ScrollDialogueUp);
+        apply_dialogue_scroll_key(&mut scroll, metrics, VisualInput::ScrollDialogueUp);
+        assert_eq!(scroll.offset, 12);
+
+        assert!(apply_dialogue_scroll_key(
+            &mut scroll,
+            metrics,
+            VisualInput::ScrollDialogueDown,
+        ));
+        assert_eq!(scroll.offset, 7);
+
+        apply_dialogue_scroll_key(&mut scroll, metrics, VisualInput::ScrollDialogueDown);
+        apply_dialogue_scroll_key(&mut scroll, metrics, VisualInput::ScrollDialogueDown);
+        assert_eq!(scroll.offset, 0);
+    }
+
+    #[test]
+    fn scene_dialogue_scrollback_page_keys_are_mapped() {
+        assert_eq!(
+            visual_input_from_key(KeyCode::PageUp),
+            VisualInput::ScrollDialogueUp
+        );
+        assert_eq!(
+            visual_input_from_key(KeyCode::PageDown),
+            VisualInput::ScrollDialogueDown
+        );
+        assert_eq!(
+            visual_input_from_key(KeyCode::UpArrow),
+            VisualInput::Previous
+        );
+        assert_eq!(visual_input_from_key(KeyCode::DownArrow), VisualInput::Next);
+    }
+
+    #[test]
     fn activate_resets_dialogue_scroll_but_selection_does_not() {
         assert!(visual_input_resets_dialogue_scroll(VisualInput::Activate));
         assert!(!visual_input_resets_dialogue_scroll(VisualInput::Next));
         assert!(!visual_input_resets_dialogue_scroll(VisualInput::Previous));
         assert!(!visual_input_resets_dialogue_scroll(VisualInput::Left));
         assert!(!visual_input_resets_dialogue_scroll(VisualInput::Right));
+        assert!(!visual_input_resets_dialogue_scroll(
+            VisualInput::ScrollDialogueUp
+        ));
+        assert!(!visual_input_resets_dialogue_scroll(
+            VisualInput::ScrollDialogueDown
+        ));
     }
 
     #[test]

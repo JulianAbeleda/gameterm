@@ -165,6 +165,7 @@ pub(crate) fn default_mode_input_action(input: VisualInput) -> &'static str {
         VisualInput::Previous => "select_previous",
         VisualInput::Left => "select_previous",
         VisualInput::Right => "select_next",
+        VisualInput::ScrollDialogueUp | VisualInput::ScrollDialogueDown => "ignore",
         VisualInput::Char(_) | VisualInput::Backspace | VisualInput::Other => "ignore",
     }
 }

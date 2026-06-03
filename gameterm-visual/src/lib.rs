@@ -1411,6 +1411,8 @@ pub enum VisualInput {
     Previous,
     Left,
     Right,
+    ScrollDialogueUp,
+    ScrollDialogueDown,
     Char(char),
     Backspace,
     Other,
@@ -1427,6 +1429,7 @@ impl VisualInput {
             Self::Previous => "previous",
             Self::Left => "left",
             Self::Right => "right",
+            Self::ScrollDialogueUp | Self::ScrollDialogueDown => "other",
             Self::Char(_) | Self::Backspace | Self::Other => "other",
         }
     }
