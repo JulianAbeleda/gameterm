@@ -36,8 +36,8 @@ Options:
                            the smoke harness discovers the GameTerm Scene pane.
   --key-sequence LIST       Comma-separated keys to send before capture after
                            launch setup. Supported keys: enter, tab, escape,
-                           space, up, down, left, right, h, j, k, l, q, r,
-                           and delay:N.
+                           backspace, space, up, down, left, right, h, j, k,
+                           l, q, r, and delay:N.
   --open-active-pane-scene  When auto-opening Scene Mode, send the native
                            active-pane shortcut Ctrl+Alt+Shift+G instead of
                            the configured-scene shortcut Ctrl+Shift+G.
@@ -901,6 +901,8 @@ on sendNamedKey(keyName)
       key code 48
     else if keyName is "escape" or keyName is "esc" then
       key code 53
+    else if keyName is "backspace" then
+      key code 51
     else if keyName is "space" then
       key code 49
     else if keyName is "up" then
