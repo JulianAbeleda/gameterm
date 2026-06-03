@@ -58,6 +58,17 @@ The installed app bundle was refreshed during this pass:
 /Users/julianabeleda/Applications/GameTerm.app
 ```
 
+For future UI or Scene Mode changes, use this repo command when the clickable
+macOS app needs to reflect the latest build:
+
+```sh
+make dev-app-open
+```
+
+This builds the required binaries, reinstalls `~/Applications/GameTerm.app`,
+verifies the app bundle binaries match the build output, quits the currently
+installed app if it is running, and reopens the refreshed app.
+
 The current local app-launch Scene compose config is:
 
 ```json

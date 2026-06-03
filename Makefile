@@ -1,4 +1,4 @@
-.PHONY: all fmt build check test docs servedocs
+.PHONY: all fmt build check test docs servedocs dev-app dev-app-open
 
 all: build
 
@@ -18,6 +18,12 @@ build:
 	cargo build $(BUILD_OPTS) -p gameterm-gui
 	cargo build $(BUILD_OPTS) -p gameterm-mux-server
 	cargo build $(BUILD_OPTS) -p strip-ansi-escapes
+
+dev-app:
+	ci/install-macos-dev-app.sh
+
+dev-app-open:
+	ci/install-macos-dev-app.sh --restart
 
 fmt:
 	cargo +nightly fmt

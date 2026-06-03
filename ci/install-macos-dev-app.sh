@@ -14,6 +14,7 @@ Options:
   --release           Install release binaries instead of debug binaries.
   --no-build          Do not run cargo build before installing.
   --open              Open the installed app after installation.
+  --restart           Quit the installed app before replacing it, then reopen it.
   -h, --help          Show this help.
 EOF
 }
@@ -24,6 +25,7 @@ target_dir="${repo_root}/target"
 profile="debug"
 build=1
 open_app=0
+restart_app=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -44,6 +46,11 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     --open)
+      open_app=1
+      shift
+      ;;
+    --restart)
+      restart_app=1
       open_app=1
       shift
       ;;
@@ -89,6 +96,11 @@ for bin in gameterm gameterm-mux-server gameterm-gui strip-ansi-escapes; do
   fi
 done
 
+if [[ "${restart_app}" -eq 1 ]]; then
+  pkill -f "${app_path}/Contents/MacOS/gameterm-gui" >/dev/null 2>&1 || true
+  sleep 0.3
+fi
+
 rm -rf "${app_path}"
 mkdir -p "${install_dir}"
 cp -R "${app_template}" "${app_path}"
@@ -113,6 +125,13 @@ for bin in gameterm gameterm-mux-server gameterm-gui strip-ansi-escapes; do
   chmod +x "${macos_dir}/${bin}"
 done
 
+for bin in gameterm gameterm-mux-server gameterm-gui strip-ansi-escapes; do
+  if ! cmp -s "${bin_dir}/${bin}" "${macos_dir}/${bin}"; then
+    echo "installed app binary does not match build output: ${bin}" >&2
+    exit 1
+  fi
+done
+
 # Ad-hoc signing keeps local Gatekeeper checks predictable without requiring a
 # developer identity.
 codesign --force --deep --sign - "${app_path}" >/dev/null
@@ -122,7 +141,7 @@ if [[ -x /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServ
     -f "${app_path}" >/dev/null 2>&1 || true
 fi
 
-echo "Installed ${app_path}"
+echo "Installed ${app_path} from ${bin_dir}"
 
 if [[ "${open_app}" -eq 1 ]]; then
   open "${app_path}"
