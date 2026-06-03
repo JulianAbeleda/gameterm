@@ -78,6 +78,8 @@ pub const VN_OVERLAY_DIALOGUE_TEXT_INSET_ROWS: usize = 2;
 pub const VN_OVERLAY_COMPOSER_TEXT_INSET_ROWS: usize = 1;
 pub const VN_OVERLAY_NAMEPLATE_OFFSET_ROWS: usize = 0;
 pub const VN_OVERLAY_NAMEPLATE_HEIGHT_ROWS: usize = 3;
+pub const VN_OVERLAY_DIALOGUE_NAMEPLATE_HEIGHT_ROWS: usize = VN_OVERLAY_NAMEPLATE_HEIGHT_ROWS;
+pub const VN_OVERLAY_COMPOSER_NAMEPLATE_HEIGHT_ROWS: usize = VN_OVERLAY_NAMEPLATE_HEIGHT_ROWS;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct VnOverlayDebugOverrides {
@@ -86,7 +88,10 @@ pub struct VnOverlayDebugOverrides {
     pub dialogue_top_ratio: f32,
     pub dialogue_bottom_ratio: f32,
     pub composer_height_rows: usize,
-    pub nameplate_height_rows: usize,
+    pub dialogue_nameplate_height_rows: usize,
+    pub composer_nameplate_height_rows: usize,
+    pub dialogue_text_inset_rows: usize,
+    pub composer_text_inset_rows: usize,
     pub selected_param: usize,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub editing_buffer: Option<String>,
@@ -100,7 +105,10 @@ impl Default for VnOverlayDebugOverrides {
             dialogue_top_ratio: VN_OVERLAY_DIALOGUE_TOP_RATIO,
             dialogue_bottom_ratio: VN_OVERLAY_DIALOGUE_BOTTOM_RATIO,
             composer_height_rows: 7,
-            nameplate_height_rows: VN_OVERLAY_NAMEPLATE_HEIGHT_ROWS,
+            dialogue_nameplate_height_rows: VN_OVERLAY_DIALOGUE_NAMEPLATE_HEIGHT_ROWS,
+            composer_nameplate_height_rows: VN_OVERLAY_COMPOSER_NAMEPLATE_HEIGHT_ROWS,
+            dialogue_text_inset_rows: VN_OVERLAY_DIALOGUE_TEXT_INSET_ROWS,
+            composer_text_inset_rows: VN_OVERLAY_COMPOSER_TEXT_INSET_ROWS,
             selected_param: 0,
             editing_buffer: None,
         }
@@ -108,7 +116,7 @@ impl Default for VnOverlayDebugOverrides {
 }
 
 impl VnOverlayDebugOverrides {
-    pub const PARAM_COUNT: usize = 6;
+    pub const PARAM_COUNT: usize = 9;
 
     pub fn select_next(&mut self) {
         self.selected_param = (self.selected_param + 1) % Self::PARAM_COUNT;
@@ -124,17 +132,40 @@ impl VnOverlayDebugOverrides {
 
     pub fn adjust(&mut self, delta: i32) {
         match self.selected_param {
-            0 => self.dialogue_margin_ratio = (self.dialogue_margin_ratio + delta as f32 * 0.005).clamp(0.0, 0.45),
-            1 => self.composer_margin_ratio = (self.composer_margin_ratio + delta as f32 * 0.005).clamp(0.0, 0.20),
-            2 => self.dialogue_top_ratio = (self.dialogue_top_ratio + delta as f32 * 0.005).clamp(0.0, 0.30),
-            3 => self.dialogue_bottom_ratio = (self.dialogue_bottom_ratio + delta as f32 * 0.010).clamp(0.30, 0.99),
+            0 => {
+                self.dialogue_margin_ratio =
+                    (self.dialogue_margin_ratio + delta as f32 * 0.005).clamp(0.0, 0.45)
+            }
+            1 => {
+                self.composer_margin_ratio =
+                    (self.composer_margin_ratio + delta as f32 * 0.005).clamp(0.0, 0.20)
+            }
+            2 => {
+                self.dialogue_top_ratio =
+                    (self.dialogue_top_ratio + delta as f32 * 0.005).clamp(0.0, 0.30)
+            }
+            3 => {
+                self.dialogue_bottom_ratio =
+                    (self.dialogue_bottom_ratio + delta as f32 * 0.010).clamp(0.30, 0.99)
+            }
             4 => {
-                if delta > 0 { self.composer_height_rows = self.composer_height_rows.saturating_add(1).min(20); }
-                else { self.composer_height_rows = self.composer_height_rows.saturating_sub(1).max(1); }
+                if delta > 0 {
+                    self.composer_height_rows = self.composer_height_rows.saturating_add(1).min(20);
+                } else {
+                    self.composer_height_rows = self.composer_height_rows.saturating_sub(1).max(1);
+                }
             }
             5 => {
-                if delta > 0 { self.nameplate_height_rows = self.nameplate_height_rows.saturating_add(1).min(8); }
-                else { self.nameplate_height_rows = self.nameplate_height_rows.saturating_sub(1).max(1); }
+                adjust_usize(&mut self.dialogue_nameplate_height_rows, delta, 1, 8);
+            }
+            6 => {
+                adjust_usize(&mut self.composer_nameplate_height_rows, delta, 1, 8);
+            }
+            7 => {
+                adjust_usize(&mut self.dialogue_text_inset_rows, delta, 0, 12);
+            }
+            8 => {
+                adjust_usize(&mut self.composer_text_inset_rows, delta, 0, 12);
             }
             _ => {}
         }
@@ -147,7 +178,10 @@ impl VnOverlayDebugOverrides {
             2 => "dialogue_top_ratio",
             3 => "dialogue_bottom_ratio",
             4 => "composer_height_rows",
-            5 => "nameplate_height_rows",
+            5 => "dialogue_nameplate_height_rows",
+            6 => "composer_nameplate_height_rows",
+            7 => "dialogue_text_inset_rows",
+            8 => "composer_text_inset_rows",
             _ => "?",
         }
     }
@@ -159,7 +193,10 @@ impl VnOverlayDebugOverrides {
             2 => "dialogue panel top",
             3 => "dialogue panel bottom",
             4 => "composer height (fullscreen)",
-            5 => "nameplate box height",
+            5 => "dialogue nameplate height",
+            6 => "composer nameplate height",
+            7 => "dialogue text top inset",
+            8 => "composer text top inset",
             _ => "",
         }
     }
@@ -171,7 +208,10 @@ impl VnOverlayDebugOverrides {
             2 => format!("{:.3}", self.dialogue_top_ratio),
             3 => format!("{:.3}", self.dialogue_bottom_ratio),
             4 => self.composer_height_rows.to_string(),
-            5 => self.nameplate_height_rows.to_string(),
+            5 => self.dialogue_nameplate_height_rows.to_string(),
+            6 => self.composer_nameplate_height_rows.to_string(),
+            7 => self.dialogue_text_inset_rows.to_string(),
+            8 => self.composer_text_inset_rows.to_string(),
             _ => String::new(),
         }
     }
@@ -186,7 +226,10 @@ impl VnOverlayDebugOverrides {
 
     pub fn push_char(&mut self, c: char) {
         if let Some(ref mut buf) = self.editing_buffer {
-            if c.is_ascii_digit() || (c == '.' && !buf.contains('.')) || (c == '-' && buf.is_empty()) {
+            if c.is_ascii_digit()
+                || (c == '.' && !buf.contains('.'))
+                || (c == '-' && buf.is_empty())
+            {
                 buf.push(c);
             }
         }
@@ -204,14 +247,61 @@ impl VnOverlayDebugOverrides {
             None => return,
         };
         match self.selected_param {
-            0 => { if let Ok(v) = buf.parse::<f32>() { self.dialogue_margin_ratio = v.clamp(0.0, 0.45); } }
-            1 => { if let Ok(v) = buf.parse::<f32>() { self.composer_margin_ratio = v.clamp(0.0, 0.20); } }
-            2 => { if let Ok(v) = buf.parse::<f32>() { self.dialogue_top_ratio = v.clamp(0.0, 0.30); } }
-            3 => { if let Ok(v) = buf.parse::<f32>() { self.dialogue_bottom_ratio = v.clamp(0.30, 0.99); } }
-            4 => { if let Ok(v) = buf.parse::<usize>() { self.composer_height_rows = v.clamp(1, 20); } }
-            5 => { if let Ok(v) = buf.parse::<usize>() { self.nameplate_height_rows = v.clamp(1, 8); } }
+            0 => {
+                if let Ok(v) = buf.parse::<f32>() {
+                    self.dialogue_margin_ratio = v.clamp(0.0, 0.45);
+                }
+            }
+            1 => {
+                if let Ok(v) = buf.parse::<f32>() {
+                    self.composer_margin_ratio = v.clamp(0.0, 0.20);
+                }
+            }
+            2 => {
+                if let Ok(v) = buf.parse::<f32>() {
+                    self.dialogue_top_ratio = v.clamp(0.0, 0.30);
+                }
+            }
+            3 => {
+                if let Ok(v) = buf.parse::<f32>() {
+                    self.dialogue_bottom_ratio = v.clamp(0.30, 0.99);
+                }
+            }
+            4 => {
+                if let Ok(v) = buf.parse::<usize>() {
+                    self.composer_height_rows = v.clamp(1, 20);
+                }
+            }
+            5 => {
+                if let Ok(v) = buf.parse::<usize>() {
+                    self.dialogue_nameplate_height_rows = v.clamp(1, 8);
+                }
+            }
+            6 => {
+                if let Ok(v) = buf.parse::<usize>() {
+                    self.composer_nameplate_height_rows = v.clamp(1, 8);
+                }
+            }
+            7 => {
+                if let Ok(v) = buf.parse::<usize>() {
+                    self.dialogue_text_inset_rows = v.clamp(0, 12);
+                }
+            }
+            8 => {
+                if let Ok(v) = buf.parse::<usize>() {
+                    self.composer_text_inset_rows = v.clamp(0, 12);
+                }
+            }
             _ => {}
         }
+    }
+}
+
+fn adjust_usize(value: &mut usize, delta: i32, min: usize, max: usize) {
+    if delta > 0 {
+        *value = value.saturating_add(1).min(max);
+    } else {
+        *value = value.saturating_sub(1).max(min);
     }
 }
 
@@ -261,7 +351,10 @@ pub fn vn_overlay_layout(
         VN_OVERLAY_DIALOGUE_TOP_RATIO,
         VN_OVERLAY_DIALOGUE_BOTTOM_RATIO,
         7,
-        VN_OVERLAY_NAMEPLATE_HEIGHT_ROWS,
+        VN_OVERLAY_DIALOGUE_NAMEPLATE_HEIGHT_ROWS,
+        VN_OVERLAY_COMPOSER_NAMEPLATE_HEIGHT_ROWS,
+        VN_OVERLAY_DIALOGUE_TEXT_INSET_ROWS,
+        VN_OVERLAY_COMPOSER_TEXT_INSET_ROWS,
     )
 }
 
@@ -282,7 +375,10 @@ pub fn vn_overlay_layout_with_overrides(
         overrides.dialogue_top_ratio,
         overrides.dialogue_bottom_ratio,
         overrides.composer_height_rows,
-        overrides.nameplate_height_rows,
+        overrides.dialogue_nameplate_height_rows,
+        overrides.composer_nameplate_height_rows,
+        overrides.dialogue_text_inset_rows,
+        overrides.composer_text_inset_rows,
     )
 }
 
@@ -297,7 +393,10 @@ fn vn_overlay_layout_inner(
     dialogue_top_ratio: f32,
     dialogue_bottom_ratio: f32,
     fullscreen_composer_height: usize,
-    nameplate_height_rows: usize,
+    dialogue_nameplate_height_rows: usize,
+    composer_nameplate_height_rows: usize,
+    dialogue_text_inset_rows: usize,
+    composer_text_inset_rows: usize,
 ) -> VnOverlayLayout {
     let cols = cols.max(1);
     let rows = rows.max(1);
@@ -337,7 +436,7 @@ fn vn_overlay_layout_inner(
         None
     };
 
-    let min_panel_top = nameplate_height_rows
+    let min_panel_top = dialogue_nameplate_height_rows
         .min(rows.saturating_sub(1))
         .saturating_add(VN_OVERLAY_NAMEPLATE_OFFSET_ROWS)
         .min(rows.saturating_sub(1));
@@ -371,20 +470,25 @@ fn vn_overlay_layout_inner(
         }
     };
 
-    let dialogue_nameplate =
-        vn_overlay_nameplate_rect(&dialogue_panel, dialogue_label, nameplate_height_rows);
-    let composer_nameplate = composer_panel
-        .map(|panel| vn_overlay_nameplate_rect(&panel, composer_label, nameplate_height_rows));
+    let dialogue_nameplate = vn_overlay_nameplate_rect(
+        &dialogue_panel,
+        dialogue_label,
+        dialogue_nameplate_height_rows,
+    );
+    let composer_nameplate = composer_panel.map(|panel| {
+        vn_overlay_nameplate_rect(&panel, composer_label, composer_nameplate_height_rows)
+    });
 
     VnOverlayLayout {
         fullscreen,
         dialogue_text_row: dialogue_panel
             .row
-            .saturating_add(VN_OVERLAY_DIALOGUE_TEXT_INSET_ROWS),
+            .saturating_add(dialogue_text_inset_rows)
+            .min(dialogue_panel.bottom().saturating_sub(1)),
         composer_text_row: composer_panel.map(|panel| {
             panel
                 .row
-                .saturating_add(VN_OVERLAY_COMPOSER_TEXT_INSET_ROWS)
+                .saturating_add(composer_text_inset_rows)
                 .min(panel.bottom().saturating_sub(1))
         }),
         dialogue_panel,
@@ -404,8 +508,11 @@ pub fn vn_overlay_side_margin(cols: usize, rows: usize) -> usize {
     margin.min(cols.saturating_sub(1))
 }
 
-
-fn vn_overlay_nameplate_rect(panel: &VnOverlayRect, label: &str, nameplate_height_rows: usize) -> VnOverlayRect {
+fn vn_overlay_nameplate_rect(
+    panel: &VnOverlayRect,
+    label: &str,
+    nameplate_height_rows: usize,
+) -> VnOverlayRect {
     let label_width = label.chars().count().max(1);
     let width = (label_width + 6).clamp(10, panel.width.max(1).min(32));
     let height = nameplate_height_rows.min(panel.height.max(1));
@@ -2073,7 +2180,9 @@ impl SceneRuntime {
     pub fn toggle_command_selection(&mut self) {
         self.view = match self.view {
             VisualView::CommandSelection => VisualView::Scene,
-            VisualView::Scene | VisualView::TileDebugger | VisualView::VnLayoutDebugger => VisualView::CommandSelection,
+            VisualView::Scene | VisualView::TileDebugger | VisualView::VnLayoutDebugger => {
+                VisualView::CommandSelection
+            }
         };
         self.bump_generation();
     }
@@ -2174,7 +2283,11 @@ impl SceneRuntime {
         }
         lines.push(String::new());
         for i in 0..VnOverlayDebugOverrides::PARAM_COUNT {
-            let marker = if i == overrides.selected_param { ">" } else { " " };
+            let marker = if i == overrides.selected_param {
+                ">"
+            } else {
+                " "
+            };
             let value = if i == overrides.selected_param && editing {
                 format!("{}_", overrides.editing_buffer.as_deref().unwrap_or(""))
             } else {
@@ -2191,37 +2304,58 @@ impl SceneRuntime {
     }
 
     fn handle_vn_layout_debug_input(&mut self, input: VisualInput) -> VisualModeOutcome {
-        let editing = self.vn_layout_debug.as_ref().map_or(false, |d| d.editing_buffer.is_some());
+        let editing = self
+            .vn_layout_debug
+            .as_ref()
+            .map_or(false, |d| d.editing_buffer.is_some());
         match input {
             VisualInput::Close if editing => {
-                if let Some(ref mut d) = self.vn_layout_debug { d.cancel_edit(); }
+                if let Some(ref mut d) = self.vn_layout_debug {
+                    d.cancel_edit();
+                }
             }
             VisualInput::Close | VisualInput::ToggleDebug => {
                 self.view = VisualView::Scene;
             }
             VisualInput::Activate if editing => {
-                if let Some(ref mut d) = self.vn_layout_debug { d.commit_edit(); }
+                if let Some(ref mut d) = self.vn_layout_debug {
+                    d.commit_edit();
+                }
             }
             VisualInput::Activate => {
-                if let Some(ref mut d) = self.vn_layout_debug { d.begin_edit(); }
+                if let Some(ref mut d) = self.vn_layout_debug {
+                    d.begin_edit();
+                }
             }
             VisualInput::Char(c) => {
-                if let Some(ref mut d) = self.vn_layout_debug { d.push_char(c); }
+                if let Some(ref mut d) = self.vn_layout_debug {
+                    d.push_char(c);
+                }
             }
             VisualInput::Backspace => {
-                if let Some(ref mut d) = self.vn_layout_debug { d.pop_char(); }
+                if let Some(ref mut d) = self.vn_layout_debug {
+                    d.pop_char();
+                }
             }
             VisualInput::Next if !editing => {
-                if let Some(ref mut d) = self.vn_layout_debug { d.select_next(); }
+                if let Some(ref mut d) = self.vn_layout_debug {
+                    d.select_next();
+                }
             }
             VisualInput::Previous if !editing => {
-                if let Some(ref mut d) = self.vn_layout_debug { d.select_prev(); }
+                if let Some(ref mut d) = self.vn_layout_debug {
+                    d.select_prev();
+                }
             }
             VisualInput::Right if !editing => {
-                if let Some(ref mut d) = self.vn_layout_debug { d.adjust(1); }
+                if let Some(ref mut d) = self.vn_layout_debug {
+                    d.adjust(1);
+                }
             }
             VisualInput::Left if !editing => {
-                if let Some(ref mut d) = self.vn_layout_debug { d.adjust(-1); }
+                if let Some(ref mut d) = self.vn_layout_debug {
+                    d.adjust(-1);
+                }
             }
             VisualInput::Reload if !editing => {
                 self.vn_layout_debug = Some(VnOverlayDebugOverrides::default());
@@ -2496,7 +2630,13 @@ impl SceneRuntime {
         let rows = rows.max(1);
         let dialogue = self.active_dialogue_line();
         let layout = match &self.vn_layout_debug {
-            Some(overrides) => vn_overlay_layout_with_overrides(cols, rows, &dialogue.speaker, "Composer", overrides),
+            Some(overrides) => vn_overlay_layout_with_overrides(
+                cols,
+                rows,
+                &dialogue.speaker,
+                "Composer",
+                overrides,
+            ),
             None => vn_overlay_layout(cols, rows, &dialogue.speaker, "Composer"),
         };
         let in_layout_debug =
@@ -2518,7 +2658,8 @@ impl SceneRuntime {
             let mut top = Vec::new();
             top.push(self.scene.title.clone());
             top.push(
-                "Scene Mode  [enter: action] [tab: debugger] [r: reload] [esc/q: close]".to_string(),
+                "Scene Mode  [enter: action] [tab: debugger] [r: reload] [esc/q: close]"
+                    .to_string(),
             );
             if self.scene_source.load_status == VisualSceneLoadStatus::ReloadFailed {
                 if let Some(error) = &self.scene_source.last_error {
@@ -4187,7 +4328,7 @@ mod tests {
         );
         assert_eq!(
             layout.dialogue_nameplate.height,
-            VN_OVERLAY_NAMEPLATE_HEIGHT_ROWS.min(layout.dialogue_panel.height.max(1)),
+            VN_OVERLAY_DIALOGUE_NAMEPLATE_HEIGHT_ROWS.min(layout.dialogue_panel.height.max(1)),
         );
         assert_eq!(
             layout.dialogue_nameplate.row
@@ -4201,7 +4342,7 @@ mod tests {
         );
         assert_eq!(
             composer_nameplate.height,
-            VN_OVERLAY_NAMEPLATE_HEIGHT_ROWS.min(composer.height)
+            VN_OVERLAY_COMPOSER_NAMEPLATE_HEIGHT_ROWS.min(composer.height)
         );
         assert_eq!(
             composer_nameplate.row + composer_nameplate.height + VN_OVERLAY_NAMEPLATE_OFFSET_ROWS,
@@ -4209,7 +4350,7 @@ mod tests {
         );
         assert_eq!(
             layout.composer_nameplate.as_ref().unwrap().height,
-            VN_OVERLAY_NAMEPLATE_HEIGHT_ROWS.min(composer.height)
+            VN_OVERLAY_COMPOSER_NAMEPLATE_HEIGHT_ROWS.min(composer.height)
         );
         assert!(layout.composer_text_row.unwrap() > composer.row);
         assert!(layout.composer_text_row.unwrap() < composer.bottom());
@@ -4242,7 +4383,10 @@ mod tests {
             layout.dialogue_nameplate.row + layout.dialogue_nameplate.height,
             layout.dialogue_panel.row
         );
-        assert_eq!(composer_nameplate.row + composer_nameplate.height, composer.row);
+        assert_eq!(
+            composer_nameplate.row + composer_nameplate.height,
+            composer.row
+        );
     }
 
     #[test]
@@ -4264,6 +4408,38 @@ mod tests {
     }
 
     #[test]
+    fn vn_overlay_debug_overrides_separate_nameplate_and_text_rows() {
+        let mut overrides = VnOverlayDebugOverrides::default();
+        overrides.dialogue_nameplate_height_rows = 4;
+        overrides.composer_nameplate_height_rows = 2;
+        overrides.dialogue_text_inset_rows = 3;
+        overrides.composer_text_inset_rows = 2;
+
+        let layout = vn_overlay_layout_with_overrides(160, 60, "Narrator", "Composer", &overrides);
+        let composer = layout.composer_panel.unwrap();
+        let composer_nameplate = layout.composer_nameplate.unwrap();
+
+        assert_eq!(layout.dialogue_nameplate.height, 4);
+        assert_eq!(composer_nameplate.height, 2);
+        assert_eq!(
+            layout.dialogue_text_row,
+            layout.dialogue_panel.row + overrides.dialogue_text_inset_rows
+        );
+        assert_eq!(
+            layout.composer_text_row,
+            Some(composer.row + overrides.composer_text_inset_rows)
+        );
+        assert_eq!(
+            layout.dialogue_nameplate.row + layout.dialogue_nameplate.height,
+            layout.dialogue_panel.row
+        );
+        assert_eq!(
+            composer_nameplate.row + composer_nameplate.height,
+            composer.row
+        );
+    }
+
+    #[test]
     fn vn_layout_debug_overrides_adjust_and_select() {
         let mut overrides = VnOverlayDebugOverrides::default();
         let baseline = overrides.dialogue_margin_ratio;
@@ -4277,7 +4453,10 @@ mod tests {
         overrides.select_prev();
         assert_eq!(overrides.selected_param, 0);
         overrides.select_prev();
-        assert_eq!(overrides.selected_param, VnOverlayDebugOverrides::PARAM_COUNT - 1);
+        assert_eq!(
+            overrides.selected_param,
+            VnOverlayDebugOverrides::PARAM_COUNT - 1
+        );
     }
 
     #[test]
