@@ -100,5 +100,7 @@ Remaining follow-up:
 
 - user config file for panel styling
 - live debugger controls for generated panel colors and border width
+- rounded-corner renderer quality pass:
+  [Rounded Panel Renderer Scope](gameterm-scene-rounded-panel-renderer-scope.md)
 - remove the PNG compatibility path only after the procedural renderer is fully
   dogfooded
