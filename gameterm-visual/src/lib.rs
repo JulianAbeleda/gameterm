@@ -2923,7 +2923,7 @@ impl SceneRuntime {
             .width
             .saturating_sub(layout.dialogue_text_inset_cols * 2)
             .max(1);
-        let mut dialogue_lines = wrap_text(&dialogue.text, dialogue_width);
+        let mut dialogue_lines = self.render_vn_dialogue_lines(&dialogue, dialogue_width);
         if !self.scene.choices.is_empty() && layout.dialogue_panel.height >= 6 {
             dialogue_lines.push(String::new());
             for (idx, choice) in self.scene.choices.iter().take(2).enumerate() {
@@ -2963,6 +2963,56 @@ impl SceneRuntime {
 
         let frame = screen.join("\r\n") + "\r\n";
         truncate_to_screen(frame, cols, rows)
+    }
+
+    fn render_vn_dialogue_lines(
+        &self,
+        dialogue: &VisualDialogueLine,
+        dialogue_width: usize,
+    ) -> Vec<String> {
+        let transcript = self.recent_compose_transcript_lines(dialogue_width);
+        if transcript.is_empty() {
+            wrap_text(&dialogue.text, dialogue_width)
+        } else {
+            transcript
+        }
+    }
+
+    fn recent_compose_transcript_lines(&self, dialogue_width: usize) -> Vec<String> {
+        let Some(start) = self
+            .compose_state
+            .history
+            .iter()
+            .rposition(|message| message.role == VisualComposeRole::User)
+        else {
+            return Vec::new();
+        };
+        let mut lines = Vec::new();
+        for message in &self.compose_state.history[start..] {
+            match message.role {
+                VisualComposeRole::User => {
+                    if !lines.is_empty() {
+                        lines.push(String::new());
+                    }
+                    lines.extend(wrap_user_prompt_for_vn(&message.text, dialogue_width));
+                }
+                VisualComposeRole::Assistant | VisualComposeRole::System => {
+                    if !lines.is_empty() {
+                        lines.push(String::new());
+                    }
+                    lines.extend(wrap_text(&message.text, dialogue_width));
+                }
+                VisualComposeRole::Error => {
+                    if !lines.is_empty() {
+                        lines.push(String::new());
+                    }
+                    for line in wrap_text(&message.text, dialogue_width.saturating_sub(7).max(1)) {
+                        lines.push(format!("Error: {line}"));
+                    }
+                }
+            }
+        }
+        lines
     }
 
     fn render_command_selection(&self, cols: usize, rows: usize) -> String {
@@ -3315,6 +3365,25 @@ fn initial_dialogue_history(scene: &VisualScene, index: usize) -> Vec<VisualDial
     } else {
         vec![active_dialogue_line(scene, index)]
     }
+}
+
+fn wrap_user_prompt_for_vn(prompt: &str, dialogue_width: usize) -> Vec<String> {
+    let prompt_width = dialogue_width.saturating_sub(2).max(1);
+    let mut lines = wrap_text(prompt, prompt_width);
+    if lines.is_empty() {
+        lines.push(String::new());
+    }
+    lines
+        .into_iter()
+        .enumerate()
+        .map(|(idx, line)| {
+            if idx == 0 {
+                format!("> {line}")
+            } else {
+                format!("  {line}")
+            }
+        })
+        .collect()
 }
 
 fn entity_mode(entity: &VisualEntity) -> Option<String> {
@@ -5370,6 +5439,38 @@ mod tests {
         assert!(report.transition_history.iter().any(
             |event| event.kind == "compose" && event.detail.contains("submit: inspect roadmap")
         ));
+    }
+
+    #[test]
+    fn staged_scene_renders_compose_prompt_above_reply() {
+        let mut scene = VisualScene::demo();
+        scene.stage = VisualStage {
+            layers: vec![VisualStageLayer {
+                layer_id: "background".to_string(),
+                zorder: 0,
+                displayables: vec![VisualStageDisplayable {
+                    tag: "background".to_string(),
+                    sprite: "vn.background.school_classroom".to_string(),
+                    placement: VisualStagePlacement::Fullscreen,
+                    zorder: 0,
+                    visible: true,
+                }],
+            }],
+        };
+        let mut runtime = SceneRuntime::new(scene).unwrap();
+
+        runtime.mark_compose_running("Compose running: say hi", "say hi");
+        let frame = runtime.render_text_frame(100, 30);
+
+        assert!(frame.contains("> say hi"));
+        assert!(!frame.contains("last: say hi"));
+
+        runtime.mark_compose_succeeded("Codex", "Hello from Scene Mode.");
+        let frame = runtime.render_text_frame(100, 30);
+        let prompt_idx = frame.find("> say hi").unwrap();
+        let reply_idx = frame.find("Hello from Scene Mode.").unwrap();
+
+        assert!(prompt_idx < reply_idx);
     }
 
     #[test]

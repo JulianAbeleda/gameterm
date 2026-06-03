@@ -1570,7 +1570,6 @@ fn sanitize_compose_output(output: &str) -> String {
 struct SceneComposeDock {
     buffer: String,
     cursor: usize,
-    last_submitted: Option<String>,
     history: Vec<String>,
     history_index: Option<usize>,
 }
@@ -1638,7 +1637,6 @@ impl SceneComposeDock {
     }
 
     fn mark_submitted(&mut self, prompt: &str) {
-        self.last_submitted = Some(prompt.to_string());
         self.history.push(prompt.to_string());
         if self.history.len() > 20 {
             self.history.remove(0);
@@ -1666,12 +1664,7 @@ impl SceneComposeDock {
         let mut line = String::from(" Compose: ");
         line.push_str(&self.buffer_with_cursor());
         if self.buffer.is_empty() {
-            if let Some(last_submitted) = &self.last_submitted {
-                line.push_str("  last: ");
-                line.push_str(last_submitted);
-            } else {
-                line.push_str("  type here; enter submits");
-            }
+            line.push_str("  type here; enter submits");
         }
         clip_text(&line, cols.max(1))
     }
@@ -1680,12 +1673,7 @@ impl SceneComposeDock {
         let mut line = String::from(" ");
         line.push_str(&self.buffer_with_cursor());
         if self.buffer.is_empty() {
-            if let Some(last_submitted) = &self.last_submitted {
-                line.push_str(" last: ");
-                line.push_str(last_submitted);
-            } else {
-                line.push_str(" type here; enter submits");
-            }
+            line.push_str(" type here; enter submits");
         }
         let content_width = rect.width.min(cols.saturating_sub(rect.col)).max(1);
         let indent = " ".repeat(rect.col.min(cols.saturating_sub(1)));
@@ -2408,7 +2396,7 @@ mod tests {
         dock.mark_submitted("h");
 
         assert!(dock.buffer.is_empty());
-        assert_eq!(dock.last_submitted.as_deref(), Some("h"));
+        assert_eq!(dock.history.last().map(String::as_str), Some("h"));
     }
 
     #[test]
@@ -2472,7 +2460,8 @@ mod tests {
 
         assert!(nameplate.contains("Composer"));
         assert!(!nameplate.contains("last:"));
-        assert!(input.contains("last: say hi"));
+        assert!(!input.contains("last:"));
+        assert!(input.contains("type here; enter submits"));
         assert!(!input.contains("Compose:"));
         assert!(!input.contains("Composer"));
     }
