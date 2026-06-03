@@ -1,6 +1,6 @@
 # GameTerm Scene Mode Real Codex Dogfood Scope
 
-Status: SCOPED.
+Status: COMPLETE.
 
 This document scopes the pass that turns the implemented fake/one-shot Codex
 compose bridge into a dogfoodable Scene Mode feature. The existing bridge can
@@ -13,15 +13,21 @@ and the live timeout/config path is too env-only for daily use.
 
 Current local state:
 
-- `4707ffed2 [visual] render compose prompts in VN dialogue`
-- `main` is ahead of `origin/main` by 1 commit
-- worktree is clean
+- `f17b5bf17 [gui] validate Scene Codex config lazily`
+- `76ebbdfc2 [docs] record Scene real Codex dogfood pass`
+- `4fe553bd1 [gui] make Scene Codex compose dogfoodable`
+- `bbd785622 [docs] scope Scene real Codex dogfood pass`
+- `main` is ahead of `origin/main` by 2 commits after the handoff-doc commit
+- worktree is clean after the handoff-doc commit is created
 
 Scene Mode compose currently supports:
 
 - deterministic built-in compose replies
 - explicit command backend through `GAMETERM_SCENE_COMPOSE_BACKEND`
 - explicit Codex backend through `GAMETERM_SCENE_COMPOSE_BACKEND_KIND=codex`
+- persistent app-launch config through `~/.config/gameterm/scene-compose.json`
+- lazy validation of Codex-only config fields so unused Codex settings do not
+  disable `built_in` or `command` backends
 - local Codex CLI command construction:
   - `codex exec`
   - `--output-last-message <tempfile>`

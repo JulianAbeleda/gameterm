@@ -6,78 +6,119 @@ deeper product context.
 
 ## Current Snapshot
 
-- Date: 2026-06-02
+- Date: 2026-06-03
 - Branch: `main`
-- Latest local commit: `16656cafe [visual] share VN overlay layout primitives`
-- Remote state at handoff time: `main` is ahead of `origin/main` by 1 commit
+- Latest behavior commit: `f17b5bf17 [gui] validate Scene Codex config lazily`
+- Remote state at handoff time: `main` is ahead of `origin/main` by 2 commits
+- Worktree state at handoff time: clean after this handoff commit is created
 - Local app bundle refreshed: `/Users/julianabeleda/Applications/GameTerm.app`
+- Persistent Scene compose config:
+  `/Users/julianabeleda/.config/gameterm/scene-compose.json`
 
 Current user goal:
 
 Keep moving Scene Mode toward a dogfoodable visual-novel-style surface where
-the user can see Codex dialogue, type through a composer dock, and trust that
-the visual layout remains stable while resizing or switching between windowed
-and fullscreen views.
+the user can see Codex dialogue, type through a Composer dock, and use the
+normal macOS GameTerm app without shell-only setup.
 
-## Latest Commit
+## Latest Commits
 
-`16656cafe [visual] share VN overlay layout primitives`
+Recent committed work:
 
-Files changed:
+- `f17b5bf17 [gui] validate Scene Codex config lazily`
+- `76ebbdfc2 [docs] record Scene real Codex dogfood pass`
+- `4fe553bd1 [gui] make Scene Codex compose dogfoodable`
+- `bbd785622 [docs] scope Scene real Codex dogfood pass`
+- `4707ffed2 [visual] render compose prompts in VN dialogue`
 
-- `gameterm-visual/src/lib.rs`
-- `gameterm-gui/src/overlay/visual.rs`
-- `gameterm-gui/src/termwindow/render/visual_quad.rs`
+Latest behavior change:
 
-What changed:
+- Scene compose config now validates Codex-specific fields only when the
+  selected backend is actually `codex`.
+- Invalid stale Codex fields no longer disable `built_in` or `command`
+  backends.
+- Regression coverage proves `built_in` and `command` still work with unused
+  invalid Codex settings.
 
-- Added shared VN layout primitives:
-  - `VnOverlayRect`
-  - `VnOverlayLayout`
-  - `vn_overlay_layout(...)`
-- Refactored staged VN text rendering so dialogue text and speaker nameplate
-  rows come from the shared layout.
-- Refactored the Scene compose dock so the `Composer` nameplate and input row
-  use the same shared layout.
-- Refactored GPU VN panel/nameplate quads so transparent rounded boxes use the
-  same layout as terminal text.
-- Removed the stale bottom-offset compose placement helper.
+Real Codex dogfood pass:
 
-Expected outcome:
+- Scene Mode can run one-shot local `codex exec` through the Composer dock.
+- Submitted user prompts render in the dialogue box as a highlighted `>` line.
+- Codex replies render below the submitted prompt in the dialogue box.
+- The Composer dock clears and remains ready after submit.
+- Finder/app launches can opt into Codex through `scene-compose.json`.
+- Failure diagnostics classify common Codex CLI issues such as rate limit,
+  auth/connect failures, missing binary, and timeout.
 
-- Dialogue panel, composer dock, nameplates, and text remain aligned across
-  resolution changes.
-- Windowed mode can be more compact than fullscreen, but labels should remain
-  attached, text should stay inside panels, and panel/text geometry should not
-  drift.
+## App And Config State
+
+The installed app bundle was refreshed during this pass:
+
+```text
+/Users/julianabeleda/Applications/GameTerm.app
+```
+
+The current local app-launch Scene compose config is:
+
+```json
+{
+  "backend_kind": "codex",
+  "codex_bin": "/opt/homebrew/bin/codex",
+  "codex_workspace": "/Users/julianabeleda/env/gameterm",
+  "codex_sandbox": "read-only",
+  "codex_approval": "never",
+  "codex_timeout_seconds": 90
+}
+```
+
+This config is user-local and is not committed to the repository.
 
 ## Verification Baseline
 
-Commands already run successfully:
+Commands already run successfully for the latest Codex dogfood and lazy
+validation pass:
 
 ```sh
-cargo test -p gameterm-visual vn_overlay_layout_derives_panels_and_nameplates
-cargo test -p gameterm-visual staged_scene_renders_vn_dialogue_box_and_compose_dock
-cargo test -p gameterm-gui scene_compose_dock_staged_nameplate_and_input_are_separate
-cargo test -p gameterm-gui vn_panel_rects_use_shared_fullscreen_proportions
-cargo test -p gameterm-gui vn_panel_nameplate_rects_attach_to_dialogue_and_dock
+cargo test -p gameterm-gui compose_backend --bin gameterm-gui
+cargo test -p gameterm-gui codex_compose --bin gameterm-gui
+cargo test -p gameterm-gui visual_compose --bin gameterm-gui
+cargo check -p gameterm-gui
 cargo build -p gameterm-gui
-ci/install-macos-dev-app.sh
+ci/install-macos-dev-app.sh --no-build
 ```
 
-Smoke capture:
+Latest focused regression check:
+
+```sh
+cargo test -p gameterm-gui visual_compose --bin gameterm-gui
+cargo test -p gameterm-gui compose_backend --bin gameterm-gui
+cargo check -p gameterm-gui
+```
+
+Smoke captures:
 
 ```text
-/Users/julianabeleda/Desktop/gameterm-scene-smoke-vn-shared-layout-20260602-182247.png
+/tmp/gameterm-scene-vn-compose-codex-fake.png
+/tmp/gameterm-scene-vn-real-codex-diagnostic.png
 ```
 
-Smoke status: PASS. The capture confirmed that the `Codex` and `Composer`
-nameplates/text are inside their respective transparent boxes.
+Smoke status:
 
-Caveat: the capture was a 1920x1080 desktop screenshot, but macOS left
-GameTerm in a smaller foreground window rather than true fullscreen. Redo a
-true fullscreen or maximized visual smoke if the next session needs stronger
-visual confidence.
+- `vn-compose-codex` fake-Codex smoke: PASS
+- `vn-compose` real local Codex CLI smoke: PASS
+
+The real-Codex capture showed:
+
+```text
+> say hi
+
+Hi!
+```
+
+Earlier in the same pass, a direct standalone `codex exec` probe returned
+`429 Too Many Requests` plus websocket `403 Forbidden`. A later Scene Mode
+real-Codex smoke succeeded, so treat the earlier direct failure as transient
+Codex account/session state unless it reappears.
 
 Known warning noise remains outside this Scene Mode lane:
 
@@ -85,78 +126,39 @@ Known warning noise remains outside this Scene Mode lane:
 - existing `gameterm-toast-notification` unnecessary `unsafe` warnings
 - existing `screen_line.rs` unused assignment warning
 
-## Dirty Worktree Caveat
+## Current Product State
 
-At handoff time, two unstaged formatting-only Rust diffs were present:
+Scene Mode now has a first dogfoodable Codex-in-VN loop:
 
-- `gameterm-visual/src/vn_script_import.rs`
-- `gameterm-visual/src/workspace_scene.rs`
+1. Launch GameTerm from the macOS app.
+2. Choose Scene Mode from the boot menu.
+3. Type in the Composer dock.
+4. Press Enter.
+5. See the submitted prompt and Codex reply in the dialogue panel.
 
-Do not include them in future behavior commits unless the next task verifies
-they are relevant. Keep commits separated by concern.
-
-## VN Overlay Audit Checklist
-
-Use this checklist when reviewing or continuing the latest VN overlay work.
-
-### Shared Dynamic Layout
-
-- Confirm the VN overlay layout is derived from current terminal columns and
-  rows.
-- Confirm terminal text placement and GPU panel rectangles both use
-  `vn_overlay_layout`.
-- Confirm resizing recomputes dialogue panel, composer dock, nameplates, and
-  text rows from the shared layout.
-- Look for remaining hardcoded margin, top, bottom, or nameplate calculations
-  that could cause text and boxes to drift apart.
-
-### Dialogue Panel
-
-- Dialogue panel should sit in the upper/middle stage area.
-- It should not sit too high, too low, or overlap the composer dock.
-- Dialogue text should start inside the panel with sane padding.
-- Dialogue text should not escape outside the panel.
-
-### Composer Dock
-
-- Composer dock should sit near the bottom of Scene Mode.
-- It should span most of the window width.
-- Composer input text should start inside the dock with sane padding.
-- Composer text should not escape outside the dock.
-
-### Nameplates
-
-- Speaker/Codex nameplate should attach to the top-left edge of the dialogue
-  panel.
-- Composer nameplate should attach to the top-left edge of the composer dock.
-- Nameplates should not cover the first line of dialogue text or composer input
-  text.
-- Nameplates should not float too far above panels.
-- Nameplates should not be hidden behind panels, clipped by the window edge, or
-  visually detached.
-- A small edge overlap is acceptable if it makes the tab look attached, but it
-  should not intrude into the content area.
-
-### Windowed And Fullscreen Behavior
-
-- Fullscreen or tall viewports should use the larger VN-style layout.
-- Smaller windowed viewports should use a compact layout that still keeps
-  boxes, nameplates, and text aligned.
-- Windowed mode can be tighter than fullscreen, but it should not show detached
-  labels, text outside boxes, or panel/text mismatch.
+This is still a one-shot local Codex bridge. It does not yet preserve Codex
+session identity, stream progress into the dialogue panel, or support
+`codex exec resume`.
 
 ## Recommended Next Actions
 
-1. If reviewing the latest visual work, inspect commit `16656cafe` and the
-   three changed files listed above.
-2. Add any missing compact/windowed resize tests before changing layout again.
-3. Redo visual smoke in a true fullscreen or maximized window if possible.
-4. Keep any follow-up fixes in separate commits.
-5. Push only when the user asks.
+1. Push the latest two local commits if the user wants the audit fix and
+   handoff refresh on `origin/main`.
+2. Scope persistent Codex sessions:
+   - parse session/thread metadata from Codex JSONL if available
+   - persist session identity per Scene overlay/session
+   - add reset/new-session action
+   - add `codex exec resume` support
+3. Decide whether progress/streaming events should render into Scene Mode or
+   stay a follow-up.
+4. Keep app-launch config behavior explicit; do not silently enable network
+   backends without user/app config.
+5. Keep future commits separated by concern.
 
 Commit discipline:
 
 - Keep separate commits by concern.
+- Use established prefixes such as `[docs]`, `[gui]`, `[visual]`, and `[test]`.
 - Do not mix formatting-only changes with behavior changes.
 - Before committing, run `git diff --check` and targeted tests.
 - Treat pre-existing warning noise as separate from Scene Mode failures.

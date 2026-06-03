@@ -44,7 +44,8 @@ Scene Mode currently has:
   deterministic/local process backend output, and fullscreen `vn-compose` smoke
 - explicit local Codex CLI backend selection, `codex exec` command construction,
   final-message output handling, persistent app-launch Scene compose config,
-  Codex failure diagnostics, and fullscreen `vn-compose-codex` fake-Codex smoke
+  Codex failure diagnostics, lazy Codex-only config validation, and fullscreen
+  `vn-compose-codex` fake-Codex smoke
 
 Latest verification baseline:
 
@@ -98,7 +99,7 @@ implementation details.
 | VN staged presentation | [VN Presentation Scope](gameterm-scene-vn-presentation-scope.md) | First-pass implemented |
 | Codex compose bridge | [Codex Compose Bridge Scope](gameterm-scene-codex-compose-bridge-scope.md) | First-pass implemented |
 | Codex session bridge | [Codex Session Bridge Scope](gameterm-scene-codex-session-bridge-scope.md) | First-pass implemented |
-| Real Codex dogfood pass | [Real Codex Dogfood Scope](gameterm-scene-real-codex-dogfood-scope.md) | Scoped |
+| Real Codex dogfood pass | [Real Codex Dogfood Scope](gameterm-scene-real-codex-dogfood-scope.md) | Complete |
 | Dogfood workspace | [Dogfood Workspace Scope](gameterm-scene-dogfood-workspace-scope.md) | Scoped |
 | Current handoff | [Scene Mode Handoff](gameterm-scene-handoff.md) | Current session snapshot |
 | Next actions | [Scene Next Actions Scope](gameterm-scene-next-actions-scope.md) | Current execution scope |
