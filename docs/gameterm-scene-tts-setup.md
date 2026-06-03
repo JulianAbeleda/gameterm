@@ -27,6 +27,9 @@ GameTerm also passes:
 command succeeds. Use `{output}` in the player command to receive the generated
 audio path.
 
+For a Japanese VOICEVOX command wrapper that translates English prose first, see
+[GameTerm Scene VOICEVOX TTS](gameterm-scene-voicevox-tts.md).
+
 For tests or dry runs:
 
 ```text
