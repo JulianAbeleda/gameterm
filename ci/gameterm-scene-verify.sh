@@ -552,7 +552,7 @@ run_vn_script_import_check() {
     any(.choices[]; .policy.origin == "vn_script_import"
       and .policy.risk == "state_change"
       and .policy.scope == "scene")
-    and any(.choices[]; .conditions[]? | .variable == "met_guide")
+    and any(.choices[]; .conditions[]? | .variable == "met_kiki")
   ' "${scene_output}" >/dev/null
   jq -e '
     .license_url == "https://www.renpy.org/doc/html/license.html"
@@ -606,14 +606,14 @@ run_vn_asset_intake_check() {
 
   jq -e '
     any(.sprites[]; .id == "workspace-map")
-    and any(.sprites[]; .id == "vn.character.guide.neutral"
-      and (.path | endswith("assets/vn-demo/characters/guide-neutral.png")))
-    and any(.sprites[]; .id == "vn.character.guide.happy"
-      and (.path | endswith("assets/vn-demo/characters/guide-happy.png")))
+    and any(.sprites[]; .id == "vn.character.kiki.neutral"
+      and (.path | endswith("assets/vn-demo/characters/kiki-neutral.png")))
+    and any(.sprites[]; .id == "vn.character.kiki.happy"
+      and (.path | endswith("assets/vn-demo/characters/kiki-happy.png")))
   ' "${sprite_manifest}" >/dev/null
   jq -e '
-    .characters.guide.expressions.neutral == "vn.character.guide.neutral"
-    and .characters.guide.expressions.happy == "vn.character.guide.happy"
+    .characters.kiki.expressions.neutral == "vn.character.kiki.neutral"
+    and .characters.kiki.expressions.happy == "vn.character.kiki.happy"
   ' "${bindings}" >/dev/null
   jq -e '
     .generated_by == "scene_vn_asset_intake"
@@ -624,8 +624,8 @@ run_vn_asset_intake_check() {
     and any(.sources[]; .id == "tainara_p_school_backgrounds"
       and (.used_assets | length) == 2)
   ' "${attribution}" >/dev/null
-  test -f "${output_root}/characters/guide-neutral.png"
-  test -f "${output_root}/characters/guide-happy.png"
+  test -f "${output_root}/characters/kiki-neutral.png"
+  test -f "${output_root}/characters/kiki-happy.png"
   test -f "${output_root}/backgrounds/school-classroom.png"
 
   "${repo_root}/ci/gameterm-scene-doctor.sh" \
@@ -662,7 +662,7 @@ run_vn_demo_install_check() {
   jq -e '
     .background == "vn.background.school_classroom"
     and any(.entities[]; .id == "vn-script-narrator"
-      and .sprite == "vn.character.guide.neutral")
+      and .sprite == "vn.character.kiki.neutral")
   ' "${generated_dir}/default.json" >/dev/null
   jq -e '
     any(.stage.layers[]?; .layer_id == "background"
@@ -670,23 +670,23 @@ run_vn_demo_install_check() {
         and .sprite == "vn.background.school_classroom"
         and .placement == "fullscreen"))
     and any(.stage.layers[]?; .layer_id == "characters"
-      and any(.displayables[]; .tag == "guide"
-        and .sprite == "vn.character.guide.neutral"
+      and any(.displayables[]; .tag == "kiki"
+        and .sprite == "vn.character.kiki.neutral"
         and .placement == "center"))
   ' "${generated_dir}/default.json" >/dev/null
   jq -e '
     any(.sprites[]; .id == "workspace-map")
-    and any(.sprites[]; .id == "vn.character.guide.neutral")
+    and any(.sprites[]; .id == "vn.character.kiki.neutral")
     and any(.sprites[]; .id == "vn.background.school_classroom")
   ' "${generated_dir}/sprites.json" >/dev/null
   jq -e '
-    .characters.guide.expressions.neutral == "vn.character.guide.neutral"
+    .characters.kiki.expressions.neutral == "vn.character.kiki.neutral"
   ' "${generated_dir}/vn-demo-bindings.json" >/dev/null
   jq -e '.source_dialect == "rpy"' \
     "${generated_dir}/vn-demo-script-attribution.json" >/dev/null
   jq -e '.generated_by == "scene_vn_asset_intake"' \
     "${generated_dir}/vn-demo-asset-attribution.json" >/dev/null
-  test -f "${generated_dir}/assets/vn-demo/characters/guide-neutral.png"
+  test -f "${generated_dir}/assets/vn-demo/characters/kiki-neutral.png"
   test -f "${generated_dir}/assets/vn-demo/backgrounds/school-classroom.png"
   jq -e '
     any(.sources[]; .id == "tainara_p_school_backgrounds"
@@ -707,7 +707,7 @@ run_vn_demo_install_check() {
   fake_image_dir="${tmp_dir}/fake-image"
   cp -R "${generated_dir}" "${fake_image_dir}"
   printf 'not a png\n' \
-    >"${fake_image_dir}/assets/vn-demo/characters/guide-neutral.png"
+    >"${fake_image_dir}/assets/vn-demo/characters/kiki-neutral.png"
   assert_failing_command \
     "expected strict VN image doctor to reject text placeholder PNG" \
     /tmp/gameterm-scene-vn-demo-fake-image.out \
@@ -716,7 +716,7 @@ run_vn_demo_install_check() {
     doctor \
     --output-dir "${fake_image_dir}" \
     --strict-images
-  grep -q "sprite asset is not PNG image data: vn.character.guide.neutral" \
+  grep -q "sprite asset is not PNG image data: vn.character.kiki.neutral" \
     /tmp/gameterm-scene-vn-demo-fake-image.out
 
   "${repo_root}/ci/gameterm-scene-vn-demo.sh" install \
@@ -769,14 +769,14 @@ run_vn_image_export_check() {
     /tmp/gameterm-scene-vn-image-export-missing.err
 
   "${repo_root}/ci/gameterm-scene-vn-image-export.sh" \
-    --source "${fixture_root}/vn-asset-source/4cher_set4_vn_sprites/guide-neutral.png" \
+    --source "${fixture_root}/vn-asset-source/4cher_set4_vn_sprites/kiki-neutral.png" \
     --output-source-root "${output_root}" \
     >/tmp/gameterm-scene-vn-image-export.out
 
-  test -f "${output_root}/4cher_set4_vn_sprites/guide-neutral.png"
-  test -f "${output_root}/4cher_set4_vn_sprites/guide-happy.png"
-  test -f "${output_root}/4cher_set4_vn_sprites/guide-concerned.png"
-  test -f "${output_root}/4cher_set4_vn_sprites/guide-surprised.png"
+  test -f "${output_root}/4cher_set4_vn_sprites/kiki-neutral.png"
+  test -f "${output_root}/4cher_set4_vn_sprites/kiki-happy.png"
+  test -f "${output_root}/4cher_set4_vn_sprites/kiki-concerned.png"
+  test -f "${output_root}/4cher_set4_vn_sprites/kiki-surprised.png"
 
   "${repo_root}/ci/gameterm-scene-vn-demo.sh" generate \
     --output-dir "${generated_dir}" \
@@ -787,8 +787,8 @@ run_vn_image_export_check() {
     2>/tmp/gameterm-scene-vn-image-export-generate.err
 
   jq -e '
-    any(.sprites[]; .id == "vn.character.guide.neutral"
-      and (.path | endswith("assets/vn-demo/characters/guide-neutral.png")))
+    any(.sprites[]; .id == "vn.character.kiki.neutral"
+      and (.path | endswith("assets/vn-demo/characters/kiki-neutral.png")))
   ' "${generated_dir}/sprites.json" >/dev/null
 
   echo "vn image export: ok"
