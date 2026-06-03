@@ -243,14 +243,23 @@ pub(super) fn compose_backend_config_from_env() -> ComposeBackendConfig {
     compose_backend_config_from_sources(&file_config, &SceneComposeEnv::current())
 }
 
+#[cfg(test)]
 pub(super) fn compose_backend_config(
     kind: Option<&str>,
     backend: Option<&str>,
     codex_config: CodexComposeConfig,
 ) -> ComposeBackendConfig {
+    compose_backend_config_with_codex_loader(kind, backend, || Ok(codex_config))
+}
+
+fn compose_backend_config_with_codex_loader(
+    kind: Option<&str>,
+    backend: Option<&str>,
+    load_codex_config: impl FnOnce() -> Result<CodexComposeConfig, String>,
+) -> ComposeBackendConfig {
     if let Some(kind) = kind.map(str::trim).filter(|value| !value.is_empty()) {
         if kind.eq_ignore_ascii_case("codex") {
-            return ComposeBackendConfig::Codex(codex_config);
+            return codex_backend_config(load_codex_config);
         }
         if kind.eq_ignore_ascii_case("built_in")
             || kind.eq_ignore_ascii_case("builtin")
@@ -272,10 +281,19 @@ pub(super) fn compose_backend_config(
     }
     match backend.map(str::trim).filter(|value| !value.is_empty()) {
         Some(value) if value.eq_ignore_ascii_case("codex") => {
-            ComposeBackendConfig::Codex(codex_config)
+            codex_backend_config(load_codex_config)
         }
         Some(value) => ComposeBackendConfig::Command(value.to_string()),
         None => ComposeBackendConfig::BuiltIn,
+    }
+}
+
+fn codex_backend_config(
+    load_codex_config: impl FnOnce() -> Result<CodexComposeConfig, String>,
+) -> ComposeBackendConfig {
+    match load_codex_config() {
+        Ok(config) => ComposeBackendConfig::Codex(config),
+        Err(err) => ComposeBackendConfig::Invalid(err),
     }
 }
 
@@ -346,10 +364,6 @@ fn compose_backend_config_from_sources(
     file_config: &SceneComposeConfigFile,
     env: &SceneComposeEnv,
 ) -> ComposeBackendConfig {
-    let codex_config = match codex_compose_config_from_sources(file_config, env) {
-        Ok(config) => config,
-        Err(err) => return ComposeBackendConfig::Invalid(err),
-    };
     let backend_kind = env
         .backend_kind
         .as_deref()
@@ -359,7 +373,9 @@ fn compose_backend_config_from_sources(
         .as_deref()
         .or(file_config.backend.as_deref())
         .or(file_config.command.as_deref());
-    compose_backend_config(backend_kind, backend, codex_config)
+    compose_backend_config_with_codex_loader(backend_kind, backend, || {
+        codex_compose_config_from_sources(file_config, env)
+    })
 }
 
 fn codex_compose_config_from_sources(
@@ -1008,6 +1024,35 @@ mod tests {
         assert!(
             matches!(config, ComposeBackendConfig::Invalid(err) if err.contains("invalid Scene Codex sandbox"))
         );
+    }
+
+    #[test]
+    fn compose_backend_config_ignores_unused_invalid_codex_values() {
+        let file_config = SceneComposeConfigFile {
+            backend_kind: Some("built_in".to_string()),
+            backend: Some("helper --flag".to_string()),
+            codex_sandbox: Some("open".to_string()),
+            codex_approval: Some("ask-me-later".to_string()),
+            codex_timeout_seconds: Some(0),
+            ..SceneComposeConfigFile::default()
+        };
+
+        let config = compose_backend_config_from_sources(&file_config, &SceneComposeEnv::default());
+
+        assert_eq!(config, ComposeBackendConfig::BuiltIn);
+
+        let file_config = SceneComposeConfigFile {
+            backend_kind: Some("command".to_string()),
+            backend: Some("helper --flag".to_string()),
+            codex_sandbox: Some("open".to_string()),
+            codex_approval: Some("ask-me-later".to_string()),
+            codex_timeout_seconds: Some(0),
+            ..SceneComposeConfigFile::default()
+        };
+
+        let config = compose_backend_config_from_sources(&file_config, &SceneComposeEnv::default());
+
+        assert_eq!(config, ComposeBackendConfig::Command("helper --flag".to_string()));
     }
 
     #[test]
