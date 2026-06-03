@@ -22,6 +22,8 @@ const VN_NAMEPLATE_ALPHA: f32 = 0.58;
 const VN_NAMEPLATE_BORDER_ALPHA: f32 = 0.30;
 const VN_PANEL_CORNER_SEGMENTS: usize = 8;
 const VN_PANEL_SLICE_PX: f32 = 32.0;
+const VN_STAGE_CHARACTER_HEIGHT_RATIO: f32 = 0.78;
+const VN_STAGE_CHARACTER_TARGET_WIDTH_RATIO: f32 = 0.34;
 static VN_PANEL_IMAGE_DATA: LazyLock<Arc<ImageData>> = LazyLock::new(|| {
     Arc::new(ImageData::with_raw_data(
         include_bytes!("../../../../assets/gameterm-scene/vn-panel.png").to_vec(),
@@ -69,18 +71,20 @@ impl TermWindow {
         let stage_rect = stage_viewport_rect(params, cell_height);
         if !suppress_stage_art {
             for displayable in &snapshot.stage {
-                let rect = stage_displayable_rect(displayable, stage_rect);
+                let rect = stage_displayable_target_rect(displayable, stage_rect);
+                let scale_mode = stage_displayable_scale_mode(displayable);
                 let layer_num = match displayable.placement {
                     VisualStagePlacement::Fullscreen => 0,
                     VisualStagePlacement::Left
                     | VisualStagePlacement::Center
                     | VisualStagePlacement::Right => 1,
                 };
-                if self.populate_visual_sprite_quad(
+                if self.populate_visual_sprite_quad_with_scale(
                     &displayable.sprite,
                     layers,
                     layer_num,
                     rect,
+                    scale_mode,
                     params,
                     hsv,
                 )? {
@@ -364,6 +368,27 @@ impl TermWindow {
         params: &RenderScreenLineParams,
         hsv: Option<HsbTransform>,
     ) -> anyhow::Result<bool> {
+        self.populate_visual_sprite_quad_with_scale(
+            sprite_id,
+            layers,
+            layer_num,
+            rect,
+            VisualImageScaleMode::Stretch,
+            params,
+            hsv,
+        )
+    }
+
+    fn populate_visual_sprite_quad_with_scale(
+        &self,
+        sprite_id: &str,
+        layers: &mut TripleLayerQuadAllocator,
+        layer_num: usize,
+        rect: RectF,
+        scale_mode: VisualImageScaleMode,
+        params: &RenderScreenLineParams,
+        hsv: Option<HsbTransform>,
+    ) -> anyhow::Result<bool> {
         let Some(image_data) =
             visual_sprite_image_data(sprite_id, self.allow_images, params.visual_sprites)
         else {
@@ -387,6 +412,12 @@ impl TermWindow {
             .cached_image(image_data, Some(padding), self.allow_images)
             .context("cached_image")?;
         self.update_next_frame_time(next_due);
+
+        let source_size = VisualImageSourceSize {
+            width: sprite.coords.size.width as f32,
+            height: sprite.coords.size.height as f32,
+        };
+        let rect = resolve_aspect_rect(source_size, rect, scale_mode);
 
         let left_offset = self.dimensions.pixel_width as f32 / 2.;
         let top_offset = self.dimensions.pixel_height as f32 / 2.;
@@ -616,12 +647,75 @@ fn inset_rect(rect: RectF, inset: f32) -> RectF {
     )
 }
 
-fn stage_displayable_rect(displayable: &VisualRenderStageDisplayable, stage_rect: RectF) -> RectF {
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum VisualImageScaleMode {
+    Stretch,
+    #[allow(dead_code)]
+    FitCenter,
+    FitBottomCenter,
+    FillCenter,
+    #[allow(dead_code)]
+    IntegerFitCenter,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct VisualImageSourceSize {
+    width: f32,
+    height: f32,
+}
+
+fn resolve_aspect_rect(
+    source: VisualImageSourceSize,
+    target: RectF,
+    mode: VisualImageScaleMode,
+) -> RectF {
+    if mode == VisualImageScaleMode::Stretch
+        || source.width <= 0.0
+        || source.height <= 0.0
+        || target.size.width <= 0.0
+        || target.size.height <= 0.0
+    {
+        return target;
+    }
+
+    let scale_x = target.size.width / source.width;
+    let scale_y = target.size.height / source.height;
+    let scale = match mode {
+        VisualImageScaleMode::Stretch => unreachable!(),
+        VisualImageScaleMode::FitCenter | VisualImageScaleMode::FitBottomCenter => {
+            scale_x.min(scale_y)
+        }
+        VisualImageScaleMode::FillCenter => scale_x.max(scale_y),
+        VisualImageScaleMode::IntegerFitCenter => {
+            let fit = scale_x.min(scale_y);
+            if fit >= 1.0 {
+                fit.floor().max(1.0)
+            } else {
+                fit
+            }
+        }
+    };
+
+    let width = (source.width * scale).max(1.0);
+    let height = (source.height * scale).max(1.0);
+    let x = target.min_x() + (target.size.width - width) / 2.0;
+    let y = match mode {
+        VisualImageScaleMode::FitBottomCenter => target.max_y() - height,
+        _ => target.min_y() + (target.size.height - height) / 2.0,
+    };
+
+    euclid::rect(x, y, width, height)
+}
+
+fn stage_displayable_target_rect(
+    displayable: &VisualRenderStageDisplayable,
+    stage_rect: RectF,
+) -> RectF {
     match displayable.placement {
         VisualStagePlacement::Fullscreen => stage_rect,
         VisualStagePlacement::Left | VisualStagePlacement::Center | VisualStagePlacement::Right => {
-            let height = (stage_rect.size.height * 0.78).max(1.0);
-            let width = height;
+            let height = (stage_rect.size.height * VN_STAGE_CHARACTER_HEIGHT_RATIO).max(1.0);
+            let width = (stage_rect.size.width * VN_STAGE_CHARACTER_TARGET_WIDTH_RATIO).max(1.0);
             let center_x = match displayable.placement {
                 VisualStagePlacement::Left => stage_rect.min_x() + stage_rect.size.width * 0.28,
                 VisualStagePlacement::Center => stage_rect.min_x() + stage_rect.size.width * 0.50,
@@ -634,6 +728,17 @@ fn stage_displayable_rect(displayable: &VisualRenderStageDisplayable, stage_rect
                 width,
                 height,
             )
+        }
+    }
+}
+
+fn stage_displayable_scale_mode(
+    displayable: &VisualRenderStageDisplayable,
+) -> VisualImageScaleMode {
+    match displayable.placement {
+        VisualStagePlacement::Fullscreen => VisualImageScaleMode::FillCenter,
+        VisualStagePlacement::Left | VisualStagePlacement::Center | VisualStagePlacement::Right => {
+            VisualImageScaleMode::FitBottomCenter
         }
     }
 }
@@ -656,6 +761,15 @@ mod tests {
     use crate::termwindow::render::VisualSpriteImages;
     use gameterm_visual::{SceneRuntime, VisualScene};
     use std::collections::HashMap;
+
+    fn assert_approx_eq(left: f32, right: f32) {
+        assert!(
+            (left - right).abs() < 0.001,
+            "expected {} to be approximately {}",
+            left,
+            right
+        );
+    }
 
     #[test]
     fn placeholder_color_is_deterministic_per_sprite() {
@@ -712,11 +826,15 @@ mod tests {
             zorder: 0,
         };
 
-        assert_eq!(stage_displayable_rect(&displayable, rect), rect);
+        assert_eq!(stage_displayable_target_rect(&displayable, rect), rect);
+        assert_eq!(
+            stage_displayable_scale_mode(&displayable),
+            VisualImageScaleMode::FillCenter
+        );
     }
 
     #[test]
-    fn stage_displayable_rect_places_character_slots() {
+    fn stage_displayable_target_rect_places_character_slots() {
         let stage = euclid::rect(0.0, 0.0, 1000.0, 800.0);
         let make_displayable = |placement| VisualRenderStageDisplayable {
             layer_id: "characters".to_string(),
@@ -727,15 +845,146 @@ mod tests {
             zorder: 0,
         };
 
-        let left = stage_displayable_rect(&make_displayable(VisualStagePlacement::Left), stage);
-        let center = stage_displayable_rect(&make_displayable(VisualStagePlacement::Center), stage);
-        let right = stage_displayable_rect(&make_displayable(VisualStagePlacement::Right), stage);
+        let left =
+            stage_displayable_target_rect(&make_displayable(VisualStagePlacement::Left), stage);
+        let center =
+            stage_displayable_target_rect(&make_displayable(VisualStagePlacement::Center), stage);
+        let right =
+            stage_displayable_target_rect(&make_displayable(VisualStagePlacement::Right), stage);
 
         assert_eq!(left.size.height, 624.0);
-        assert_eq!(left.size.width, 624.0);
+        assert_eq!(left.size.width, 340.0);
         assert_eq!(left.max_y(), stage.max_y());
         assert!(left.min_x() < center.min_x());
         assert!(center.min_x() < right.min_x());
+    }
+
+    #[test]
+    fn fit_center_preserves_aspect_for_wide_source() {
+        let source = VisualImageSourceSize {
+            width: 800.0,
+            height: 400.0,
+        };
+        let target = euclid::rect(10.0, 20.0, 300.0, 300.0);
+
+        let rect = resolve_aspect_rect(source, target, VisualImageScaleMode::FitCenter);
+
+        assert_approx_eq(rect.size.width / rect.size.height, 2.0);
+        assert_approx_eq(rect.size.width, 300.0);
+        assert_approx_eq(rect.size.height, 150.0);
+        assert_approx_eq(rect.min_x(), 10.0);
+        assert_approx_eq(rect.min_y(), 95.0);
+    }
+
+    #[test]
+    fn fit_bottom_center_preserves_aspect_and_bottom_anchor() {
+        let source = VisualImageSourceSize {
+            width: 400.0,
+            height: 800.0,
+        };
+        let target = euclid::rect(100.0, 50.0, 300.0, 600.0);
+
+        let rect = resolve_aspect_rect(source, target, VisualImageScaleMode::FitBottomCenter);
+
+        assert_approx_eq(rect.size.width / rect.size.height, 0.5);
+        assert_approx_eq(rect.max_y(), target.max_y());
+        assert!(rect.size.width <= target.size.width);
+        assert!(rect.size.height <= target.size.height);
+    }
+
+    #[test]
+    fn fill_center_preserves_aspect_and_covers_target() {
+        let source = VisualImageSourceSize {
+            width: 1600.0,
+            height: 900.0,
+        };
+        let target = euclid::rect(0.0, 0.0, 800.0, 800.0);
+
+        let rect = resolve_aspect_rect(source, target, VisualImageScaleMode::FillCenter);
+
+        assert_approx_eq(rect.size.width / rect.size.height, 16.0 / 9.0);
+        assert!(rect.size.width >= target.size.width);
+        assert!(rect.size.height >= target.size.height);
+        assert!(rect.min_x() < target.min_x());
+    }
+
+    #[test]
+    fn integer_fit_center_uses_whole_scale_when_possible() {
+        let source = VisualImageSourceSize {
+            width: 64.0,
+            height: 32.0,
+        };
+        let target = euclid::rect(0.0, 0.0, 170.0, 100.0);
+
+        let rect = resolve_aspect_rect(source, target, VisualImageScaleMode::IntegerFitCenter);
+
+        assert_approx_eq(rect.size.width, 128.0);
+        assert_approx_eq(rect.size.height, 64.0);
+        assert_approx_eq(rect.size.width / rect.size.height, 2.0);
+    }
+
+    #[test]
+    fn staged_character_rect_preserves_source_aspect_across_viewports() {
+        let displayable = VisualRenderStageDisplayable {
+            layer_id: "characters".to_string(),
+            tag: "guide".to_string(),
+            sprite: "vn.character.guide.neutral".to_string(),
+            placement: VisualStagePlacement::Center,
+            layer_zorder: 10,
+            zorder: 0,
+        };
+        let source = VisualImageSourceSize {
+            width: 512.0,
+            height: 1024.0,
+        };
+        let fullscreen_target =
+            stage_displayable_target_rect(&displayable, euclid::rect(0.0, 0.0, 1920.0, 1080.0));
+        let windowed_target =
+            stage_displayable_target_rect(&displayable, euclid::rect(0.0, 0.0, 1000.0, 560.0));
+
+        let fullscreen = resolve_aspect_rect(
+            source,
+            fullscreen_target,
+            stage_displayable_scale_mode(&displayable),
+        );
+        let windowed = resolve_aspect_rect(
+            source,
+            windowed_target,
+            stage_displayable_scale_mode(&displayable),
+        );
+
+        assert_approx_eq(fullscreen.size.width / fullscreen.size.height, 0.5);
+        assert_approx_eq(windowed.size.width / windowed.size.height, 0.5);
+        assert_approx_eq(fullscreen.max_y(), fullscreen_target.max_y());
+        assert_approx_eq(windowed.max_y(), windowed_target.max_y());
+    }
+
+    #[test]
+    fn fullscreen_background_uses_fill_policy() {
+        let displayable = VisualRenderStageDisplayable {
+            layer_id: "background".to_string(),
+            tag: "background".to_string(),
+            sprite: "vn.background.school_classroom".to_string(),
+            placement: VisualStagePlacement::Fullscreen,
+            layer_zorder: 0,
+            zorder: 0,
+        };
+        let target =
+            stage_displayable_target_rect(&displayable, euclid::rect(0.0, 0.0, 1000.0, 560.0));
+        let source = VisualImageSourceSize {
+            width: 1920.0,
+            height: 1080.0,
+        };
+
+        let rect = resolve_aspect_rect(source, target, stage_displayable_scale_mode(&displayable));
+
+        assert_eq!(
+            stage_displayable_scale_mode(&displayable),
+            VisualImageScaleMode::FillCenter
+        );
+        assert_approx_eq(rect.size.width / rect.size.height, 16.0 / 9.0);
+        assert!(rect.size.width + 0.001 >= target.size.width);
+        assert!(rect.size.height + 0.001 >= target.size.height);
     }
 
     #[test]
