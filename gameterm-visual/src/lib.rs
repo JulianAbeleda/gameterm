@@ -3051,49 +3051,8 @@ impl SceneRuntime {
                 &line,
             );
         }
-        self.render_vn_dialogue_scrollbar(&mut screen, cols, &layout, scroll_metrics);
-
         let frame = screen.join("\r\n") + "\r\n";
         truncate_to_screen(frame, cols, rows)
-    }
-
-    fn render_vn_dialogue_scrollbar(
-        &self,
-        screen: &mut [String],
-        cols: usize,
-        layout: &VnOverlayLayout,
-        metrics: VnDialogueScrollMetrics,
-    ) {
-        if metrics.max_scroll_offset == 0 || metrics.visible_rows == 0 {
-            return;
-        }
-        let bar_col = layout
-            .dialogue_panel
-            .right()
-            .saturating_sub(2)
-            .min(cols.saturating_sub(1));
-        let bar_height = metrics.visible_rows;
-        let thumb_height = ((bar_height * metrics.visible_rows) / metrics.total_lines.max(1))
-            .max(1)
-            .min(bar_height);
-        let travel = bar_height.saturating_sub(thumb_height);
-        let thumb_top = if metrics.max_scroll_offset == 0 {
-            0
-        } else {
-            let distance_from_top = metrics
-                .max_scroll_offset
-                .saturating_sub(metrics.scroll_offset);
-            (travel * distance_from_top) / metrics.max_scroll_offset
-        };
-        for idx in 0..bar_height {
-            let row = layout.dialogue_text_row.saturating_add(idx);
-            let marker = if idx >= thumb_top && idx < thumb_top.saturating_add(thumb_height) {
-                "#"
-            } else {
-                "|"
-            };
-            place_vn_overlay_text(screen, cols, row, bar_col, 1, marker);
-        }
     }
 
     fn vn_dialogue_nameplate(&self, dialogue: &VisualDialogueLine) -> String {
@@ -5710,7 +5669,7 @@ mod tests {
     }
 
     #[test]
-    fn staged_scene_draws_dialogue_scrollbar_for_overflowing_transcript() {
+    fn staged_scene_reports_dialogue_scroll_metrics_for_overflowing_transcript() {
         let mut runtime = SceneRuntime::new(staged_compose_scene()).unwrap();
 
         for idx in 0..8 {
@@ -5724,16 +5683,12 @@ mod tests {
             );
         }
 
-        let frame = runtime.render_text_frame(80, 24);
-
         assert!(
             runtime
                 .vn_dialogue_scroll_metrics(80, 24, 0)
                 .max_scroll_offset
                 > 0
         );
-        assert!(frame.contains('#'));
-        assert!(frame.contains('|'));
     }
 
     #[test]

@@ -668,12 +668,9 @@ fn vn_dialogue_scrollbar_rects(
     if track_height <= 0.0 {
         return None;
     }
-    let track = euclid::rect(
-        panel.max_x() - layout.dialogue_text_inset_cols as f32 * cell_width + track_width,
-        track_top,
-        track_width,
-        track_height,
-    );
+    let gutter_width = layout.dialogue_text_inset_cols as f32 * cell_width;
+    let track_x = panel.max_x() - (gutter_width * 0.5) - (track_width * 0.5);
+    let track = euclid::rect(track_x, track_top, track_width, track_height);
 
     let thumb_height = ((track_height * metrics.visible_rows as f32)
         / metrics.total_lines.max(1) as f32)
