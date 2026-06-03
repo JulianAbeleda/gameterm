@@ -337,18 +337,24 @@ fn vn_overlay_layout_inner(
         None
     };
 
+    let min_panel_top = nameplate_height_rows
+        .min(rows.saturating_sub(1))
+        .saturating_add(VN_OVERLAY_NAMEPLATE_OFFSET_ROWS)
+        .min(rows.saturating_sub(1));
     let dialogue_panel = if fullscreen {
         let top = ((rows as f32) * dialogue_top_ratio).round() as usize;
+        let top = top.max(min_panel_top);
         let bottom = ((rows as f32) * dialogue_bottom_ratio).round() as usize;
         let reserved_bottom = composer_panel
             .map(|panel| panel.row.saturating_sub(composer_gap))
             .unwrap_or(rows);
         let bottom = bottom.min(reserved_bottom).max(top + 4);
+        let row = top.min(rows.saturating_sub(1));
         VnOverlayRect {
             col: margin,
-            row: top.min(rows.saturating_sub(1)),
+            row,
             width: panel_width,
-            height: bottom.saturating_sub(top).max(4),
+            height: bottom.saturating_sub(row).max(4),
         }
     } else {
         let height = if rows >= 18 { 7 } else { 4 };
@@ -4224,6 +4230,37 @@ mod tests {
         assert_eq!(large_window.composer_text_row, Some(large_composer.row + 1));
         assert_eq!(compact_composer.row, 18);
         assert_eq!(large_composer.row, 24);
+    }
+
+    #[test]
+    fn vn_overlay_nameplates_do_not_overlap_at_fullscreen_threshold() {
+        let layout = vn_overlay_layout(120, VN_OVERLAY_FULLSCREEN_MIN_ROWS, "Codex", "Composer");
+        let composer = layout.composer_panel.unwrap();
+        let composer_nameplate = layout.composer_nameplate.unwrap();
+
+        assert_eq!(
+            layout.dialogue_nameplate.row + layout.dialogue_nameplate.height,
+            layout.dialogue_panel.row
+        );
+        assert_eq!(composer_nameplate.row + composer_nameplate.height, composer.row);
+    }
+
+    #[test]
+    fn vn_overlay_debug_overrides_preserve_nameplate_separation() {
+        let mut overrides = VnOverlayDebugOverrides::default();
+        overrides.dialogue_top_ratio = 0.0;
+        let layout = vn_overlay_layout_with_overrides(
+            120,
+            VN_OVERLAY_FULLSCREEN_MIN_ROWS,
+            "Codex",
+            "Composer",
+            &overrides,
+        );
+
+        assert_eq!(
+            layout.dialogue_nameplate.row + layout.dialogue_nameplate.height,
+            layout.dialogue_panel.row
+        );
     }
 
     #[test]
