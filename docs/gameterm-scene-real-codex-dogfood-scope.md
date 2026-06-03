@@ -251,6 +251,21 @@ If the app install script needs a narrow change:
 
 ## Verification Checklist
 
+Current pass results:
+
+- `cargo test -p gameterm-gui compose_backend --bin gameterm-gui`: PASS
+- `cargo test -p gameterm-gui codex_compose --bin gameterm-gui`: PASS
+- `cargo test -p gameterm-gui visual_compose --bin gameterm-gui`: PASS
+- `cargo check -p gameterm-gui`: PASS with pre-existing warning noise
+- `cargo build -p gameterm-gui`: PASS with pre-existing warning noise
+- `vn-compose-codex` fake-Codex smoke: PASS at
+  `/tmp/gameterm-scene-vn-compose-codex-fake.png`
+- `vn-compose` real-Codex smoke: PASS at
+  `/tmp/gameterm-scene-vn-real-codex-diagnostic.png`
+- Earlier direct live-Codex probe returned `429 Too Many Requests` plus
+  websocket `403 Forbidden`; the later Scene smoke succeeded, so treat that as
+  transient account/session state unless it reappears.
+
 Targeted checks:
 
 ```sh

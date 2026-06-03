@@ -43,8 +43,8 @@ Scene Mode currently has:
 - structured Scene VN compose submit events, dialogue patch replies, sanitized
   deterministic/local process backend output, and fullscreen `vn-compose` smoke
 - explicit local Codex CLI backend selection, `codex exec` command construction,
-  final-message output handling, and fullscreen `vn-compose-codex` fake-Codex
-  smoke
+  final-message output handling, persistent app-launch Scene compose config,
+  Codex failure diagnostics, and fullscreen `vn-compose-codex` fake-Codex smoke
 
 Latest verification baseline:
 
@@ -61,6 +61,12 @@ Latest verification baseline:
   downloaded PSD/school assets, recorded in
   [GameTerm Scene Mode Smoke Report](gameterm-scene-smoke-report.md)
 - Live smoke: PASS for `vn-compose` shared VN overlay layout, recorded in
+  [GameTerm Scene Mode Smoke Report](gameterm-scene-smoke-report.md)
+- Live smoke: PASS for `vn-compose-codex` with deterministic fake-Codex
+  backend, recorded in
+  [GameTerm Scene Mode Smoke Report](gameterm-scene-smoke-report.md)
+- Live smoke: PASS for `vn-compose` with the real local Codex CLI backend,
+  recorded in
   [GameTerm Scene Mode Smoke Report](gameterm-scene-smoke-report.md)
 
 Known non-blocking warning noise remains outside Scene Mode scope:

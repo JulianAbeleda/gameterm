@@ -72,6 +72,76 @@ Validated named scenarios:
 
 ## Live Results
 
+### vn-compose-codex-fake-pass-20260603-0055
+
+Command:
+
+```sh
+cargo build -p gameterm-gui
+ci/gameterm-scene-smoke.sh --launch \
+  --scenario vn-compose-codex \
+  --output /tmp/gameterm-scene-vn-compose-codex-fake.png \
+  --wait-before-capture 3 \
+  --post-action-wait 2
+```
+
+Result: PASS.
+
+Capture:
+
+```text
+/tmp/gameterm-scene-vn-compose-codex-fake.png
+```
+
+Observation: the smoke helper launched the VN compose Codex scenario with the
+deterministic fake-Codex command, submitted `look at roadmap`, and captured a
+non-empty 1920x1080 PNG. Visual inspection confirmed the dialogue panel renders
+the submitted user prompt as a highlighted `>` line and the fake Codex reply as
+the assistant dialogue, with the composer dock cleared and ready for the next
+prompt.
+
+### vn-compose-real-codex-pass-20260603-0058
+
+Command:
+
+```sh
+GAMETERM_SCENE_COMPOSE_BACKEND_KIND=codex \
+GAMETERM_SCENE_COMPOSE_CODEX_BIN=/opt/homebrew/bin/codex \
+GAMETERM_SCENE_COMPOSE_WORKSPACE=/Users/julianabeleda/env/gameterm \
+GAMETERM_SCENE_COMPOSE_CODEX_SANDBOX=read-only \
+GAMETERM_SCENE_COMPOSE_CODEX_APPROVAL=never \
+GAMETERM_SCENE_COMPOSE_CODEX_TIMEOUT_SECONDS=90 \
+ci/gameterm-scene-smoke.sh --launch \
+  --scenario vn-compose \
+  --key-sequence 'text:say hi,enter,delay:8' \
+  --wait-before-capture 3 \
+  --post-action-wait 2 \
+  --capture-timeout 12 \
+  --output /tmp/gameterm-scene-vn-real-codex-diagnostic.png
+```
+
+Result: PASS.
+
+Capture:
+
+```text
+/tmp/gameterm-scene-vn-real-codex-diagnostic.png
+```
+
+Observation: the smoke helper launched Scene Mode with the real local Codex CLI
+backend selected by environment, submitted `say hi`, and captured a non-empty
+1920x1080 PNG. Visual inspection confirmed the dialogue panel shows `> say hi`
+followed by the Codex reply `Hi!`, and the composer dock remains ready for the
+next prompt. This differs from the deterministic built-in reply format
+(`I received your Scene Mode prompt: ...`), so the capture validates the real
+Codex backend path.
+
+Earlier direct probe note: before this smoke, a standalone `codex exec
+--output-last-message ... 'Reply exactly: hi'` probe from
+`/Users/julianabeleda/env/gameterm` returned `429 Too Many Requests` and
+websocket `403 Forbidden`. Treat that as transient account/session state unless
+it reappears during live Scene use.
+
 ### vn-compose-shared-layout-pass-20260602-1822
 
 Command:
