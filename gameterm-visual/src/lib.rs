@@ -2253,7 +2253,11 @@ impl SceneRuntime {
         place_vn_overlay_text(
             &mut screen,
             cols,
-            layout.dialogue_nameplate.row,
+            layout
+                .dialogue_nameplate
+                .row
+                .saturating_add(layout.dialogue_nameplate.height / 2)
+                .min(rows.saturating_sub(1)),
             layout.dialogue_nameplate.col.saturating_add(1),
             layout.dialogue_nameplate.width.saturating_sub(2).max(1),
             &dialogue.speaker,

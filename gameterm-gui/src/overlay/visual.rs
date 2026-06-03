@@ -1732,7 +1732,7 @@ fn render_runtime_with_compose(
                 frame,
                 size.cols,
                 size.rows,
-                nameplate.row,
+                nameplate.row.saturating_add(nameplate.height / 2).min(size.rows.saturating_sub(1)),
                 &compose_dock.render_staged_nameplate_line(size.cols, nameplate),
             );
         }
