@@ -14,8 +14,8 @@ Options:
   --source PATH              Local source image, usually a PSD.
   --output-source-root PATH  Asset source root to populate.
   --source-id TEXT           Catalog source directory. Default: 4cher_set4_vn_sprites.
-  --character-id TEXT        Character filename prefix. Default: guide.
-  --expressions CSV          Expression suffixes. Default: neutral,happy,concerned,surprised.
+  --character-id TEXT        Character filename prefix. Default: kiki.
+  --expressions CSV          Expression suffixes. Default: neutral,happy,concerned,surprised,idle-0,idle-1,idle-2,idle-3,idle-4,idle-5.
   --force                    Overwrite existing exported files.
   -h, --help                 Show this help.
 EOF
@@ -24,8 +24,8 @@ EOF
 source_path=""
 output_source_root=""
 source_id="4cher_set4_vn_sprites"
-character_id="guide"
-expressions_csv="neutral,happy,concerned,surprised"
+character_id="kiki"
+expressions_csv="neutral,happy,concerned,surprised,idle-0,idle-1,idle-2,idle-3,idle-4,idle-5"
 force=0
 tmp_paths=()
 

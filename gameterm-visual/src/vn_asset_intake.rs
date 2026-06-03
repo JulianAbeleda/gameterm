@@ -332,6 +332,54 @@ fn expected_assets_for_role(role: &str) -> Option<&'static [ExpectedAsset]> {
                 is_default_background: false,
             },
             ExpectedAsset {
+                source_file: "kiki-idle-0.png",
+                output_file: "characters/kiki-idle-0.png",
+                sprite_id: "vn.character.kiki.idle.0",
+                character: Some("kiki"),
+                expression: Some("idle.0"),
+                is_default_background: false,
+            },
+            ExpectedAsset {
+                source_file: "kiki-idle-1.png",
+                output_file: "characters/kiki-idle-1.png",
+                sprite_id: "vn.character.kiki.idle.1",
+                character: Some("kiki"),
+                expression: Some("idle.1"),
+                is_default_background: false,
+            },
+            ExpectedAsset {
+                source_file: "kiki-idle-2.png",
+                output_file: "characters/kiki-idle-2.png",
+                sprite_id: "vn.character.kiki.idle.2",
+                character: Some("kiki"),
+                expression: Some("idle.2"),
+                is_default_background: false,
+            },
+            ExpectedAsset {
+                source_file: "kiki-idle-3.png",
+                output_file: "characters/kiki-idle-3.png",
+                sprite_id: "vn.character.kiki.idle.3",
+                character: Some("kiki"),
+                expression: Some("idle.3"),
+                is_default_background: false,
+            },
+            ExpectedAsset {
+                source_file: "kiki-idle-4.png",
+                output_file: "characters/kiki-idle-4.png",
+                sprite_id: "vn.character.kiki.idle.4",
+                character: Some("kiki"),
+                expression: Some("idle.4"),
+                is_default_background: false,
+            },
+            ExpectedAsset {
+                source_file: "kiki-idle-5.png",
+                output_file: "characters/kiki-idle-5.png",
+                sprite_id: "vn.character.kiki.idle.5",
+                character: Some("kiki"),
+                expression: Some("idle.5"),
+                is_default_background: false,
+            },
+            ExpectedAsset {
                 source_file: "kiki-happy.png",
                 output_file: "characters/kiki-happy.png",
                 sprite_id: "vn.character.kiki.happy",
@@ -555,6 +603,12 @@ mod tests {
             &source_root.join("character/kiki-happy.png"),
             b"gameterm-test-happy",
         );
+        for frame in 0..6 {
+            write_file(
+                &source_root.join(format!("character/kiki-idle-{frame}.png")),
+                format!("gameterm-test-idle-{frame}").as_bytes(),
+            );
+        }
 
         let report = run_vn_asset_intake(VnAssetIntakeOptions {
             catalog_path,
@@ -571,6 +625,10 @@ mod tests {
             sprite.id == "vn.character.kiki.neutral"
                 && sprite.path == "assets/vn-demo/characters/kiki-neutral.png"
         }));
+        assert!(report.sprite_manifest.sprites.iter().any(|sprite| {
+            sprite.id == "vn.character.kiki.idle.5"
+                && sprite.path == "assets/vn-demo/characters/kiki-idle-5.png"
+        }));
         assert_eq!(
             report
                 .bindings
@@ -582,6 +640,17 @@ mod tests {
                 .map(String::as_str),
             Some("vn.character.kiki.happy")
         );
+        assert_eq!(
+            report
+                .bindings
+                .characters
+                .get("kiki")
+                .unwrap()
+                .expressions
+                .get("idle.3")
+                .map(String::as_str),
+            Some("vn.character.kiki.idle.3")
+        );
         assert!(report.warnings.iter().any(|warning| {
             warning.kind == VnAssetIntakeWarningKind::CompositionRequired
                 && warning.source_id.as_deref() == Some("parts")
@@ -590,7 +659,7 @@ mod tests {
             .attribution
             .sources
             .iter()
-            .any(|source| { source.id == "character" && source.used_assets.len() == 2 }));
+            .any(|source| { source.id == "character" && source.used_assets.len() == 8 }));
     }
 
     #[test]
