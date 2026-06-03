@@ -110,6 +110,40 @@ impl VnPanelStyle {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct RoundedRectPrimitive {
+    rect: RectF,
+    fill: LinearRgba,
+    border: LinearRgba,
+    border_width: f32,
+    radius: f32,
+}
+
+impl RoundedRectPrimitive {
+    fn new(rect: RectF, style: VnPanelStyle) -> Self {
+        let radius = style
+            .radius
+            .max(4.0)
+            .min(rect.size.width / 3.0)
+            .min(rect.size.height / 2.0);
+        Self {
+            rect,
+            fill: style.fill,
+            border: style.border,
+            border_width: style.border_width,
+            radius,
+        }
+    }
+
+    fn inner_rect(self) -> RectF {
+        inset_rect(self.rect, self.border_width)
+    }
+
+    fn inner_radius(self) -> f32 {
+        (self.radius - self.border_width).max(1.0)
+    }
+}
+
 fn vn_panel_texture_rendering_enabled() -> bool {
     *VN_PANEL_TEXTURE_RENDERING
 }
@@ -232,7 +266,12 @@ impl TermWindow {
             return Ok(());
         }
 
-        self.populate_rounded_vn_panel(layers, layer_num, rect, style, hsv)
+        self.populate_rounded_rect_primitive(
+            layers,
+            layer_num,
+            RoundedRectPrimitive::new(rect, style),
+            hsv,
+        )
     }
 
     fn populate_vn_panel_texture(
@@ -292,28 +331,21 @@ impl TermWindow {
         Ok(true)
     }
 
-    fn populate_rounded_vn_panel(
+    fn populate_rounded_rect_primitive(
         &self,
         layers: &mut TripleLayerQuadAllocator,
         layer_num: usize,
-        rect: RectF,
-        style: VnPanelStyle,
+        primitive: RoundedRectPrimitive,
         hsv: Option<HsbTransform>,
     ) -> anyhow::Result<()> {
-        let radius = style
-            .radius
-            .max(4.0)
-            .min(rect.size.width / 3.0)
-            .min(rect.size.height / 2.0);
-        for panel_rect in rounded_panel_rects(rect, radius) {
-            let mut quad = self.filled_rectangle(layers, layer_num, panel_rect, style.border)?;
+        for panel_rect in rounded_panel_rects(primitive.rect, primitive.radius) {
+            let mut quad =
+                self.filled_rectangle(layers, layer_num, panel_rect, primitive.border)?;
             quad.set_hsv(hsv);
         }
 
-        let inner = inset_rect(rect, style.border_width);
-        let inner_radius = (radius - style.border_width).max(1.0);
-        for panel_rect in rounded_panel_rects(inner, inner_radius) {
-            let mut quad = self.filled_rectangle(layers, layer_num, panel_rect, style.fill)?;
+        for panel_rect in rounded_panel_rects(primitive.inner_rect(), primitive.inner_radius()) {
+            let mut quad = self.filled_rectangle(layers, layer_num, panel_rect, primitive.fill)?;
             quad.set_hsv(hsv);
         }
         Ok(())
@@ -1197,6 +1229,32 @@ mod tests {
             assert!(panel_rect.size.width > 0.0);
             assert!(panel_rect.size.height > 0.0);
         }
+    }
+
+    #[test]
+    fn rounded_rect_primitive_derives_inner_shape_from_style() {
+        let rect = euclid::rect(4.0, 6.0, 120.0, 48.0);
+        let primitive = RoundedRectPrimitive::new(rect, VnPanelStyle::dialogue_panel());
+
+        assert_eq!(primitive.rect, rect);
+        assert_eq!(primitive.fill, VN_PANEL_FILL);
+        assert_eq!(primitive.border, VN_PANEL_BORDER);
+        assert_eq!(primitive.border_width, VN_PANEL_BORDER_WIDTH_PX);
+        assert_eq!(primitive.radius, VN_DIALOGUE_PANEL_RADIUS_PX);
+        assert_eq!(
+            primitive.inner_rect(),
+            inset_rect(rect, VN_PANEL_BORDER_WIDTH_PX)
+        );
+        assert_eq!(
+            primitive.inner_radius(),
+            VN_DIALOGUE_PANEL_RADIUS_PX - VN_PANEL_BORDER_WIDTH_PX
+        );
+
+        let small = RoundedRectPrimitive::new(
+            euclid::rect(0.0, 0.0, 12.0, 8.0),
+            VnPanelStyle::dialogue_panel(),
+        );
+        assert_eq!(small.radius, 4.0);
     }
 
     #[test]
