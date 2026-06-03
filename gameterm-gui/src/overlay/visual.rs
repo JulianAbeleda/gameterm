@@ -131,7 +131,6 @@ fn show_visual_scene_overlay_with_source(
     gui_window: Option<Window>,
     source: VisualSceneOverlaySource,
 ) -> anyhow::Result<()> {
-    term.no_grab_mouse_in_raw_mode();
     term.set_raw_mode()?;
     term.render(&[Change::Title("GameTerm Scene".to_string())])?;
     let pane_id = term
