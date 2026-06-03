@@ -995,8 +995,8 @@ mod tests {
         let stage = euclid::rect(0.0, 0.0, 1000.0, 800.0);
         let make_displayable = |placement| VisualRenderStageDisplayable {
             layer_id: "characters".to_string(),
-            tag: "guide".to_string(),
-            sprite: "vn.character.guide.neutral".to_string(),
+            tag: "kiki".to_string(),
+            sprite: "vn.character.kiki.neutral".to_string(),
             placement,
             layer_zorder: 10,
             zorder: 0,
@@ -1123,8 +1123,8 @@ mod tests {
     fn staged_character_rect_preserves_source_aspect_across_viewports() {
         let displayable = VisualRenderStageDisplayable {
             layer_id: "characters".to_string(),
-            tag: "guide".to_string(),
-            sprite: "vn.character.guide.neutral".to_string(),
+            tag: "kiki".to_string(),
+            sprite: "vn.character.kiki.neutral".to_string(),
             placement: VisualStagePlacement::Center,
             layer_zorder: 10,
             zorder: 0,
@@ -1159,8 +1159,8 @@ mod tests {
     fn staged_character_placeholder_uses_portrait_fit() {
         let displayable = VisualRenderStageDisplayable {
             layer_id: "characters".to_string(),
-            tag: "guide".to_string(),
-            sprite: "missing-guide".to_string(),
+            tag: "kiki".to_string(),
+            sprite: "missing-kiki".to_string(),
             placement: VisualStagePlacement::Center,
             layer_zorder: 10,
             zorder: 0,

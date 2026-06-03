@@ -798,7 +798,7 @@ Observation: the smoke harness generated the VN demo into a temporary Scene
 config, strict-validated sprite files as PNG image data, resized the launched
 GameTerm window to fill the visible desktop, opened Scene Mode, sent the
 scripted VN key sequence, and captured the imported VN scene. The capture shows
-`VN Script Demo` with `sprite=vn.character.guide.neutral`.
+`VN Script Demo` with `sprite=vn.character.kiki.neutral`.
 
 ### vn-demo downloaded PSD
 

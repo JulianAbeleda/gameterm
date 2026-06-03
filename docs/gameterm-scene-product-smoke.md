@@ -93,7 +93,7 @@ Launch GameTerm and open Scene Mode with the configured keybinding:
 - Run `ci/gameterm-scene-vn-demo.sh generate --output-dir /tmp/gameterm-vn-demo --asset-source-root ci/fixtures/gameterm-scene/vn-asset-source --force --strict-images`.
 - Run `ci/gameterm-scene-vn-demo.sh doctor --output-dir /tmp/gameterm-vn-demo --strict-images`.
 - Confirm `/tmp/gameterm-vn-demo/sprites.json` includes
-  `vn.character.guide.neutral`.
+  `vn.character.kiki.neutral`.
 - If testing local downloaded PSD/image art, export it into an ignored
   source-root first:
 

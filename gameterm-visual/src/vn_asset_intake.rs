@@ -324,34 +324,34 @@ fn expected_assets_for_role(role: &str) -> Option<&'static [ExpectedAsset]> {
     match role {
         "character_sprite" => Some(&[
             ExpectedAsset {
-                source_file: "guide-neutral.png",
-                output_file: "characters/guide-neutral.png",
-                sprite_id: "vn.character.guide.neutral",
-                character: Some("guide"),
+                source_file: "kiki-neutral.png",
+                output_file: "characters/kiki-neutral.png",
+                sprite_id: "vn.character.kiki.neutral",
+                character: Some("kiki"),
                 expression: Some("neutral"),
                 is_default_background: false,
             },
             ExpectedAsset {
-                source_file: "guide-happy.png",
-                output_file: "characters/guide-happy.png",
-                sprite_id: "vn.character.guide.happy",
-                character: Some("guide"),
+                source_file: "kiki-happy.png",
+                output_file: "characters/kiki-happy.png",
+                sprite_id: "vn.character.kiki.happy",
+                character: Some("kiki"),
                 expression: Some("happy"),
                 is_default_background: false,
             },
             ExpectedAsset {
-                source_file: "guide-concerned.png",
-                output_file: "characters/guide-concerned.png",
-                sprite_id: "vn.character.guide.concerned",
-                character: Some("guide"),
+                source_file: "kiki-concerned.png",
+                output_file: "characters/kiki-concerned.png",
+                sprite_id: "vn.character.kiki.concerned",
+                character: Some("kiki"),
                 expression: Some("concerned"),
                 is_default_background: false,
             },
             ExpectedAsset {
-                source_file: "guide-surprised.png",
-                output_file: "characters/guide-surprised.png",
-                sprite_id: "vn.character.guide.surprised",
-                character: Some("guide"),
+                source_file: "kiki-surprised.png",
+                output_file: "characters/kiki-surprised.png",
+                sprite_id: "vn.character.kiki.surprised",
+                character: Some("kiki"),
                 expression: Some("surprised"),
                 is_default_background: false,
             },
@@ -548,11 +548,11 @@ mod tests {
         let sprite_manifest_path = tmp.path().join("scene/sprites.json");
         write_catalog(&catalog_path);
         write_file(
-            &source_root.join("character/guide-neutral.png"),
+            &source_root.join("character/kiki-neutral.png"),
             b"gameterm-test-neutral",
         );
         write_file(
-            &source_root.join("character/guide-happy.png"),
+            &source_root.join("character/kiki-happy.png"),
             b"gameterm-test-happy",
         );
 
@@ -566,21 +566,21 @@ mod tests {
         })
         .unwrap();
 
-        assert!(output_root.join("characters/guide-neutral.png").is_file());
+        assert!(output_root.join("characters/kiki-neutral.png").is_file());
         assert!(report.sprite_manifest.sprites.iter().any(|sprite| {
-            sprite.id == "vn.character.guide.neutral"
-                && sprite.path == "assets/vn-demo/characters/guide-neutral.png"
+            sprite.id == "vn.character.kiki.neutral"
+                && sprite.path == "assets/vn-demo/characters/kiki-neutral.png"
         }));
         assert_eq!(
             report
                 .bindings
                 .characters
-                .get("guide")
+                .get("kiki")
                 .unwrap()
                 .expressions
                 .get("happy")
                 .map(String::as_str),
-            Some("vn.character.guide.happy")
+            Some("vn.character.kiki.happy")
         );
         assert!(report.warnings.iter().any(|warning| {
             warning.kind == VnAssetIntakeWarningKind::CompositionRequired

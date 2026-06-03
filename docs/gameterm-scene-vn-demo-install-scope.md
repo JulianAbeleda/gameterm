@@ -160,7 +160,7 @@ First-pass behavior:
 
 - The importer loads `vn-demo-bindings.json` when provided.
 - If `default_background` exists, generated `scene.background` uses it.
-- If `characters.guide.expressions.neutral` exists, the narrator/guide entity
+- If `characters.kiki.expressions.neutral` exists, the narrator/kiki entity
   can use that sprite ID.
 - If bindings are missing or incomplete, importer keeps existing fallback
   sprite IDs.
@@ -232,7 +232,7 @@ Verifier integration:
 - assert generated `default.json` validates
 - assert generated `sprites.json` contains base sprites and VN sprite IDs when
   assets are supplied
-- assert generated bindings contain `vn.character.guide.neutral`
+- assert generated bindings contain `vn.character.kiki.neutral`
 - assert attribution files exist
 - assert overwrite protection preserves existing files without `--force`
 - assert `doctor` reports `0 error(s)`

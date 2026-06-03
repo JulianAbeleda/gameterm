@@ -434,7 +434,7 @@ fn build_scene(
                 kind: VisualEntityKind::Agent,
                 label: "Narrator".to_string(),
                 position: VisualPosition { x: 7, y: 4 },
-                sprite: binding_character_sprite(options, "guide", "neutral", "agent_idle"),
+                sprite: binding_character_sprite(options, "kiki", "neutral", "agent_idle"),
                 visible: true,
                 state_flags: Vec::new(),
                 metadata: vec![(
@@ -486,7 +486,7 @@ fn build_stage(options: &VnScriptImportOptions, presentation: &ParsedPresentatio
         .initial_character
         .clone()
         .unwrap_or(ParsedStageCharacter {
-            tag: "guide".to_string(),
+            tag: "kiki".to_string(),
             expression: "neutral".to_string(),
             placement: VisualStagePlacement::Center,
         });
@@ -775,20 +775,20 @@ mod tests {
     use crate::VnAssetBindingCharacter;
 
     const SOURCE: &str = r#"
-default met_guide = True
+default met_kiki = True
 
 label start:
     "A terminal window glows like a tiny stage."
-    guide "Scene Mode can read a Ren'Py-shaped script."
+    kiki "Scene Mode can read a Ren'Py-shaped script."
 
     menu:
-        "Ask about Scene Mode." if met_guide:
+        "Ask about Scene Mode." if met_kiki:
             jump explain
         "End the demo.":
             jump ending
 
 label explain:
-    guide "Labels become dialogue targets, and menu items become Scene Mode choices."
+    kiki "Labels become dialogue targets, and menu items become Scene Mode choices."
     jump ending
 
 label ending:
@@ -817,7 +817,7 @@ label ending:
             report.scene.choices[0].policy.as_ref().unwrap().origin,
             "vn_script_import"
         );
-        assert_eq!(report.scene.choices[0].conditions[0].variable, "met_guide");
+        assert_eq!(report.scene.choices[0].conditions[0].variable, "met_kiki");
         assert_eq!(
             report.scene.choices[0].kind,
             SceneActionKind::AdvanceDialogue { target: 2 }
@@ -853,16 +853,16 @@ label start:
 
     #[test]
     fn vn_script_import_applies_asset_bindings_when_present() {
-        let mut guide = VnAssetBindingCharacter::default();
-        guide.expressions.insert(
+        let mut kiki = VnAssetBindingCharacter::default();
+        kiki.expressions.insert(
             "neutral".to_string(),
-            "vn.character.guide.neutral".to_string(),
+            "vn.character.kiki.neutral".to_string(),
         );
         let mut bindings = VnAssetBindings {
             default_background: Some("vn.background.school_classroom".to_string()),
             ..Default::default()
         };
-        bindings.characters.insert("guide".to_string(), guide);
+        bindings.characters.insert("kiki".to_string(), kiki);
 
         let report = import_vn_script_scene(
             SOURCE,
@@ -882,7 +882,7 @@ label start:
                 .find(|entity| entity.id == "vn-script-narrator")
                 .unwrap()
                 .sprite,
-            "vn.character.guide.neutral"
+            "vn.character.kiki.neutral"
         );
         assert!(report.scene.stage.layers.iter().any(|layer| {
             layer.layer_id == "background"
@@ -894,8 +894,8 @@ label start:
         assert!(report.scene.stage.layers.iter().any(|layer| {
             layer.layer_id == "characters"
                 && layer.displayables.iter().any(|displayable| {
-                    displayable.tag == "guide"
-                        && displayable.sprite == "vn.character.guide.neutral"
+                    displayable.tag == "kiki"
+                        && displayable.sprite == "vn.character.kiki.neutral"
                         && displayable.placement == VisualStagePlacement::Center
                 })
         }));
@@ -903,19 +903,18 @@ label start:
 
     #[test]
     fn vn_script_import_uses_initial_scene_and_show_for_stage() {
-        let mut guide = VnAssetBindingCharacter::default();
-        guide
-            .expressions
-            .insert("happy".to_string(), "vn.character.guide.happy".to_string());
+        let mut kiki = VnAssetBindingCharacter::default();
+        kiki.expressions
+            .insert("happy".to_string(), "vn.character.kiki.happy".to_string());
         let mut bindings = VnAssetBindings::default();
-        bindings.characters.insert("guide".to_string(), guide);
+        bindings.characters.insert("kiki".to_string(), kiki);
 
         let report = import_vn_script_scene(
             r#"
 label start:
     scene clubroom
-    show guide happy at right
-    guide "The stage is set."
+    show kiki happy at right
+    kiki "The stage is set."
 "#,
             VnScriptImportOptions {
                 bindings: Some(bindings),
@@ -934,8 +933,8 @@ label start:
         assert!(report.scene.stage.layers.iter().any(|layer| {
             layer.layer_id == "characters"
                 && layer.displayables.iter().any(|displayable| {
-                    displayable.tag == "guide"
-                        && displayable.sprite == "vn.character.guide.happy"
+                    displayable.tag == "kiki"
+                        && displayable.sprite == "vn.character.kiki.happy"
                         && displayable.placement == VisualStagePlacement::Right
                 })
         }));

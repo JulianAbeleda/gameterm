@@ -257,9 +257,9 @@ A VN-shaped source like:
 
 ```renpy
 scene school_classroom
-show guide neutral at center
-guide "Scene Mode has a stage now."
-show guide happy at right
+show kiki neutral at center
+kiki "Scene Mode has a stage now."
+show kiki happy at right
 ```
 
 should render as a staged background plus character, not as a tiny grid entity.

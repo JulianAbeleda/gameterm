@@ -34,7 +34,7 @@
       }
     },
     {
-      "key": "met_guide",
+      "key": "met_kiki",
       "value": {
         "Bool": true
       }
@@ -121,7 +121,7 @@
       ]
     },
     {
-      "speaker": "guide",
+      "speaker": "kiki",
       "text": "Scene Mode can read a Ren'Py-shaped script.",
       "metadata": [
         [
@@ -135,7 +135,7 @@
       ]
     },
     {
-      "speaker": "guide",
+      "speaker": "kiki",
       "text": "Labels become dialogue targets, and menu items become Scene Mode choices.",
       "metadata": [
         [
@@ -179,7 +179,7 @@
       },
       "conditions": [
         {
-          "variable": "met_guide",
+          "variable": "met_kiki",
           "equals": {
             "Bool": true
           }

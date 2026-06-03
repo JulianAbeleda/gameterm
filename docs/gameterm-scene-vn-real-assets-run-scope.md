@@ -47,7 +47,7 @@ Already implemented:
 - Rust VN script importer.
 - Rust VN asset intake helper.
 - VN demo generate/install/doctor helper.
-- binding file that maps guide expressions to generated sprite IDs.
+- binding file that maps kiki expressions to generated sprite IDs.
 - overwrite protection.
 - attribution files.
 - verifier coverage using repo-safe placeholder assets.
@@ -73,9 +73,9 @@ Scope:
 - Accept a user-provided extracted asset root through the existing
   `--asset-source-root` path.
 - Document the expected local layout for approved sources in the catalog.
-- Support at least the current guide expressions:
-  - `vn.character.guide.neutral`
-  - `vn.character.guide.happy`
+- Support at least the current kiki expressions:
+  - `vn.character.kiki.neutral`
+  - `vn.character.kiki.happy`
 - Optionally support a non-AI background only if the catalog has an approved
   source and local file mapping.
 - Keep missing optional expressions as warnings, not hard failures.
@@ -90,7 +90,7 @@ Acceptance:
 - Running `scene_vn_asset_intake` with real PNG files copies those files into
   the output tree.
 - `sprites.json` contains VN sprite IDs pointing at copied real images.
-- `default.json` uses `vn.character.guide.neutral` for the guide/narrator
+- `default.json` uses `vn.character.kiki.neutral` for the kiki/narrator
   entity when bindings exist.
 - Script-only mode still works without assets.
 - No third-party asset archive or unclear-license file is committed.
@@ -115,8 +115,8 @@ ci/gameterm-scene-vn-demo.sh generate \
   --force
 ```
 
-The export helper writes `4cher_set4_vn_sprites/guide-neutral.png`,
-`guide-happy.png`, `guide-concerned.png`, and `guide-surprised.png` by default
+The export helper writes `4cher_set4_vn_sprites/kiki-neutral.png`,
+`kiki-happy.png`, `kiki-concerned.png`, and `kiki-surprised.png` by default
 because that is the current catalog shape used by the VN demo. It intentionally
 does not commit or vendor the downloaded PSD/image source.
 

@@ -304,7 +304,7 @@ cargo run -p gameterm-visual --example scene_vn_asset_intake -- \
 
 The helper copies only approved local files, writes a normal Scene
 `sprites.json`, writes attribution, and writes bindings such as
-`vn.character.guide.neutral`. Existing output files are not overwritten unless
+`vn.character.kiki.neutral`. Existing output files are not overwritten unless
 `--force` is passed.
 
 For the full local demo workflow, use the VN demo helper. Script-only installs

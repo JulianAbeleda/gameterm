@@ -4639,8 +4639,8 @@ mod tests {
                     layer_id: "characters".to_string(),
                     zorder: 10,
                     displayables: vec![VisualStageDisplayable {
-                        tag: "guide".to_string(),
-                        sprite: "vn.character.guide.neutral".to_string(),
+                        tag: "kiki".to_string(),
+                        sprite: "vn.character.kiki.neutral".to_string(),
                         placement: VisualStagePlacement::Center,
                         zorder: 0,
                         visible: true,
@@ -4669,7 +4669,7 @@ mod tests {
                 .iter()
                 .map(|displayable| displayable.tag.as_str())
                 .collect::<Vec<_>>(),
-            vec!["background", "guide"]
+            vec!["background", "kiki"]
         );
         assert_eq!(
             snapshot.stage[0].placement,
@@ -5040,7 +5040,7 @@ mod tests {
                 layer_id: "characters".to_string(),
                 zorder: 0,
                 displayables: vec![VisualStageDisplayable {
-                    tag: "guide".to_string(),
+                    tag: "kiki".to_string(),
                     sprite: " ".to_string(),
                     placement: VisualStagePlacement::Center,
                     zorder: 0,
@@ -5050,7 +5050,7 @@ mod tests {
         };
         assert!(matches!(
             empty_sprite.validate(),
-            Err(VisualSceneError::EmptyStageDisplayableSprite { tag }) if tag == "guide"
+            Err(VisualSceneError::EmptyStageDisplayableSprite { tag }) if tag == "kiki"
         ));
     }
 

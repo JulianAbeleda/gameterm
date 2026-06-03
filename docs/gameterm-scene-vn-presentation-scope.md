@@ -63,7 +63,7 @@ Already working:
 Current limitation:
 
 - `default.json.background` can reference `vn.background.school_classroom`.
-- The guide entity can reference `vn.character.guide.neutral`.
+- The kiki entity can reference `vn.character.kiki.neutral`.
 - Rendering is still entity/grid oriented. The character is drawn in a small
   cell-sized entity rect. The background is loaded and referenced, but not
   composed as a full VN backdrop behind staged characters.
@@ -91,20 +91,20 @@ The user should be able to write a small VN-shaped source like:
 ```renpy
 label start:
     scene school_classroom
-    show guide neutral at center
-    guide "Scene Mode has a stage now."
-    show guide happy at right
-    guide "Expressions and positions can change."
-    hide guide
+    show kiki neutral at center
+    kiki "Scene Mode has a stage now."
+    show kiki happy at right
+    kiki "Expressions and positions can change."
+    hide kiki
 ```
 
 and generate a Scene Mode view that:
 
 - uses `vn.background.school_classroom` as the active background displayable
-- shows `vn.character.guide.neutral` at center
-- replaces the same `guide` tag with `vn.character.guide.happy`
-- moves the guide to the right stage slot
-- removes the guide after `hide guide`
+- shows `vn.character.kiki.neutral` at center
+- replaces the same `kiki` tag with `vn.character.kiki.happy`
+- moves the kiki to the right stage slot
+- removes the kiki after `hide kiki`
 
 ## Data Model
 
@@ -192,11 +192,11 @@ Mapping rules:
 
 - `scene school_classroom` -> `SetStageBackground` using bindings or a
   generated sprite id.
-- `show guide neutral` -> `ShowStageDisplayable` with tag `guide` and sprite
-  `vn.character.guide.neutral`.
-- `show guide happy at right` -> replace tag `guide` with
-  `vn.character.guide.happy` and placement `Right`.
-- `hide guide` -> remove the `guide` displayable from the characters layer.
+- `show kiki neutral` -> `ShowStageDisplayable` with tag `kiki` and sprite
+  `vn.character.kiki.neutral`.
+- `show kiki happy at right` -> replace tag `kiki` with
+  `vn.character.kiki.happy` and placement `Right`.
+- `hide kiki` -> remove the `kiki` displayable from the characters layer.
 
 Unsupported Ren'Py properties should warn, not guess:
 
@@ -241,17 +241,17 @@ Example:
 ```renpy
 label start:
     scene school_classroom
-    show guide neutral at center
+    show kiki neutral at center
     "A terminal window glows like a tiny stage."
-    guide "Scene Mode can read a VN-shaped script."
+    kiki "Scene Mode can read a VN-shaped script."
 ```
 
 Add a second expression/position:
 
 ```renpy
 label explain:
-    show guide happy at right
-    guide "Labels become dialogue targets, and menu items become choices."
+    show kiki happy at right
+    kiki "Labels become dialogue targets, and menu items become choices."
 ```
 
 The fixture should still be GameTerm-owned. Do not import Ren'Py demo script
@@ -297,7 +297,7 @@ ci/gameterm-scene-smoke.sh \
 Expected smoke result:
 
 - screenshot clearly shows the school background as a large backdrop
-- screenshot clearly shows the guide character staged at a named position
+- screenshot clearly shows the kiki character staged at a named position
 - dialogue/choices remain readable
 - Tile Debugger can report active stage displayables
 

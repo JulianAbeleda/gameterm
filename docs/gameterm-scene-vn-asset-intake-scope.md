@@ -105,10 +105,10 @@ Recommended first-pass IDs:
 ```text
 vn.background.school_classroom
 vn.background.school_hallway
-vn.character.guide.neutral
-vn.character.guide.happy
-vn.character.guide.concerned
-vn.character.guide.surprised
+vn.character.kiki.neutral
+vn.character.kiki.happy
+vn.character.kiki.concerned
+vn.character.kiki.surprised
 ```
 
 Rules:
@@ -126,8 +126,8 @@ The generated manifest should use the existing Scene sprite shape:
 {
   "sprites": [
     {
-      "id": "vn.character.guide.neutral",
-      "path": "assets/vn-demo/characters/guide-neutral.png"
+      "id": "vn.character.kiki.neutral",
+      "path": "assets/vn-demo/characters/kiki-neutral.png"
     },
     {
       "id": "vn.background.school_classroom",
@@ -164,9 +164,9 @@ The generated attribution file should include:
       "repo_policy": "allowed_with_attribution",
       "used_assets": [
         {
-          "sprite_id": "vn.character.guide.neutral",
+          "sprite_id": "vn.character.kiki.neutral",
           "source_path": "BLOND GIRL - SET 4/neutral.png",
-          "output_path": "assets/vn-demo/characters/guide-neutral.png"
+          "output_path": "assets/vn-demo/characters/kiki-neutral.png"
         }
       ]
     }
@@ -237,9 +237,9 @@ First-pass binding can be explicit rather than inferred:
   "bindings": {
     "default_background": "vn.background.school_classroom",
     "characters": {
-      "guide": {
-        "neutral": "vn.character.guide.neutral",
-        "happy": "vn.character.guide.happy"
+      "kiki": {
+        "neutral": "vn.character.kiki.neutral",
+        "happy": "vn.character.kiki.happy"
       }
     }
   }
@@ -344,8 +344,8 @@ Possible fixture layout:
 ```text
 ci/fixtures/gameterm-scene/vn-asset-source/
   4cher_set4_vn_sprites/
-    guide-neutral.png
-    guide-happy.png
+    kiki-neutral.png
+    kiki-happy.png
 ```
 
 If placeholder files are generated for tests, they should be clearly marked as
