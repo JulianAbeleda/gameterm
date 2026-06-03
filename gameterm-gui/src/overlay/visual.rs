@@ -1512,11 +1512,7 @@ fn apply_structured_compose_backend_result(
 
 fn apply_compose_backend_failure_result(runtime: &mut SceneRuntime, result: &ComposeBackendResult) {
     let diagnostic = sanitize_compose_output(&result.stderr);
-    let diagnostic = if diagnostic.is_empty() {
-        format!("Compose backend failed for: {}", result.prompt)
-    } else {
-        diagnostic
-    };
+    let diagnostic = result.failure_dialogue(&diagnostic);
     let marked_diagnostic = diagnostic.clone();
     let patch = VisualScenePatch {
         scene_patch_version: VisualScenePatch::VERSION,
@@ -1529,7 +1525,7 @@ fn apply_compose_backend_failure_result(runtime: &mut SceneRuntime, result: &Com
             text: diagnostic,
             append_history: true,
         }),
-        status: Some(result.label.failed_status().to_string()),
+        status: Some(result.failure_status()),
     };
     if let Err(err) = runtime.apply_scene_patch(patch) {
         runtime.mark_action_status(format!("Compose reply failed: {err}"));
@@ -2589,6 +2585,7 @@ mod tests {
             sandbox: "read-only".to_string(),
             approval: "on-request".to_string(),
             json: true,
+            timeout: std::time::Duration::from_secs(90),
         };
 
         assert_eq!(
@@ -2617,6 +2614,7 @@ mod tests {
             sandbox: "read-only".to_string(),
             approval: "on-request".to_string(),
             json: true,
+            timeout: std::time::Duration::from_secs(90),
         };
         let argv = codex_compose_argv(
             &config,
@@ -2686,6 +2684,7 @@ mod tests {
             sandbox: "read-only".to_string(),
             approval: "on-request".to_string(),
             json: true,
+            timeout: std::time::Duration::from_secs(90),
         };
         let result = run_codex_compose_backend(request, config);
 
