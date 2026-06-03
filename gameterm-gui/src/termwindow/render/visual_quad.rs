@@ -8,8 +8,8 @@ use ::window::RectF;
 use anyhow::Context;
 use config::HsbTransform;
 use gameterm_visual::{
-    vn_overlay_layout, vn_overlay_layout_with_overrides, SceneRuntime, VisualRenderEntity, VisualRenderSnapshot, VisualView,
-    VisualRenderStageDisplayable, VisualRenderTile, VisualScene, VisualStagePlacement,
+    vn_overlay_layout, vn_overlay_layout_with_overrides, VisualRenderEntity, VisualRenderSnapshot,
+    VisualRenderStageDisplayable, VisualRenderTile, VisualStagePlacement, VisualView,
     VnOverlayRect,
 };
 use std::sync::{Arc, LazyLock};
@@ -654,6 +654,7 @@ fn visual_sprite_image_data<'a>(
 mod tests {
     use super::*;
     use crate::termwindow::render::VisualSpriteImages;
+    use gameterm_visual::{SceneRuntime, VisualScene};
     use std::collections::HashMap;
 
     #[test]

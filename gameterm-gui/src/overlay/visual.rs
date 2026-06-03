@@ -5,11 +5,11 @@ use gameterm_dynamic::Value;
 use gameterm_term::color::ColorAttribute;
 use gameterm_term::TerminalSize;
 use gameterm_visual::{
-    truncate_to_screen, vn_overlay_layout, vn_overlay_layout_with_overrides, RunCommandTarget, SceneRuntime, VisualActionRequest, VisualView,
-    VisualInput, VisualMode, VisualModeOutcome, VisualResolvedSprite, VisualScene,
-    VisualSceneDialoguePatch, VisualSceneLoadStatus, VisualScenePatch, VisualSceneSource,
-    VisualSpriteManifest, VisualSpriteManifestStatus, VisualStoryState, VnOverlayDebugOverrides,
-    VnOverlayRect,
+    truncate_to_screen, vn_overlay_layout, vn_overlay_layout_with_overrides, RunCommandTarget,
+    SceneRuntime, VisualActionRequest, VisualInput, VisualMode, VisualModeOutcome,
+    VisualResolvedSprite, VisualScene, VisualSceneDialoguePatch, VisualSceneLoadStatus,
+    VisualScenePatch, VisualSceneSource, VisualSpriteManifest, VisualSpriteManifestStatus,
+    VisualStoryState, VisualView, VnOverlayDebugOverrides, VnOverlayRect,
 };
 use mux::domain::SplitSource;
 use mux::tab::{SplitDirection, SplitRequest, SplitSize};
@@ -330,9 +330,9 @@ fn show_visual_scene_overlay_with_source(
                 // While the VN layout debugger menu is open it owns every key so
                 // that r resets values and esc cancels an edit instead of
                 // reloading or closing the whole overlay.
-                let in_layout_debug = runtime
-                    .as_ref()
-                    .map_or(false, |runtime| runtime.view() == VisualView::VnLayoutDebugger);
+                let in_layout_debug = runtime.as_ref().map_or(false, |runtime| {
+                    runtime.view() == VisualView::VnLayoutDebugger
+                });
                 if visual_input == VisualInput::Close && !in_layout_debug {
                     break;
                 }
@@ -1827,15 +1827,21 @@ fn render_runtime_with_compose(
     frame.push_str(&runtime.render_text_frame(size.cols, size.rows));
     if !snapshot.stage.is_empty() {
         let layout = match snapshot.vn_layout_debug.as_ref() {
-            Some(overrides) => vn_overlay_layout_with_overrides(size.cols, size.rows, &snapshot.dialogue_speaker, "Composer", overrides),
+            Some(overrides) => vn_overlay_layout_with_overrides(
+                size.cols,
+                size.rows,
+                &snapshot.dialogue_speaker,
+                "Composer",
+                overrides,
+            ),
             None => vn_overlay_layout(size.cols, size.rows, &snapshot.dialogue_speaker, "Composer"),
         };
-        if let Some(nameplate) = layout.composer_nameplate {
+        if let Some(nameplate) = layout.composer_nameplate_text {
             frame = replace_screen_line(
                 frame,
                 size.cols,
                 size.rows,
-                nameplate.row.saturating_add(nameplate.height.saturating_sub(1)).min(size.rows.saturating_sub(1)),
+                nameplate.row.min(size.rows.saturating_sub(1)),
                 &compose_dock.render_staged_nameplate_line(size.cols, nameplate),
             );
         }
@@ -1907,6 +1913,10 @@ mod tests {
         CodexComposeConfig, ComposeBackendConfig,
     };
     use super::*;
+    use gameterm_visual::{
+        VN_OVERLAY_COMPOSER_NAMEPLATE_TEXT_INSET_ROWS,
+        VN_OVERLAY_DIALOGUE_NAMEPLATE_TEXT_INSET_COLS,
+    };
 
     fn scene_fixture_path(name: &str) -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -1967,6 +1977,48 @@ mod tests {
         assert_eq!(loaded.dialogue_text_inset_cols, 9);
         assert_eq!(loaded.composer_text_inset_rows, 3);
         assert_eq!(loaded.editing_buffer, None);
+    }
+
+    #[test]
+    fn vn_overlay_layout_config_loads_previous_schema_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir
+            .path()
+            .join("scenes")
+            .join(VN_OVERLAY_LAYOUT_CONFIG_FILE);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            r#"{
+  "dialogue_margin_ratio": 0.18,
+  "composer_margin_ratio": 0.04,
+  "dialogue_top_ratio": 0.06,
+  "dialogue_bottom_ratio": 0.66,
+  "composer_height_rows": 7,
+  "dialogue_nameplate_height_rows": 3,
+  "composer_nameplate_height_rows": 3,
+  "dialogue_nameplate_inset_cols": 4,
+  "composer_nameplate_inset_cols": 4,
+  "dialogue_text_inset_cols": 8,
+  "composer_text_inset_cols": 7,
+  "dialogue_text_inset_rows": 2,
+  "composer_text_inset_rows": 1,
+  "selected_param": 12
+}"#,
+        )
+        .unwrap();
+
+        let loaded = load_vn_overlay_layout_config_from_path(&path).unwrap();
+
+        assert_eq!(loaded.dialogue_text_inset_cols, 8);
+        assert_eq!(
+            loaded.dialogue_nameplate_text_inset_cols,
+            VN_OVERLAY_DIALOGUE_NAMEPLATE_TEXT_INSET_COLS
+        );
+        assert_eq!(
+            loaded.composer_nameplate_text_inset_rows,
+            VN_OVERLAY_COMPOSER_NAMEPLATE_TEXT_INSET_ROWS
+        );
     }
 
     #[test]
@@ -2404,7 +2456,7 @@ mod tests {
         let mut dock = SceneComposeDock::default();
         dock.mark_submitted("say hi");
         let layout = vn_overlay_layout(80, 24, "Codex", "Composer");
-        let nameplate = layout.composer_nameplate.unwrap();
+        let nameplate = layout.composer_nameplate_text.unwrap();
         let panel = layout.composer_panel.unwrap();
         let input_rect = VnOverlayRect {
             col: panel.col.saturating_add(layout.composer_text_inset_cols),

@@ -78,6 +78,17 @@ pub const VN_OVERLAY_DIALOGUE_TEXT_INSET_COLS: usize = VN_OVERLAY_TEXT_INSET_COL
 pub const VN_OVERLAY_COMPOSER_TEXT_INSET_COLS: usize = VN_OVERLAY_TEXT_INSET_COLS;
 pub const VN_OVERLAY_DIALOGUE_NAMEPLATE_INSET_COLS: usize = VN_OVERLAY_TEXT_INSET_COLS;
 pub const VN_OVERLAY_COMPOSER_NAMEPLATE_INSET_COLS: usize = VN_OVERLAY_TEXT_INSET_COLS;
+pub const VN_OVERLAY_NAMEPLATE_TEXT_INSET_COLS: usize = 1;
+pub const VN_OVERLAY_NAMEPLATE_TEXT_INSET_ROWS: usize =
+    VN_OVERLAY_NAMEPLATE_HEIGHT_ROWS.saturating_sub(1);
+pub const VN_OVERLAY_DIALOGUE_NAMEPLATE_TEXT_INSET_COLS: usize =
+    VN_OVERLAY_NAMEPLATE_TEXT_INSET_COLS;
+pub const VN_OVERLAY_COMPOSER_NAMEPLATE_TEXT_INSET_COLS: usize =
+    VN_OVERLAY_NAMEPLATE_TEXT_INSET_COLS;
+pub const VN_OVERLAY_DIALOGUE_NAMEPLATE_TEXT_INSET_ROWS: usize =
+    VN_OVERLAY_NAMEPLATE_TEXT_INSET_ROWS;
+pub const VN_OVERLAY_COMPOSER_NAMEPLATE_TEXT_INSET_ROWS: usize =
+    VN_OVERLAY_NAMEPLATE_TEXT_INSET_ROWS;
 pub const VN_OVERLAY_DIALOGUE_TEXT_INSET_ROWS: usize = 2;
 pub const VN_OVERLAY_COMPOSER_TEXT_INSET_ROWS: usize = 1;
 pub const VN_OVERLAY_NAMEPLATE_OFFSET_ROWS: usize = 0;
@@ -86,6 +97,7 @@ pub const VN_OVERLAY_DIALOGUE_NAMEPLATE_HEIGHT_ROWS: usize = VN_OVERLAY_NAMEPLAT
 pub const VN_OVERLAY_COMPOSER_NAMEPLATE_HEIGHT_ROWS: usize = VN_OVERLAY_NAMEPLATE_HEIGHT_ROWS;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct VnOverlayDebugOverrides {
     pub dialogue_margin_ratio: f32,
     pub composer_margin_ratio: f32,
@@ -96,6 +108,10 @@ pub struct VnOverlayDebugOverrides {
     pub composer_nameplate_height_rows: usize,
     pub dialogue_nameplate_inset_cols: usize,
     pub composer_nameplate_inset_cols: usize,
+    pub dialogue_nameplate_text_inset_cols: usize,
+    pub composer_nameplate_text_inset_cols: usize,
+    pub dialogue_nameplate_text_inset_rows: usize,
+    pub composer_nameplate_text_inset_rows: usize,
     pub dialogue_text_inset_cols: usize,
     pub composer_text_inset_cols: usize,
     pub dialogue_text_inset_rows: usize,
@@ -117,6 +133,10 @@ impl Default for VnOverlayDebugOverrides {
             composer_nameplate_height_rows: VN_OVERLAY_COMPOSER_NAMEPLATE_HEIGHT_ROWS,
             dialogue_nameplate_inset_cols: VN_OVERLAY_DIALOGUE_NAMEPLATE_INSET_COLS,
             composer_nameplate_inset_cols: VN_OVERLAY_COMPOSER_NAMEPLATE_INSET_COLS,
+            dialogue_nameplate_text_inset_cols: VN_OVERLAY_DIALOGUE_NAMEPLATE_TEXT_INSET_COLS,
+            composer_nameplate_text_inset_cols: VN_OVERLAY_COMPOSER_NAMEPLATE_TEXT_INSET_COLS,
+            dialogue_nameplate_text_inset_rows: VN_OVERLAY_DIALOGUE_NAMEPLATE_TEXT_INSET_ROWS,
+            composer_nameplate_text_inset_rows: VN_OVERLAY_COMPOSER_NAMEPLATE_TEXT_INSET_ROWS,
             dialogue_text_inset_cols: VN_OVERLAY_DIALOGUE_TEXT_INSET_COLS,
             composer_text_inset_cols: VN_OVERLAY_COMPOSER_TEXT_INSET_COLS,
             dialogue_text_inset_rows: VN_OVERLAY_DIALOGUE_TEXT_INSET_ROWS,
@@ -128,7 +148,7 @@ impl Default for VnOverlayDebugOverrides {
 }
 
 impl VnOverlayDebugOverrides {
-    pub const PARAM_COUNT: usize = 13;
+    pub const PARAM_COUNT: usize = 17;
 
     pub fn select_next(&mut self) {
         self.selected_param = (self.selected_param + 1) % Self::PARAM_COUNT;
@@ -180,15 +200,27 @@ impl VnOverlayDebugOverrides {
                 adjust_usize(&mut self.composer_nameplate_inset_cols, delta, 0, 40);
             }
             9 => {
-                adjust_usize(&mut self.dialogue_text_inset_cols, delta, 0, 40);
+                adjust_usize(&mut self.dialogue_nameplate_text_inset_cols, delta, 0, 40);
             }
             10 => {
-                adjust_usize(&mut self.composer_text_inset_cols, delta, 0, 40);
+                adjust_usize(&mut self.composer_nameplate_text_inset_cols, delta, 0, 40);
             }
             11 => {
-                adjust_usize(&mut self.dialogue_text_inset_rows, delta, 0, 12);
+                adjust_usize(&mut self.dialogue_nameplate_text_inset_rows, delta, 0, 8);
             }
             12 => {
+                adjust_usize(&mut self.composer_nameplate_text_inset_rows, delta, 0, 8);
+            }
+            13 => {
+                adjust_usize(&mut self.dialogue_text_inset_cols, delta, 0, 40);
+            }
+            14 => {
+                adjust_usize(&mut self.composer_text_inset_cols, delta, 0, 40);
+            }
+            15 => {
+                adjust_usize(&mut self.dialogue_text_inset_rows, delta, 0, 12);
+            }
+            16 => {
                 adjust_usize(&mut self.composer_text_inset_rows, delta, 0, 12);
             }
             _ => {}
@@ -206,10 +238,14 @@ impl VnOverlayDebugOverrides {
             6 => "composer_nameplate_height_rows",
             7 => "dialogue_nameplate_inset_cols",
             8 => "composer_nameplate_inset_cols",
-            9 => "dialogue_text_inset_cols",
-            10 => "composer_text_inset_cols",
-            11 => "dialogue_text_inset_rows",
-            12 => "composer_text_inset_rows",
+            9 => "dialogue_nameplate_text_inset_cols",
+            10 => "composer_nameplate_text_inset_cols",
+            11 => "dialogue_nameplate_text_inset_rows",
+            12 => "composer_nameplate_text_inset_rows",
+            13 => "dialogue_text_inset_cols",
+            14 => "composer_text_inset_cols",
+            15 => "dialogue_text_inset_rows",
+            16 => "composer_text_inset_rows",
             _ => "?",
         }
     }
@@ -225,10 +261,14 @@ impl VnOverlayDebugOverrides {
             6 => "composer nameplate height",
             7 => "dialogue nameplate left inset",
             8 => "composer nameplate left inset",
-            9 => "dialogue text left inset",
-            10 => "composer text left inset",
-            11 => "dialogue text top inset",
-            12 => "composer text top inset",
+            9 => "dialogue nameplate label left inset",
+            10 => "composer nameplate label left inset",
+            11 => "dialogue nameplate label top inset",
+            12 => "composer nameplate label top inset",
+            13 => "dialogue text left inset",
+            14 => "composer text left inset",
+            15 => "dialogue text top inset",
+            16 => "composer text top inset",
             _ => "",
         }
     }
@@ -244,10 +284,14 @@ impl VnOverlayDebugOverrides {
             6 => self.composer_nameplate_height_rows.to_string(),
             7 => self.dialogue_nameplate_inset_cols.to_string(),
             8 => self.composer_nameplate_inset_cols.to_string(),
-            9 => self.dialogue_text_inset_cols.to_string(),
-            10 => self.composer_text_inset_cols.to_string(),
-            11 => self.dialogue_text_inset_rows.to_string(),
-            12 => self.composer_text_inset_rows.to_string(),
+            9 => self.dialogue_nameplate_text_inset_cols.to_string(),
+            10 => self.composer_nameplate_text_inset_cols.to_string(),
+            11 => self.dialogue_nameplate_text_inset_rows.to_string(),
+            12 => self.composer_nameplate_text_inset_rows.to_string(),
+            13 => self.dialogue_text_inset_cols.to_string(),
+            14 => self.composer_text_inset_cols.to_string(),
+            15 => self.dialogue_text_inset_rows.to_string(),
+            16 => self.composer_text_inset_rows.to_string(),
             _ => String::new(),
         }
     }
@@ -330,20 +374,40 @@ impl VnOverlayDebugOverrides {
             }
             9 => {
                 if let Ok(v) = buf.parse::<usize>() {
-                    self.dialogue_text_inset_cols = v.clamp(0, 40);
+                    self.dialogue_nameplate_text_inset_cols = v.clamp(0, 40);
                 }
             }
             10 => {
                 if let Ok(v) = buf.parse::<usize>() {
-                    self.composer_text_inset_cols = v.clamp(0, 40);
+                    self.composer_nameplate_text_inset_cols = v.clamp(0, 40);
                 }
             }
             11 => {
                 if let Ok(v) = buf.parse::<usize>() {
-                    self.dialogue_text_inset_rows = v.clamp(0, 12);
+                    self.dialogue_nameplate_text_inset_rows = v.clamp(0, 8);
                 }
             }
             12 => {
+                if let Ok(v) = buf.parse::<usize>() {
+                    self.composer_nameplate_text_inset_rows = v.clamp(0, 8);
+                }
+            }
+            13 => {
+                if let Ok(v) = buf.parse::<usize>() {
+                    self.dialogue_text_inset_cols = v.clamp(0, 40);
+                }
+            }
+            14 => {
+                if let Ok(v) = buf.parse::<usize>() {
+                    self.composer_text_inset_cols = v.clamp(0, 40);
+                }
+            }
+            15 => {
+                if let Ok(v) = buf.parse::<usize>() {
+                    self.dialogue_text_inset_rows = v.clamp(0, 12);
+                }
+            }
+            16 => {
                 if let Ok(v) = buf.parse::<usize>() {
                     self.composer_text_inset_rows = v.clamp(0, 12);
                 }
@@ -384,8 +448,10 @@ pub struct VnOverlayLayout {
     pub fullscreen: bool,
     pub dialogue_panel: VnOverlayRect,
     pub dialogue_nameplate: VnOverlayRect,
+    pub dialogue_nameplate_text: VnOverlayRect,
     pub composer_panel: Option<VnOverlayRect>,
     pub composer_nameplate: Option<VnOverlayRect>,
+    pub composer_nameplate_text: Option<VnOverlayRect>,
     pub dialogue_text_inset_cols: usize,
     pub composer_text_inset_cols: usize,
     pub dialogue_text_row: usize,
@@ -412,6 +478,10 @@ pub fn vn_overlay_layout(
         VN_OVERLAY_COMPOSER_NAMEPLATE_HEIGHT_ROWS,
         VN_OVERLAY_DIALOGUE_NAMEPLATE_INSET_COLS,
         VN_OVERLAY_COMPOSER_NAMEPLATE_INSET_COLS,
+        VN_OVERLAY_DIALOGUE_NAMEPLATE_TEXT_INSET_COLS,
+        VN_OVERLAY_COMPOSER_NAMEPLATE_TEXT_INSET_COLS,
+        VN_OVERLAY_DIALOGUE_NAMEPLATE_TEXT_INSET_ROWS,
+        VN_OVERLAY_COMPOSER_NAMEPLATE_TEXT_INSET_ROWS,
         VN_OVERLAY_DIALOGUE_TEXT_INSET_COLS,
         VN_OVERLAY_COMPOSER_TEXT_INSET_COLS,
         VN_OVERLAY_DIALOGUE_TEXT_INSET_ROWS,
@@ -440,6 +510,10 @@ pub fn vn_overlay_layout_with_overrides(
         overrides.composer_nameplate_height_rows,
         overrides.dialogue_nameplate_inset_cols,
         overrides.composer_nameplate_inset_cols,
+        overrides.dialogue_nameplate_text_inset_cols,
+        overrides.composer_nameplate_text_inset_cols,
+        overrides.dialogue_nameplate_text_inset_rows,
+        overrides.composer_nameplate_text_inset_rows,
         overrides.dialogue_text_inset_cols,
         overrides.composer_text_inset_cols,
         overrides.dialogue_text_inset_rows,
@@ -462,6 +536,10 @@ fn vn_overlay_layout_inner(
     composer_nameplate_height_rows: usize,
     dialogue_nameplate_inset_cols: usize,
     composer_nameplate_inset_cols: usize,
+    dialogue_nameplate_text_inset_cols: usize,
+    composer_nameplate_text_inset_cols: usize,
+    dialogue_nameplate_text_inset_rows: usize,
+    composer_nameplate_text_inset_rows: usize,
     dialogue_text_inset_cols: usize,
     composer_text_inset_cols: usize,
     dialogue_text_inset_rows: usize,
@@ -553,6 +631,18 @@ fn vn_overlay_layout_inner(
             composer_nameplate_inset_cols,
         )
     });
+    let dialogue_nameplate_text = vn_overlay_nameplate_text_rect(
+        &dialogue_nameplate,
+        dialogue_nameplate_text_inset_cols,
+        dialogue_nameplate_text_inset_rows,
+    );
+    let composer_nameplate_text = composer_nameplate.map(|nameplate| {
+        vn_overlay_nameplate_text_rect(
+            &nameplate,
+            composer_nameplate_text_inset_cols,
+            composer_nameplate_text_inset_rows,
+        )
+    });
 
     VnOverlayLayout {
         fullscreen,
@@ -568,8 +658,10 @@ fn vn_overlay_layout_inner(
         }),
         dialogue_panel,
         dialogue_nameplate,
+        dialogue_nameplate_text,
         composer_panel,
         composer_nameplate,
+        composer_nameplate_text,
         dialogue_text_inset_cols,
         composer_text_inset_cols,
     }
@@ -601,6 +693,24 @@ fn vn_overlay_nameplate_rect(
         row: panel.row.saturating_sub(row_offset),
         width,
         height,
+    }
+}
+
+fn vn_overlay_nameplate_text_rect(
+    nameplate: &VnOverlayRect,
+    text_inset_cols: usize,
+    text_inset_rows: usize,
+) -> VnOverlayRect {
+    let col_inset = text_inset_cols.min(nameplate.width.saturating_sub(1));
+    let row_inset = text_inset_rows.min(nameplate.height.saturating_sub(1));
+    VnOverlayRect {
+        col: nameplate.col.saturating_add(col_inset),
+        row: nameplate.row.saturating_add(row_inset),
+        width: nameplate
+            .width
+            .saturating_sub(col_inset.saturating_add(1))
+            .max(1),
+        height: 1,
     }
 }
 
@@ -2796,12 +2906,11 @@ impl SceneRuntime {
             &mut screen,
             cols,
             layout
-                .dialogue_nameplate
+                .dialogue_nameplate_text
                 .row
-                .saturating_add(layout.dialogue_nameplate.height.saturating_sub(1))
                 .min(rows.saturating_sub(1)),
-            layout.dialogue_nameplate.col.saturating_add(1),
-            layout.dialogue_nameplate.width.saturating_sub(2).max(1),
+            layout.dialogue_nameplate_text.col,
+            layout.dialogue_nameplate_text.width,
             &dialogue.speaker,
         );
 
@@ -4425,6 +4534,14 @@ mod tests {
             layout.dialogue_panel.row
         );
         assert_eq!(
+            layout.dialogue_nameplate_text.col,
+            layout.dialogue_nameplate.col + VN_OVERLAY_DIALOGUE_NAMEPLATE_TEXT_INSET_COLS
+        );
+        assert_eq!(
+            layout.dialogue_nameplate_text.row,
+            layout.dialogue_nameplate.row + VN_OVERLAY_DIALOGUE_NAMEPLATE_TEXT_INSET_ROWS
+        );
+        assert_eq!(
             composer_nameplate.col,
             composer.col + VN_OVERLAY_COMPOSER_NAMEPLATE_INSET_COLS
         );
@@ -4439,6 +4556,14 @@ mod tests {
         assert_eq!(
             layout.composer_nameplate.as_ref().unwrap().height,
             VN_OVERLAY_COMPOSER_NAMEPLATE_HEIGHT_ROWS.min(composer.height)
+        );
+        assert_eq!(
+            layout.composer_nameplate_text.unwrap().col,
+            composer_nameplate.col + VN_OVERLAY_COMPOSER_NAMEPLATE_TEXT_INSET_COLS
+        );
+        assert_eq!(
+            layout.composer_nameplate_text.unwrap().row,
+            composer_nameplate.row + VN_OVERLAY_COMPOSER_NAMEPLATE_TEXT_INSET_ROWS
         );
         assert!(layout.composer_text_row.unwrap() > composer.row);
         assert!(layout.composer_text_row.unwrap() < composer.bottom());
@@ -4502,6 +4627,10 @@ mod tests {
         overrides.composer_nameplate_height_rows = 2;
         overrides.dialogue_nameplate_inset_cols = 6;
         overrides.composer_nameplate_inset_cols = 3;
+        overrides.dialogue_nameplate_text_inset_cols = 2;
+        overrides.composer_nameplate_text_inset_cols = 4;
+        overrides.dialogue_nameplate_text_inset_rows = 1;
+        overrides.composer_nameplate_text_inset_rows = 0;
         overrides.dialogue_text_inset_cols = 9;
         overrides.composer_text_inset_cols = 5;
         overrides.dialogue_text_inset_rows = 3;
@@ -4510,11 +4639,22 @@ mod tests {
         let layout = vn_overlay_layout_with_overrides(160, 60, "Narrator", "Composer", &overrides);
         let composer = layout.composer_panel.unwrap();
         let composer_nameplate = layout.composer_nameplate.unwrap();
+        let composer_nameplate_text = layout.composer_nameplate_text.unwrap();
 
         assert_eq!(layout.dialogue_nameplate.height, 4);
         assert_eq!(composer_nameplate.height, 2);
         assert_eq!(layout.dialogue_nameplate.col, layout.dialogue_panel.col + 6);
         assert_eq!(composer_nameplate.col, composer.col + 3);
+        assert_eq!(
+            layout.dialogue_nameplate_text.col,
+            layout.dialogue_nameplate.col + 2
+        );
+        assert_eq!(
+            layout.dialogue_nameplate_text.row,
+            layout.dialogue_nameplate.row + 1
+        );
+        assert_eq!(composer_nameplate_text.col, composer_nameplate.col + 4);
+        assert_eq!(composer_nameplate_text.row, composer_nameplate.row);
         assert_eq!(layout.dialogue_text_inset_cols, 9);
         assert_eq!(layout.composer_text_inset_cols, 5);
         assert_eq!(
