@@ -1750,9 +1750,11 @@ fn render_runtime_with_compose(
         }
         if let (Some(panel), Some(text_row)) = (layout.composer_panel, layout.composer_text_row) {
             let input_rect = VnOverlayRect {
-                col: panel.col.saturating_add(layout.text_inset_cols),
+                col: panel.col.saturating_add(layout.composer_text_inset_cols),
                 row: text_row,
-                width: panel.width.saturating_sub(layout.text_inset_cols * 2),
+                width: panel
+                    .width
+                    .saturating_sub(layout.composer_text_inset_cols * 2),
                 height: 1,
             };
             frame = replace_screen_line(
@@ -2274,9 +2276,11 @@ mod tests {
         let nameplate = layout.composer_nameplate.unwrap();
         let panel = layout.composer_panel.unwrap();
         let input_rect = VnOverlayRect {
-            col: panel.col.saturating_add(layout.text_inset_cols),
+            col: panel.col.saturating_add(layout.composer_text_inset_cols),
             row: layout.composer_text_row.unwrap(),
-            width: panel.width.saturating_sub(layout.text_inset_cols * 2),
+            width: panel
+                .width
+                .saturating_sub(layout.composer_text_inset_cols * 2),
             height: 1,
         };
 
