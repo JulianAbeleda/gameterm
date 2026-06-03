@@ -2038,7 +2038,7 @@ fn render_runtime_with_compose_and_scroll(
         Value::String(serde_json::to_string(sprite_manifest)?),
     );
     let mut frame = String::new();
-    if !sprite_manifest.warnings.is_empty() {
+    if snapshot.stage.is_empty() && !sprite_manifest.warnings.is_empty() {
         frame.push_str("Sprites: ");
         frame.push_str(&sprite_manifest.warnings.join("; "));
         frame.push_str("\r\n\r\n");
