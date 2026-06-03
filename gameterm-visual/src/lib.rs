@@ -2074,6 +2074,15 @@ impl SceneRuntime {
         self.view
     }
 
+    pub fn vn_layout_debug_overrides(&self) -> Option<&VnOverlayDebugOverrides> {
+        self.vn_layout_debug.as_ref()
+    }
+
+    pub fn set_vn_layout_debug_overrides(&mut self, overrides: VnOverlayDebugOverrides) {
+        self.vn_layout_debug = Some(overrides);
+        self.bump_generation();
+    }
+
     pub fn scene_source(&self) -> &VisualSceneSource {
         &self.scene_source
     }

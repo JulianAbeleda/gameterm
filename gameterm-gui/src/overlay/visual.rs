@@ -8,7 +8,8 @@ use gameterm_visual::{
     truncate_to_screen, vn_overlay_layout, vn_overlay_layout_with_overrides, RunCommandTarget, SceneRuntime, VisualActionRequest, VisualView,
     VisualInput, VisualMode, VisualModeOutcome, VisualResolvedSprite, VisualScene,
     VisualSceneDialoguePatch, VisualSceneLoadStatus, VisualScenePatch, VisualSceneSource,
-    VisualSpriteManifest, VisualSpriteManifestStatus, VisualStoryState, VnOverlayRect,
+    VisualSpriteManifest, VisualSpriteManifestStatus, VisualStoryState, VnOverlayDebugOverrides,
+    VnOverlayRect,
 };
 use mux::domain::SplitSource;
 use mux::tab::{SplitDirection, SplitRequest, SplitSize};
@@ -27,6 +28,8 @@ use termwiz::input::{InputEvent, KeyCode, KeyEvent, Modifiers};
 use termwiz::surface::Change;
 use termwiz::terminal::Terminal;
 use window::{Window, WindowOps};
+
+const VN_OVERLAY_LAYOUT_CONFIG_FILE: &str = "vn-overlay-layout.json";
 
 #[cfg(test)]
 use super::visual_compose::ComposeBackendLabel;
@@ -361,9 +364,13 @@ fn show_visual_scene_overlay_with_source(
                     continue;
                 }
                 if let Some(runtime) = runtime.as_mut() {
+                    let vn_layout_before = runtime
+                        .vn_layout_debug_overrides()
+                        .map(persistable_vn_overlay_layout);
                     if runtime.handle_input(visual_input) == VisualModeOutcome::Exit {
                         break;
                     }
+                    persist_vn_overlay_layout_if_changed(vn_layout_before, runtime);
                     let size = term.get_screen_size()?;
                     dispatch_pending_action(
                         runtime,
@@ -518,7 +525,8 @@ fn reload_active_scene(
                 runtime.replace_scene_preserving_state(scene, source)?;
                 render_runtime(term, runtime, sprite_manifest)?;
             } else {
-                let loaded = SceneRuntime::new_with_source(scene, source)?;
+                let mut loaded = SceneRuntime::new_with_source(scene, source)?;
+                apply_configured_vn_overlay_layout(&mut loaded);
                 render_runtime(term, &loaded, sprite_manifest)?;
                 *runtime = Some(loaded);
             }
@@ -565,8 +573,9 @@ fn reload_generated_scene(
         runtime.replace_scene_preserving_state(scene, source)?;
         render_runtime(term, runtime, sprite_manifest)?;
     } else {
-        let loaded =
+        let mut loaded =
             SceneRuntime::new_with_source_and_action_base_dir(scene, source, action_base_dir)?;
+        apply_configured_vn_overlay_layout(&mut loaded);
         render_runtime(term, &loaded, sprite_manifest)?;
         *runtime = Some(loaded);
     }
@@ -903,7 +912,8 @@ fn initial_scene_state(
     let sprite_manifest = load_sprite_manifest_status(sprite_manifest_path);
     match load_scene(scene_path, reload_count) {
         Ok((scene, source)) => {
-            let runtime = SceneRuntime::new_with_source(scene, source)?;
+            let mut runtime = SceneRuntime::new_with_source(scene, source)?;
+            apply_configured_vn_overlay_layout(&mut runtime);
             render_runtime(term, &runtime, &sprite_manifest)?;
             Ok((Some(runtime), sprite_manifest, None))
         }
@@ -936,7 +946,8 @@ fn initial_generated_scene_state(
     let source = VisualSceneSource::new(source_label, VisualSceneLoadStatus::Loaded, reload_count);
     match SceneRuntime::new_with_source_and_action_base_dir(scene, source.clone(), action_base_dir)
     {
-        Ok(runtime) => {
+        Ok(mut runtime) => {
+            apply_configured_vn_overlay_layout(&mut runtime);
             render_runtime(term, &runtime, &sprite_manifest)?;
             Ok((Some(runtime), sprite_manifest, None))
         }
@@ -1014,12 +1025,92 @@ fn default_sprite_manifest_path() -> PathBuf {
     default_scene_dir().join("sprites.json")
 }
 
+fn default_vn_overlay_layout_config_path() -> PathBuf {
+    default_scene_dir().join(VN_OVERLAY_LAYOUT_CONFIG_FILE)
+}
+
 fn default_scene_dir() -> PathBuf {
     let config_home = config::CONFIG_DIRS
         .first()
         .cloned()
         .unwrap_or_else(|| config::HOME_DIR.join(".config").join("gameterm"));
     config_home.join("scenes")
+}
+
+fn apply_configured_vn_overlay_layout(runtime: &mut SceneRuntime) {
+    if let Some(overrides) = load_vn_overlay_layout_config() {
+        runtime.set_vn_layout_debug_overrides(overrides);
+    }
+}
+
+fn load_vn_overlay_layout_config() -> Option<VnOverlayDebugOverrides> {
+    load_vn_overlay_layout_config_from_path(&default_vn_overlay_layout_config_path())
+}
+
+fn load_vn_overlay_layout_config_from_path(path: &Path) -> Option<VnOverlayDebugOverrides> {
+    let data = match fs::read_to_string(&path) {
+        Ok(data) => data,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return None,
+        Err(err) => {
+            log::warn!(
+                "failed to read VN overlay layout config {}: {err}",
+                path.display()
+            );
+            return None;
+        }
+    };
+    match serde_json::from_str::<VnOverlayDebugOverrides>(&data) {
+        Ok(mut overrides) => {
+            overrides.editing_buffer = None;
+            Some(overrides)
+        }
+        Err(err) => {
+            log::warn!(
+                "failed to parse VN overlay layout config {}: {err}",
+                path.display()
+            );
+            None
+        }
+    }
+}
+
+fn persistable_vn_overlay_layout(overrides: &VnOverlayDebugOverrides) -> VnOverlayDebugOverrides {
+    let mut overrides = overrides.clone();
+    overrides.editing_buffer = None;
+    overrides
+}
+
+fn save_vn_overlay_layout_config(overrides: &VnOverlayDebugOverrides) -> anyhow::Result<()> {
+    save_vn_overlay_layout_config_to_path(&default_vn_overlay_layout_config_path(), overrides)
+}
+
+fn save_vn_overlay_layout_config_to_path(
+    path: &Path,
+    overrides: &VnOverlayDebugOverrides,
+) -> anyhow::Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let overrides = persistable_vn_overlay_layout(overrides);
+    fs::write(path, serde_json::to_string_pretty(&overrides)?)?;
+    Ok(())
+}
+
+fn persist_vn_overlay_layout_if_changed(
+    before: Option<VnOverlayDebugOverrides>,
+    runtime: &SceneRuntime,
+) {
+    let after = runtime
+        .vn_layout_debug_overrides()
+        .map(persistable_vn_overlay_layout);
+    if after == before {
+        return;
+    }
+    if let Some(after) = after {
+        if let Err(err) = save_vn_overlay_layout_config(&after) {
+            log::warn!("failed to save VN overlay layout config: {err}");
+        }
+    }
 }
 
 fn load_sprite_manifest_status(path: &PathBuf) -> VisualSpriteManifestStatus {
@@ -1854,6 +1945,46 @@ mod tests {
         assert!(bundled_sprite_asset_path("task_tile").ends_with("task-tile.png"));
         assert!(bundled_sprite_asset_path("agent_idle").ends_with("agent-idle.png"));
         assert!(bundled_sprite_asset_path("other").ends_with("terminal.png"));
+    }
+
+    #[test]
+    fn vn_overlay_layout_config_round_trips_without_edit_buffer() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir
+            .path()
+            .join("scenes")
+            .join(VN_OVERLAY_LAYOUT_CONFIG_FILE);
+        let mut overrides = VnOverlayDebugOverrides::default();
+        overrides.dialogue_text_inset_cols = 9;
+        overrides.composer_text_inset_rows = 3;
+        overrides.editing_buffer = Some("partial".to_string());
+
+        save_vn_overlay_layout_config_to_path(&path, &overrides).unwrap();
+        let saved = std::fs::read_to_string(&path).unwrap();
+        assert!(!saved.contains("editing_buffer"));
+
+        let loaded = load_vn_overlay_layout_config_from_path(&path).unwrap();
+        assert_eq!(loaded.dialogue_text_inset_cols, 9);
+        assert_eq!(loaded.composer_text_inset_rows, 3);
+        assert_eq!(loaded.editing_buffer, None);
+    }
+
+    #[test]
+    fn persistable_vn_overlay_layout_ignores_transient_editing() {
+        let mut before = VnOverlayDebugOverrides::default();
+        let mut after = before.clone();
+        after.editing_buffer = Some("0.250".to_string());
+
+        assert_eq!(
+            persistable_vn_overlay_layout(&before),
+            persistable_vn_overlay_layout(&after)
+        );
+
+        before.dialogue_text_inset_rows = 4;
+        assert_ne!(
+            persistable_vn_overlay_layout(&before),
+            persistable_vn_overlay_layout(&after)
+        );
     }
 
     #[test]
