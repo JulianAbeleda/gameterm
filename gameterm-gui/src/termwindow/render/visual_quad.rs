@@ -21,13 +21,23 @@ const VN_PANEL_BORDER: LinearRgba = LinearRgba(0.1608, 0.1725, 0.1961, 0.3608);
 const VN_NAMEPLATE_FILL: LinearRgba = LinearRgba(0.102, 0.1137, 0.1333, 0.58);
 const VN_NAMEPLATE_BORDER: LinearRgba = LinearRgba(0.1608, 0.1725, 0.1961, 0.42);
 const VN_PANEL_BORDER_WIDTH_PX: f32 = 1.5;
-const VN_PANEL_CORNER_SEGMENTS: usize = 8;
+const VN_DIALOGUE_PANEL_RADIUS_PX: f32 = 22.0;
+const VN_COMPOSER_PANEL_RADIUS_PX: f32 = 18.0;
+const VN_DIALOGUE_NAMEPLATE_RADIUS_PX: f32 = 13.0;
+const VN_COMPOSER_NAMEPLATE_RADIUS_PX: f32 = 11.0;
+const VN_PANEL_MIN_CORNER_SEGMENTS: usize = 12;
+const VN_PANEL_MAX_CORNER_SEGMENTS: usize = 32;
 const VN_PANEL_SLICE_PX: f32 = 32.0;
 const VN_STAGE_CHARACTER_HEIGHT_RATIO: f32 = 0.78;
 const VN_STAGE_CHARACTER_TARGET_WIDTH_RATIO: f32 = 0.34;
 static VN_PANEL_TEXTURE_RENDERING: LazyLock<bool> = LazyLock::new(|| {
     std::env::var("GAMETERM_SCENE_VN_PANEL_TEXTURE")
-        .map(|value| matches!(value.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+        .map(|value| {
+            matches!(
+                value.to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
         .unwrap_or(false)
 });
 static VN_PANEL_IMAGE_DATA: LazyLock<Arc<ImageData>> = LazyLock::new(|| {
@@ -59,6 +69,7 @@ struct VnPanelStyle {
     fill: LinearRgba,
     border: LinearRgba,
     border_width: f32,
+    radius: f32,
 }
 
 impl VnPanelStyle {
@@ -67,14 +78,34 @@ impl VnPanelStyle {
             fill: VN_PANEL_FILL,
             border: VN_PANEL_BORDER,
             border_width: VN_PANEL_BORDER_WIDTH_PX,
+            radius: VN_DIALOGUE_PANEL_RADIUS_PX,
         }
     }
 
-    fn nameplate() -> Self {
+    fn composer_panel() -> Self {
+        Self {
+            fill: VN_PANEL_FILL,
+            border: VN_PANEL_BORDER,
+            border_width: VN_PANEL_BORDER_WIDTH_PX,
+            radius: VN_COMPOSER_PANEL_RADIUS_PX,
+        }
+    }
+
+    fn dialogue_nameplate() -> Self {
         Self {
             fill: VN_NAMEPLATE_FILL,
             border: VN_NAMEPLATE_BORDER,
             border_width: VN_PANEL_BORDER_WIDTH_PX,
+            radius: VN_DIALOGUE_NAMEPLATE_RADIUS_PX,
+        }
+    }
+
+    fn composer_nameplate() -> Self {
+        Self {
+            fill: VN_NAMEPLATE_FILL,
+            border: VN_NAMEPLATE_BORDER,
+            border_width: VN_PANEL_BORDER_WIDTH_PX,
+            radius: VN_COMPOSER_NAMEPLATE_RADIUS_PX,
         }
     }
 }
@@ -157,32 +188,30 @@ impl TermWindow {
             params.dims.cols,
             params.dims.viewport_rows,
         );
-        let layout = match params.visual_snapshot.and_then(|s| s.vn_layout_debug.as_ref()) {
-            Some(overrides) => vn_overlay_layout_with_overrides(layout_cols, layout_rows, speaker, "Composer", overrides),
+        let layout = match params
+            .visual_snapshot
+            .and_then(|s| s.vn_layout_debug.as_ref())
+        {
+            Some(overrides) => vn_overlay_layout_with_overrides(
+                layout_cols,
+                layout_rows,
+                speaker,
+                "Composer",
+                overrides,
+            ),
             None => vn_overlay_layout(layout_cols, layout_rows, speaker, "Composer"),
         };
-        let panel_rects = vn_panel_rects(&layout, stage_rect, cell_width, cell_height);
-        for rect in &panel_rects {
-            self.populate_vn_panel_surface(
-                layers,
-                1,
-                *rect,
-                cell_width,
-                params,
-                VnPanelStyle::dialogue_panel(),
-                hsv,
-            )?;
+        for (rect, style) in vn_panel_rects(&layout, stage_rect, cell_width, cell_height)
+            .into_iter()
+            .zip(vn_panel_styles(&layout))
+        {
+            self.populate_vn_panel_surface(layers, 1, rect, cell_width, params, style, hsv)?;
         }
-        for rect in vn_panel_nameplate_rects(&layout, stage_rect, cell_width, cell_height) {
-            self.populate_vn_panel_surface(
-                layers,
-                1,
-                rect,
-                cell_width,
-                params,
-                VnPanelStyle::nameplate(),
-                hsv,
-            )?;
+        for (rect, style) in vn_panel_nameplate_rects(&layout, stage_rect, cell_width, cell_height)
+            .into_iter()
+            .zip(vn_panel_nameplate_styles(&layout))
+        {
+            self.populate_vn_panel_surface(layers, 1, rect, cell_width, params, style, hsv)?;
         }
         Ok(())
     }
@@ -198,13 +227,12 @@ impl TermWindow {
         hsv: Option<HsbTransform>,
     ) -> anyhow::Result<()> {
         if vn_panel_texture_rendering_enabled()
-            && self
-                .populate_vn_panel_texture(layers, layer_num, rect, cell_width, params, hsv)?
+            && self.populate_vn_panel_texture(layers, layer_num, rect, cell_width, params, hsv)?
         {
             return Ok(());
         }
 
-        self.populate_rounded_vn_panel(layers, layer_num, rect, cell_width, style, hsv)
+        self.populate_rounded_vn_panel(layers, layer_num, rect, style, hsv)
     }
 
     fn populate_vn_panel_texture(
@@ -269,11 +297,11 @@ impl TermWindow {
         layers: &mut TripleLayerQuadAllocator,
         layer_num: usize,
         rect: RectF,
-        cell_width: f32,
         style: VnPanelStyle,
         hsv: Option<HsbTransform>,
     ) -> anyhow::Result<()> {
-        let radius = (cell_width * 2.2)
+        let radius = style
+            .radius
             .max(4.0)
             .min(rect.size.width / 3.0)
             .min(rect.size.height / 2.0);
@@ -575,6 +603,30 @@ fn vn_overlay_rect_to_pixels(
     )
 }
 
+fn vn_panel_styles(layout: &gameterm_visual::VnOverlayLayout) -> Vec<VnPanelStyle> {
+    let mut styles = Vec::new();
+    if layout.composer_panel.is_some() {
+        styles.push(VnPanelStyle::composer_panel());
+    }
+    styles.push(VnPanelStyle::dialogue_panel());
+    styles
+}
+
+fn vn_panel_nameplate_styles(layout: &gameterm_visual::VnOverlayLayout) -> Vec<VnPanelStyle> {
+    let mut styles = Vec::new();
+    if layout.composer_nameplate.is_some() {
+        styles.push(VnPanelStyle::composer_nameplate());
+    }
+    styles.push(VnPanelStyle::dialogue_nameplate());
+    styles
+}
+
+fn rounded_panel_corner_segments(radius: f32) -> usize {
+    ((radius / 1.25).ceil() as usize)
+        .max(VN_PANEL_MIN_CORNER_SEGMENTS)
+        .min(VN_PANEL_MAX_CORNER_SEGMENTS)
+}
+
 fn rounded_panel_rects(rect: RectF, radius: f32) -> Vec<RectF> {
     let radius = radius
         .max(0.0)
@@ -595,14 +647,18 @@ fn rounded_panel_rects(rect: RectF, radius: f32) -> Vec<RectF> {
         ));
     }
 
-    let strip_height = (radius / VN_PANEL_CORNER_SEGMENTS as f32).max(1.0);
-    for segment in 0..VN_PANEL_CORNER_SEGMENTS {
+    let corner_segments = rounded_panel_corner_segments(radius);
+    let strip_height = radius / corner_segments as f32;
+    for segment in 0..corner_segments {
         let y0 = segment as f32 * strip_height;
         if y0 >= radius {
             break;
         }
         let y1 = ((segment + 1) as f32 * strip_height).min(radius);
-        let height = (y1 - y0).max(1.0);
+        let height = y1 - y0;
+        if height <= 0.0 {
+            continue;
+        }
         let sample_y = y0 + height * 0.5;
         let distance_from_center = radius - sample_y;
         let x_extent = (radius * radius - distance_from_center * distance_from_center)
@@ -1104,23 +1160,62 @@ mod tests {
         let rect = euclid::rect(10.0, 20.0, 100.0, 40.0);
         let rects = rounded_panel_rects(rect, 8.0);
 
-        assert_eq!(rects.len(), 17);
+        assert_eq!(rects.len(), 25);
         assert_eq!(rects[0].min_y(), 28.0);
         assert_eq!(rects[0].size.height, 24.0);
         assert!(rects[1].min_x() > rect.min_x());
         assert!(rects[1].size.width < rect.size.width);
-        assert!(rects[15].min_x() < rects[1].min_x());
-        assert!(rects[15].size.width > rects[1].size.width);
+        assert!(rects[23].min_x() < rects[1].min_x());
+        assert!(rects[23].size.width > rects[1].size.width);
+    }
+
+    #[test]
+    fn rounded_panel_rects_increase_detail_for_larger_radius() {
+        let rect = euclid::rect(0.0, 0.0, 200.0, 100.0);
+
+        assert!(rounded_panel_rects(rect, 28.0).len() > rounded_panel_rects(rect, 8.0).len());
+        assert_eq!(
+            rounded_panel_corner_segments(4.0),
+            VN_PANEL_MIN_CORNER_SEGMENTS
+        );
+        assert_eq!(
+            rounded_panel_corner_segments(80.0),
+            VN_PANEL_MAX_CORNER_SEGMENTS
+        );
+    }
+
+    #[test]
+    fn rounded_panel_rects_preserve_bounds_and_clamp_radius() {
+        let rect = euclid::rect(5.0, 7.0, 40.0, 16.0);
+        let rects = rounded_panel_rects(rect, 80.0);
+
+        for panel_rect in rects {
+            assert!(panel_rect.min_x() >= rect.min_x());
+            assert!(panel_rect.min_y() >= rect.min_y());
+            assert!(panel_rect.max_x() <= rect.max_x());
+            assert!(panel_rect.max_y() <= rect.max_y());
+            assert!(panel_rect.size.width > 0.0);
+            assert!(panel_rect.size.height > 0.0);
+        }
     }
 
     #[test]
     fn vn_panel_styles_use_extracted_procedural_values() {
         let panel = VnPanelStyle::dialogue_panel();
-        let nameplate = VnPanelStyle::nameplate();
+        let composer = VnPanelStyle::composer_panel();
+        let nameplate = VnPanelStyle::dialogue_nameplate();
+        let composer_nameplate = VnPanelStyle::composer_nameplate();
 
         assert_eq!(panel.fill, LinearRgba(0.102, 0.1137, 0.1333, 0.4627));
         assert_eq!(panel.border, LinearRgba(0.1608, 0.1725, 0.1961, 0.3608));
         assert_eq!(panel.border_width, 1.5);
+        assert_eq!(panel.radius, VN_DIALOGUE_PANEL_RADIUS_PX);
+        assert_eq!(composer.radius, VN_COMPOSER_PANEL_RADIUS_PX);
+        assert_eq!(nameplate.radius, VN_DIALOGUE_NAMEPLATE_RADIUS_PX);
+        assert_eq!(composer_nameplate.radius, VN_COMPOSER_NAMEPLATE_RADIUS_PX);
+        assert!(panel.radius > composer.radius);
+        assert!(composer.radius > nameplate.radius);
+        assert!(nameplate.radius > composer_nameplate.radius);
         assert_eq!(nameplate.fill.0, panel.fill.0);
         assert_eq!(nameplate.fill.1, panel.fill.1);
         assert_eq!(nameplate.fill.2, panel.fill.2);

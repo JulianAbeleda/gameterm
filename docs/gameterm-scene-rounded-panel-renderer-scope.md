@@ -1,6 +1,6 @@
 # GameTerm Scene Rounded Panel Renderer Scope
 
-Status: SCOPED.
+Status: FIRST PASS IMPLEMENTED.
 
 This document scopes the pass for making code-rendered VN panels look like
 intentional rounded UI primitives rather than approximate stacked rectangles.
@@ -201,10 +201,28 @@ Manual inspection criteria:
 - Existing aspect-safe image behavior remains unchanged.
 - The docs explain that bit depth is not the cause of rounded-corner quality.
 
+## First Pass Result
+
+Implemented first:
+
+- independent radius constructors for dialogue panel, Composer panel, dialogue
+  nameplate, and Composer nameplate
+- explicit pixel radius values instead of deriving radius from terminal cell
+  width
+- dynamic corner subdivision based on radius, replacing the fixed eight-strip
+  approximation
+- bounds/clamping tests for rounded panel geometry
+- style tests proving the panel and nameplate radii are independently tunable
+
+Remaining follow-up:
+
+- a true mesh or signed-distance rounded rectangle primitive for cleaner
+  anti-aliased edges
+- live debugger controls for radius and edge softness
+- persisted user config for panel style values
+- windowed/fullscreen visual comparison captures after dogfood tuning
+
 ## Suggested Commit Plan
 
-1. `[visual] add independent Scene panel radius styles`
-2. `[visual] improve Scene rounded panel geometry`
-3. `[test] cover Scene rounded panel geometry`
-4. `[docs] record Scene rounded panel renderer pass`
-
+1. `[visual] improve Scene rounded panel geometry`
+2. `[docs] record Scene rounded panel renderer pass`
