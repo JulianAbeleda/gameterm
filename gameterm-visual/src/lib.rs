@@ -204,9 +204,10 @@ fn vn_overlay_nameplate_rect(panel: &VnOverlayRect, label: &str) -> VnOverlayRec
     let label_width = label.chars().count().max(1);
     let width = (label_width + 6).clamp(10, panel.width.max(1).min(32));
     let height = VN_OVERLAY_NAMEPLATE_HEIGHT_ROWS.min(panel.height.max(1));
+    let row_offset = height.saturating_add(VN_OVERLAY_NAMEPLATE_OFFSET_ROWS);
     VnOverlayRect {
         col: panel.col.saturating_add(VN_OVERLAY_TEXT_INSET_COLS),
-        row: panel.row.saturating_sub(height / 2),
+        row: panel.row.saturating_sub(row_offset),
         width,
         height,
     }
@@ -3859,7 +3860,9 @@ mod tests {
             VN_OVERLAY_NAMEPLATE_HEIGHT_ROWS.min(layout.dialogue_panel.height.max(1)),
         );
         assert_eq!(
-            layout.dialogue_nameplate.row + layout.dialogue_nameplate.height / 2,
+            layout.dialogue_nameplate.row
+                + layout.dialogue_nameplate.height
+                + VN_OVERLAY_NAMEPLATE_OFFSET_ROWS,
             layout.dialogue_panel.row
         );
         assert_eq!(
@@ -3871,7 +3874,7 @@ mod tests {
             VN_OVERLAY_NAMEPLATE_HEIGHT_ROWS.min(composer.height)
         );
         assert_eq!(
-            composer_nameplate.row + composer_nameplate.height / 2,
+            composer_nameplate.row + composer_nameplate.height + VN_OVERLAY_NAMEPLATE_OFFSET_ROWS,
             composer.row
         );
         assert_eq!(

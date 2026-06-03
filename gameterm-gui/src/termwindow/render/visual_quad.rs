@@ -766,9 +766,11 @@ mod tests {
         for (nameplate, panel) in nameplates.iter().zip(rects.iter()) {
             assert!(nameplate.min_x() > panel.min_x());
             assert!(nameplate.max_x() < panel.max_x());
-            assert!(nameplate.min_y() < panel.min_y());
-            assert!(nameplate.max_y() > panel.min_y());
+            assert_eq!(nameplate.max_y(), panel.min_y());
         }
+        let expected_gap_px = 0.0;
+        assert!((nameplates[0].max_y() - rects[0].min_y() - expected_gap_px).abs() < 0.1);
+        assert!((nameplates[1].max_y() - rects[1].min_y() - expected_gap_px).abs() < 0.1);
         assert!(nameplates[1].min_y() > stage.min_y());
     }
 
