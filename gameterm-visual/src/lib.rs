@@ -4211,6 +4211,72 @@ mod tests {
     }
 
     #[test]
+    fn vn_layout_debug_overrides_adjust_and_select() {
+        let mut overrides = VnOverlayDebugOverrides::default();
+        let baseline = overrides.dialogue_margin_ratio;
+        overrides.adjust(1);
+        assert!(overrides.dialogue_margin_ratio > baseline);
+        overrides.adjust(-1);
+        assert!((overrides.dialogue_margin_ratio - baseline).abs() < 1e-6);
+
+        overrides.select_next();
+        assert_eq!(overrides.selected_param, 1);
+        overrides.select_prev();
+        assert_eq!(overrides.selected_param, 0);
+        overrides.select_prev();
+        assert_eq!(overrides.selected_param, VnOverlayDebugOverrides::PARAM_COUNT - 1);
+    }
+
+    #[test]
+    fn vn_layout_debug_overrides_text_edit_commits_typed_value() {
+        let mut overrides = VnOverlayDebugOverrides::default();
+        overrides.begin_edit();
+        assert!(overrides.editing_buffer.is_some());
+        // Clear the prefilled value, then type a new one.
+        for _ in 0..16 {
+            overrides.pop_char();
+        }
+        for c in "0.250".chars() {
+            overrides.push_char(c);
+        }
+        // Non-numeric input is rejected.
+        overrides.push_char('x');
+        overrides.commit_edit();
+        assert!(overrides.editing_buffer.is_none());
+        assert!((overrides.dialogue_margin_ratio - 0.250).abs() < 1e-6);
+    }
+
+    #[test]
+    fn vn_layout_debug_overrides_text_edit_cancel_keeps_value() {
+        let mut overrides = VnOverlayDebugOverrides::default();
+        let baseline = overrides.dialogue_margin_ratio;
+        overrides.begin_edit();
+        for _ in 0..16 {
+            overrides.pop_char();
+        }
+        for c in "0.400".chars() {
+            overrides.push_char(c);
+        }
+        overrides.cancel_edit();
+        assert!(overrides.editing_buffer.is_none());
+        assert!((overrides.dialogue_margin_ratio - baseline).abs() < 1e-6);
+    }
+
+    #[test]
+    fn vn_layout_debug_overrides_edit_clamps_out_of_range() {
+        let mut overrides = VnOverlayDebugOverrides::default();
+        overrides.begin_edit();
+        for _ in 0..16 {
+            overrides.pop_char();
+        }
+        for c in "9.999".chars() {
+            overrides.push_char(c);
+        }
+        overrides.commit_edit();
+        assert!(overrides.dialogue_margin_ratio <= 0.45);
+    }
+
+    #[test]
     fn staged_scene_renders_dialogue_text_on_layout_row() {
         let mut scene = VisualScene::demo();
         scene.dialogue = "This is the active layout row.".to_string();
