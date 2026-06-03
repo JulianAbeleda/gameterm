@@ -69,16 +69,15 @@ pub struct VisualPosition {
 }
 
 pub const VN_OVERLAY_FULLSCREEN_MIN_ROWS: usize = 40;
-pub const VN_OVERLAY_SIDE_MARGIN_RATIO: f32 = 0.175;
+pub const VN_OVERLAY_SIDE_MARGIN_RATIO: f32 = 0.125;
 pub const VN_OVERLAY_COMPOSER_SIDE_MARGIN_RATIO: f32 = 0.025;
-pub const VN_OVERLAY_DIALOGUE_TOP_RATIO: f32 = 0.06;
+pub const VN_OVERLAY_DIALOGUE_TOP_RATIO: f32 = 0.075;
 pub const VN_OVERLAY_DIALOGUE_BOTTOM_RATIO: f32 = 0.66;
-pub const VN_OVERLAY_TEXT_INSET_COLS: usize = 4;
-pub const VN_OVERLAY_DIALOGUE_TEXT_INSET_COLS: usize = VN_OVERLAY_TEXT_INSET_COLS;
-pub const VN_OVERLAY_COMPOSER_TEXT_INSET_COLS: usize = VN_OVERLAY_TEXT_INSET_COLS;
-pub const VN_OVERLAY_DIALOGUE_NAMEPLATE_INSET_COLS: usize = VN_OVERLAY_TEXT_INSET_COLS;
-pub const VN_OVERLAY_COMPOSER_NAMEPLATE_INSET_COLS: usize = VN_OVERLAY_TEXT_INSET_COLS;
-pub const VN_OVERLAY_NAMEPLATE_TEXT_INSET_COLS: usize = 1;
+pub const VN_OVERLAY_DIALOGUE_TEXT_INSET_COLS: usize = 3;
+pub const VN_OVERLAY_COMPOSER_TEXT_INSET_COLS: usize = 1;
+pub const VN_OVERLAY_DIALOGUE_NAMEPLATE_INSET_COLS: usize = 2;
+pub const VN_OVERLAY_COMPOSER_NAMEPLATE_INSET_COLS: usize = 2;
+pub const VN_OVERLAY_NAMEPLATE_TEXT_INSET_COLS: usize = 3;
 pub const VN_OVERLAY_NAMEPLATE_TEXT_INSET_ROWS: usize =
     VN_OVERLAY_NAMEPLATE_HEIGHT_ROWS.saturating_sub(1);
 pub const VN_OVERLAY_DIALOGUE_NAMEPLATE_TEXT_INSET_COLS: usize =
@@ -90,7 +89,7 @@ pub const VN_OVERLAY_DIALOGUE_NAMEPLATE_TEXT_INSET_ROWS: usize =
 pub const VN_OVERLAY_COMPOSER_NAMEPLATE_TEXT_INSET_ROWS: usize =
     VN_OVERLAY_NAMEPLATE_TEXT_INSET_ROWS;
 pub const VN_OVERLAY_DIALOGUE_TEXT_INSET_ROWS: usize = 2;
-pub const VN_OVERLAY_COMPOSER_TEXT_INSET_ROWS: usize = 1;
+pub const VN_OVERLAY_COMPOSER_TEXT_INSET_ROWS: usize = 2;
 pub const VN_OVERLAY_NAMEPLATE_OFFSET_ROWS: usize = 0;
 pub const VN_OVERLAY_NAMEPLATE_HEIGHT_ROWS: usize = 3;
 pub const VN_OVERLAY_DIALOGUE_NAMEPLATE_HEIGHT_ROWS: usize = VN_OVERLAY_NAMEPLATE_HEIGHT_ROWS;
@@ -4784,8 +4783,14 @@ mod tests {
         assert!(!compact.fullscreen);
         assert_eq!(compact_composer.height, 4);
         assert_eq!(large_composer.height, 4);
-        assert_eq!(compact.composer_text_row, Some(compact_composer.row + 1));
-        assert_eq!(large_window.composer_text_row, Some(large_composer.row + 1));
+        assert_eq!(
+            compact.composer_text_row,
+            Some(compact_composer.row + VN_OVERLAY_COMPOSER_TEXT_INSET_ROWS)
+        );
+        assert_eq!(
+            large_window.composer_text_row,
+            Some(large_composer.row + VN_OVERLAY_COMPOSER_TEXT_INSET_ROWS)
+        );
         assert_eq!(compact_composer.row, 18);
         assert_eq!(large_composer.row, 24);
     }
