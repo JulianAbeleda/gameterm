@@ -619,7 +619,7 @@ run_vn_asset_intake_check() {
     .generated_by == "scene_vn_asset_intake"
     and any(.sources[]; .id == "4cher_set4_vn_sprites"
       and .repo_policy == "allowed_with_attribution"
-      and (.used_assets | length) == 10)
+      and (.used_assets | length) == 16)
     and any(.warnings[]; contains("requires sprite composition"))
     and any(.sources[]; .id == "tainara_p_school_backgrounds"
       and (.used_assets | length) == 2)
@@ -777,8 +777,10 @@ run_vn_image_export_check() {
   test -f "${output_root}/4cher_set4_vn_sprites/kiki-happy.png"
   test -f "${output_root}/4cher_set4_vn_sprites/kiki-concerned.png"
   test -f "${output_root}/4cher_set4_vn_sprites/kiki-surprised.png"
-  test -f "${output_root}/4cher_set4_vn_sprites/kiki-idle-0.png"
-  test -f "${output_root}/4cher_set4_vn_sprites/kiki-idle-5.png"
+  test -f "${output_root}/4cher_set4_vn_sprites/kiki-breath-0.png"
+  test -f "${output_root}/4cher_set4_vn_sprites/kiki-breath-5.png"
+  test -f "${output_root}/4cher_set4_vn_sprites/kiki-blink-0.png"
+  test -f "${output_root}/4cher_set4_vn_sprites/kiki-blink-5.png"
 
   "${repo_root}/ci/gameterm-scene-vn-demo.sh" generate \
     --output-dir "${generated_dir}" \

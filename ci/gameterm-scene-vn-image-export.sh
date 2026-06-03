@@ -15,7 +15,7 @@ Options:
   --output-source-root PATH  Asset source root to populate.
   --source-id TEXT           Catalog source directory. Default: 4cher_set4_vn_sprites.
   --character-id TEXT        Character filename prefix. Default: kiki.
-  --expressions CSV          Expression suffixes. Default: neutral,happy,concerned,surprised,idle-0,idle-1,idle-2,idle-3,idle-4,idle-5.
+  --expressions CSV          Expression suffixes. Default: neutral,happy,concerned,surprised,breath-0,breath-1,breath-2,breath-3,breath-4,breath-5,blink-0,blink-1,blink-2,blink-3,blink-4,blink-5.
   --force                    Overwrite existing exported files.
   -h, --help                 Show this help.
 EOF
@@ -25,7 +25,7 @@ source_path=""
 output_source_root=""
 source_id="4cher_set4_vn_sprites"
 character_id="kiki"
-expressions_csv="neutral,happy,concerned,surprised,idle-0,idle-1,idle-2,idle-3,idle-4,idle-5"
+expressions_csv="neutral,happy,concerned,surprised,breath-0,breath-1,breath-2,breath-3,breath-4,breath-5,blink-0,blink-1,blink-2,blink-3,blink-4,blink-5"
 force=0
 tmp_paths=()
 

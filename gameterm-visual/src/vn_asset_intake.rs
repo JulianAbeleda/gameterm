@@ -332,51 +332,99 @@ fn expected_assets_for_role(role: &str) -> Option<&'static [ExpectedAsset]> {
                 is_default_background: false,
             },
             ExpectedAsset {
-                source_file: "kiki-idle-0.png",
-                output_file: "characters/kiki-idle-0.png",
-                sprite_id: "vn.character.kiki.idle.0",
+                source_file: "kiki-breath-0.png",
+                output_file: "characters/kiki-breath-0.png",
+                sprite_id: "vn.character.kiki.breath.0",
                 character: Some("kiki"),
-                expression: Some("idle.0"),
+                expression: Some("breath.0"),
                 is_default_background: false,
             },
             ExpectedAsset {
-                source_file: "kiki-idle-1.png",
-                output_file: "characters/kiki-idle-1.png",
-                sprite_id: "vn.character.kiki.idle.1",
+                source_file: "kiki-breath-1.png",
+                output_file: "characters/kiki-breath-1.png",
+                sprite_id: "vn.character.kiki.breath.1",
                 character: Some("kiki"),
-                expression: Some("idle.1"),
+                expression: Some("breath.1"),
                 is_default_background: false,
             },
             ExpectedAsset {
-                source_file: "kiki-idle-2.png",
-                output_file: "characters/kiki-idle-2.png",
-                sprite_id: "vn.character.kiki.idle.2",
+                source_file: "kiki-breath-2.png",
+                output_file: "characters/kiki-breath-2.png",
+                sprite_id: "vn.character.kiki.breath.2",
                 character: Some("kiki"),
-                expression: Some("idle.2"),
+                expression: Some("breath.2"),
                 is_default_background: false,
             },
             ExpectedAsset {
-                source_file: "kiki-idle-3.png",
-                output_file: "characters/kiki-idle-3.png",
-                sprite_id: "vn.character.kiki.idle.3",
+                source_file: "kiki-breath-3.png",
+                output_file: "characters/kiki-breath-3.png",
+                sprite_id: "vn.character.kiki.breath.3",
                 character: Some("kiki"),
-                expression: Some("idle.3"),
+                expression: Some("breath.3"),
                 is_default_background: false,
             },
             ExpectedAsset {
-                source_file: "kiki-idle-4.png",
-                output_file: "characters/kiki-idle-4.png",
-                sprite_id: "vn.character.kiki.idle.4",
+                source_file: "kiki-breath-4.png",
+                output_file: "characters/kiki-breath-4.png",
+                sprite_id: "vn.character.kiki.breath.4",
                 character: Some("kiki"),
-                expression: Some("idle.4"),
+                expression: Some("breath.4"),
                 is_default_background: false,
             },
             ExpectedAsset {
-                source_file: "kiki-idle-5.png",
-                output_file: "characters/kiki-idle-5.png",
-                sprite_id: "vn.character.kiki.idle.5",
+                source_file: "kiki-breath-5.png",
+                output_file: "characters/kiki-breath-5.png",
+                sprite_id: "vn.character.kiki.breath.5",
                 character: Some("kiki"),
-                expression: Some("idle.5"),
+                expression: Some("breath.5"),
+                is_default_background: false,
+            },
+            ExpectedAsset {
+                source_file: "kiki-blink-0.png",
+                output_file: "characters/kiki-blink-0.png",
+                sprite_id: "vn.character.kiki.blink.0",
+                character: Some("kiki"),
+                expression: Some("blink.0"),
+                is_default_background: false,
+            },
+            ExpectedAsset {
+                source_file: "kiki-blink-1.png",
+                output_file: "characters/kiki-blink-1.png",
+                sprite_id: "vn.character.kiki.blink.1",
+                character: Some("kiki"),
+                expression: Some("blink.1"),
+                is_default_background: false,
+            },
+            ExpectedAsset {
+                source_file: "kiki-blink-2.png",
+                output_file: "characters/kiki-blink-2.png",
+                sprite_id: "vn.character.kiki.blink.2",
+                character: Some("kiki"),
+                expression: Some("blink.2"),
+                is_default_background: false,
+            },
+            ExpectedAsset {
+                source_file: "kiki-blink-3.png",
+                output_file: "characters/kiki-blink-3.png",
+                sprite_id: "vn.character.kiki.blink.3",
+                character: Some("kiki"),
+                expression: Some("blink.3"),
+                is_default_background: false,
+            },
+            ExpectedAsset {
+                source_file: "kiki-blink-4.png",
+                output_file: "characters/kiki-blink-4.png",
+                sprite_id: "vn.character.kiki.blink.4",
+                character: Some("kiki"),
+                expression: Some("blink.4"),
+                is_default_background: false,
+            },
+            ExpectedAsset {
+                source_file: "kiki-blink-5.png",
+                output_file: "characters/kiki-blink-5.png",
+                sprite_id: "vn.character.kiki.blink.5",
+                character: Some("kiki"),
+                expression: Some("blink.5"),
                 is_default_background: false,
             },
             ExpectedAsset {
@@ -605,8 +653,12 @@ mod tests {
         );
         for frame in 0..6 {
             write_file(
-                &source_root.join(format!("character/kiki-idle-{frame}.png")),
-                format!("gameterm-test-idle-{frame}").as_bytes(),
+                &source_root.join(format!("character/kiki-breath-{frame}.png")),
+                format!("gameterm-test-breath-{frame}").as_bytes(),
+            );
+            write_file(
+                &source_root.join(format!("character/kiki-blink-{frame}.png")),
+                format!("gameterm-test-blink-{frame}").as_bytes(),
             );
         }
 
@@ -626,8 +678,12 @@ mod tests {
                 && sprite.path == "assets/vn-demo/characters/kiki-neutral.png"
         }));
         assert!(report.sprite_manifest.sprites.iter().any(|sprite| {
-            sprite.id == "vn.character.kiki.idle.5"
-                && sprite.path == "assets/vn-demo/characters/kiki-idle-5.png"
+            sprite.id == "vn.character.kiki.breath.5"
+                && sprite.path == "assets/vn-demo/characters/kiki-breath-5.png"
+        }));
+        assert!(report.sprite_manifest.sprites.iter().any(|sprite| {
+            sprite.id == "vn.character.kiki.blink.5"
+                && sprite.path == "assets/vn-demo/characters/kiki-blink-5.png"
         }));
         assert_eq!(
             report
@@ -647,9 +703,20 @@ mod tests {
                 .get("kiki")
                 .unwrap()
                 .expressions
-                .get("idle.3")
+                .get("breath.3")
                 .map(String::as_str),
-            Some("vn.character.kiki.idle.3")
+            Some("vn.character.kiki.breath.3")
+        );
+        assert_eq!(
+            report
+                .bindings
+                .characters
+                .get("kiki")
+                .unwrap()
+                .expressions
+                .get("blink.2")
+                .map(String::as_str),
+            Some("vn.character.kiki.blink.2")
         );
         assert!(report.warnings.iter().any(|warning| {
             warning.kind == VnAssetIntakeWarningKind::CompositionRequired
@@ -659,7 +726,7 @@ mod tests {
             .attribution
             .sources
             .iter()
-            .any(|source| { source.id == "character" && source.used_assets.len() == 8 }));
+            .any(|source| { source.id == "character" && source.used_assets.len() == 14 }));
     }
 
     #[test]
