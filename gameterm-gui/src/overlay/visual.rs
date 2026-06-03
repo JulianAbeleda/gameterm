@@ -7,9 +7,10 @@ use gameterm_term::TerminalSize;
 use gameterm_visual::{
     truncate_to_screen, vn_overlay_layout, vn_overlay_layout_with_overrides, RunCommandTarget,
     SceneRuntime, VisualActionRequest, VisualInput, VisualMode, VisualModeOutcome,
-    VisualResolvedSprite, VisualScene, VisualSceneDialoguePatch, VisualSceneLoadStatus,
-    VisualScenePatch, VisualSceneSource, VisualSpriteManifest, VisualSpriteManifestStatus,
-    VisualStoryState, VisualView, VnDialogueScrollMetrics, VnOverlayDebugOverrides, VnOverlayRect,
+    VisualRenderSnapshot, VisualResolvedSprite, VisualScene, VisualSceneDialoguePatch,
+    VisualSceneLoadStatus, VisualScenePatch, VisualSceneSource, VisualSpriteManifest,
+    VisualSpriteManifestStatus, VisualStoryState, VisualView, VnDialogueScrollMetrics,
+    VnOverlayDebugOverrides, VnOverlayRect,
 };
 use mux::domain::SplitSource;
 use mux::tab::{SplitDirection, SplitRequest, SplitSize};
@@ -23,13 +24,18 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use termwiz::input::{InputEvent, KeyCode, KeyEvent, Modifiers, MouseButtons, MouseEvent};
 use termwiz::surface::Change;
 use termwiz::terminal::Terminal;
 use window::{Window, WindowOps};
 
 const VN_OVERLAY_LAYOUT_CONFIG_FILE: &str = "vn-overlay-layout.json";
+const KIKI_STAGE_TAG: &str = "kiki";
+const KIKI_IDLE_BASE_SPRITE: &str = "vn.character.kiki.neutral";
+const KIKI_IDLE_FRAME_PREFIX: &str = "vn.character.kiki.idle.";
+const KIKI_IDLE_FRAME_COUNT: usize = 6;
+const KIKI_IDLE_FRAME_MS: u128 = 180;
 
 #[cfg(test)]
 use super::visual_compose::ComposeBackendLabel;
@@ -169,6 +175,7 @@ fn show_visual_scene_overlay_with_source(
     let (stt_tx, stt_rx) = mpsc::channel();
     let mut stt_state = SceneSttState::default();
     let mut stt_cancel: Option<SceneSttCancel> = None;
+    let mut last_idle_frame: Option<usize> = None;
 
     loop {
         let mut needs_render = false;
@@ -272,6 +279,23 @@ fn show_visual_scene_overlay_with_source(
                         scene_patch.source_pane_id,
                     )?;
                     dialogue_scroll.reset_to_bottom();
+                }
+            }
+            if let Some(runtime) = runtime.as_ref() {
+                let idle_frame = current_kiki_idle_frame();
+                if runtime_has_kiki_idle_animation(runtime, &sprite_manifest) {
+                    if last_idle_frame != Some(idle_frame) {
+                        render_runtime_with_compose_and_scroll(
+                            &mut term,
+                            runtime,
+                            &sprite_manifest,
+                            &compose_dock,
+                            &dialogue_scroll,
+                        )?;
+                        last_idle_frame = Some(idle_frame);
+                    }
+                } else {
+                    last_idle_frame = None;
                 }
             }
             continue;
@@ -1927,6 +1951,7 @@ fn render_runtime_with_compose_and_scroll(
 ) -> anyhow::Result<()> {
     let size = term.get_screen_size()?;
     let mut snapshot = runtime.render_snapshot();
+    apply_kiki_idle_animation(&mut snapshot, sprite_manifest, current_kiki_idle_frame());
     snapshot.overlay_cols = Some(size.cols);
     snapshot.overlay_rows = Some(size.rows);
     term.set_metadata(
@@ -2001,6 +2026,80 @@ fn render_runtime_with_compose_and_scroll(
     Ok(())
 }
 
+fn current_kiki_idle_frame() -> usize {
+    let elapsed_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis())
+        .unwrap_or(0);
+    kiki_idle_frame_for_elapsed_ms(elapsed_ms)
+}
+
+fn kiki_idle_frame_for_elapsed_ms(elapsed_ms: u128) -> usize {
+    ((elapsed_ms / KIKI_IDLE_FRAME_MS) % KIKI_IDLE_FRAME_COUNT as u128) as usize
+}
+
+fn runtime_has_kiki_idle_animation(
+    runtime: &SceneRuntime,
+    sprite_manifest: &VisualSpriteManifestStatus,
+) -> bool {
+    snapshot_has_kiki_idle_animation(&runtime.render_snapshot(), sprite_manifest)
+}
+
+fn snapshot_has_kiki_idle_animation(
+    snapshot: &VisualRenderSnapshot,
+    sprite_manifest: &VisualSpriteManifestStatus,
+) -> bool {
+    !kiki_is_speaking(snapshot)
+        && snapshot
+            .stage
+            .iter()
+            .any(|displayable| displayable.tag == KIKI_STAGE_TAG)
+        && kiki_idle_frames_available(sprite_manifest)
+}
+
+fn apply_kiki_idle_animation(
+    snapshot: &mut VisualRenderSnapshot,
+    sprite_manifest: &VisualSpriteManifestStatus,
+    frame: usize,
+) {
+    if !snapshot_has_kiki_idle_animation(snapshot, sprite_manifest) {
+        return;
+    }
+    let sprite = kiki_idle_sprite_id(frame);
+    for displayable in &mut snapshot.stage {
+        if displayable.tag == KIKI_STAGE_TAG && displayable.sprite == KIKI_IDLE_BASE_SPRITE {
+            displayable.sprite = sprite.clone();
+        }
+    }
+}
+
+fn kiki_is_speaking(snapshot: &VisualRenderSnapshot) -> bool {
+    snapshot
+        .dialogue_speaker
+        .trim()
+        .eq_ignore_ascii_case(KIKI_STAGE_TAG)
+}
+
+fn kiki_idle_frames_available(sprite_manifest: &VisualSpriteManifestStatus) -> bool {
+    (0..KIKI_IDLE_FRAME_COUNT)
+        .all(|frame| sprite_manifest_has_id(sprite_manifest, &kiki_idle_sprite_id(frame)))
+}
+
+fn sprite_manifest_has_id(sprite_manifest: &VisualSpriteManifestStatus, sprite_id: &str) -> bool {
+    sprite_manifest
+        .sprites
+        .iter()
+        .any(|sprite| sprite.id == sprite_id)
+}
+
+fn kiki_idle_sprite_id(frame: usize) -> String {
+    format!(
+        "{}{}",
+        KIKI_IDLE_FRAME_PREFIX,
+        frame.min(KIKI_IDLE_FRAME_COUNT.saturating_sub(1))
+    )
+}
+
 fn replace_last_screen_line(frame: String, cols: usize, rows: usize, replacement: &str) -> String {
     let rows = rows.max(1);
     replace_screen_line(frame, cols, rows, rows - 1, replacement)
@@ -2050,6 +2149,78 @@ mod tests {
             .join("fixtures")
             .join("gameterm-scene")
             .join(name)
+    }
+
+    fn kiki_idle_sprite_manifest(frame_count: usize) -> VisualSpriteManifestStatus {
+        VisualSpriteManifestStatus {
+            manifest_path: None,
+            sprites: (0..frame_count)
+                .map(|frame| VisualResolvedSprite {
+                    id: kiki_idle_sprite_id(frame),
+                    path: format!("/tmp/kiki-idle-{frame}.png"),
+                })
+                .collect(),
+            warnings: Vec::new(),
+        }
+    }
+
+    fn kiki_stage_snapshot(speaker: &str) -> VisualRenderSnapshot {
+        let mut scene = VisualScene::demo();
+        scene.dialogue_lines.clear();
+        scene.dialogue_speaker = speaker.to_string();
+        scene.dialogue = "Kiki is waiting.".to_string();
+        scene.stage = VisualStage {
+            layers: vec![VisualStageLayer {
+                layer_id: "characters".to_string(),
+                zorder: 10,
+                displayables: vec![VisualStageDisplayable {
+                    tag: KIKI_STAGE_TAG.to_string(),
+                    sprite: KIKI_IDLE_BASE_SPRITE.to_string(),
+                    placement: VisualStagePlacement::Center,
+                    zorder: 0,
+                    visible: true,
+                }],
+            }],
+        };
+        SceneRuntime::new(scene).unwrap().render_snapshot()
+    }
+
+    #[test]
+    fn kiki_idle_frame_cycles_over_six_frames() {
+        assert_eq!(kiki_idle_frame_for_elapsed_ms(0), 0);
+        assert_eq!(kiki_idle_frame_for_elapsed_ms(KIKI_IDLE_FRAME_MS), 1);
+        assert_eq!(kiki_idle_frame_for_elapsed_ms(KIKI_IDLE_FRAME_MS * 5), 5);
+        assert_eq!(kiki_idle_frame_for_elapsed_ms(KIKI_IDLE_FRAME_MS * 6), 0);
+    }
+
+    #[test]
+    fn kiki_idle_animation_replaces_stage_sprite_when_not_speaking() {
+        let mut snapshot = kiki_stage_snapshot("Codex");
+        let sprites = kiki_idle_sprite_manifest(KIKI_IDLE_FRAME_COUNT);
+
+        apply_kiki_idle_animation(&mut snapshot, &sprites, 3);
+
+        assert_eq!(snapshot.stage[0].sprite, "vn.character.kiki.idle.3");
+    }
+
+    #[test]
+    fn kiki_idle_animation_waits_for_all_frames() {
+        let mut snapshot = kiki_stage_snapshot("Codex");
+        let sprites = kiki_idle_sprite_manifest(KIKI_IDLE_FRAME_COUNT - 1);
+
+        apply_kiki_idle_animation(&mut snapshot, &sprites, 3);
+
+        assert_eq!(snapshot.stage[0].sprite, KIKI_IDLE_BASE_SPRITE);
+    }
+
+    #[test]
+    fn kiki_idle_animation_stops_when_kiki_is_speaking() {
+        let mut snapshot = kiki_stage_snapshot("Kiki");
+        let sprites = kiki_idle_sprite_manifest(KIKI_IDLE_FRAME_COUNT);
+
+        apply_kiki_idle_animation(&mut snapshot, &sprites, 3);
+
+        assert_eq!(snapshot.stage[0].sprite, KIKI_IDLE_BASE_SPRITE);
     }
 
     #[test]
