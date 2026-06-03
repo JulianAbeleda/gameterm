@@ -51,6 +51,9 @@ Scene Mode currently has:
 - a first-pass panel-style helper that converts VN panel PNGs into compact
   procedural style JSON and optionally delegates exploratory SVG tracing to
   local VTracer, Potrace, or AutoTrace binaries
+- code-rendered VN dialogue panels, Composer panels, and nameplates using the
+  extracted panel style, with PNG nine-slice retained as an opt-in
+  compatibility path
 
 Latest verification baseline:
 

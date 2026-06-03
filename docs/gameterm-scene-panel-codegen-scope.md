@@ -1,6 +1,6 @@
 # GameTerm Scene Panel Codegen Scope
 
-Status: FIRST PASS IMPLEMENTED.
+Status: FIRST PASS IMPLEMENTED; PROCEDURAL RENDERING ENABLED.
 
 This document records the first pass for converting VN panel PNGs into compact
 procedural panel style data.
@@ -88,10 +88,17 @@ PNG panel
 
 ## Next Step
 
-Wire the generated style into Scene Mode as either:
+Completed first:
 
-- checked-in constants for the current VN panels, or
-- a user config file for panel styling.
+- checked-in constants for the current VN panels
+- procedural rendering for dialogue panels, Composer panels, and nameplates by
+  default
+- optional PNG nine-slice compatibility through
+  `GAMETERM_SCENE_VN_PANEL_TEXTURE=1`
 
-Then make `populate_visual_vn_panels` prefer procedural panel rendering by
-default and keep the PNG nine-slice path as an optional compatibility fallback.
+Remaining follow-up:
+
+- user config file for panel styling
+- live debugger controls for generated panel colors and border width
+- remove the PNG compatibility path only after the procedural renderer is fully
+  dogfooded

@@ -16,14 +16,20 @@ use std::sync::{Arc, LazyLock};
 use termwiz::color::LinearRgba;
 use termwiz::image::ImageData;
 
-const VN_PANEL_ALPHA: f32 = 0.38;
-const VN_PANEL_BORDER_ALPHA: f32 = 0.18;
-const VN_NAMEPLATE_ALPHA: f32 = 0.58;
-const VN_NAMEPLATE_BORDER_ALPHA: f32 = 0.30;
+const VN_PANEL_FILL: LinearRgba = LinearRgba(0.102, 0.1137, 0.1333, 0.4627);
+const VN_PANEL_BORDER: LinearRgba = LinearRgba(0.1608, 0.1725, 0.1961, 0.3608);
+const VN_NAMEPLATE_FILL: LinearRgba = LinearRgba(0.102, 0.1137, 0.1333, 0.58);
+const VN_NAMEPLATE_BORDER: LinearRgba = LinearRgba(0.1608, 0.1725, 0.1961, 0.42);
+const VN_PANEL_BORDER_WIDTH_PX: f32 = 1.5;
 const VN_PANEL_CORNER_SEGMENTS: usize = 8;
 const VN_PANEL_SLICE_PX: f32 = 32.0;
 const VN_STAGE_CHARACTER_HEIGHT_RATIO: f32 = 0.78;
 const VN_STAGE_CHARACTER_TARGET_WIDTH_RATIO: f32 = 0.34;
+static VN_PANEL_TEXTURE_RENDERING: LazyLock<bool> = LazyLock::new(|| {
+    std::env::var("GAMETERM_SCENE_VN_PANEL_TEXTURE")
+        .map(|value| matches!(value.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+        .unwrap_or(false)
+});
 static VN_PANEL_IMAGE_DATA: LazyLock<Arc<ImageData>> = LazyLock::new(|| {
     Arc::new(ImageData::with_raw_data(
         include_bytes!("../../../../assets/gameterm-scene/vn-panel.png").to_vec(),
@@ -46,6 +52,35 @@ fn visual_placeholder_color(sprite: &str, alpha: f32, floor: f32) -> LinearRgba 
 
 fn visual_selection_color(alpha: f32) -> LinearRgba {
     LinearRgba::with_components(1.0, 0.92, 0.34, alpha)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct VnPanelStyle {
+    fill: LinearRgba,
+    border: LinearRgba,
+    border_width: f32,
+}
+
+impl VnPanelStyle {
+    fn dialogue_panel() -> Self {
+        Self {
+            fill: VN_PANEL_FILL,
+            border: VN_PANEL_BORDER,
+            border_width: VN_PANEL_BORDER_WIDTH_PX,
+        }
+    }
+
+    fn nameplate() -> Self {
+        Self {
+            fill: VN_NAMEPLATE_FILL,
+            border: VN_NAMEPLATE_BORDER,
+            border_width: VN_PANEL_BORDER_WIDTH_PX,
+        }
+    }
+}
+
+fn vn_panel_texture_rendering_enabled() -> bool {
+    *VN_PANEL_TEXTURE_RENDERING
 }
 
 impl TermWindow {
@@ -128,32 +163,48 @@ impl TermWindow {
         };
         let panel_rects = vn_panel_rects(&layout, stage_rect, cell_width, cell_height);
         for rect in &panel_rects {
-            if !self.populate_vn_panel_texture(layers, 1, *rect, cell_width, params, hsv)? {
-                self.populate_rounded_vn_panel(
-                    layers,
-                    1,
-                    *rect,
-                    cell_width,
-                    VN_PANEL_ALPHA,
-                    VN_PANEL_BORDER_ALPHA,
-                    hsv,
-                )?;
-            }
+            self.populate_vn_panel_surface(
+                layers,
+                1,
+                *rect,
+                cell_width,
+                params,
+                VnPanelStyle::dialogue_panel(),
+                hsv,
+            )?;
         }
         for rect in vn_panel_nameplate_rects(&layout, stage_rect, cell_width, cell_height) {
-            if !self.populate_vn_panel_texture(layers, 1, rect, cell_width, params, hsv)? {
-                self.populate_rounded_vn_panel(
-                    layers,
-                    1,
-                    rect,
-                    cell_width,
-                    VN_NAMEPLATE_ALPHA,
-                    VN_NAMEPLATE_BORDER_ALPHA,
-                    hsv,
-                )?;
-            }
+            self.populate_vn_panel_surface(
+                layers,
+                1,
+                rect,
+                cell_width,
+                params,
+                VnPanelStyle::nameplate(),
+                hsv,
+            )?;
         }
         Ok(())
+    }
+
+    fn populate_vn_panel_surface(
+        &self,
+        layers: &mut TripleLayerQuadAllocator,
+        layer_num: usize,
+        rect: RectF,
+        cell_width: f32,
+        params: &RenderScreenLineParams,
+        style: VnPanelStyle,
+        hsv: Option<HsbTransform>,
+    ) -> anyhow::Result<()> {
+        if vn_panel_texture_rendering_enabled()
+            && self
+                .populate_vn_panel_texture(layers, layer_num, rect, cell_width, params, hsv)?
+        {
+            return Ok(());
+        }
+
+        self.populate_rounded_vn_panel(layers, layer_num, rect, cell_width, style, hsv)
     }
 
     fn populate_vn_panel_texture(
@@ -219,26 +270,22 @@ impl TermWindow {
         layer_num: usize,
         rect: RectF,
         cell_width: f32,
-        fill_alpha: f32,
-        border_alpha: f32,
+        style: VnPanelStyle,
         hsv: Option<HsbTransform>,
     ) -> anyhow::Result<()> {
         let radius = (cell_width * 2.2)
             .max(4.0)
             .min(rect.size.width / 3.0)
             .min(rect.size.height / 2.0);
-        let border = 1.5;
-        let border_color = LinearRgba::with_components(0.92, 0.96, 1.0, border_alpha);
         for panel_rect in rounded_panel_rects(rect, radius) {
-            let mut quad = self.filled_rectangle(layers, layer_num, panel_rect, border_color)?;
+            let mut quad = self.filled_rectangle(layers, layer_num, panel_rect, style.border)?;
             quad.set_hsv(hsv);
         }
 
-        let inner = inset_rect(rect, border);
-        let inner_radius = (radius - border).max(1.0);
-        let fill_color = LinearRgba::with_components(0.025, 0.028, 0.034, fill_alpha);
+        let inner = inset_rect(rect, style.border_width);
+        let inner_radius = (radius - style.border_width).max(1.0);
         for panel_rect in rounded_panel_rects(inner, inner_radius) {
-            let mut quad = self.filled_rectangle(layers, layer_num, panel_rect, fill_color)?;
+            let mut quad = self.filled_rectangle(layers, layer_num, panel_rect, style.fill)?;
             quad.set_hsv(hsv);
         }
         Ok(())
@@ -1064,6 +1111,21 @@ mod tests {
         assert!(rects[1].size.width < rect.size.width);
         assert!(rects[15].min_x() < rects[1].min_x());
         assert!(rects[15].size.width > rects[1].size.width);
+    }
+
+    #[test]
+    fn vn_panel_styles_use_extracted_procedural_values() {
+        let panel = VnPanelStyle::dialogue_panel();
+        let nameplate = VnPanelStyle::nameplate();
+
+        assert_eq!(panel.fill, LinearRgba(0.102, 0.1137, 0.1333, 0.4627));
+        assert_eq!(panel.border, LinearRgba(0.1608, 0.1725, 0.1961, 0.3608));
+        assert_eq!(panel.border_width, 1.5);
+        assert_eq!(nameplate.fill.0, panel.fill.0);
+        assert_eq!(nameplate.fill.1, panel.fill.1);
+        assert_eq!(nameplate.fill.2, panel.fill.2);
+        assert!(nameplate.fill.3 > panel.fill.3);
+        assert!(nameplate.border.3 > panel.border.3);
     }
 
     #[test]
