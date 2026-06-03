@@ -5,7 +5,7 @@ use gameterm_dynamic::Value;
 use gameterm_term::color::ColorAttribute;
 use gameterm_term::TerminalSize;
 use gameterm_visual::{
-    truncate_to_screen, vn_overlay_layout, vn_overlay_layout_with_overrides, RunCommandTarget, SceneRuntime, VisualActionRequest,
+    truncate_to_screen, vn_overlay_layout, vn_overlay_layout_with_overrides, RunCommandTarget, SceneRuntime, VisualActionRequest, VisualView,
     VisualInput, VisualMode, VisualModeOutcome, VisualResolvedSprite, VisualScene,
     VisualSceneDialoguePatch, VisualSceneLoadStatus, VisualScenePatch, VisualSceneSource,
     VisualSpriteManifest, VisualSpriteManifestStatus, VisualStoryState, VnOverlayRect,
@@ -320,10 +320,16 @@ fn show_visual_scene_overlay_with_source(
                     }
                 }
                 let visual_input = visual_input_from_key(key);
-                if visual_input == VisualInput::Close {
+                // While the VN layout debugger menu is open it owns every key so
+                // that r resets values and esc cancels an edit instead of
+                // reloading or closing the whole overlay.
+                let in_layout_debug = runtime
+                    .as_ref()
+                    .map_or(false, |runtime| runtime.view() == VisualView::VnLayoutDebugger);
+                if visual_input == VisualInput::Close && !in_layout_debug {
                     break;
                 }
-                if visual_input == VisualInput::Reload {
+                if visual_input == VisualInput::Reload && !in_layout_debug {
                     if let Some((scene, source_label, action_base_dir)) = &generated_scene {
                         reload_generated_scene(
                             &mut term,

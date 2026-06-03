@@ -58,36 +58,42 @@ impl TermWindow {
         if snapshot.stage.is_empty() {
             return Ok(());
         }
-        if matches!(snapshot.view, VisualView::TileDebugger | VisualView::VnLayoutDebugger) {
+        // The tile debugger is a plain entity inspector; suppress all stage art.
+        if matches!(snapshot.view, VisualView::TileDebugger) {
             return Ok(());
         }
+        // The VN layout debugger keeps the panels and nameplates visible so the
+        // boxes can be tuned live, but drops the background and character art.
+        let suppress_stage_art = matches!(snapshot.view, VisualView::VnLayoutDebugger);
 
         let stage_rect = stage_viewport_rect(params, cell_height);
-        for displayable in &snapshot.stage {
-            let rect = stage_displayable_rect(displayable, stage_rect);
-            let layer_num = match displayable.placement {
-                VisualStagePlacement::Fullscreen => 0,
-                VisualStagePlacement::Left
-                | VisualStagePlacement::Center
-                | VisualStagePlacement::Right => 1,
-            };
-            if self.populate_visual_sprite_quad(
-                &displayable.sprite,
-                layers,
-                layer_num,
-                rect,
-                params,
-                hsv,
-            )? {
-                continue;
+        if !suppress_stage_art {
+            for displayable in &snapshot.stage {
+                let rect = stage_displayable_rect(displayable, stage_rect);
+                let layer_num = match displayable.placement {
+                    VisualStagePlacement::Fullscreen => 0,
+                    VisualStagePlacement::Left
+                    | VisualStagePlacement::Center
+                    | VisualStagePlacement::Right => 1,
+                };
+                if self.populate_visual_sprite_quad(
+                    &displayable.sprite,
+                    layers,
+                    layer_num,
+                    rect,
+                    params,
+                    hsv,
+                )? {
+                    continue;
+                }
+                let mut quad = self.filled_rectangle(
+                    layers,
+                    layer_num,
+                    rect,
+                    visual_placeholder_color(&displayable.sprite, 0.42, 0.24),
+                )?;
+                quad.set_hsv(hsv);
             }
-            let mut quad = self.filled_rectangle(
-                layers,
-                layer_num,
-                rect,
-                visual_placeholder_color(&displayable.sprite, 0.42, 0.24),
-            )?;
-            quad.set_hsv(hsv);
         }
         self.populate_visual_vn_panels(layers, stage_rect, params, cell_height, hsv)?;
 

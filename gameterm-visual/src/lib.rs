@@ -2151,20 +2151,22 @@ impl SceneRuntime {
             VisualView::Scene => self.render_scene(cols, rows),
             VisualView::CommandSelection => self.render_command_selection(cols, rows),
             VisualView::TileDebugger => self.render_debugger(cols, rows),
-            VisualView::VnLayoutDebugger => self.render_vn_layout_debugger(cols, rows),
+            VisualView::VnLayoutDebugger => self.render_scene(cols, rows),
         }
     }
 
-    fn render_vn_layout_debugger(&self, cols: usize, rows: usize) -> String {
+    fn vn_layout_debug_menu_lines(&self) -> Vec<String> {
         let overrides = self.vn_layout_debug.clone().unwrap_or_default();
         let editing = overrides.editing_buffer.is_some();
-        let mut out = String::new();
-        out.push_str("VN Layout Debugger\r\n");
+        let mut lines = Vec::new();
+        lines.push("VN Layout Debugger".to_string());
         if editing {
-            out.push_str("[enter: confirm] [esc: cancel]\r\n\r\n");
+            lines.push("[enter: confirm] [esc: cancel]".to_string());
         } else {
-            out.push_str("[tab: back] [jk: select] [←→: adjust] [enter: type value] [r: reset]\r\n\r\n");
+            lines.push("[jk: param] [<- ->: adjust]".to_string());
+            lines.push("[enter: type] [r: reset] [tab: done]".to_string());
         }
+        lines.push(String::new());
         for i in 0..VnOverlayDebugOverrides::PARAM_COUNT {
             let marker = if i == overrides.selected_param { ">" } else { " " };
             let value = if i == overrides.selected_param && editing {
@@ -2172,28 +2174,14 @@ impl SceneRuntime {
             } else {
                 overrides.param_value_str(i)
             };
-            out.push_str(&format!(
-                "  {} {:<28} {:>7}   {}\r\n",
+            lines.push(format!(
+                "{} {:<22} {:>7}",
                 marker,
                 VnOverlayDebugOverrides::param_label(i),
                 value,
-                VnOverlayDebugOverrides::param_desc(i),
             ));
         }
-        let layout = vn_overlay_layout_with_overrides(cols, rows, "Narrator", "Composer", &overrides);
-        out.push_str("\r\nPreview (current terminal):\r\n");
-        out.push_str(&format!(
-            "  dialogue  col={} row={} w={} h={}\r\n",
-            layout.dialogue_panel.col, layout.dialogue_panel.row,
-            layout.dialogue_panel.width, layout.dialogue_panel.height,
-        ));
-        if let Some(c) = layout.composer_panel {
-            out.push_str(&format!(
-                "  composer  col={} row={} w={} h={}\r\n",
-                c.col, c.row, c.width, c.height,
-            ));
-        }
-        truncate_to_screen(out, cols, rows)
+        lines
     }
 
     fn handle_vn_layout_debug_input(&mut self, input: VisualInput) -> VisualModeOutcome {
@@ -2505,54 +2493,69 @@ impl SceneRuntime {
             Some(overrides) => vn_overlay_layout_with_overrides(cols, rows, &dialogue.speaker, "Composer", overrides),
             None => vn_overlay_layout(cols, rows, &dialogue.speaker, "Composer"),
         };
-        let mut top = Vec::new();
-
-        top.push(self.scene.title.clone());
-        top.push(
-            "Scene Mode  [enter: action] [tab: debugger] [r: reload] [esc/q: close]".to_string(),
-        );
-        if self.scene_source.load_status == VisualSceneLoadStatus::ReloadFailed {
-            if let Some(error) = &self.scene_source.last_error {
-                top.push(format!("Reload failed: {error}"));
-            }
-        }
-        if let Some(entity) = self.selected_entity() {
-            top.push(format!(
-                "Selected: {} [{:?}] sprite={} flags={}",
-                entity.label,
-                entity.kind,
-                entity.sprite,
-                entity.state_flags.join(", ")
-            ));
-        }
-        top.push(format!(
-            "Mode: {} ({})",
-            self.scene.mode.label, self.scene.mode.mode_id
-        ));
-        top.push(format!(
-            "Stage: {} layer(s), {} displayable(s)",
-            self.scene.stage.layers.len(),
-            self.scene
-                .stage
-                .layers
-                .iter()
-                .map(|layer| layer.displayables.len())
-                .sum::<usize>()
-        ));
-        if !self.scene.variables.is_empty() {
-            top.push(format!(
-                "State: {}",
-                format_state_summary(&self.scene.variables, 4)
-            ));
-        }
-        if !self.status.is_empty() {
-            top.push(format!("Status: {}", self.status));
-        }
+        let in_layout_debug =
+            self.view == VisualView::VnLayoutDebugger && self.vn_layout_debug.is_some();
 
         let mut screen = vec![String::new(); rows];
-        let top_limit = layout.dialogue_nameplate.row.min(rows);
-        for (idx, line) in top.into_iter().take(top_limit).enumerate() {
-            place_vn_overlay_text(&mut screen, cols, idx, 0, cols, &line);
+
+        if in_layout_debug {
+            // Render the adjustable menu in the left margin so the live boxes
+            // stay visible to the right while tuning.
+            for (idx, line) in self.vn_layout_debug_menu_lines().into_iter().enumerate() {
+                if idx >= rows {
+                    break;
+                }
+                let width = line.chars().count().max(1);
+                place_vn_overlay_text(&mut screen, cols, idx, 0, width, &line);
+            }
+        } else {
+            let mut top = Vec::new();
+            top.push(self.scene.title.clone());
+            top.push(
+                "Scene Mode  [enter: action] [tab: debugger] [r: reload] [esc/q: close]".to_string(),
+            );
+            if self.scene_source.load_status == VisualSceneLoadStatus::ReloadFailed {
+                if let Some(error) = &self.scene_source.last_error {
+                    top.push(format!("Reload failed: {error}"));
+                }
+            }
+            if let Some(entity) = self.selected_entity() {
+                top.push(format!(
+                    "Selected: {} [{:?}] sprite={} flags={}",
+                    entity.label,
+                    entity.kind,
+                    entity.sprite,
+                    entity.state_flags.join(", ")
+                ));
+            }
+            top.push(format!(
+                "Mode: {} ({})",
+                self.scene.mode.label, self.scene.mode.mode_id
+            ));
+            top.push(format!(
+                "Stage: {} layer(s), {} displayable(s)",
+                self.scene.stage.layers.len(),
+                self.scene
+                    .stage
+                    .layers
+                    .iter()
+                    .map(|layer| layer.displayables.len())
+                    .sum::<usize>()
+            ));
+            if !self.scene.variables.is_empty() {
+                top.push(format!(
+                    "State: {}",
+                    format_state_summary(&self.scene.variables, 4)
+                ));
+            }
+            if !self.status.is_empty() {
+                top.push(format!("Status: {}", self.status));
+            }
+
+            let top_limit = layout.dialogue_nameplate.row.min(rows);
+            for (idx, line) in top.into_iter().take(top_limit).enumerate() {
+                place_vn_overlay_text(&mut screen, cols, idx, 0, cols, &line);
+            }
         }
         place_vn_overlay_text(
             &mut screen,
@@ -3055,10 +3058,23 @@ fn place_vn_overlay_text(
     };
     let col = col.min(cols.saturating_sub(1));
     let width = width.min(cols.saturating_sub(col)).max(1);
-    let mut output = String::new();
-    output.push_str(&" ".repeat(col));
-    output.push_str(&format!("{:<width$}", clip_text(text, width)));
-    *line = clip_text(&output, cols);
+    // Splice the field into the existing line so multiple fields can share a
+    // row as long as their column spans do not overlap.
+    let mut chars: Vec<char> = line.chars().collect();
+    if chars.len() < cols {
+        chars.resize(cols, ' ');
+    }
+    let field: Vec<char> = format!("{:<width$}", clip_text(text, width))
+        .chars()
+        .take(width)
+        .collect();
+    for (i, ch) in field.into_iter().enumerate() {
+        if col + i < chars.len() {
+            chars[col + i] = ch;
+        }
+    }
+    chars.truncate(cols);
+    *line = chars.into_iter().collect();
 }
 
 #[cfg(test)]
@@ -4260,6 +4276,39 @@ mod tests {
         overrides.cancel_edit();
         assert!(overrides.editing_buffer.is_none());
         assert!((overrides.dialogue_margin_ratio - baseline).abs() < 1e-6);
+    }
+
+    #[test]
+    fn vn_layout_debugger_renders_menu_alongside_live_boxes() {
+        let mut scene = VisualScene::demo();
+        scene.dialogue = "Live tuning line.".to_string();
+        scene.dialogue_speaker = "Narrator".to_string();
+        scene.dialogue_lines.clear();
+        scene.choices.clear();
+        scene.stage = VisualStage {
+            layers: vec![VisualStageLayer {
+                layer_id: "background".to_string(),
+                zorder: 0,
+                displayables: vec![VisualStageDisplayable {
+                    tag: "background".to_string(),
+                    sprite: "vn.background.school_classroom".to_string(),
+                    placement: VisualStagePlacement::Fullscreen,
+                    zorder: 0,
+                    visible: true,
+                }],
+            }],
+        };
+        let mut runtime = SceneRuntime::new(scene).unwrap();
+        runtime.toggle_debugger(); // Scene -> TileDebugger
+        runtime.toggle_debugger(); // TileDebugger -> VnLayoutDebugger
+        assert_eq!(runtime.view(), VisualView::VnLayoutDebugger);
+
+        let frame = runtime.render_text_frame(200, 60);
+        // Menu controls and the live dialogue box text coexist.
+        assert!(frame.contains("VN Layout Debugger"));
+        assert!(frame.contains("dialogue_margin_ratio"));
+        assert!(frame.contains("Live tuning line."));
+        assert!(frame.contains("Narrator"));
     }
 
     #[test]
