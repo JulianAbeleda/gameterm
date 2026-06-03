@@ -190,6 +190,7 @@ impl TermWindow {
                 )? {
                     continue;
                 }
+                let rect = stage_displayable_placeholder_rect(displayable, rect);
                 let mut quad = self.filled_rectangle(
                     layers,
                     layer_num,
@@ -871,11 +872,32 @@ fn stage_displayable_scale_mode(
     displayable: &VisualRenderStageDisplayable,
 ) -> VisualImageScaleMode {
     match displayable.placement {
+        // Fullscreen backgrounds use cover semantics. The generated rect may
+        // exceed the viewport and rely on framebuffer clipping.
         VisualStagePlacement::Fullscreen => VisualImageScaleMode::FillCenter,
         VisualStagePlacement::Left | VisualStagePlacement::Center | VisualStagePlacement::Right => {
             VisualImageScaleMode::FitBottomCenter
         }
     }
+}
+
+fn stage_displayable_placeholder_rect(
+    displayable: &VisualRenderStageDisplayable,
+    target: RectF,
+) -> RectF {
+    let source = match displayable.placement {
+        VisualStagePlacement::Fullscreen => VisualImageSourceSize {
+            width: 16.0,
+            height: 9.0,
+        },
+        VisualStagePlacement::Left | VisualStagePlacement::Center | VisualStagePlacement::Right => {
+            VisualImageSourceSize {
+                width: 1.0,
+                height: 2.0,
+            }
+        }
+    };
+    resolve_aspect_rect(source, target, stage_displayable_scale_mode(displayable))
 }
 
 fn visual_sprite_image_data<'a>(
@@ -1059,6 +1081,45 @@ mod tests {
     }
 
     #[test]
+    fn resolve_aspect_rect_returns_target_for_degenerate_input() {
+        let target = euclid::rect(10.0, 20.0, 300.0, 200.0);
+
+        assert_eq!(
+            resolve_aspect_rect(
+                VisualImageSourceSize {
+                    width: 0.0,
+                    height: 100.0,
+                },
+                target,
+                VisualImageScaleMode::FitCenter,
+            ),
+            target
+        );
+        assert_eq!(
+            resolve_aspect_rect(
+                VisualImageSourceSize {
+                    width: 100.0,
+                    height: -1.0,
+                },
+                target,
+                VisualImageScaleMode::FillCenter,
+            ),
+            target
+        );
+        assert_eq!(
+            resolve_aspect_rect(
+                VisualImageSourceSize {
+                    width: 100.0,
+                    height: 100.0,
+                },
+                euclid::rect(0.0, 0.0, 0.0, 100.0),
+                VisualImageScaleMode::FitBottomCenter,
+            ),
+            euclid::rect(0.0, 0.0, 0.0, 100.0)
+        );
+    }
+
+    #[test]
     fn staged_character_rect_preserves_source_aspect_across_viewports() {
         let displayable = VisualRenderStageDisplayable {
             layer_id: "characters".to_string(),
@@ -1095,6 +1156,27 @@ mod tests {
     }
 
     #[test]
+    fn staged_character_placeholder_uses_portrait_fit() {
+        let displayable = VisualRenderStageDisplayable {
+            layer_id: "characters".to_string(),
+            tag: "guide".to_string(),
+            sprite: "missing-guide".to_string(),
+            placement: VisualStagePlacement::Center,
+            layer_zorder: 10,
+            zorder: 0,
+        };
+        let target =
+            stage_displayable_target_rect(&displayable, euclid::rect(0.0, 0.0, 1000.0, 560.0));
+
+        let rect = stage_displayable_placeholder_rect(&displayable, target);
+
+        assert_approx_eq(rect.size.width / rect.size.height, 0.5);
+        assert_approx_eq(rect.max_y(), target.max_y());
+        assert!(rect.size.width <= target.size.width);
+        assert!(rect.size.height <= target.size.height);
+    }
+
+    #[test]
     fn fullscreen_background_uses_fill_policy() {
         let displayable = VisualRenderStageDisplayable {
             layer_id: "background".to_string(),
@@ -1117,6 +1199,26 @@ mod tests {
             stage_displayable_scale_mode(&displayable),
             VisualImageScaleMode::FillCenter
         );
+        assert_approx_eq(rect.size.width / rect.size.height, 16.0 / 9.0);
+        assert!(rect.size.width + 0.001 >= target.size.width);
+        assert!(rect.size.height + 0.001 >= target.size.height);
+    }
+
+    #[test]
+    fn fullscreen_background_placeholder_uses_cover_policy() {
+        let displayable = VisualRenderStageDisplayable {
+            layer_id: "background".to_string(),
+            tag: "background".to_string(),
+            sprite: "missing-background".to_string(),
+            placement: VisualStagePlacement::Fullscreen,
+            layer_zorder: 0,
+            zorder: 0,
+        };
+        let target =
+            stage_displayable_target_rect(&displayable, euclid::rect(0.0, 0.0, 1000.0, 560.0));
+
+        let rect = stage_displayable_placeholder_rect(&displayable, target);
+
         assert_approx_eq(rect.size.width / rect.size.height, 16.0 / 9.0);
         assert!(rect.size.width + 0.001 >= target.size.width);
         assert!(rect.size.height + 0.001 >= target.size.height);
