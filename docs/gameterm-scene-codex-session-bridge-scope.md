@@ -279,7 +279,13 @@ This pass is complete when:
 
 ## Next Pass After This
 
-After this pass, the likely next scope is persistent sessions:
+The immediate next pass is scoped in
+[Real Codex Dogfood Scope](gameterm-scene-real-codex-dogfood-scope.md). It
+keeps one-shot `codex exec` as the product boundary and focuses on persistent
+Scene compose config, app-launch consistency, real-Codex diagnostics, timeout
+tuning, and smoke evidence.
+
+After that pass, the likely next scope is persistent sessions:
 
 - capture Codex session id from JSONL if available
 - persist session id per Scene overlay/session

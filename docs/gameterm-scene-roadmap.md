@@ -92,6 +92,7 @@ implementation details.
 | VN staged presentation | [VN Presentation Scope](gameterm-scene-vn-presentation-scope.md) | First-pass implemented |
 | Codex compose bridge | [Codex Compose Bridge Scope](gameterm-scene-codex-compose-bridge-scope.md) | First-pass implemented |
 | Codex session bridge | [Codex Session Bridge Scope](gameterm-scene-codex-session-bridge-scope.md) | First-pass implemented |
+| Real Codex dogfood pass | [Real Codex Dogfood Scope](gameterm-scene-real-codex-dogfood-scope.md) | Scoped |
 | Dogfood workspace | [Dogfood Workspace Scope](gameterm-scene-dogfood-workspace-scope.md) | Scoped |
 | Current handoff | [Scene Mode Handoff](gameterm-scene-handoff.md) | Current session snapshot |
 | Next actions | [Scene Next Actions Scope](gameterm-scene-next-actions-scope.md) | Current execution scope |
