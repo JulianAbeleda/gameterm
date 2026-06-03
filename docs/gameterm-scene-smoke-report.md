@@ -967,3 +967,79 @@ panels visible.
 
 1. Keep deterministic smoke registry and asset checks in
    `ci/gameterm-scene-verify.sh --all`.
+
+## Aspect-Safe Scene Images
+
+### vn-compose-fullscreen-aspect
+
+Command:
+
+```sh
+cargo build -p gameterm-gui
+ci/gameterm-scene-smoke.sh --scenario vn-compose --launch \
+  --wait-before-capture 3 \
+  --post-action-wait 2 \
+  --capture-timeout 12 \
+  --output /tmp/gameterm-scene-aspect-vn-fullscreen.png
+```
+
+Result: PASS.
+
+Capture:
+
+```text
+/tmp/gameterm-scene-aspect-vn-fullscreen.png
+```
+
+Smoke report:
+
+```text
+scenario: vn-compose
+fixture: vn-demo
+window size: fullscreen
+native Scene open: 1
+output: /tmp/gameterm-scene-aspect-vn-fullscreen.png
+bytes: 268285
+```
+
+Observation: the smoke harness opened Scene Mode through the native smoke hook,
+typed `look at roadmap` into the compose dock, submitted it, and captured a
+`1920x1080` PNG. The staged character remains proportionally centered and the
+background fills the stage without visible squashing.
+
+### vn-compose-windowed-aspect
+
+Command:
+
+```sh
+ci/gameterm-scene-smoke.sh --scenario vn-compose --launch \
+  --window-size 1000x560 \
+  --wait-before-capture 3 \
+  --post-action-wait 2 \
+  --capture-timeout 12 \
+  --output /tmp/gameterm-scene-aspect-vn-windowed.png
+```
+
+Result: PASS.
+
+Capture:
+
+```text
+/tmp/gameterm-scene-aspect-vn-windowed.png
+```
+
+Smoke report:
+
+```text
+scenario: vn-compose
+fixture: vn-demo
+window size: 1000x560
+native Scene open: 1
+output: /tmp/gameterm-scene-aspect-vn-windowed.png
+bytes: 2008168
+```
+
+Observation: the compact windowed capture keeps the staged character's
+proportions consistent with the fullscreen capture. The dialogue and Composer
+panels remain in the VN overlay path and are not affected by image aspect
+scaling.

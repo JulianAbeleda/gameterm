@@ -99,7 +99,7 @@ implementation details.
 | VN real asset run | [VN Real Assets Run Scope](gameterm-scene-vn-real-assets-run-scope.md) | Complete |
 | VN local PSD/image export | [VN Real Assets Run Scope](gameterm-scene-vn-real-assets-run-scope.md) | Complete |
 | VN staged presentation | [VN Presentation Scope](gameterm-scene-vn-presentation-scope.md) | First-pass implemented |
-| Aspect-safe Scene images | [Aspect-Safe Image Scope](gameterm-scene-aspect-safe-image-scope.md) | Scoped |
+| Aspect-safe Scene images | [Aspect-Safe Image Scope](gameterm-scene-aspect-safe-image-scope.md) | Complete |
 | Codex compose bridge | [Codex Compose Bridge Scope](gameterm-scene-codex-compose-bridge-scope.md) | First-pass implemented |
 | Codex session bridge | [Codex Session Bridge Scope](gameterm-scene-codex-session-bridge-scope.md) | First-pass implemented |
 | Real Codex dogfood pass | [Real Codex Dogfood Scope](gameterm-scene-real-codex-dogfood-scope.md) | Complete |

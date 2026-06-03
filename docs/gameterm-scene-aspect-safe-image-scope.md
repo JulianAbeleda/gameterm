@@ -1,6 +1,6 @@
 # GameTerm Scene Mode Aspect-Safe Image Scope
 
-Status: SCOPED.
+Status: COMPLETE.
 
 This document scopes the pass to make Scene Mode image assets preserve their
 source aspect ratio when the GameTerm window moves between fullscreen,
@@ -320,3 +320,41 @@ that is acceptable:
 - `cargo test -p gameterm-gui visual_quad --bin gameterm-gui` passes.
 - `cargo check -p gameterm-gui` passes with only pre-existing warning noise.
 - Smoke captures are recorded in the smoke report if a visual pass is run.
+
+## Completion Notes
+
+Implemented in `gameterm-gui/src/termwindow/render/visual_quad.rs`.
+
+Result:
+
+- Staged displayables now separate placement target calculation from image
+  scaling policy.
+- Fullscreen staged displayables use `FillCenter`.
+- Left, center, and right staged displayables use `FitBottomCenter`.
+- Existing tile/entity sprite quads keep `Stretch` behavior so grid rendering
+  is unchanged.
+- Source dimensions come from cached sprite atlas coordinates before the
+  aspect-safe destination rect is resolved.
+- Focused visual quad tests cover fit, bottom-anchor, fill, integer-fit,
+  character viewport resizing, and fullscreen background fill policy.
+
+Verification:
+
+```sh
+cargo test -p gameterm-gui visual_quad --bin gameterm-gui
+cargo test -p gameterm-gui vn_panel --bin gameterm-gui
+cargo test -p gameterm-gui scene_compose --bin gameterm-gui
+cargo check -p gameterm-gui
+cargo build -p gameterm-gui
+ci/gameterm-scene-smoke.sh --scenario vn-compose --launch \
+  --wait-before-capture 3 \
+  --post-action-wait 2 \
+  --capture-timeout 12 \
+  --output /tmp/gameterm-scene-aspect-vn-fullscreen.png
+ci/gameterm-scene-smoke.sh --scenario vn-compose --launch \
+  --window-size 1000x560 \
+  --wait-before-capture 3 \
+  --post-action-wait 2 \
+  --capture-timeout 12 \
+  --output /tmp/gameterm-scene-aspect-vn-windowed.png
+```
