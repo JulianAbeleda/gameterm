@@ -1132,6 +1132,8 @@ fn visual_input_from_key(key: KeyCode) -> VisualInput {
         KeyCode::UpArrow | KeyCode::Char('k') | KeyCode::Char('K') => VisualInput::Previous,
         KeyCode::RightArrow | KeyCode::Char('l') | KeyCode::Char('L') => VisualInput::Right,
         KeyCode::LeftArrow | KeyCode::Char('h') | KeyCode::Char('H') => VisualInput::Left,
+        KeyCode::Backspace => VisualInput::Backspace,
+        KeyCode::Char(c) => VisualInput::Char(c),
         _ => VisualInput::Other,
     }
 }

@@ -88,6 +88,8 @@ pub struct VnOverlayDebugOverrides {
     pub composer_height_rows: usize,
     pub nameplate_height_rows: usize,
     pub selected_param: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub editing_buffer: Option<String>,
 }
 
 impl Default for VnOverlayDebugOverrides {
@@ -100,6 +102,7 @@ impl Default for VnOverlayDebugOverrides {
             composer_height_rows: 7,
             nameplate_height_rows: VN_OVERLAY_NAMEPLATE_HEIGHT_ROWS,
             selected_param: 0,
+            editing_buffer: None,
         }
     }
 }
@@ -170,6 +173,44 @@ impl VnOverlayDebugOverrides {
             4 => self.composer_height_rows.to_string(),
             5 => self.nameplate_height_rows.to_string(),
             _ => String::new(),
+        }
+    }
+
+    pub fn begin_edit(&mut self) {
+        self.editing_buffer = Some(self.param_value_str(self.selected_param));
+    }
+
+    pub fn cancel_edit(&mut self) {
+        self.editing_buffer = None;
+    }
+
+    pub fn push_char(&mut self, c: char) {
+        if let Some(ref mut buf) = self.editing_buffer {
+            if c.is_ascii_digit() || (c == '.' && !buf.contains('.')) || (c == '-' && buf.is_empty()) {
+                buf.push(c);
+            }
+        }
+    }
+
+    pub fn pop_char(&mut self) {
+        if let Some(ref mut buf) = self.editing_buffer {
+            buf.pop();
+        }
+    }
+
+    pub fn commit_edit(&mut self) {
+        let buf = match self.editing_buffer.take() {
+            Some(b) => b,
+            None => return,
+        };
+        match self.selected_param {
+            0 => { if let Ok(v) = buf.parse::<f32>() { self.dialogue_margin_ratio = v.clamp(0.0, 0.45); } }
+            1 => { if let Ok(v) = buf.parse::<f32>() { self.composer_margin_ratio = v.clamp(0.0, 0.20); } }
+            2 => { if let Ok(v) = buf.parse::<f32>() { self.dialogue_top_ratio = v.clamp(0.0, 0.30); } }
+            3 => { if let Ok(v) = buf.parse::<f32>() { self.dialogue_bottom_ratio = v.clamp(0.30, 0.99); } }
+            4 => { if let Ok(v) = buf.parse::<usize>() { self.composer_height_rows = v.clamp(1, 20); } }
+            5 => { if let Ok(v) = buf.parse::<usize>() { self.nameplate_height_rows = v.clamp(1, 8); } }
+            _ => {}
         }
     }
 }
@@ -1059,6 +1100,8 @@ pub enum VisualInput {
     Previous,
     Left,
     Right,
+    Char(char),
+    Backspace,
     Other,
 }
 
@@ -1073,7 +1116,7 @@ impl VisualInput {
             Self::Previous => "previous",
             Self::Left => "left",
             Self::Right => "right",
-            Self::Other => "other",
+            Self::Char(_) | Self::Backspace | Self::Other => "other",
         }
     }
 }
@@ -2114,16 +2157,26 @@ impl SceneRuntime {
 
     fn render_vn_layout_debugger(&self, cols: usize, rows: usize) -> String {
         let overrides = self.vn_layout_debug.clone().unwrap_or_default();
+        let editing = overrides.editing_buffer.is_some();
         let mut out = String::new();
         out.push_str("VN Layout Debugger\r\n");
-        out.push_str("[tab: back] [jk: select] [←→: adjust] [r: reset]\r\n\r\n");
+        if editing {
+            out.push_str("[enter: confirm] [esc: cancel]\r\n\r\n");
+        } else {
+            out.push_str("[tab: back] [jk: select] [←→: adjust] [enter: type value] [r: reset]\r\n\r\n");
+        }
         for i in 0..VnOverlayDebugOverrides::PARAM_COUNT {
             let marker = if i == overrides.selected_param { ">" } else { " " };
+            let value = if i == overrides.selected_param && editing {
+                format!("{}_", overrides.editing_buffer.as_deref().unwrap_or(""))
+            } else {
+                overrides.param_value_str(i)
+            };
             out.push_str(&format!(
                 "  {} {:<28} {:>7}   {}\r\n",
                 marker,
                 VnOverlayDebugOverrides::param_label(i),
-                overrides.param_value_str(i),
+                value,
                 VnOverlayDebugOverrides::param_desc(i),
             ));
         }
@@ -2144,23 +2197,39 @@ impl SceneRuntime {
     }
 
     fn handle_vn_layout_debug_input(&mut self, input: VisualInput) -> VisualModeOutcome {
+        let editing = self.vn_layout_debug.as_ref().map_or(false, |d| d.editing_buffer.is_some());
         match input {
+            VisualInput::Close if editing => {
+                if let Some(ref mut d) = self.vn_layout_debug { d.cancel_edit(); }
+            }
             VisualInput::Close | VisualInput::ToggleDebug => {
                 self.view = VisualView::Scene;
             }
-            VisualInput::Next => {
+            VisualInput::Activate if editing => {
+                if let Some(ref mut d) = self.vn_layout_debug { d.commit_edit(); }
+            }
+            VisualInput::Activate => {
+                if let Some(ref mut d) = self.vn_layout_debug { d.begin_edit(); }
+            }
+            VisualInput::Char(c) => {
+                if let Some(ref mut d) = self.vn_layout_debug { d.push_char(c); }
+            }
+            VisualInput::Backspace => {
+                if let Some(ref mut d) = self.vn_layout_debug { d.pop_char(); }
+            }
+            VisualInput::Next if !editing => {
                 if let Some(ref mut d) = self.vn_layout_debug { d.select_next(); }
             }
-            VisualInput::Previous => {
+            VisualInput::Previous if !editing => {
                 if let Some(ref mut d) = self.vn_layout_debug { d.select_prev(); }
             }
-            VisualInput::Right => {
+            VisualInput::Right if !editing => {
                 if let Some(ref mut d) = self.vn_layout_debug { d.adjust(1); }
             }
-            VisualInput::Left => {
+            VisualInput::Left if !editing => {
                 if let Some(ref mut d) = self.vn_layout_debug { d.adjust(-1); }
             }
-            VisualInput::Reload => {
+            VisualInput::Reload if !editing => {
                 self.vn_layout_debug = Some(VnOverlayDebugOverrides::default());
             }
             _ => return VisualModeOutcome::Continue,
