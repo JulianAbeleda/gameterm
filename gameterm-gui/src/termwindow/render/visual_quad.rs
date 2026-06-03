@@ -8,7 +8,7 @@ use ::window::RectF;
 use anyhow::Context;
 use config::HsbTransform;
 use gameterm_visual::{
-    vn_overlay_layout, SceneRuntime, VisualRenderEntity, VisualRenderSnapshot,
+    vn_overlay_layout, vn_overlay_layout_with_overrides, SceneRuntime, VisualRenderEntity, VisualRenderSnapshot,
     VisualRenderStageDisplayable, VisualRenderTile, VisualScene, VisualStagePlacement,
     VnOverlayRect,
 };
@@ -109,7 +109,10 @@ impl TermWindow {
             params.dims.cols,
             params.dims.viewport_rows,
         );
-        let layout = vn_overlay_layout(layout_cols, layout_rows, speaker, "Composer");
+        let layout = match params.visual_snapshot.and_then(|s| s.vn_layout_debug.as_ref()) {
+            Some(overrides) => vn_overlay_layout_with_overrides(layout_cols, layout_rows, speaker, "Composer", overrides),
+            None => vn_overlay_layout(layout_cols, layout_rows, speaker, "Composer"),
+        };
         let panel_rects = vn_panel_rects(&layout, stage_rect, cell_width, cell_height);
         for rect in &panel_rects {
             if !self.populate_vn_panel_texture(layers, 1, *rect, cell_width, params, hsv)? {

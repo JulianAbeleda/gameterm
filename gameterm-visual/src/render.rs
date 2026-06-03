@@ -121,6 +121,7 @@ mod tests {
             choices: Vec::new(),
             overlay_cols: None,
             overlay_rows: None,
+            vn_layout_debug: None,
         }
     }
 

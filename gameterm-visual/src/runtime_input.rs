@@ -163,6 +163,8 @@ pub(crate) fn default_mode_input_action(input: VisualInput) -> &'static str {
         VisualInput::Activate => "activate_choice",
         VisualInput::Next => "select_next",
         VisualInput::Previous => "select_previous",
+        VisualInput::Left => "select_previous",
+        VisualInput::Right => "select_next",
         VisualInput::Other => "ignore",
     }
 }

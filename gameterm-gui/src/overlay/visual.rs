@@ -5,7 +5,7 @@ use gameterm_dynamic::Value;
 use gameterm_term::color::ColorAttribute;
 use gameterm_term::TerminalSize;
 use gameterm_visual::{
-    truncate_to_screen, vn_overlay_layout, RunCommandTarget, SceneRuntime, VisualActionRequest,
+    truncate_to_screen, vn_overlay_layout, vn_overlay_layout_with_overrides, RunCommandTarget, SceneRuntime, VisualActionRequest,
     VisualInput, VisualMode, VisualModeOutcome, VisualResolvedSprite, VisualScene,
     VisualSceneDialoguePatch, VisualSceneLoadStatus, VisualScenePatch, VisualSceneSource,
     VisualSpriteManifest, VisualSpriteManifestStatus, VisualStoryState, VnOverlayRect,
@@ -1128,12 +1128,10 @@ fn visual_input_from_key(key: KeyCode) -> VisualInput {
         KeyCode::Char('r') | KeyCode::Char('R') => VisualInput::Reload,
         KeyCode::Tab => VisualInput::ToggleDebug,
         KeyCode::Enter => VisualInput::Activate,
-        KeyCode::RightArrow | KeyCode::DownArrow | KeyCode::Char('l') | KeyCode::Char('j') => {
-            VisualInput::Next
-        }
-        KeyCode::LeftArrow | KeyCode::UpArrow | KeyCode::Char('h') | KeyCode::Char('k') => {
-            VisualInput::Previous
-        }
+        KeyCode::DownArrow | KeyCode::Char('j') | KeyCode::Char('J') => VisualInput::Next,
+        KeyCode::UpArrow | KeyCode::Char('k') | KeyCode::Char('K') => VisualInput::Previous,
+        KeyCode::RightArrow | KeyCode::Char('l') | KeyCode::Char('L') => VisualInput::Right,
+        KeyCode::LeftArrow | KeyCode::Char('h') | KeyCode::Char('H') => VisualInput::Left,
         _ => VisualInput::Other,
     }
 }
@@ -1725,14 +1723,16 @@ fn render_runtime_with_compose(
     }
     frame.push_str(&runtime.render_text_frame(size.cols, size.rows));
     if !snapshot.stage.is_empty() {
-        let layout =
-            vn_overlay_layout(size.cols, size.rows, &snapshot.dialogue_speaker, "Composer");
+        let layout = match snapshot.vn_layout_debug.as_ref() {
+            Some(overrides) => vn_overlay_layout_with_overrides(size.cols, size.rows, &snapshot.dialogue_speaker, "Composer", overrides),
+            None => vn_overlay_layout(size.cols, size.rows, &snapshot.dialogue_speaker, "Composer"),
+        };
         if let Some(nameplate) = layout.composer_nameplate {
             frame = replace_screen_line(
                 frame,
                 size.cols,
                 size.rows,
-                nameplate.row.saturating_add(nameplate.height / 2).min(size.rows.saturating_sub(1)),
+                nameplate.row.saturating_add(nameplate.height.saturating_sub(1)).min(size.rows.saturating_sub(1)),
                 &compose_dock.render_staged_nameplate_line(size.cols, nameplate),
             );
         }
