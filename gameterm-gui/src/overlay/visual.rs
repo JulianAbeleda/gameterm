@@ -269,7 +269,11 @@ fn show_visual_scene_overlay_with_source(
                         )?;
                         continue;
                     }
-                    if !runtime.scene().stage.is_empty() {
+                    // While the VN layout debugger menu is open it owns every
+                    // key. The compose dock must not intercept text/navigation
+                    // input before the debugger can select, adjust, or edit.
+                    let in_layout_debug = runtime.view() == VisualView::VnLayoutDebugger;
+                    if !runtime.scene().stage.is_empty() && !in_layout_debug {
                         match compose_dock.handle_key(key) {
                             SceneComposeAction::Consumed => {
                                 render_runtime_with_compose(
