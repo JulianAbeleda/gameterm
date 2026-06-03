@@ -440,6 +440,9 @@ fn show_visual_scene_overlay_with_source(
                     if runtime.handle_input(visual_input) == VisualModeOutcome::Exit {
                         break;
                     }
+                    if visual_input_resets_dialogue_scroll(visual_input) {
+                        dialogue_scroll.reset_to_bottom();
+                    }
                     persist_vn_overlay_layout_if_changed(vn_layout_before, runtime);
                     let size = term.get_screen_size()?;
                     dispatch_pending_action(
@@ -1344,6 +1347,10 @@ fn visual_input_from_key(key: KeyCode) -> VisualInput {
         KeyCode::Char(c) => VisualInput::Char(c),
         _ => VisualInput::Other,
     }
+}
+
+fn visual_input_resets_dialogue_scroll(input: VisualInput) -> bool {
+    matches!(input, VisualInput::Activate)
 }
 
 fn is_tts_toggle_key(key: KeyCode, modifiers: Modifiers) -> bool {
@@ -2781,6 +2788,15 @@ mod tests {
         scroll.offset = 10;
         apply_dialogue_scroll_wheel(&mut scroll, metrics, MouseButtons::VERT_WHEEL);
         assert_eq!(scroll.offset, 3);
+    }
+
+    #[test]
+    fn activate_resets_dialogue_scroll_but_selection_does_not() {
+        assert!(visual_input_resets_dialogue_scroll(VisualInput::Activate));
+        assert!(!visual_input_resets_dialogue_scroll(VisualInput::Next));
+        assert!(!visual_input_resets_dialogue_scroll(VisualInput::Previous));
+        assert!(!visual_input_resets_dialogue_scroll(VisualInput::Left));
+        assert!(!visual_input_resets_dialogue_scroll(VisualInput::Right));
     }
 
     #[test]
