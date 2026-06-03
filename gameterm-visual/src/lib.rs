@@ -458,6 +458,14 @@ pub struct VnOverlayLayout {
     pub composer_text_row: Option<usize>,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VnDialogueScrollMetrics {
+    pub total_lines: usize,
+    pub visible_rows: usize,
+    pub scroll_offset: usize,
+    pub max_scroll_offset: usize,
+}
+
 pub fn vn_overlay_layout(
     cols: usize,
     rows: usize,
@@ -2460,11 +2468,20 @@ impl SceneRuntime {
     }
 
     pub fn render_text_frame(&self, cols: usize, rows: usize) -> String {
+        self.render_text_frame_with_dialogue_scroll(cols, rows, 0)
+    }
+
+    pub fn render_text_frame_with_dialogue_scroll(
+        &self,
+        cols: usize,
+        rows: usize,
+        dialogue_scroll_offset: usize,
+    ) -> String {
         match self.view {
-            VisualView::Scene => self.render_scene(cols, rows),
+            VisualView::Scene => self.render_scene(cols, rows, dialogue_scroll_offset),
             VisualView::CommandSelection => self.render_command_selection(cols, rows),
             VisualView::TileDebugger => self.render_debugger(cols, rows),
-            VisualView::VnLayoutDebugger => self.render_scene(cols, rows),
+            VisualView::VnLayoutDebugger => self.render_scene(cols, rows, dialogue_scroll_offset),
         }
     }
 
@@ -2681,9 +2698,9 @@ impl SceneRuntime {
         }
     }
 
-    fn render_scene(&self, cols: usize, rows: usize) -> String {
+    fn render_scene(&self, cols: usize, rows: usize, dialogue_scroll_offset: usize) -> String {
         if !self.scene.stage.is_empty() {
-            return self.render_staged_scene(cols, rows);
+            return self.render_staged_scene(cols, rows, dialogue_scroll_offset);
         }
 
         let mut out = String::new();
@@ -2823,11 +2840,48 @@ impl SceneRuntime {
         truncate_to_screen(out, cols, rows)
     }
 
-    fn render_staged_scene(&self, cols: usize, rows: usize) -> String {
+    pub fn vn_dialogue_scroll_metrics(
+        &self,
+        cols: usize,
+        rows: usize,
+        dialogue_scroll_offset: usize,
+    ) -> VnDialogueScrollMetrics {
+        if self.scene.stage.is_empty() {
+            return VnDialogueScrollMetrics::default();
+        }
         let cols = cols.max(1);
         let rows = rows.max(1);
         let dialogue = self.active_dialogue_line();
-        let layout = match &self.vn_layout_debug {
+        let layout = self.active_vn_overlay_layout(cols, rows, &dialogue);
+        let dialogue_width = self.vn_dialogue_text_width(&layout);
+        let dialogue_lines = self.render_vn_dialogue_lines(&dialogue, dialogue_width);
+        self.vn_dialogue_scroll_metrics_for_line_count(
+            dialogue_lines.len(),
+            self.vn_dialogue_visible_rows(&layout),
+            dialogue_scroll_offset,
+        )
+    }
+
+    pub fn vn_dialogue_panel_rect(&self, cols: usize, rows: usize) -> Option<VnOverlayRect> {
+        if self.scene.stage.is_empty() {
+            return None;
+        }
+        let cols = cols.max(1);
+        let rows = rows.max(1);
+        let dialogue = self.active_dialogue_line();
+        Some(
+            self.active_vn_overlay_layout(cols, rows, &dialogue)
+                .dialogue_panel,
+        )
+    }
+
+    fn active_vn_overlay_layout(
+        &self,
+        cols: usize,
+        rows: usize,
+        dialogue: &VisualDialogueLine,
+    ) -> VnOverlayLayout {
+        match &self.vn_layout_debug {
             Some(overrides) => vn_overlay_layout_with_overrides(
                 cols,
                 rows,
@@ -2836,7 +2890,51 @@ impl SceneRuntime {
                 overrides,
             ),
             None => vn_overlay_layout(cols, rows, &dialogue.speaker, "Composer"),
-        };
+        }
+    }
+
+    fn vn_dialogue_text_width(&self, layout: &VnOverlayLayout) -> usize {
+        const SCROLLBAR_GUTTER_COLS: usize = 2;
+        layout
+            .dialogue_panel
+            .width
+            .saturating_sub(layout.dialogue_text_inset_cols * 2)
+            .saturating_sub(SCROLLBAR_GUTTER_COLS)
+            .max(1)
+    }
+
+    fn vn_dialogue_visible_rows(&self, layout: &VnOverlayLayout) -> usize {
+        layout
+            .dialogue_panel
+            .bottom()
+            .saturating_sub(layout.dialogue_text_row)
+    }
+
+    fn vn_dialogue_scroll_metrics_for_line_count(
+        &self,
+        total_lines: usize,
+        visible_rows: usize,
+        dialogue_scroll_offset: usize,
+    ) -> VnDialogueScrollMetrics {
+        let max_scroll_offset = total_lines.saturating_sub(visible_rows);
+        VnDialogueScrollMetrics {
+            total_lines,
+            visible_rows,
+            scroll_offset: dialogue_scroll_offset.min(max_scroll_offset),
+            max_scroll_offset,
+        }
+    }
+
+    fn render_staged_scene(
+        &self,
+        cols: usize,
+        rows: usize,
+        dialogue_scroll_offset: usize,
+    ) -> String {
+        let cols = cols.max(1);
+        let rows = rows.max(1);
+        let dialogue = self.active_dialogue_line();
+        let layout = self.active_vn_overlay_layout(cols, rows, &dialogue);
         let in_layout_debug =
             self.view == VisualView::VnLayoutDebugger && self.vn_layout_debug.is_some();
 
@@ -2906,16 +3004,14 @@ impl SceneRuntime {
             .dialogue_panel
             .col
             .saturating_add(layout.dialogue_text_inset_cols);
-        let dialogue_width = layout
-            .dialogue_panel
-            .width
-            .saturating_sub(layout.dialogue_text_inset_cols * 2)
-            .max(1);
+        let dialogue_width = self.vn_dialogue_text_width(&layout);
         let dialogue_lines = self.render_vn_dialogue_lines(&dialogue, dialogue_width);
-        let dialogue_rows = layout
-            .dialogue_panel
-            .bottom()
-            .saturating_sub(layout.dialogue_text_row);
+        let dialogue_rows = self.vn_dialogue_visible_rows(&layout);
+        let scroll_metrics = self.vn_dialogue_scroll_metrics_for_line_count(
+            dialogue_lines.len(),
+            dialogue_rows,
+            dialogue_scroll_offset,
+        );
         if !dialogue_lines.is_empty() {
             place_vn_overlay_text(
                 &mut screen,
@@ -2929,12 +3025,16 @@ impl SceneRuntime {
                 &self.vn_dialogue_nameplate(&dialogue),
             );
         }
-        let line_count = dialogue_lines.len();
-        let start = line_count.saturating_sub(dialogue_rows);
+        let line_count = scroll_metrics.total_lines;
+        let start = line_count.saturating_sub(
+            scroll_metrics
+                .visible_rows
+                .saturating_add(scroll_metrics.scroll_offset),
+        );
         for (idx, line) in dialogue_lines
             .into_iter()
             .skip(start)
-            .take(dialogue_rows)
+            .take(scroll_metrics.visible_rows)
             .enumerate()
         {
             place_vn_overlay_text(
@@ -2946,9 +3046,49 @@ impl SceneRuntime {
                 &line,
             );
         }
+        self.render_vn_dialogue_scrollbar(&mut screen, cols, &layout, scroll_metrics);
 
         let frame = screen.join("\r\n") + "\r\n";
         truncate_to_screen(frame, cols, rows)
+    }
+
+    fn render_vn_dialogue_scrollbar(
+        &self,
+        screen: &mut [String],
+        cols: usize,
+        layout: &VnOverlayLayout,
+        metrics: VnDialogueScrollMetrics,
+    ) {
+        if metrics.max_scroll_offset == 0 || metrics.visible_rows == 0 {
+            return;
+        }
+        let bar_col = layout
+            .dialogue_panel
+            .right()
+            .saturating_sub(2)
+            .min(cols.saturating_sub(1));
+        let bar_height = metrics.visible_rows;
+        let thumb_height = ((bar_height * metrics.visible_rows) / metrics.total_lines.max(1))
+            .max(1)
+            .min(bar_height);
+        let travel = bar_height.saturating_sub(thumb_height);
+        let thumb_top = if metrics.max_scroll_offset == 0 {
+            0
+        } else {
+            let distance_from_top = metrics
+                .max_scroll_offset
+                .saturating_sub(metrics.scroll_offset);
+            (travel * distance_from_top) / metrics.max_scroll_offset
+        };
+        for idx in 0..bar_height {
+            let row = layout.dialogue_text_row.saturating_add(idx);
+            let marker = if idx >= thumb_top && idx < thumb_top.saturating_add(thumb_height) {
+                "#"
+            } else {
+                "|"
+            };
+            place_vn_overlay_text(screen, cols, row, bar_col, 1, marker);
+        }
     }
 
     fn vn_dialogue_nameplate(&self, dialogue: &VisualDialogueLine) -> String {
@@ -5529,6 +5669,75 @@ mod tests {
         assert!(!frame.contains("old prompt 0"));
         assert!(frame.contains("> latest prompt"));
         assert!(frame.contains("latest reply should remain visible"));
+    }
+
+    #[test]
+    fn staged_scene_compose_transcript_scroll_offset_shows_older_lines() {
+        let mut runtime = SceneRuntime::new(staged_compose_scene()).unwrap();
+
+        for idx in 0..8 {
+            runtime.mark_compose_running("Compose running", &format!("old prompt {idx}"));
+            runtime.mark_compose_succeeded(
+                "Codex",
+                &format!(
+                    "old reply {idx} {}",
+                    "with enough words to wrap inside the dialogue box ".repeat(2)
+                ),
+            );
+        }
+        runtime.mark_compose_running("Compose running", "latest prompt");
+        runtime.mark_compose_succeeded("Codex", "latest reply should remain visible");
+
+        let metrics = runtime.vn_dialogue_scroll_metrics(80, 24, usize::MAX);
+        assert!(metrics.max_scroll_offset > 0);
+
+        let frame =
+            runtime.render_text_frame_with_dialogue_scroll(80, 24, metrics.max_scroll_offset);
+
+        assert!(frame.contains("> old prompt 0"));
+        assert!(!frame.contains("latest reply should remain visible"));
+    }
+
+    #[test]
+    fn staged_scene_draws_dialogue_scrollbar_for_overflowing_transcript() {
+        let mut runtime = SceneRuntime::new(staged_compose_scene()).unwrap();
+
+        for idx in 0..8 {
+            runtime.mark_compose_running("Compose running", &format!("prompt {idx}"));
+            runtime.mark_compose_succeeded(
+                "Codex",
+                &format!(
+                    "reply {idx} {}",
+                    "with enough words to overflow the dialogue panel ".repeat(3)
+                ),
+            );
+        }
+
+        let frame = runtime.render_text_frame(80, 24);
+
+        assert!(
+            runtime
+                .vn_dialogue_scroll_metrics(80, 24, 0)
+                .max_scroll_offset
+                > 0
+        );
+        assert!(frame.contains('#'));
+        assert!(frame.contains('|'));
+    }
+
+    #[test]
+    fn staged_scene_dialogue_scroll_metrics_clamp_offset() {
+        let mut runtime = SceneRuntime::new(staged_compose_scene()).unwrap();
+
+        for idx in 0..6 {
+            runtime.mark_compose_running("Compose running", &format!("prompt {idx}"));
+            runtime.mark_compose_succeeded("Codex", &"reply ".repeat(40));
+        }
+
+        let metrics = runtime.vn_dialogue_scroll_metrics(80, 24, usize::MAX);
+
+        assert!(metrics.total_lines > metrics.visible_rows);
+        assert_eq!(metrics.scroll_offset, metrics.max_scroll_offset);
     }
 
     #[test]

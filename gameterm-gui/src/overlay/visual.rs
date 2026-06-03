@@ -9,7 +9,7 @@ use gameterm_visual::{
     SceneRuntime, VisualActionRequest, VisualInput, VisualMode, VisualModeOutcome,
     VisualResolvedSprite, VisualScene, VisualSceneDialoguePatch, VisualSceneLoadStatus,
     VisualScenePatch, VisualSceneSource, VisualSpriteManifest, VisualSpriteManifestStatus,
-    VisualStoryState, VisualView, VnOverlayDebugOverrides, VnOverlayRect,
+    VisualStoryState, VisualView, VnDialogueScrollMetrics, VnOverlayDebugOverrides, VnOverlayRect,
 };
 use mux::domain::SplitSource;
 use mux::tab::{SplitDirection, SplitRequest, SplitSize};
@@ -24,7 +24,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
-use termwiz::input::{InputEvent, KeyCode, KeyEvent, Modifiers};
+use termwiz::input::{InputEvent, KeyCode, KeyEvent, Modifiers, MouseButtons, MouseEvent};
 use termwiz::surface::Change;
 use termwiz::terminal::Terminal;
 use window::{Window, WindowOps};
@@ -84,6 +84,29 @@ enum VisualSceneOverlaySource {
     },
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct SceneDialogueScrollback {
+    offset: usize,
+}
+
+impl SceneDialogueScrollback {
+    fn reset_to_bottom(&mut self) {
+        self.offset = 0;
+    }
+
+    fn scroll_up(&mut self, max_offset: usize) {
+        self.offset = self.offset.saturating_add(1).min(max_offset);
+    }
+
+    fn scroll_down(&mut self) {
+        self.offset = self.offset.saturating_sub(1);
+    }
+
+    fn clamp(&mut self, max_offset: usize) {
+        self.offset = self.offset.min(max_offset);
+    }
+}
+
 fn show_visual_scene_overlay_with_source(
     mut term: TermWizTerminal,
     route_pane_id: Option<mux::pane::PaneId>,
@@ -138,6 +161,7 @@ fn show_visual_scene_overlay_with_source(
     let _scene_patch_subscription =
         ScenePatchNotificationSubscription::new(pane_id, route_pane_id, scene_patch_tx);
     let mut compose_dock = SceneComposeDock::default();
+    let mut dialogue_scroll = SceneDialogueScrollback::default();
     let (compose_tx, compose_rx) = mpsc::channel();
     let mut compose_backend_running = false;
     let (tts_tx, tts_rx) = mpsc::channel();
@@ -173,6 +197,7 @@ fn show_visual_scene_overlay_with_source(
             compose_backend_running = false;
             if let Some(runtime) = runtime.as_mut() {
                 let speakable_segments = apply_compose_backend_result(runtime, result);
+                dialogue_scroll.reset_to_bottom();
                 if !tts_state.is_muted() {
                     for segment in speakable_segments {
                         spawn_tts_backend(SceneTtsRequest { segment }, tts_tx.clone());
@@ -200,12 +225,19 @@ fn show_visual_scene_overlay_with_source(
                     &scene_path,
                     pane_id,
                 );
+                dialogue_scroll.reset_to_bottom();
                 needs_render = true;
             }
         }
         if needs_render {
             if let Some(runtime) = runtime.as_ref() {
-                render_runtime_with_compose(&mut term, runtime, &sprite_manifest, &compose_dock)?;
+                render_runtime_with_compose_and_scroll(
+                    &mut term,
+                    runtime,
+                    &sprite_manifest,
+                    &compose_dock,
+                    &dialogue_scroll,
+                )?;
             }
         }
 
@@ -220,11 +252,13 @@ fn show_visual_scene_overlay_with_source(
                     &mut sprite_manifest,
                     &mut load_error,
                 )?;
+                dialogue_scroll.reset_to_bottom();
                 file_watcher.refresh(&scene_path, &sprite_manifest_path);
             }
             if let Some(path) = patch_inbox.changed_path() {
                 if let Some(runtime) = runtime.as_mut() {
                     apply_scene_patch_file(&mut term, runtime, &sprite_manifest, &path)?;
+                    dialogue_scroll.reset_to_bottom();
                 }
                 patch_inbox.refresh();
             }
@@ -237,6 +271,7 @@ fn show_visual_scene_overlay_with_source(
                         &scene_patch.patch_json,
                         scene_patch.source_pane_id,
                     )?;
+                    dialogue_scroll.reset_to_bottom();
                 }
             }
             continue;
@@ -246,11 +281,12 @@ fn show_visual_scene_overlay_with_source(
                 if let Some(runtime) = runtime.as_mut() {
                     if is_tts_toggle_key(key, modifiers) {
                         runtime.mark_action_status(tts_state.toggle_muted());
-                        render_runtime_with_compose(
+                        render_runtime_with_compose_and_scroll(
                             &mut term,
                             runtime,
                             &sprite_manifest,
                             &compose_dock,
+                            &dialogue_scroll,
                         )?;
                         continue;
                     }
@@ -264,11 +300,12 @@ fn show_visual_scene_overlay_with_source(
                             runtime.mark_action_status(stt_state.mark_started());
                             stt_cancel = Some(spawn_stt_backend(stt_tx.clone()));
                         }
-                        render_runtime_with_compose(
+                        render_runtime_with_compose_and_scroll(
                             &mut term,
                             runtime,
                             &sprite_manifest,
                             &compose_dock,
+                            &dialogue_scroll,
                         )?;
                         continue;
                     }
@@ -279,11 +316,12 @@ fn show_visual_scene_overlay_with_source(
                     if !runtime.scene().stage.is_empty() && !in_layout_debug {
                         match compose_dock.handle_key(key) {
                             SceneComposeAction::Consumed => {
-                                render_runtime_with_compose(
+                                render_runtime_with_compose_and_scroll(
                                     &mut term,
                                     runtime,
                                     &sprite_manifest,
                                     &compose_dock,
+                                    &dialogue_scroll,
                                 )?;
                                 continue;
                             }
@@ -294,17 +332,19 @@ fn show_visual_scene_overlay_with_source(
                                     runtime.mark_action_status(
                                         "Compose busy: finish the current reply first",
                                     );
-                                    render_runtime_with_compose(
+                                    render_runtime_with_compose_and_scroll(
                                         &mut term,
                                         runtime,
                                         &sprite_manifest,
                                         &compose_dock,
+                                        &dialogue_scroll,
                                     )?;
                                     continue;
                                 }
                                 compose_dock.mark_submitted(&prompt);
                                 runtime
                                     .mark_compose_running(compose_running_status(&prompt), &prompt);
+                                dialogue_scroll.reset_to_bottom();
                                 compose_backend_running = true;
                                 spawn_compose_backend(
                                     ComposeBackendRequest {
@@ -314,11 +354,12 @@ fn show_visual_scene_overlay_with_source(
                                     },
                                     compose_tx.clone(),
                                 );
-                                render_runtime_with_compose(
+                                render_runtime_with_compose_and_scroll(
                                     &mut term,
                                     runtime,
                                     &sprite_manifest,
                                     &compose_dock,
+                                    &dialogue_scroll,
                                 )?;
                                 continue;
                             }
@@ -360,6 +401,7 @@ fn show_visual_scene_overlay_with_source(
                             &mut load_error,
                         )?;
                     }
+                    dialogue_scroll.reset_to_bottom();
                     file_watcher.refresh(&scene_path, &sprite_manifest_path);
                     continue;
                 }
@@ -394,21 +436,58 @@ fn show_visual_scene_overlay_with_source(
                     )?;
                     file_watcher.refresh(&scene_path, &sprite_manifest_path);
                     patch_inbox.refresh();
-                    render_runtime_with_compose(
+                    render_runtime_with_compose_and_scroll(
                         &mut term,
                         runtime,
                         &sprite_manifest,
                         &compose_dock,
+                        &dialogue_scroll,
                     )?;
+                }
+            }
+            InputEvent::Mouse(MouseEvent {
+                x,
+                y,
+                mouse_buttons,
+                ..
+            }) if mouse_buttons.contains(MouseButtons::VERT_WHEEL) => {
+                if let Some(runtime) = runtime.as_ref() {
+                    let size = term.get_screen_size()?;
+                    if handle_dialogue_scroll_wheel(
+                        runtime,
+                        &mut dialogue_scroll,
+                        size.cols,
+                        size.rows,
+                        x,
+                        y,
+                        mouse_buttons,
+                    ) {
+                        render_runtime_with_compose_and_scroll(
+                            &mut term,
+                            runtime,
+                            &sprite_manifest,
+                            &compose_dock,
+                            &dialogue_scroll,
+                        )?;
+                        continue;
+                    }
                 }
             }
             InputEvent::Resized { .. } => {
                 if let Some(runtime) = runtime.as_ref() {
-                    render_runtime_with_compose(
+                    let size = term.get_screen_size()?;
+                    let metrics = runtime.vn_dialogue_scroll_metrics(
+                        size.cols,
+                        size.rows,
+                        dialogue_scroll.offset,
+                    );
+                    dialogue_scroll.clamp(metrics.max_scroll_offset);
+                    render_runtime_with_compose_and_scroll(
                         &mut term,
                         runtime,
                         &sprite_manifest,
                         &compose_dock,
+                        &dialogue_scroll,
                     )?;
                 } else {
                     let error = load_error
@@ -1784,11 +1863,67 @@ fn render_runtime(
     render_runtime_with_compose(term, runtime, sprite_manifest, &SceneComposeDock::default())
 }
 
+fn handle_dialogue_scroll_wheel(
+    runtime: &SceneRuntime,
+    scroll: &mut SceneDialogueScrollback,
+    cols: usize,
+    rows: usize,
+    x: u16,
+    y: u16,
+    mouse_buttons: MouseButtons,
+) -> bool {
+    let Some(panel) = runtime.vn_dialogue_panel_rect(cols, rows) else {
+        return false;
+    };
+    let mouse_col = x.saturating_sub(1) as usize;
+    let mouse_row = y.saturating_sub(1) as usize;
+    if mouse_col < panel.col
+        || mouse_col >= panel.right()
+        || mouse_row < panel.row
+        || mouse_row >= panel.bottom()
+    {
+        return false;
+    }
+
+    let metrics = runtime.vn_dialogue_scroll_metrics(cols, rows, scroll.offset);
+    apply_dialogue_scroll_wheel(scroll, metrics, mouse_buttons);
+    true
+}
+
+fn apply_dialogue_scroll_wheel(
+    scroll: &mut SceneDialogueScrollback,
+    metrics: VnDialogueScrollMetrics,
+    mouse_buttons: MouseButtons,
+) {
+    if mouse_buttons.contains(MouseButtons::WHEEL_POSITIVE) {
+        scroll.scroll_up(metrics.max_scroll_offset);
+    } else {
+        scroll.scroll_down();
+    }
+    scroll.clamp(metrics.max_scroll_offset);
+}
+
 fn render_runtime_with_compose(
     term: &mut TermWizTerminal,
     runtime: &SceneRuntime,
     sprite_manifest: &VisualSpriteManifestStatus,
     compose_dock: &SceneComposeDock,
+) -> anyhow::Result<()> {
+    render_runtime_with_compose_and_scroll(
+        term,
+        runtime,
+        sprite_manifest,
+        compose_dock,
+        &SceneDialogueScrollback::default(),
+    )
+}
+
+fn render_runtime_with_compose_and_scroll(
+    term: &mut TermWizTerminal,
+    runtime: &SceneRuntime,
+    sprite_manifest: &VisualSpriteManifestStatus,
+    compose_dock: &SceneComposeDock,
+    dialogue_scroll: &SceneDialogueScrollback,
 ) -> anyhow::Result<()> {
     let size = term.get_screen_size()?;
     let mut snapshot = runtime.render_snapshot();
@@ -1808,7 +1943,11 @@ fn render_runtime_with_compose(
         frame.push_str(&sprite_manifest.warnings.join("; "));
         frame.push_str("\r\n\r\n");
     }
-    frame.push_str(&runtime.render_text_frame(size.cols, size.rows));
+    frame.push_str(&runtime.render_text_frame_with_dialogue_scroll(
+        size.cols,
+        size.rows,
+        dialogue_scroll.offset,
+    ));
     if !snapshot.stage.is_empty() {
         let layout = match snapshot.vn_layout_debug.as_ref() {
             Some(overrides) => vn_overlay_layout_with_overrides(
@@ -1898,6 +2037,7 @@ mod tests {
     };
     use super::*;
     use gameterm_visual::{
+        VisualStage, VisualStageDisplayable, VisualStageLayer, VisualStagePlacement,
         VN_OVERLAY_COMPOSER_NAMEPLATE_TEXT_INSET_ROWS,
         VN_OVERLAY_DIALOGUE_NAMEPLATE_TEXT_INSET_COLS,
     };
@@ -2364,6 +2504,78 @@ mod tests {
         assert!(scene_patch_target_matches(None, Some(7), 7, Some(3)));
         assert!(!scene_patch_target_matches(Some(4), None, 7, Some(3)));
         assert!(!scene_patch_target_matches(None, Some(4), 7, Some(3)));
+    }
+
+    #[test]
+    fn scene_dialogue_scrollback_moves_within_bounds() {
+        let mut scroll = SceneDialogueScrollback { offset: 1 };
+        let metrics = VnDialogueScrollMetrics {
+            total_lines: 20,
+            visible_rows: 5,
+            scroll_offset: 1,
+            max_scroll_offset: 3,
+        };
+
+        apply_dialogue_scroll_wheel(
+            &mut scroll,
+            metrics,
+            MouseButtons::VERT_WHEEL | MouseButtons::WHEEL_POSITIVE,
+        );
+        assert_eq!(scroll.offset, 2);
+
+        apply_dialogue_scroll_wheel(&mut scroll, metrics, MouseButtons::VERT_WHEEL);
+        assert_eq!(scroll.offset, 1);
+
+        scroll.offset = 10;
+        apply_dialogue_scroll_wheel(&mut scroll, metrics, MouseButtons::VERT_WHEEL);
+        assert_eq!(scroll.offset, 3);
+    }
+
+    #[test]
+    fn scene_dialogue_scroll_wheel_is_bounded_to_dialogue_panel() {
+        let mut scene = VisualScene::demo();
+        scene.stage = VisualStage {
+            layers: vec![VisualStageLayer {
+                layer_id: "background".to_string(),
+                zorder: 0,
+                displayables: vec![VisualStageDisplayable {
+                    tag: "background".to_string(),
+                    sprite: "vn.background.school_classroom".to_string(),
+                    placement: VisualStagePlacement::Fullscreen,
+                    zorder: 0,
+                    visible: true,
+                }],
+            }],
+        };
+        let mut runtime = SceneRuntime::new(scene).unwrap();
+        for idx in 0..8 {
+            runtime.mark_compose_running("Compose running", &format!("prompt {idx}"));
+            runtime.mark_compose_succeeded("Codex", &"reply ".repeat(40));
+        }
+        let panel = runtime.vn_dialogue_panel_rect(100, 30).unwrap();
+        let mut scroll = SceneDialogueScrollback::default();
+
+        assert!(!handle_dialogue_scroll_wheel(
+            &runtime,
+            &mut scroll,
+            100,
+            30,
+            1,
+            1,
+            MouseButtons::VERT_WHEEL | MouseButtons::WHEEL_POSITIVE,
+        ));
+        assert_eq!(scroll.offset, 0);
+
+        assert!(handle_dialogue_scroll_wheel(
+            &runtime,
+            &mut scroll,
+            100,
+            30,
+            panel.col.saturating_add(1) as u16,
+            panel.row.saturating_add(1) as u16,
+            MouseButtons::VERT_WHEEL | MouseButtons::WHEEL_POSITIVE,
+        ));
+        assert_eq!(scroll.offset, 1);
     }
 
     #[test]
