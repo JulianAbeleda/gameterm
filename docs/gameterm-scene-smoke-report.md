@@ -1088,3 +1088,63 @@ Notes:
 - The wrapper fallback in `[tools] keep VOICEVOX speaking without implicit
   translation` keeps the default app route speaking even when the implicit
   `codex exec` translation path fails.
+
+## Scene VOICEVOX CTranslate2 Latency Benchmark
+
+Date: 2026-06-04.
+
+Setup:
+
+```sh
+ci/scene-tts/setup-ct2-en-ja.sh
+```
+
+Model:
+
+```text
+staka/fugumt-en-ja -> CTranslate2 int8
+.cache/scene-tts/models/fugumt-en-ja-ct2-int8
+```
+
+Input:
+
+```text
+Fake Codex received: hi
+```
+
+Previous Codex translation path:
+
+```text
+codex_translation_seconds=5.339
+voicevox_audio_query_seconds=0.030
+voicevox_synthesis_seconds=0.785
+wav_duration_seconds=3.264000
+total_generate_and_play_seconds=10.367
+```
+
+Local CTranslate2 path:
+
+```text
+ct2_process_translation_seconds=0.929
+voicevox_wrapper_generate_seconds=1.617
+wav_duration_seconds=2.165333
+```
+
+Direct CT2 helper timing for the same input:
+
+```text
+ct2_timing tokenizer=0.038s translator=0.026s translate=0.030s total=0.094s
+```
+
+Result: PASS.
+
+Observations:
+
+- The CT2 helper produced usable Japanese:
+  `偽コード受信:こんにちは。`
+- The audio-ready time dropped from roughly `6.1s` with `codex exec`
+  translation to `1.617s` with the local CT2 path.
+- The remaining CT2 process wall time is mostly Python startup/import overhead;
+  the actual tokenizer/model work is under `0.1s` for this short prompt.
+- Next latency target is a persistent translation/TTS worker or moving the
+  VOICEVOX HTTP path into Rust.

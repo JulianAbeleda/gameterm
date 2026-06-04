@@ -82,6 +82,10 @@ VOICEVOX/TTS status:
   translator is configured, but falls back to synthesizing the filtered prose
   directly if that implicit translation fails. Explicit translator commands
   still fail loudly.
+- The VOICEVOX wrapper now prefers the local CTranslate2 helper
+  `ci/scene-tts/ct2-en-to-ja.sh` when `.cache/scene-tts` has the int8 FuguMT
+  model installed. This removes the `codex exec` translation delay from the
+  default app path.
 
 ## App And Config State
 
@@ -193,20 +197,20 @@ session identity, stream progress into the dialogue panel, or support
 
 ## Recommended Next Actions
 
-1. Reduce VOICEVOX latency:
-   - measure translation time vs VOICEVOX `audio_query` vs synthesis vs
-     `afplay`
-   - avoid spawning `codex exec` for translation where possible
-   - consider a faster local/static translator path for short debug phrases
-   - consider moving the VOICEVOX HTTP path into Rust after the command path is
-     proven, while still using the same VOICEVOX speaker
+1. Reduce remaining VOICEVOX latency:
+   - local CTranslate2 translation is now wired and avoids `codex exec`
+   - current Scene test phrase benchmark: wrapper generation `1.617s` before
+     playback, down from roughly `6.1s` before audio was ready with Codex
+     translation
+   - next bottleneck is process startup plus VOICEVOX synthesis; consider a
+     persistent translation/TTS worker or moving VOICEVOX HTTP into Rust
 2. Push local commits after the handoff refresh is committed.
-4. Scope persistent Codex sessions:
+3. Scope persistent Codex sessions:
    - parse session/thread metadata from Codex JSONL if available
    - persist session identity per Scene overlay/session
    - add reset/new-session action
    - add `codex exec resume` support
-5. Decide whether progress/streaming events should render into Scene Mode or
+4. Decide whether progress/streaming events should render into Scene Mode or
    stay a follow-up.
 6. Keep app-launch config behavior explicit; do not silently enable network
    backends without user/app config.
