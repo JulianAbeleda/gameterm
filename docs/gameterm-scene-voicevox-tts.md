@@ -91,6 +91,20 @@ is available, it exits with a short setup error.
 With VOICEVOX running:
 
 ```sh
+vs hello
+```
+
+The `vs` helper reads text from arguments or stdin, writes a temporary WAV,
+plays it with `afplay`, and deletes the WAV after playback:
+
+```sh
+vs "hello, this is a test"
+echo "hello, this is a test" | vs
+```
+
+For lower-level debugging, call the wrapper directly:
+
+```sh
 export GAMETERM_SCENE_TTS_OUTPUT=/tmp/gameterm-voicevox-test.wav
 
 echo "hello, this is a test" | \
