@@ -51,6 +51,52 @@ trim_text() {
   sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
 }
 
+filter_speakable_lines() {
+  awk '
+    function trim(value) {
+      sub(/^[[:space:]]+/, "", value)
+      sub(/[[:space:]]+$/, "", value)
+      return value
+    }
+
+    function is_technical_line(line, compact, token_count, punctuation_count, punctuation_ratio) {
+      compact = trim(line)
+      if (compact == "") return 1
+
+      token_count = split(compact, tokens, /[[:space:]]+/)
+      punctuation_count = gsub(/[[:punct:]]/, "&", compact)
+      punctuation_ratio = punctuation_count / length(compact)
+
+      if (compact ~ /^([A-Za-z]:\\|\\\\|\/|~\/)/) return 1
+      if (compact ~ /^[.]{0,2}\//) return 1
+      if (compact ~ /https?:\/\//) return 1
+      if (compact ~ /^[[:space:]]*[{[]/) return 1
+      if (compact ~ /^[[:space:]]*[}\]],?$/) return 1
+      if (compact ~ /^[[:space:]]*["A-Za-z0-9_-]+["]?[[:space:]]*:[[:space:]]*[{["0-9tfn-]/) return 1
+      if (compact ~ /^[[:space:]]*(error|warning|info|debug|trace|note):/) return 1
+      if (compact ~ /^[[:space:]]*(Compiling|Checking|Finished|Running|Downloaded|Installing|Installed)[[:space:]]/) return 1
+      if (compact ~ /^[[:space:]]*(\$|>|%|#)[[:space:]]*[A-Za-z0-9_.\/-]+/) return 1
+      if (compact ~ /^[[:space:]]*(cargo|git|make|npm|pnpm|yarn|node|python|python3|uv|ruby|go|rustc|curl|jq|sed|awk|grep|rg|cat|ls|cd|mkdir|rm|cp|mv|chmod|chown|launchctl|open|osascript|afplay)[[:space:]]/) return 1
+      if (compact ~ /^[[:space:]]*[A-Za-z0-9_-]+=[^[:space:]]+/) return 1
+      if (compact ~ /^-{3,}$/) return 1
+      if (compact ~ /^diff --git /) return 1
+      if (compact ~ /^commit [0-9a-f]{7,40}$/) return 1
+      if (compact ~ /^[0-9a-f]{7,40}[[:space:]]/) return 1
+      if (compact ~ /[A-Za-z0-9_.-]+\.(rs|toml|json|md|sh|py|js|ts|tsx|jsx|png|jpg|jpeg|wav|zip|dmg|app|plist)(:|$|[[:space:]])/) return 1
+      if (compact ~ /\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.\/-]+/) return 1
+      if (compact ~ /[A-Za-z]:\\[A-Za-z0-9_.\\ -]+/) return 1
+      if (token_count <= 4 && compact ~ /[-_\/\\.:=]/ && punctuation_ratio > 0.18) return 1
+      if (punctuation_ratio > 0.45) return 1
+
+      return 0
+    }
+
+    !is_technical_line($0) {
+      print
+    }
+  ' | trim_text
+}
+
 translate_with_configured_command() {
   local text="$1"
   local command_text="$2"
@@ -110,6 +156,11 @@ output_path="${GAMETERM_SCENE_TTS_OUTPUT:-}"
 [[ -n "$output_path" ]] || fail "GAMETERM_SCENE_TTS_OUTPUT is required"
 
 english_text="$(cat | trim_text)"
+if [[ -z "$english_text" ]]; then
+  exit 0
+fi
+
+english_text="$(printf '%s\n' "$english_text" | filter_speakable_lines)"
 if [[ -z "$english_text" ]]; then
   exit 0
 fi
