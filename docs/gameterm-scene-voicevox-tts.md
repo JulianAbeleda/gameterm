@@ -102,6 +102,21 @@ vs "hello, this is a test"
 echo "hello, this is a test" | vs
 ```
 
+## Scene Fake-Codex Test
+
+Use the Scene compose debug backend when you want to test the dialogue and TTS
+path without waiting on real Codex:
+
+```text
+Alt+C
+```
+
+`Alt+C` toggles Scene compose between `Codex` and `Fake Codex`. Toggling clears
+the current dialogue transcript so the next prompt starts from a clean panel. In
+fake mode, submitted Composer prompts produce a deterministic `Fake Codex`
+reply, update the dialogue nameplate to `Fake Codex`, and still flow through the
+same Scene TTS command backend when TTS is enabled and unmuted.
+
 For lower-level debugging, call the wrapper directly:
 
 ```sh
