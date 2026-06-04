@@ -11,11 +11,6 @@ use window::WindowOps;
 
 use super::visual_tts::SceneTtsConfig;
 
-const SCENE_TTS_COMMAND_ENV: &str = "GAMETERM_SCENE_TTS_COMMAND";
-const SCENE_TTS_VOICEVOX_SCRIPT: &str = "ci/scene-tts/voicevox-en-to-ja.sh";
-const SCENE_TTS_PLAYER: &str = "afplay {output}";
-const SCENE_TTS_TIMEOUT_SECONDS: u64 = 120;
-
 #[derive(Clone, Copy)]
 enum BootChoice {
     SceneVoicevox,
@@ -170,35 +165,7 @@ fn boot_choices() -> [BootChoice; 3] {
 }
 
 pub(crate) fn voicevox_scene_tts_config() -> Result<SceneTtsConfig, String> {
-    SceneTtsConfig::command_from_strings(
-        &default_voicevox_scene_tts_command(),
-        Some(SCENE_TTS_PLAYER),
-        std::time::Duration::from_secs(SCENE_TTS_TIMEOUT_SECONDS),
-    )
-}
-
-pub(crate) fn default_voicevox_scene_tts_command() -> String {
-    if let Ok(command) = std::env::var(SCENE_TTS_COMMAND_ENV) {
-        if !command.trim().is_empty() {
-            return command;
-        }
-    }
-
-    if let Ok(cwd) = std::env::current_dir() {
-        let candidate = cwd.join(SCENE_TTS_VOICEVOX_SCRIPT);
-        if candidate.exists() {
-            return candidate.display().to_string();
-        }
-    }
-
-    if let Ok(home) = std::env::var("HOME") {
-        let candidate = std::path::Path::new(&home)
-            .join("env/gameterm")
-            .join(SCENE_TTS_VOICEVOX_SCRIPT);
-        return candidate.display().to_string();
-    }
-
-    SCENE_TTS_VOICEVOX_SCRIPT.to_string()
+    Ok(SceneTtsConfig::voicevox_default())
 }
 
 pub fn boot_menu(mut term: TermWizTerminal, window: ::window::Window) -> anyhow::Result<()> {
@@ -218,7 +185,7 @@ pub fn boot_menu(mut term: TermWizTerminal, window: ::window::Window) -> anyhow:
 
 #[cfg(test)]
 mod tests {
-    use super::{boot_choices, default_voicevox_scene_tts_command, BootChoice};
+    use super::{boot_choices, BootChoice};
     use config::keyassignment::KeyAssignment;
 
     #[test]
@@ -258,16 +225,9 @@ mod tests {
     }
 
     #[test]
-    fn boot_menu_voicevox_command_uses_repo_helper_path() {
-        let command = default_voicevox_scene_tts_command();
-
-        assert!(command.ends_with("ci/scene-tts/voicevox-en-to-ja.sh"));
-    }
-
-    #[test]
     fn boot_menu_voicevox_scene_choice_builds_tts_config() {
         let config = super::voicevox_scene_tts_config().unwrap();
 
-        assert!(config.is_command_backend());
+        assert!(config.is_voicevox_backend());
     }
 }

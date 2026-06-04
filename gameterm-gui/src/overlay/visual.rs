@@ -47,8 +47,8 @@ use super::visual_compose::{
 };
 use super::visual_stt::{spawn_stt_backend, SceneSttCancel, SceneSttResult, SceneSttState};
 use super::visual_tts::{
-    extract_speakable_segments, spawn_tts_backend, SceneTtsConfig, SceneTtsRequest,
-    SceneTtsResult, SceneTtsState, SpeakableSegment, SpeakableSource,
+    extract_speakable_segments, SceneTtsConfig, SceneTtsRequest, SceneTtsResult, SceneTtsState,
+    SceneTtsWorker, SpeakableSegment, SpeakableSource,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -229,6 +229,7 @@ fn show_visual_scene_overlay_with_source(
     let tts_config = launch_options
         .tts_config
         .unwrap_or_else(SceneTtsConfig::from_env);
+    let tts_worker = SceneTtsWorker::new(tts_config, tts_tx.clone());
     let mut tts_state = SceneTtsState::default();
     let (stt_tx, stt_rx) = mpsc::channel();
     let mut stt_state = SceneSttState::default();
@@ -265,11 +266,7 @@ fn show_visual_scene_overlay_with_source(
                 dialogue_scroll.reset_to_bottom();
                 if !tts_state.is_muted() {
                     for segment in speakable_segments {
-                        spawn_tts_backend(
-                            SceneTtsRequest { segment },
-                            tts_config.clone(),
-                            tts_tx.clone(),
-                        );
+                        tts_worker.speak(SceneTtsRequest { segment });
                     }
                 }
                 needs_render = true;
@@ -462,11 +459,7 @@ fn show_visual_scene_overlay_with_source(
                                     );
                                     if !tts_state.is_muted() {
                                         for segment in speakable_segments {
-                                            spawn_tts_backend(
-                                                SceneTtsRequest { segment },
-                                                tts_config.clone(),
-                                                tts_tx.clone(),
-                                            );
+                                            tts_worker.speak(SceneTtsRequest { segment });
                                         }
                                     }
                                     render_runtime_with_compose_and_scroll(
