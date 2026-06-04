@@ -11,6 +11,12 @@ GameTerm still owns speech filtering. The command backend sends this helper
 plain prose only; code blocks, logs, diffs, and image data are skipped before
 the helper runs.
 
+The helper also applies a second whole-line filter before translation. It skips
+lines that are mostly technical, such as file paths, Windows paths, URLs,
+commands, JSON/code-looking lines, commit hashes, stack/log output, and build
+output. The visible Scene dialogue is unchanged; only the spoken transcript is
+filtered.
+
 ## Requirements
 
 - `curl`
