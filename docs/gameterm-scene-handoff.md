@@ -8,10 +8,10 @@ deeper product context.
 
 - Date: 2026-06-04
 - Branch: `main`
-- Latest behavior commit: `3eddb9b61 [gui] add explicit Scene VOICEVOX launch config`
-- Latest tooling commit: `09edb63fe [tools] keep VOICEVOX speaking without implicit translation`
-- Remote state at handoff time: `main` is ahead of `origin/main` by 5 commits before this docs commit
-- Worktree state at handoff time: docs-only changes pending until this handoff commit is created
+- Latest behavior commit: current pass `[gui] add Rust Scene VOICEVOX backend`
+- Latest tooling commit: `ec1b29b8e [tools] add local CT2 Scene translation helper`
+- Remote state at handoff time: local commits pending push
+- Worktree state at handoff time: Rust TTS backend/docs changes being committed
 - Local app bundle refreshed: `/Users/julianabeleda/Applications/GameTerm.app`
 - Persistent Scene compose config:
   `/Users/julianabeleda/.config/gameterm/scene-compose.json`
@@ -26,6 +26,9 @@ normal macOS GameTerm app without shell-only setup.
 
 Recent committed work:
 
+- current pass `[gui] add Rust Scene VOICEVOX backend`
+- `60920fd3d [docs] record CT2 Scene voice benchmark`
+- `ec1b29b8e [tools] add local CT2 Scene translation helper`
 - `09edb63fe [tools] keep VOICEVOX speaking without implicit translation`
 - `3eddb9b61 [gui] add explicit Scene VOICEVOX launch config`
 - `9f0a5f246 [docs] document Scene fake Codex TTS test`
@@ -47,7 +50,8 @@ Latest behavior change:
 - The `vs` terminal shortcut speaks text through the VOICEVOX wrapper and
   deletes the generated WAV after playback.
 - Boot option `1. Scene Mode + VOICEVOX` now routes through a dedicated Scene
-  launch action that passes a command TTS config directly into the overlay.
+  launch action that passes a Rust VOICEVOX TTS config directly into the
+  overlay.
 
 Real Codex dogfood pass:
 
@@ -69,8 +73,9 @@ VOICEVOX/TTS status:
 - Before the explicit launch-config fix, option 1 reached Scene Mode but Scene
   status still reported `TTS disabled` and no VOICEVOX command spawned.
 - The expected Scene voice path is:
-  Composer reply -> speakable prose segment -> `GAMETERM_SCENE_TTS_COMMAND`
-  stdin -> VOICEVOX WAV -> `afplay`.
+  Composer reply -> speakable prose segment -> Rust Scene TTS worker ->
+  optional CT2/helper translation command -> Rust VOICEVOX HTTP
+  `audio_query`/`synthesis` -> temporary WAV -> `afplay`.
 - VOICEVOX does not receive raw Codex JSON. GameTerm parses/extracts the reply
   first and sends only speakable prose to the TTS command.
 - Important primitive: Scene TTS config belongs to the Scene overlay launch.
@@ -78,11 +83,14 @@ VOICEVOX/TTS status:
   Plain Scene launches still fall back to `GAMETERM_SCENE_TTS_*` env visible to
   the GUI process. Env set only inside Codex/native terminal does not configure
   the already-running GUI overlay.
-- The VOICEVOX wrapper tries `codex exec` translation when no explicit
-  translator is configured, but falls back to synthesizing the filtered prose
-  directly if that implicit translation fails. Explicit translator commands
+- The Rust VOICEVOX backend uses an explicit translator command when provided.
+  Otherwise it prefers the local CTranslate2 helper when ready, and falls back
+  to direct VOICEVOX synthesis if translation is unavailable.
+- The standalone VOICEVOX wrapper still tries `codex exec` translation after
+  CT2 when no explicit translator is configured, but falls back to direct
+  VOICEVOX if that implicit translation fails. Explicit translator commands
   still fail loudly.
-- The VOICEVOX wrapper now prefers the local CTranslate2 helper
+- The VOICEVOX path now prefers the local CTranslate2 helper
   `ci/scene-tts/ct2-en-to-ja.sh` when `.cache/scene-tts` has the int8 FuguMT
   model installed. This removes the `codex exec` translation delay from the
   default app path.
@@ -202,8 +210,10 @@ session identity, stream progress into the dialogue panel, or support
    - current Scene test phrase benchmark: wrapper generation `1.617s` before
      playback, down from roughly `6.1s` before audio was ready with Codex
      translation
-   - next bottleneck is process startup plus VOICEVOX synthesis; consider a
-     persistent translation/TTS worker or moving VOICEVOX HTTP into Rust
+   - Rust now owns the persistent Scene TTS worker and VOICEVOX HTTP request
+     path
+   - next bottleneck is translation helper process startup plus VOICEVOX
+     synthesis; pure Rust in-process translation remains deferred
 2. Push local commits after the handoff refresh is committed.
 3. Scope persistent Codex sessions:
    - parse session/thread metadata from Codex JSONL if available

@@ -1,21 +1,20 @@
 # GameTerm Scene VOICEVOX TTS
 
-This helper lets Scene Mode speak English compose replies through a Japanese
-VOICEVOX character voice:
+Scene Mode can speak English compose replies through a Japanese VOICEVOX
+character voice:
 
 ```text
-English prose -> local translation command -> Japanese text -> VOICEVOX WAV
+English prose -> optional local translation -> Japanese text -> VOICEVOX WAV
 ```
 
-GameTerm still owns speech filtering. The command backend sends this helper
-plain prose only; code blocks, logs, diffs, and image data are skipped before
-the helper runs.
+GameTerm owns speech filtering. Code blocks, logs, diffs, and image data are
+skipped before the VOICEVOX path runs.
 
-The helper also applies a second whole-line filter before translation. It skips
-lines that are mostly technical, such as file paths, Windows paths, URLs,
-commands, JSON/code-looking lines, commit hashes, stack/log output, and build
-output. The visible Scene dialogue is unchanged; only the spoken transcript is
-filtered.
+The standalone wrapper also applies a second whole-line filter before
+translation. It skips lines that are mostly technical, such as file paths,
+Windows paths, URLs, commands, JSON/code-looking lines, commit hashes,
+stack/log output, and build output. The visible Scene dialogue is unchanged;
+only the spoken transcript is filtered.
 
 ## Requirements
 
@@ -24,7 +23,7 @@ filtered.
 - VOICEVOX engine running locally
 - Optional local CTranslate2 translator
 - Optional local translation command
-- Optional `codex exec` fallback if no translation command is configured
+- Optional `codex exec` fallback for the standalone wrapper
 
 GameTerm does not bundle VOICEVOX, voices, translation services, or model
 weights. Check the license for the VOICEVOX engine and speaker you use before
@@ -41,7 +40,7 @@ Check that it is reachable:
 curl http://127.0.0.1:50021/version
 ```
 
-The wrapper defaults to:
+The Rust backend and wrapper default to:
 
 ```text
 VOICEVOX_HOST=127.0.0.1
@@ -57,12 +56,33 @@ If the GameTerm boot menu is enabled, choose:
 1. Scene Mode + VOICEVOX
 ```
 
-That option opens Scene Mode with an explicit VOICEVOX command TTS launch
+That option opens Scene Mode with an explicit Rust VOICEVOX TTS launch
 configuration. It does not rely on shell environment variables being present in
 the already-running GUI process. The regular `2. Scene Mode` boot option
 remains a quiet Scene Mode launch without TTS.
 
-Use the wrapper as a Scene Mode command TTS backend:
+The app boot option uses:
+
+```text
+GameTerm speakable prose
+-> Rust Scene TTS worker
+-> optional CT2/helper translation command
+-> Rust VOICEVOX HTTP audio_query/synthesis
+-> temporary WAV
+-> afplay
+```
+
+To force the Rust VOICEVOX backend from a shell launch:
+
+```sh
+GAMETERM_SCENE_TTS_BACKEND=voicevox \
+GAMETERM_SCENE_TTS_VOICEVOX_SPEAKER=14 \
+GAMETERM_SCENE_TTS_TRANSLATION_BACKEND=ct2 \
+GAMETERM_SCENE_TTS_PLAYER='afplay {output}' \
+gameterm start
+```
+
+The wrapper is still available as a Scene Mode command TTS backend:
 
 ```sh
 GAMETERM_SCENE_TTS_BACKEND=command \
@@ -79,8 +99,8 @@ ci/scene-tts/setup-ct2-en-ja.sh
 ```
 
 The setup writes a Python venv and converted FuguMT CTranslate2 int8 model under
-`.cache/scene-tts`, which is gitignored. Once installed, the VOICEVOX wrapper
-uses it automatically before trying `codex exec`.
+`.cache/scene-tts`, which is gitignored. Once installed, the Rust VOICEVOX
+backend and wrapper can use it automatically.
 
 You can test the translator directly:
 
@@ -101,12 +121,12 @@ VOICEVOX_SPEAKER=14 \
 gameterm start
 ```
 
-If `GAMETERM_SCENE_TTS_TRANSLATE_COMMAND` is unset, the wrapper first checks
-whether the local CTranslate2 helper is ready. If not, it tries the same
-`codex exec` translation prompt when the `codex` binary is available. If that
-implicit translation fails, the wrapper falls back to synthesizing the filtered
-prose directly through VOICEVOX so Scene Mode can still speak from the clicked
-app. Explicit translator commands still fail loudly when they fail.
+If `GAMETERM_SCENE_TTS_TRANSLATE_COMMAND` is unset, the Rust backend first
+checks whether the local CTranslate2 helper is ready. If it is not ready, the
+backend falls back to synthesizing the filtered prose directly through
+VOICEVOX. The standalone wrapper checks CTranslate2 first, then can try
+`codex exec`, then falls back to direct VOICEVOX when that implicit translation
+fails. Explicit translator commands still fail loudly when they fail.
 
 ## Standalone Test
 
@@ -148,7 +168,7 @@ Known current status:
 - Scene Mode VOICEVOX from the clicked app reaches `TTS ready` after choosing
   boot option `1. Scene Mode + VOICEVOX`, toggling `Alt+C` Fake Codex, and
   submitting a short prompt.
-- Boot option `1. Scene Mode + VOICEVOX` now passes a command TTS config
+- Boot option `1. Scene Mode + VOICEVOX` now passes a Rust VOICEVOX TTS config
   directly into the Scene overlay. Setting env only inside the native
   terminal/Codex child process still will not configure Scene TTS for an
   existing GUI overlay.
@@ -188,9 +208,6 @@ temporary files and prints a short stderr message that GameTerm can surface as
 
 - `VOICEVOX engine not reachable ...`: start VOICEVOX and confirm
   `curl http://127.0.0.1:50021/version` works.
-- `translation command not configured`: set
-  `GAMETERM_SCENE_TTS_TRANSLATE_COMMAND`, run
-  `ci/scene-tts/setup-ct2-en-ja.sh`, or install/configure `codex`.
 - `translation returned empty text`: the translator command ran but did not
   produce Japanese text.
 - `VOICEVOX audio_query failed`: VOICEVOX rejected the text or speaker id.

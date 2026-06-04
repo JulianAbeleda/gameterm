@@ -1146,5 +1146,59 @@ Observations:
   translation to `1.617s` with the local CT2 path.
 - The remaining CT2 process wall time is mostly Python startup/import overhead;
   the actual tokenizer/model work is under `0.1s` for this short prompt.
-- Next latency target is a persistent translation/TTS worker or moving the
-  VOICEVOX HTTP path into Rust.
+- Next latency target is reducing translation helper process startup and
+  VOICEVOX synthesis time.
+
+## Scene Rust VOICEVOX Backend Smoke
+
+Date: 2026-06-04.
+
+Scope:
+
+```text
+Scene speakable prose
+-> persistent Rust TTS worker
+-> optional CT2/helper translation command
+-> Rust VOICEVOX HTTP audio_query/synthesis
+-> temporary WAV
+-> afplay
+```
+
+Code validation:
+
+```sh
+cargo test -p gameterm-gui visual_tts --bin gameterm-gui
+cargo test -p gameterm-gui boot_menu --bin gameterm-gui
+```
+
+Result:
+
+```text
+visual_tts: 7 passed, 0 failed
+boot_menu: 6 passed, 0 failed
+```
+
+Covered:
+
+- queued TTS requests run through a persistent worker instead of spawning one
+  thread per request
+- Rust VOICEVOX backend writes WAV bytes returned from `/synthesis`
+- Rust VOICEVOX backend percent-encodes translated Japanese text before
+  `/audio_query`
+- boot option `1. Scene Mode + VOICEVOX` builds a Rust VOICEVOX config instead
+  of a command-wrapper config
+
+Remaining live/manual validation:
+
+- app boot option `1. Scene Mode + VOICEVOX`
+- `Alt+C` Fake Codex
+- submit a short Composer prompt
+- confirm status reaches `TTS ready: ...` and audio plays through `afplay`
+
+Notes:
+
+- Pure Rust in-process translation is not implemented yet. The translation
+  stage is Rust-owned, but still shells out to the CT2 helper or a configured
+  translator command.
+- The standalone `vs` shortcut and `voicevox-en-to-ja.sh` wrapper remain for
+  regular terminal testing and command-backend fallback.
