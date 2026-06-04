@@ -33,6 +33,11 @@
 
 set -euo pipefail
 
+# Finder-launched macOS apps commonly inherit a minimal PATH that omits
+# Homebrew. Keep command discovery stable when GameTerm launches from the app.
+PATH="/opt/homebrew/bin:/usr/local/bin:${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}"
+export PATH
+
 fail() {
   printf '%s\n' "$*" >&2
   exit 1
@@ -56,9 +61,30 @@ translate_with_configured_command() {
 translate_with_codex() {
   local text="$1"
   local prompt
+  local codex_bin
 
   prompt='Translate the following English text to natural Japanese. Output only the Japanese translation.'
-  printf '%s' "$text" | codex exec "$prompt"
+  codex_bin="$(codex_command)"
+  printf '%s' "$text" | "$codex_bin" exec "$prompt"
+}
+
+codex_command() {
+  if command -v codex >/dev/null 2>&1; then
+    command -v codex
+    return
+  fi
+
+  if [[ -x /opt/homebrew/bin/codex ]]; then
+    printf '%s\n' /opt/homebrew/bin/codex
+    return
+  fi
+
+  if [[ -x /usr/local/bin/codex ]]; then
+    printf '%s\n' /usr/local/bin/codex
+    return
+  fi
+
+  return 1
 }
 
 translate_to_japanese() {
@@ -69,7 +95,7 @@ translate_to_japanese() {
     return
   fi
 
-  if command -v codex >/dev/null 2>&1; then
+  if codex_command >/dev/null 2>&1; then
     translate_with_codex "$text"
     return
   fi
