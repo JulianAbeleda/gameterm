@@ -183,7 +183,10 @@ trap cleanup EXIT
 if ! japanese_text="$(translate_to_japanese "$english_text" 2>"$translate_err" | trim_text)"; then
   detail="$(cat "$translate_err" | trim_text)"
   [[ -n "$detail" ]] || detail="translation failed"
-  fail "$detail"
+  if [[ -n "${GAMETERM_SCENE_TTS_TRANSLATE_COMMAND:-}" ]]; then
+    fail "$detail"
+  fi
+  japanese_text="$english_text"
 fi
 [[ -n "$japanese_text" ]] || fail "translation returned empty text"
 
