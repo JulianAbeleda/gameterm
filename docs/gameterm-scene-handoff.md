@@ -8,9 +8,10 @@ deeper product context.
 
 - Date: 2026-06-04
 - Branch: `main`
-- Latest behavior commit: `8409cc3c3 [visual] add Scene fake Codex debug toggle`
-- Remote state at handoff time: `main` is ahead of `origin/main` by 3 commits
-- Worktree state at handoff time: clean after this handoff commit is created
+- Latest behavior commit: `3eddb9b61 [gui] add explicit Scene VOICEVOX launch config`
+- Latest tooling commit: `09edb63fe [tools] keep VOICEVOX speaking without implicit translation`
+- Remote state at handoff time: `main` is ahead of `origin/main` by 5 commits before this docs commit
+- Worktree state at handoff time: docs-only changes pending until this handoff commit is created
 - Local app bundle refreshed: `/Users/julianabeleda/Applications/GameTerm.app`
 - Persistent Scene compose config:
   `/Users/julianabeleda/.config/gameterm/scene-compose.json`
@@ -25,6 +26,8 @@ normal macOS GameTerm app without shell-only setup.
 
 Recent committed work:
 
+- `09edb63fe [tools] keep VOICEVOX speaking without implicit translation`
+- `3eddb9b61 [gui] add explicit Scene VOICEVOX launch config`
 - `9f0a5f246 [docs] document Scene fake Codex TTS test`
 - `8409cc3c3 [visual] add Scene fake Codex debug toggle`
 - `55661ed85 [tools] add VOICEVOX speak shortcut`
@@ -43,6 +46,8 @@ Latest behavior change:
   compose replies when Scene TTS is configured and unmuted.
 - The `vs` terminal shortcut speaks text through the VOICEVOX wrapper and
   deletes the generated WAV after playback.
+- Boot option `1. Scene Mode + VOICEVOX` now routes through a dedicated Scene
+  launch action that passes a command TTS config directly into the overlay.
 
 Real Codex dogfood pass:
 
@@ -58,17 +63,25 @@ VOICEVOX/TTS status:
 
 - `vs hello` works from the regular terminal path, but has roughly 5-6 seconds
   of latency before audio playback.
-- The clicked GameTerm app Scene Mode VOICEVOX path is not proven working yet.
-  User testing confirms no voice is heard from Scene Mode today.
+- The clicked GameTerm app Scene Mode VOICEVOX path now reaches `TTS ready`
+  after boot option `1. Scene Mode + VOICEVOX`, `Alt+C` Fake Codex, and a
+  short `hi` prompt.
+- Before the explicit launch-config fix, option 1 reached Scene Mode but Scene
+  status still reported `TTS disabled` and no VOICEVOX command spawned.
 - The expected Scene voice path is:
   Composer reply -> speakable prose segment -> `GAMETERM_SCENE_TTS_COMMAND`
   stdin -> VOICEVOX WAV -> `afplay`.
 - VOICEVOX does not receive raw Codex JSON. GameTerm parses/extracts the reply
   first and sends only speakable prose to the TTS command.
-- Important primitive: Scene TTS env must be visible to the GameTerm GUI
-  process. Boot option `1. Scene Mode + VOICEVOX` sets these env vars inside
+- Important primitive: Scene TTS config belongs to the Scene overlay launch.
+  Boot option `1. Scene Mode + VOICEVOX` now passes that config directly.
+  Plain Scene launches still fall back to `GAMETERM_SCENE_TTS_*` env visible to
   the GUI process. Env set only inside Codex/native terminal does not configure
   the already-running GUI overlay.
+- The VOICEVOX wrapper tries `codex exec` translation when no explicit
+  translator is configured, but falls back to synthesizing the filtered prose
+  directly if that implicit translation fails. Explicit translator commands
+  still fail loudly.
 
 ## App And Config State
 
@@ -180,22 +193,14 @@ session identity, stream progress into the dialogue panel, or support
 
 ## Recommended Next Actions
 
-1. Diagnose and fix Scene Mode VOICEVOX playback:
-   - launch through boot option `1. Scene Mode + VOICEVOX`
-   - toggle `Alt+C` to `Fake Codex`
-   - submit a short Composer prompt
-   - confirm whether a `gameterm-scene-tts-*.wav` file is created
-   - confirm whether `afplay` is spawned
-   - confirm TTS status text in Scene Mode after the TTS result returns
-   - verify whether the GameTerm GUI process has `GAMETERM_SCENE_TTS_*` set
-2. Reduce VOICEVOX latency:
+1. Reduce VOICEVOX latency:
    - measure translation time vs VOICEVOX `audio_query` vs synthesis vs
      `afplay`
    - avoid spawning `codex exec` for translation where possible
    - consider a faster local/static translator path for short debug phrases
    - consider moving the VOICEVOX HTTP path into Rust after the command path is
      proven, while still using the same VOICEVOX speaker
-3. Push local commits after the handoff refresh is committed.
+2. Push local commits after the handoff refresh is committed.
 4. Scope persistent Codex sessions:
    - parse session/thread metadata from Codex JSONL if available
    - persist session identity per Scene overlay/session

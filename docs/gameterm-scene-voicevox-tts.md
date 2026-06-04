@@ -56,9 +56,10 @@ If the GameTerm boot menu is enabled, choose:
 1. Scene Mode + VOICEVOX
 ```
 
-That option configures the command TTS backend for the current app process and
-then opens Scene Mode. The regular `2. Scene Mode` boot option remains a quiet
-Scene Mode launch without TTS.
+That option opens Scene Mode with an explicit VOICEVOX command TTS launch
+configuration. It does not rely on shell environment variables being present in
+the already-running GUI process. The regular `2. Scene Mode` boot option
+remains a quiet Scene Mode launch without TTS.
 
 Use the wrapper as a Scene Mode command TTS backend:
 
@@ -83,8 +84,10 @@ gameterm start
 ```
 
 If `GAMETERM_SCENE_TTS_TRANSLATE_COMMAND` is unset, the wrapper tries the same
-`codex exec` translation prompt when the `codex` binary is available. If neither
-is available, it exits with a short setup error.
+`codex exec` translation prompt when the `codex` binary is available. If that
+implicit translation fails, the wrapper falls back to synthesizing the filtered
+prose directly through VOICEVOX so Scene Mode can still speak from the clicked
+app. Explicit translator commands still fail loudly when they fail.
 
 ## Standalone Test
 
@@ -122,13 +125,15 @@ Known current status:
 - The standalone terminal shortcut works: `vs hello`.
 - The standalone path currently has noticeable latency, around 5-6 seconds in
   user testing.
-- Scene Mode VOICEVOX playback from the clicked app is not confirmed working
-  yet. Use `Alt+C` fake Codex mode as the next diagnostic path because it
-  removes real Codex latency/failure from the voice test.
-- The Scene TTS env must be set in the GameTerm GUI process. Boot option
-  `1. Scene Mode + VOICEVOX` does this. Setting env only inside the native
-  terminal/Codex child process will not configure Scene TTS for the existing
-  GUI overlay.
+- Scene Mode VOICEVOX from the clicked app reaches `TTS ready` after choosing
+  boot option `1. Scene Mode + VOICEVOX`, toggling `Alt+C` Fake Codex, and
+  submitting a short prompt.
+- Boot option `1. Scene Mode + VOICEVOX` now passes a command TTS config
+  directly into the Scene overlay. Setting env only inside the native
+  terminal/Codex child process still will not configure Scene TTS for an
+  existing GUI overlay.
+- Plain Scene launches still use `GAMETERM_SCENE_TTS_*` as the fallback config
+  source when no explicit launch option is provided.
 
 For lower-level debugging, call the wrapper directly:
 

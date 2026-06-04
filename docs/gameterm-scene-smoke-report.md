@@ -1043,3 +1043,48 @@ Observation: the compact windowed capture keeps the staged character's
 proportions consistent with the fullscreen capture. The dialogue and Composer
 panels remain in the VN overlay path and are not affected by image aspect
 scaling.
+
+## Scene VOICEVOX App Boot Smoke
+
+Date: 2026-06-04.
+
+Setup:
+
+```sh
+curl -fsS http://127.0.0.1:50021/version
+make dev-app-open
+```
+
+VOICEVOX engine result:
+
+```text
+"0.25.2"
+```
+
+App route:
+
+```text
+1. Scene Mode + VOICEVOX
+Alt+C -> Fake Codex
+Composer prompt: hi
+```
+
+Result: PASS.
+
+Evidence:
+
+- Scene status changed to `TTS ready: .../gameterm-scene-tts-...wav`.
+- A fresh WAV was created in macOS `TMPDIR`:
+  `/var/folders/ck/d1mxj__s0p1gzq10q1_5gwqh0000gn/T/gameterm-scene-tts-54057-1780605743985804000.wav`.
+- Status capture:
+  `/tmp/gameterm-voicevox-status-crop2.png`.
+- Full capture:
+  `/tmp/gameterm-voicevox-smoke2.png`.
+
+Notes:
+
+- Before `[gui] add explicit Scene VOICEVOX launch config`, the same app route
+  reached Scene Mode but reported `TTS disabled`.
+- The wrapper fallback in `[tools] keep VOICEVOX speaking without implicit
+  translation` keeps the default app route speaking even when the implicit
+  `codex exec` translation path fails.
