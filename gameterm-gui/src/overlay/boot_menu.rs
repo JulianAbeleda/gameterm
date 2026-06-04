@@ -9,8 +9,17 @@ use termwiz::surface::{Change, Position};
 use termwiz::terminal::Terminal;
 use window::WindowOps;
 
+const SCENE_TTS_BACKEND_ENV: &str = "GAMETERM_SCENE_TTS_BACKEND";
+const SCENE_TTS_COMMAND_ENV: &str = "GAMETERM_SCENE_TTS_COMMAND";
+const SCENE_TTS_PLAYER_ENV: &str = "GAMETERM_SCENE_TTS_PLAYER";
+const SCENE_TTS_TIMEOUT_ENV: &str = "GAMETERM_SCENE_TTS_TIMEOUT_SECONDS";
+const SCENE_TTS_VOICEVOX_SCRIPT: &str = "ci/scene-tts/voicevox-en-to-ja.sh";
+const SCENE_TTS_PLAYER: &str = "afplay {output}";
+const SCENE_TTS_TIMEOUT_SECONDS: &str = "120";
+
 #[derive(Clone, Copy)]
 enum BootChoice {
+    SceneVoicevox,
     Scene,
     Native,
 }
@@ -18,15 +27,23 @@ enum BootChoice {
 impl BootChoice {
     fn label(self) -> &'static str {
         match self {
-            BootChoice::Scene => "1. Scene Mode",
-            BootChoice::Native => "2. Native Terminal Mode",
+            BootChoice::SceneVoicevox => "1. Scene Mode + VOICEVOX",
+            BootChoice::Scene => "2. Scene Mode",
+            BootChoice::Native => "3. Native Terminal Mode",
         }
     }
 
     fn assignment(self) -> Option<KeyAssignment> {
         match self {
+            BootChoice::SceneVoicevox => Some(KeyAssignment::ShowGameTermScene),
             BootChoice::Scene => Some(KeyAssignment::ShowGameTermScene),
             BootChoice::Native => None,
+        }
+    }
+
+    fn configure(self) {
+        if matches!(self, BootChoice::SceneVoicevox) {
+            configure_voicevox_scene_tts();
         }
     }
 }
@@ -39,7 +56,7 @@ struct BootMenuState {
 
 impl BootMenuState {
     fn render(&self, term: &mut TermWizTerminal) -> termwiz::Result<()> {
-        let choices = [BootChoice::Scene, BootChoice::Native];
+        let choices = boot_choices();
         let mut changes = vec![
             Change::ClearScreen(ColorAttribute::Default),
             Change::CursorPosition {
@@ -62,12 +79,13 @@ impl BootMenuState {
         }
 
         changes.push(Change::Text(
-            "\r\nPress 1/2, Enter to choose, or Esc for native terminal.\r\n".to_string(),
+            "\r\nPress 1/2/3, Enter to choose, or Esc for native terminal.\r\n".to_string(),
         ));
         term.render(&changes)
     }
 
     fn choose(&self, choice: BootChoice) {
+        choice.configure();
         if let Some(assignment) = choice.assignment() {
             self.window.notify(TermWindowNotif::PerformAssignment {
                 pane_id: self.pane_id,
@@ -78,18 +96,25 @@ impl BootMenuState {
     }
 
     fn run_loop(&mut self, term: &mut TermWizTerminal) -> anyhow::Result<()> {
-        let choices = [BootChoice::Scene, BootChoice::Native];
+        let choices = boot_choices();
         while let Ok(Some(event)) = term.poll_input(None) {
             match event {
                 InputEvent::Key(KeyEvent {
                     key: KeyCode::Char('1'),
                     ..
                 }) => {
-                    self.choose(BootChoice::Scene);
+                    self.choose(BootChoice::SceneVoicevox);
                     break;
                 }
                 InputEvent::Key(KeyEvent {
                     key: KeyCode::Char('2'),
+                    ..
+                }) => {
+                    self.choose(BootChoice::Scene);
+                    break;
+                }
+                InputEvent::Key(KeyEvent {
+                    key: KeyCode::Char('3'),
                     ..
                 })
                 | InputEvent::Key(KeyEvent {
@@ -102,7 +127,7 @@ impl BootMenuState {
                 }) if modifiers.contains(Modifiers::CTRL)
                     && modifiers.contains(Modifiers::SHIFT) =>
                 {
-                    self.choose(BootChoice::Scene);
+                    self.choose(BootChoice::SceneVoicevox);
                     break;
                 }
                 InputEvent::Key(KeyEvent {
@@ -144,6 +169,45 @@ impl BootMenuState {
     }
 }
 
+fn boot_choices() -> [BootChoice; 3] {
+    [
+        BootChoice::SceneVoicevox,
+        BootChoice::Scene,
+        BootChoice::Native,
+    ]
+}
+
+fn configure_voicevox_scene_tts() {
+    std::env::set_var(SCENE_TTS_BACKEND_ENV, "command");
+    std::env::set_var(SCENE_TTS_COMMAND_ENV, default_voicevox_scene_tts_command());
+    std::env::set_var(SCENE_TTS_PLAYER_ENV, SCENE_TTS_PLAYER);
+    std::env::set_var(SCENE_TTS_TIMEOUT_ENV, SCENE_TTS_TIMEOUT_SECONDS);
+}
+
+fn default_voicevox_scene_tts_command() -> String {
+    if let Ok(command) = std::env::var(SCENE_TTS_COMMAND_ENV) {
+        if !command.trim().is_empty() {
+            return command;
+        }
+    }
+
+    if let Ok(cwd) = std::env::current_dir() {
+        let candidate = cwd.join(SCENE_TTS_VOICEVOX_SCRIPT);
+        if candidate.exists() {
+            return candidate.display().to_string();
+        }
+    }
+
+    if let Ok(home) = std::env::var("HOME") {
+        let candidate = std::path::Path::new(&home)
+            .join("env/gameterm")
+            .join(SCENE_TTS_VOICEVOX_SCRIPT);
+        return candidate.display().to_string();
+    }
+
+    SCENE_TTS_VOICEVOX_SCRIPT.to_string()
+}
+
 pub fn boot_menu(mut term: TermWizTerminal, window: ::window::Window) -> anyhow::Result<()> {
     let pane_id = term.pane_id().ok_or_else(|| {
         anyhow::anyhow!("GameTerm boot menu terminal is not attached to a mux pane")
@@ -161,12 +225,24 @@ pub fn boot_menu(mut term: TermWizTerminal, window: ::window::Window) -> anyhow:
 
 #[cfg(test)]
 mod tests {
-    use super::BootChoice;
+    use super::{boot_choices, default_voicevox_scene_tts_command, BootChoice};
     use config::keyassignment::KeyAssignment;
 
     #[test]
+    fn boot_menu_voicevox_scene_choice_routes_to_configured_scene_mode() {
+        assert_eq!(
+            BootChoice::SceneVoicevox.label(),
+            "1. Scene Mode + VOICEVOX"
+        );
+        assert!(matches!(
+            BootChoice::SceneVoicevox.assignment(),
+            Some(KeyAssignment::ShowGameTermScene)
+        ));
+    }
+
+    #[test]
     fn boot_menu_scene_choice_routes_to_configured_scene_mode() {
-        assert_eq!(BootChoice::Scene.label(), "1. Scene Mode");
+        assert_eq!(BootChoice::Scene.label(), "2. Scene Mode");
         assert!(matches!(
             BootChoice::Scene.assignment(),
             Some(KeyAssignment::ShowGameTermScene)
@@ -175,7 +251,23 @@ mod tests {
 
     #[test]
     fn boot_menu_native_choice_exits_without_overlay_assignment() {
-        assert_eq!(BootChoice::Native.label(), "2. Native Terminal Mode");
+        assert_eq!(BootChoice::Native.label(), "3. Native Terminal Mode");
         assert!(BootChoice::Native.assignment().is_none());
+    }
+
+    #[test]
+    fn boot_menu_choices_keep_voice_scene_first() {
+        let choices = boot_choices();
+
+        assert!(matches!(choices[0], BootChoice::SceneVoicevox));
+        assert!(matches!(choices[1], BootChoice::Scene));
+        assert!(matches!(choices[2], BootChoice::Native));
+    }
+
+    #[test]
+    fn boot_menu_voicevox_command_uses_repo_helper_path() {
+        let command = default_voicevox_scene_tts_command();
+
+        assert!(command.ends_with("ci/scene-tts/voicevox-en-to-ja.sh"));
     }
 }
