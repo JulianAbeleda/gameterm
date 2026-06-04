@@ -14,13 +14,13 @@
 #   GAMETERM_SCENE_TTS_SOURCE          Source label from GameTerm.
 #   VOICEVOX_HOST                      Default: 127.0.0.1
 #   VOICEVOX_PORT                      Default: 50021
-#   VOICEVOX_SPEAKER                   Default: 3
+#   VOICEVOX_SPEAKER                   Default: 14 (冥鳴ひまり / ノーマル)
 #
 # Example GameTerm launch:
 #   GAMETERM_SCENE_TTS_BACKEND=command \
 #   GAMETERM_SCENE_TTS_COMMAND=/Users/julianabeleda/env/gameterm/ci/scene-tts/voicevox-en-to-ja.sh \
 #   GAMETERM_SCENE_TTS_PLAYER='afplay {output}' \
-#   VOICEVOX_SPEAKER=3 \
+#   VOICEVOX_SPEAKER=14 \
 #   gameterm start
 #
 # Example with an explicit translator:
@@ -28,7 +28,7 @@
 #   GAMETERM_SCENE_TTS_BACKEND=command \
 #   GAMETERM_SCENE_TTS_COMMAND=/Users/julianabeleda/env/gameterm/ci/scene-tts/voicevox-en-to-ja.sh \
 #   GAMETERM_SCENE_TTS_PLAYER='afplay {output}' \
-#   VOICEVOX_SPEAKER=3 \
+#   VOICEVOX_SPEAKER=14 \
 #   gameterm start
 
 set -euo pipefail
@@ -112,7 +112,7 @@ fi
 
 host="${VOICEVOX_HOST:-127.0.0.1}"
 port="${VOICEVOX_PORT:-50021}"
-speaker="${VOICEVOX_SPEAKER:-3}"
+speaker="${VOICEVOX_SPEAKER:-14}"
 base_url="http://${host}:${port}"
 
 if ! curl -fsS --connect-timeout 2 --max-time 5 "$base_url/version" >/dev/null 2>"$voicevox_err"; then

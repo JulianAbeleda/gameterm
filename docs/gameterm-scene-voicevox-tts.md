@@ -39,7 +39,7 @@ The wrapper defaults to:
 ```text
 VOICEVOX_HOST=127.0.0.1
 VOICEVOX_PORT=50021
-VOICEVOX_SPEAKER=3
+VOICEVOX_SPEAKER=14
 ```
 
 ## GameTerm Launch
@@ -50,7 +50,7 @@ Use the wrapper as a Scene Mode command TTS backend:
 GAMETERM_SCENE_TTS_BACKEND=command \
 GAMETERM_SCENE_TTS_COMMAND=/Users/julianabeleda/env/gameterm/ci/scene-tts/voicevox-en-to-ja.sh \
 GAMETERM_SCENE_TTS_PLAYER='afplay {output}' \
-VOICEVOX_SPEAKER=3 \
+VOICEVOX_SPEAKER=14 \
 gameterm start
 ```
 
@@ -62,7 +62,7 @@ GAMETERM_SCENE_TTS_TRANSLATE_COMMAND='codex exec "Translate the following Englis
 GAMETERM_SCENE_TTS_BACKEND=command \
 GAMETERM_SCENE_TTS_COMMAND=/Users/julianabeleda/env/gameterm/ci/scene-tts/voicevox-en-to-ja.sh \
 GAMETERM_SCENE_TTS_PLAYER='afplay {output}' \
-VOICEVOX_SPEAKER=3 \
+VOICEVOX_SPEAKER=14 \
 gameterm start
 ```
 
@@ -79,7 +79,7 @@ export GAMETERM_SCENE_TTS_OUTPUT=/tmp/gameterm-voicevox-test.wav
 
 echo "hello, this is a test" | \
   GAMETERM_SCENE_TTS_TRANSLATE_COMMAND='codex exec "Translate the following English text to natural Japanese. Output only the Japanese translation."' \
-  VOICEVOX_SPEAKER=3 \
+  VOICEVOX_SPEAKER=14 \
   ci/scene-tts/voicevox-en-to-ja.sh && \
   afplay "$GAMETERM_SCENE_TTS_OUTPUT"
 ```
