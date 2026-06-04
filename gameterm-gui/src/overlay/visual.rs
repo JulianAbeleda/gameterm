@@ -229,8 +229,11 @@ fn show_visual_scene_overlay_with_source(
     let tts_config = launch_options
         .tts_config
         .unwrap_or_else(SceneTtsConfig::from_env);
+    let sync_first_voice_reveal = tts_config.can_play_audio();
     let tts_worker = SceneTtsWorker::new(tts_config, tts_tx.clone());
     let mut tts_state = SceneTtsState::default();
+    let mut first_voice_reveal_done = false;
+    let mut pending_first_voice_reveal: Option<PendingFirstVoiceReveal> = None;
     let (stt_tx, stt_rx) = mpsc::channel();
     let mut stt_state = SceneSttState::default();
     let mut stt_cancel: Option<SceneSttCancel> = None;
@@ -262,11 +265,29 @@ fn show_visual_scene_overlay_with_source(
         while let Ok(result) = compose_rx.try_recv() {
             compose_backend_running = false;
             if let Some(runtime) = runtime.as_mut() {
-                let speakable_segments = apply_compose_backend_result(runtime, result);
                 dialogue_scroll.reset_to_bottom();
-                if !tts_state.is_muted() {
+                let speakable_segments = compose_result_speakable_segments(&result);
+                if should_delay_first_voice_reveal(
+                    sync_first_voice_reveal,
+                    first_voice_reveal_done,
+                    pending_first_voice_reveal.is_some(),
+                    tts_state.is_muted(),
+                    &speakable_segments,
+                ) {
                     for segment in speakable_segments {
                         tts_worker.speak(SceneTtsRequest { segment });
+                    }
+                    pending_first_voice_reveal = Some(PendingFirstVoiceReveal { result });
+                    runtime.mark_action_status("Voice preparing first reply");
+                } else {
+                    let speakable_segments = apply_compose_backend_result(runtime, result);
+                    if !first_voice_reveal_done && !speakable_segments.is_empty() {
+                        first_voice_reveal_done = true;
+                    }
+                    if !tts_state.is_muted() {
+                        for segment in speakable_segments {
+                            tts_worker.speak(SceneTtsRequest { segment });
+                        }
                     }
                 }
                 needs_render = true;
@@ -274,6 +295,11 @@ fn show_visual_scene_overlay_with_source(
         }
         while let Ok(result) = tts_rx.try_recv() {
             if let Some(runtime) = runtime.as_mut() {
+                if let Some(pending) = pending_first_voice_reveal.take() {
+                    apply_compose_backend_result(runtime, pending.result);
+                    first_voice_reveal_done = true;
+                    dialogue_scroll.reset_to_bottom();
+                }
                 apply_tts_result(runtime, &mut tts_state, result);
                 needs_render = true;
             }
@@ -401,6 +427,8 @@ fn show_visual_scene_overlay_with_source(
                             let status = compose_debug_backend.toggle();
                             runtime.clear_compose_history();
                             runtime.mark_action_status(status);
+                            first_voice_reveal_done = false;
+                            pending_first_voice_reveal = None;
                             dialogue_scroll.reset_to_bottom();
                         }
                         render_runtime_with_compose_and_scroll(
@@ -453,13 +481,33 @@ fn show_visual_scene_overlay_with_source(
                                 runtime.mark_compose_running(running_status, &prompt);
                                 dialogue_scroll.reset_to_bottom();
                                 if compose_debug_backend.is_fake() {
-                                    let speakable_segments = apply_compose_backend_result(
-                                        runtime,
-                                        fake_codex_compose_result(prompt),
-                                    );
-                                    if !tts_state.is_muted() {
+                                    let result = fake_codex_compose_result(prompt);
+                                    let speakable_segments =
+                                        compose_result_speakable_segments(&result);
+                                    if should_delay_first_voice_reveal(
+                                        sync_first_voice_reveal,
+                                        first_voice_reveal_done,
+                                        pending_first_voice_reveal.is_some(),
+                                        tts_state.is_muted(),
+                                        &speakable_segments,
+                                    ) {
                                         for segment in speakable_segments {
                                             tts_worker.speak(SceneTtsRequest { segment });
+                                        }
+                                        pending_first_voice_reveal =
+                                            Some(PendingFirstVoiceReveal { result });
+                                        runtime.mark_action_status("Voice preparing first reply");
+                                    } else {
+                                        let speakable_segments =
+                                            apply_compose_backend_result(runtime, result);
+                                        if !first_voice_reveal_done && !speakable_segments.is_empty()
+                                        {
+                                            first_voice_reveal_done = true;
+                                        }
+                                        if !tts_state.is_muted() {
+                                            for segment in speakable_segments {
+                                                tts_worker.speak(SceneTtsRequest { segment });
+                                            }
                                         }
                                     }
                                     render_runtime_with_compose_and_scroll(
@@ -1486,6 +1534,11 @@ fn is_compose_debug_backend_toggle_key(key: KeyCode, modifiers: Modifiers) -> bo
 
 const COMPOSE_OUTPUT_LIMIT: usize = 1200;
 
+#[derive(Debug, Clone)]
+struct PendingFirstVoiceReveal {
+    result: ComposeBackendResult,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum StructuredComposeOutcome {
     NoReply,
@@ -1493,6 +1546,63 @@ enum StructuredComposeOutcome {
         speaker: String,
         dialogue_text: String,
     },
+}
+
+fn should_delay_first_voice_reveal(
+    sync_first_voice_reveal: bool,
+    first_voice_reveal_done: bool,
+    reveal_already_pending: bool,
+    tts_muted: bool,
+    speakable_segments: &[SpeakableSegment],
+) -> bool {
+    sync_first_voice_reveal
+        && !first_voice_reveal_done
+        && !reveal_already_pending
+        && !tts_muted
+        && !speakable_segments.is_empty()
+}
+
+fn compose_result_speakable_segments(result: &ComposeBackendResult) -> Vec<SpeakableSegment> {
+    let Some((speaker, dialogue_text)) = compose_result_reply_preview(result) else {
+        return Vec::new();
+    };
+    extract_speakable_segments(Some(&speaker), &dialogue_text, SpeakableSource::ComposeReply)
+}
+
+fn compose_result_reply_preview(result: &ComposeBackendResult) -> Option<(String, String)> {
+    if !result.succeeded() {
+        return None;
+    }
+
+    if let Some(payload) = parse_structured_compose_payload(&result.stdout) {
+        if let Some(value) = payload.patch.clone() {
+            if let Ok(patch) = parse_structured_compose_patch(value) {
+                if let Some(dialogue) = patch.dialogue {
+                    return Some((dialogue.speaker, dialogue.text));
+                }
+            }
+        }
+
+        if payload.dialogue_text_is_present() {
+            let speaker = payload
+                .speaker
+                .as_deref()
+                .filter(|speaker| !speaker.trim().is_empty())
+                .unwrap_or("Codex")
+                .to_string();
+            return Some((speaker, payload.text_or_default()));
+        }
+
+        return None;
+    }
+
+    let reply = sanitize_compose_output(&result.stdout);
+    let reply = if reply.is_empty() {
+        "The compose backend returned no output.".to_string()
+    } else {
+        reply
+    };
+    Some(("Codex".to_string(), reply))
 }
 
 fn apply_compose_backend_result(
@@ -3198,6 +3308,55 @@ mod tests {
     }
 
     #[test]
+    fn first_voice_reveal_delay_requires_first_unmuted_speakable_audio() {
+        let segments = vec![SpeakableSegment {
+            speaker: Some("Codex".to_string()),
+            text: "Ready.".to_string(),
+            source: SpeakableSource::ComposeReply,
+        }];
+
+        assert!(should_delay_first_voice_reveal(
+            true, false, false, false, &segments
+        ));
+        assert!(!should_delay_first_voice_reveal(
+            false, false, false, false, &segments
+        ));
+        assert!(!should_delay_first_voice_reveal(
+            true, true, false, false, &segments
+        ));
+        assert!(!should_delay_first_voice_reveal(
+            true, false, true, false, &segments
+        ));
+        assert!(!should_delay_first_voice_reveal(
+            true, false, false, true, &segments
+        ));
+        assert!(!should_delay_first_voice_reveal(
+            true,
+            false,
+            false,
+            false,
+            &[]
+        ));
+    }
+
+    #[test]
+    fn compose_result_speakable_segments_preview_plain_output() {
+        let result = ComposeBackendResult {
+            prompt: "status".to_string(),
+            stdout: "Here is the answer.\n/Users/julianabeleda/env/gameterm\n".to_string(),
+            stderr: String::new(),
+            exit_code: Some(0),
+            label: ComposeBackendLabel::Codex,
+        };
+
+        let segments = compose_result_speakable_segments(&result);
+
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].speaker.as_deref(), Some("Codex"));
+        assert_eq!(segments[0].text, "Here is the answer.");
+    }
+
+    #[test]
     fn compose_backend_structured_output_applies_patch_and_reply() {
         let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
         let raw_output = r#"{"speaker":"Guide","text":"The task now tracks progress","append_history":true,"status":"Task updated","patch":{"scene_patch_version":1,"updates":[{"entity_id":"task-render","label":"Task Render"}]}}"#;
@@ -3223,6 +3382,24 @@ mod tests {
         assert_eq!(snapshot.dialogue_speaker, "Guide");
         assert_eq!(snapshot.dialogue, "The task now tracks progress");
         assert_eq!(snapshot.status, "Task updated");
+    }
+
+    #[test]
+    fn compose_result_speakable_segments_preview_structured_patch_dialogue() {
+        let raw_output = r#"{"status":"Task updated","patch":{"scene_patch_version":1,"dialogue":{"speaker":"Kiki","text":"The stage is ready.","append_history":true}}}"#;
+        let result = ComposeBackendResult {
+            prompt: "status".to_string(),
+            stdout: raw_output.to_string(),
+            stderr: String::new(),
+            exit_code: Some(0),
+            label: ComposeBackendLabel::Codex,
+        };
+
+        let segments = compose_result_speakable_segments(&result);
+
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].speaker.as_deref(), Some("Kiki"));
+        assert_eq!(segments[0].text, "The stage is ready.");
     }
 
     #[test]

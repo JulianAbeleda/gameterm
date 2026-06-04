@@ -103,6 +103,13 @@ impl SceneTtsConfig {
         }
     }
 
+    pub(crate) fn can_play_audio(&self) -> bool {
+        matches!(
+            self.backend,
+            SceneTtsBackend::Command(_) | SceneTtsBackend::Voicevox(_)
+        )
+    }
+
     #[cfg(test)]
     pub(crate) fn is_voicevox_backend(&self) -> bool {
         matches!(self.backend, SceneTtsBackend::Voicevox(_))
@@ -996,6 +1003,45 @@ We can continue after the smoke pass."#;
         assert!(!state.is_muted());
         assert_eq!(state.toggle_muted(), "TTS muted");
         assert!(state.is_muted());
+    }
+
+    #[test]
+    fn visual_tts_config_reports_playable_audio_backends() {
+        let dir = tempfile::tempdir().unwrap();
+        let disabled = SceneTtsConfig {
+            backend: SceneTtsBackend::Disabled,
+            player: None,
+            cache_dir: dir.path().to_path_buf(),
+            timeout: Duration::from_secs(2),
+        };
+        let silent = SceneTtsConfig {
+            backend: SceneTtsBackend::BuiltInSilent,
+            player: None,
+            cache_dir: dir.path().to_path_buf(),
+            timeout: Duration::from_secs(2),
+        };
+        let command = SceneTtsConfig {
+            backend: SceneTtsBackend::Command(vec!["tts-helper".to_string()]),
+            player: None,
+            cache_dir: dir.path().to_path_buf(),
+            timeout: Duration::from_secs(2),
+        };
+        let voicevox = SceneTtsConfig {
+            backend: SceneTtsBackend::Voicevox(SceneVoicevoxConfig {
+                host: "127.0.0.1".to_string(),
+                port: 50021,
+                speaker: 14,
+                translation: SceneTranslationConfig::Off,
+            }),
+            player: None,
+            cache_dir: dir.path().to_path_buf(),
+            timeout: Duration::from_secs(2),
+        };
+
+        assert!(!disabled.can_play_audio());
+        assert!(!silent.can_play_audio());
+        assert!(command.can_play_audio());
+        assert!(voicevox.can_play_audio());
     }
 
     fn test_segment(text: &str) -> SpeakableSegment {
