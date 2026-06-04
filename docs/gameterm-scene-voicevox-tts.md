@@ -44,6 +44,16 @@ VOICEVOX_SPEAKER=14
 
 ## GameTerm Launch
 
+If the GameTerm boot menu is enabled, choose:
+
+```text
+1. Scene Mode + VOICEVOX
+```
+
+That option configures the command TTS backend for the current app process and
+then opens Scene Mode. The regular `2. Scene Mode` boot option remains a quiet
+Scene Mode launch without TTS.
+
 Use the wrapper as a Scene Mode command TTS backend:
 
 ```sh
