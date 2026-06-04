@@ -38,6 +38,8 @@ set -euo pipefail
 PATH="/opt/homebrew/bin:/usr/local/bin:${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}"
 export PATH
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 fail() {
   printf '%s\n' "$*" >&2
   exit 1
@@ -104,6 +106,14 @@ translate_with_configured_command() {
   printf '%s' "$text" | bash -lc "$command_text"
 }
 
+translate_with_ct2() {
+  local text="$1"
+  local ct2_bin
+
+  ct2_bin="$(ct2_command)"
+  printf '%s' "$text" | "$ct2_bin"
+}
+
 translate_with_codex() {
   local text="$1"
   local prompt
@@ -133,11 +143,27 @@ codex_command() {
   return 1
 }
 
+ct2_command() {
+  local candidate="${GAMETERM_SCENE_TTS_CT2_COMMAND:-$script_dir/ct2-en-to-ja.sh}"
+
+  if [[ -x "$candidate" ]] && "$candidate" --ready >/dev/null 2>&1; then
+    printf '%s\n' "$candidate"
+    return
+  fi
+
+  return 1
+}
+
 translate_to_japanese() {
   local text="$1"
 
   if [[ -n "${GAMETERM_SCENE_TTS_TRANSLATE_COMMAND:-}" ]]; then
     translate_with_configured_command "$text" "$GAMETERM_SCENE_TTS_TRANSLATE_COMMAND"
+    return
+  fi
+
+  if ct2_command >/dev/null 2>&1; then
+    translate_with_ct2 "$text"
     return
   fi
 
