@@ -117,6 +117,19 @@ fake mode, submitted Composer prompts produce a deterministic `Fake Codex`
 reply, update the dialogue nameplate to `Fake Codex`, and still flow through the
 same Scene TTS command backend when TTS is enabled and unmuted.
 
+Known current status:
+
+- The standalone terminal shortcut works: `vs hello`.
+- The standalone path currently has noticeable latency, around 5-6 seconds in
+  user testing.
+- Scene Mode VOICEVOX playback from the clicked app is not confirmed working
+  yet. Use `Alt+C` fake Codex mode as the next diagnostic path because it
+  removes real Codex latency/failure from the voice test.
+- The Scene TTS env must be set in the GameTerm GUI process. Boot option
+  `1. Scene Mode + VOICEVOX` does this. Setting env only inside the native
+  terminal/Codex child process will not configure Scene TTS for the existing
+  GUI overlay.
+
 For lower-level debugging, call the wrapper directly:
 
 ```sh
