@@ -806,6 +806,14 @@ pub fn derive_command_from_key_assignment(action: &KeyAssignment) -> Option<Comm
             menubar: &["View"],
             icon: Some("cod_symbol_color"),
         },
+        ShowGameTermSceneVoicevox => CommandDef {
+            brief: "Show GameTerm Scene with VOICEVOX".into(),
+            doc: "Activates GameTerm visual scene mode with VOICEVOX TTS configured".into(),
+            keys: vec![],
+            args: &[ArgType::ActiveWindow],
+            menubar: &[],
+            icon: Some("cod_symbol_color"),
+        },
         ShowGameTermActivePaneScene => CommandDef {
             brief: "Show active pane Scene".into(),
             doc: "Generates a GameTerm visual scene from the active pane workspace context".into(),

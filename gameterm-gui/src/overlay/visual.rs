@@ -47,8 +47,8 @@ use super::visual_compose::{
 };
 use super::visual_stt::{spawn_stt_backend, SceneSttCancel, SceneSttResult, SceneSttState};
 use super::visual_tts::{
-    extract_speakable_segments, spawn_tts_backend, SceneTtsRequest, SceneTtsResult, SceneTtsState,
-    SpeakableSegment, SpeakableSource,
+    extract_speakable_segments, spawn_tts_backend, SceneTtsConfig, SceneTtsRequest,
+    SceneTtsResult, SceneTtsState, SpeakableSegment, SpeakableSource,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -78,16 +78,18 @@ impl SceneComposeDebugBackend {
     }
 }
 
-pub fn show_visual_scene_overlay(
+pub(crate) fn show_visual_scene_overlay_with_options(
     term: TermWizTerminal,
     route_pane_id: Option<mux::pane::PaneId>,
     gui_window: Option<Window>,
+    launch_options: SceneOverlayLaunchOptions,
 ) -> anyhow::Result<()> {
     show_visual_scene_overlay_with_source(
         term,
         route_pane_id,
         gui_window,
         VisualSceneOverlaySource::Default,
+        launch_options,
     )
 }
 
@@ -108,7 +110,21 @@ pub fn show_generated_visual_scene_overlay(
             action_base_dir,
             source_label: source_label.into(),
         },
+        SceneOverlayLaunchOptions::default(),
     )
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct SceneOverlayLaunchOptions {
+    tts_config: Option<SceneTtsConfig>,
+}
+
+impl SceneOverlayLaunchOptions {
+    pub(crate) fn with_tts_config(tts_config: SceneTtsConfig) -> Self {
+        Self {
+            tts_config: Some(tts_config),
+        }
+    }
 }
 
 enum VisualSceneOverlaySource {
@@ -156,6 +172,7 @@ fn show_visual_scene_overlay_with_source(
     route_pane_id: Option<mux::pane::PaneId>,
     gui_window: Option<Window>,
     source: VisualSceneOverlaySource,
+    launch_options: SceneOverlayLaunchOptions,
 ) -> anyhow::Result<()> {
     term.set_raw_mode()?;
     term.render(&[Change::Title("GameTerm Scene".to_string())])?;
@@ -209,6 +226,9 @@ fn show_visual_scene_overlay_with_source(
     let (compose_tx, compose_rx) = mpsc::channel();
     let mut compose_backend_running = false;
     let (tts_tx, tts_rx) = mpsc::channel();
+    let tts_config = launch_options
+        .tts_config
+        .unwrap_or_else(SceneTtsConfig::from_env);
     let mut tts_state = SceneTtsState::default();
     let (stt_tx, stt_rx) = mpsc::channel();
     let mut stt_state = SceneSttState::default();
@@ -245,7 +265,11 @@ fn show_visual_scene_overlay_with_source(
                 dialogue_scroll.reset_to_bottom();
                 if !tts_state.is_muted() {
                     for segment in speakable_segments {
-                        spawn_tts_backend(SceneTtsRequest { segment }, tts_tx.clone());
+                        spawn_tts_backend(
+                            SceneTtsRequest { segment },
+                            tts_config.clone(),
+                            tts_tx.clone(),
+                        );
                     }
                 }
                 needs_render = true;
@@ -440,6 +464,7 @@ fn show_visual_scene_overlay_with_source(
                                         for segment in speakable_segments {
                                             spawn_tts_backend(
                                                 SceneTtsRequest { segment },
+                                                tts_config.clone(),
                                                 tts_tx.clone(),
                                             );
                                         }

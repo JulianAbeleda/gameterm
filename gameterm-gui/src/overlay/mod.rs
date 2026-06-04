@@ -28,7 +28,7 @@ pub use copy::{CopyModeParams, CopyOverlay};
 pub use debug::show_debug_overlay;
 pub use launcher::{launcher, LauncherArgs, LauncherFlags};
 pub use quickselect::QuickSelectOverlay;
-pub use visual::{show_generated_visual_scene_overlay, show_visual_scene_overlay};
+pub use visual::show_generated_visual_scene_overlay;
 
 pub fn start_overlay<T, F>(
     term_window: &TermWindow,

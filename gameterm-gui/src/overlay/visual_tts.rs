@@ -52,18 +52,58 @@ impl SceneTtsResult {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum SceneTtsBackend {
+pub(crate) enum SceneTtsBackend {
     Disabled,
     BuiltInSilent,
     Command(Vec<String>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct SceneTtsConfig {
+pub(crate) struct SceneTtsConfig {
     backend: SceneTtsBackend,
     player: Option<Vec<String>>,
     cache_dir: PathBuf,
     timeout: Duration,
+}
+
+impl SceneTtsConfig {
+    pub(crate) fn from_env() -> Self {
+        scene_tts_config_from_env()
+    }
+
+    pub(crate) fn command_from_strings(
+        command: &str,
+        player: Option<&str>,
+        timeout: Duration,
+    ) -> Result<Self, String> {
+        let command = parse_command_argv(command)?;
+        if command.is_empty() {
+            return Err("empty TTS command".to_string());
+        }
+        let player = match player {
+            Some(player) if !player.trim().is_empty() => {
+                let player = parse_command_argv(player)?;
+                if player.is_empty() {
+                    None
+                } else {
+                    Some(player)
+                }
+            }
+            _ => None,
+        };
+
+        Ok(Self {
+            backend: SceneTtsBackend::Command(command),
+            player,
+            cache_dir: std::env::temp_dir(),
+            timeout,
+        })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn is_command_backend(&self) -> bool {
+        matches!(self.backend, SceneTtsBackend::Command(_))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -132,9 +172,13 @@ pub(super) fn extract_speakable_segments(
     segments
 }
 
-pub(super) fn spawn_tts_backend(request: SceneTtsRequest, tx: mpsc::Sender<SceneTtsResult>) {
+pub(super) fn spawn_tts_backend(
+    request: SceneTtsRequest,
+    config: SceneTtsConfig,
+    tx: mpsc::Sender<SceneTtsResult>,
+) {
     thread::spawn(move || {
-        let result = run_tts_backend(request, scene_tts_config_from_env());
+        let result = run_tts_backend(request, config);
         let _ = tx.send(result);
     });
 }

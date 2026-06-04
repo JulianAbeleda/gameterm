@@ -2650,6 +2650,23 @@ impl TermWindow {
     }
 
     fn show_game_term_scene_overlay(&mut self) -> anyhow::Result<()> {
+        self.show_game_term_scene_overlay_with_options(
+            crate::overlay::visual::SceneOverlayLaunchOptions::default(),
+        )
+    }
+
+    fn show_game_term_scene_voicevox_overlay(&mut self) -> anyhow::Result<()> {
+        let tts_config = crate::overlay::boot_menu::voicevox_scene_tts_config()
+            .map_err(|err| anyhow::anyhow!("failed to configure Scene VOICEVOX TTS: {err}"))?;
+        self.show_game_term_scene_overlay_with_options(
+            crate::overlay::visual::SceneOverlayLaunchOptions::with_tts_config(tts_config),
+        )
+    }
+
+    fn show_game_term_scene_overlay_with_options(
+        &mut self,
+        launch_options: crate::overlay::visual::SceneOverlayLaunchOptions,
+    ) -> anyhow::Result<()> {
         let tab = match Mux::get().get_active_tab_for_window(self.mux_window_id) {
             Some(tab) => tab,
             None => anyhow::bail!("no active tab!?"),
@@ -2657,7 +2674,12 @@ impl TermWindow {
         let route_pane_id = tab.get_active_pane().map(|pane| pane.pane_id());
         let gui_window = self.window.clone();
         let (overlay, future) = start_overlay(self, &tab, move |_tab_id, term| {
-            crate::overlay::show_visual_scene_overlay(term, route_pane_id, gui_window.clone())
+            crate::overlay::visual::show_visual_scene_overlay_with_options(
+                term,
+                route_pane_id,
+                gui_window.clone(),
+                launch_options,
+            )
         });
         self.assign_overlay(tab.tab_id(), overlay);
         promise::spawn::spawn(future).detach();
@@ -2934,6 +2956,9 @@ impl TermWindow {
             ShowDebugOverlay => self.show_debug_overlay(),
             ShowGameTermScene => {
                 self.show_game_term_scene_overlay()?;
+            }
+            ShowGameTermSceneVoicevox => {
+                self.show_game_term_scene_voicevox_overlay()?;
             }
             ShowGameTermActivePaneScene => {
                 if Mux::get()

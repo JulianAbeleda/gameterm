@@ -9,13 +9,12 @@ use termwiz::surface::{Change, Position};
 use termwiz::terminal::Terminal;
 use window::WindowOps;
 
-const SCENE_TTS_BACKEND_ENV: &str = "GAMETERM_SCENE_TTS_BACKEND";
+use super::visual_tts::SceneTtsConfig;
+
 const SCENE_TTS_COMMAND_ENV: &str = "GAMETERM_SCENE_TTS_COMMAND";
-const SCENE_TTS_PLAYER_ENV: &str = "GAMETERM_SCENE_TTS_PLAYER";
-const SCENE_TTS_TIMEOUT_ENV: &str = "GAMETERM_SCENE_TTS_TIMEOUT_SECONDS";
 const SCENE_TTS_VOICEVOX_SCRIPT: &str = "ci/scene-tts/voicevox-en-to-ja.sh";
 const SCENE_TTS_PLAYER: &str = "afplay {output}";
-const SCENE_TTS_TIMEOUT_SECONDS: &str = "120";
+const SCENE_TTS_TIMEOUT_SECONDS: u64 = 120;
 
 #[derive(Clone, Copy)]
 enum BootChoice {
@@ -35,15 +34,9 @@ impl BootChoice {
 
     fn assignment(self) -> Option<KeyAssignment> {
         match self {
-            BootChoice::SceneVoicevox => Some(KeyAssignment::ShowGameTermScene),
+            BootChoice::SceneVoicevox => Some(KeyAssignment::ShowGameTermSceneVoicevox),
             BootChoice::Scene => Some(KeyAssignment::ShowGameTermScene),
             BootChoice::Native => None,
-        }
-    }
-
-    fn configure(self) {
-        if matches!(self, BootChoice::SceneVoicevox) {
-            configure_voicevox_scene_tts();
         }
     }
 }
@@ -85,7 +78,6 @@ impl BootMenuState {
     }
 
     fn choose(&self, choice: BootChoice) {
-        choice.configure();
         if let Some(assignment) = choice.assignment() {
             self.window.notify(TermWindowNotif::PerformAssignment {
                 pane_id: self.pane_id,
@@ -177,14 +169,15 @@ fn boot_choices() -> [BootChoice; 3] {
     ]
 }
 
-fn configure_voicevox_scene_tts() {
-    std::env::set_var(SCENE_TTS_BACKEND_ENV, "command");
-    std::env::set_var(SCENE_TTS_COMMAND_ENV, default_voicevox_scene_tts_command());
-    std::env::set_var(SCENE_TTS_PLAYER_ENV, SCENE_TTS_PLAYER);
-    std::env::set_var(SCENE_TTS_TIMEOUT_ENV, SCENE_TTS_TIMEOUT_SECONDS);
+pub(crate) fn voicevox_scene_tts_config() -> Result<SceneTtsConfig, String> {
+    SceneTtsConfig::command_from_strings(
+        &default_voicevox_scene_tts_command(),
+        Some(SCENE_TTS_PLAYER),
+        std::time::Duration::from_secs(SCENE_TTS_TIMEOUT_SECONDS),
+    )
 }
 
-fn default_voicevox_scene_tts_command() -> String {
+pub(crate) fn default_voicevox_scene_tts_command() -> String {
     if let Ok(command) = std::env::var(SCENE_TTS_COMMAND_ENV) {
         if !command.trim().is_empty() {
             return command;
@@ -236,7 +229,7 @@ mod tests {
         );
         assert!(matches!(
             BootChoice::SceneVoicevox.assignment(),
-            Some(KeyAssignment::ShowGameTermScene)
+            Some(KeyAssignment::ShowGameTermSceneVoicevox)
         ));
     }
 
@@ -269,5 +262,12 @@ mod tests {
         let command = default_voicevox_scene_tts_command();
 
         assert!(command.ends_with("ci/scene-tts/voicevox-en-to-ja.sh"));
+    }
+
+    #[test]
+    fn boot_menu_voicevox_scene_choice_builds_tts_config() {
+        let config = super::voicevox_scene_tts_config().unwrap();
+
+        assert!(config.is_command_backend());
     }
 }
