@@ -41,7 +41,6 @@ const KIKI_BLINK_FRAME_COUNT: usize = 6;
 const KIKI_BLINK_FRAME_MS: u128 = 90;
 const KIKI_BLINK_INTERVAL_MS: u128 = 4_200;
 
-#[cfg(test)]
 use super::visual_compose::ComposeBackendLabel;
 use super::visual_compose::{
     compose_running_status, spawn_compose_backend, ComposeBackendRequest, ComposeBackendResult,
@@ -51,6 +50,33 @@ use super::visual_tts::{
     extract_speakable_segments, spawn_tts_backend, SceneTtsRequest, SceneTtsResult, SceneTtsState,
     SpeakableSegment, SpeakableSource,
 };
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SceneComposeDebugBackend {
+    RealCodex,
+    FakeCodex,
+}
+
+impl SceneComposeDebugBackend {
+    fn toggle(&mut self) -> &'static str {
+        *self = match self {
+            Self::RealCodex => Self::FakeCodex,
+            Self::FakeCodex => Self::RealCodex,
+        };
+        self.status()
+    }
+
+    fn status(self) -> &'static str {
+        match self {
+            Self::RealCodex => "Compose debug backend: Codex",
+            Self::FakeCodex => "Compose debug backend: Fake Codex",
+        }
+    }
+
+    fn is_fake(self) -> bool {
+        matches!(self, Self::FakeCodex)
+    }
+}
 
 pub fn show_visual_scene_overlay(
     term: TermWizTerminal,
@@ -179,6 +205,7 @@ fn show_visual_scene_overlay_with_source(
         ScenePatchNotificationSubscription::new(pane_id, route_pane_id, scene_patch_tx);
     let mut compose_dock = SceneComposeDock::default();
     let mut dialogue_scroll = SceneDialogueScrollback::default();
+    let mut compose_debug_backend = SceneComposeDebugBackend::RealCodex;
     let (compose_tx, compose_rx) = mpsc::channel();
     let mut compose_backend_running = false;
     let (tts_tx, tts_rx) = mpsc::channel();
@@ -344,6 +371,26 @@ fn show_visual_scene_overlay_with_source(
                         )?;
                         continue;
                     }
+                    if is_compose_debug_backend_toggle_key(key, modifiers) {
+                        if compose_backend_running {
+                            runtime.mark_action_status(
+                                "Compose debug backend toggle unavailable: compose is running",
+                            );
+                        } else {
+                            let status = compose_debug_backend.toggle();
+                            runtime.clear_compose_history();
+                            runtime.mark_action_status(status);
+                            dialogue_scroll.reset_to_bottom();
+                        }
+                        render_runtime_with_compose_and_scroll(
+                            &mut term,
+                            runtime,
+                            &sprite_manifest,
+                            &compose_dock,
+                            &dialogue_scroll,
+                        )?;
+                        continue;
+                    }
                     // While the VN layout debugger menu is open it owns every
                     // key. The compose dock must not intercept text/navigation
                     // input before the debugger can select, adjust, or edit.
@@ -377,9 +424,35 @@ fn show_visual_scene_overlay_with_source(
                                     continue;
                                 }
                                 compose_dock.mark_submitted(&prompt);
-                                runtime
-                                    .mark_compose_running(compose_running_status(&prompt), &prompt);
+                                let running_status = if compose_debug_backend.is_fake() {
+                                    format!("Fake Codex running: {prompt}")
+                                } else {
+                                    compose_running_status(&prompt)
+                                };
+                                runtime.mark_compose_running(running_status, &prompt);
                                 dialogue_scroll.reset_to_bottom();
+                                if compose_debug_backend.is_fake() {
+                                    let speakable_segments = apply_compose_backend_result(
+                                        runtime,
+                                        fake_codex_compose_result(prompt),
+                                    );
+                                    if !tts_state.is_muted() {
+                                        for segment in speakable_segments {
+                                            spawn_tts_backend(
+                                                SceneTtsRequest { segment },
+                                                tts_tx.clone(),
+                                            );
+                                        }
+                                    }
+                                    render_runtime_with_compose_and_scroll(
+                                        &mut term,
+                                        runtime,
+                                        &sprite_manifest,
+                                        &compose_dock,
+                                        &dialogue_scroll,
+                                    )?;
+                                    continue;
+                                }
                                 compose_backend_running = true;
                                 spawn_compose_backend(
                                     ComposeBackendRequest {
@@ -1389,6 +1462,10 @@ fn is_stt_toggle_key(key: KeyCode, modifiers: Modifiers) -> bool {
     matches!(key, KeyCode::Char('v') | KeyCode::Char('V')) && modifiers.contains(Modifiers::ALT)
 }
 
+fn is_compose_debug_backend_toggle_key(key: KeyCode, modifiers: Modifiers) -> bool {
+    matches!(key, KeyCode::Char('c') | KeyCode::Char('C')) && modifiers.contains(Modifiers::ALT)
+}
+
 const COMPOSE_OUTPUT_LIMIT: usize = 1200;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1458,6 +1535,27 @@ fn apply_compose_backend_result(
 
     apply_compose_backend_failure_result(runtime, &result);
     Vec::new()
+}
+
+fn fake_codex_compose_result(prompt: String) -> ComposeBackendResult {
+    let text = if prompt.trim().is_empty() {
+        "Fake Codex is ready.".to_string()
+    } else {
+        format!("Fake Codex received: {}", prompt.trim())
+    };
+    let stdout = serde_json::json!({
+        "speaker": "Fake Codex",
+        "text": text,
+        "status": "Fake Codex succeeded"
+    })
+    .to_string();
+    ComposeBackendResult {
+        prompt,
+        stdout,
+        stderr: String::new(),
+        exit_code: Some(0),
+        label: ComposeBackendLabel::Codex,
+    }
 }
 
 fn apply_tts_result(
@@ -3110,6 +3208,21 @@ mod tests {
     }
 
     #[test]
+    fn fake_codex_compose_result_renders_fake_speaker() {
+        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        let segments =
+            apply_compose_backend_result(&mut runtime, fake_codex_compose_result("hi".to_string()));
+
+        let snapshot = runtime.render_snapshot();
+        assert_eq!(snapshot.dialogue_speaker, "Fake Codex");
+        assert_eq!(snapshot.dialogue, "Fake Codex received: hi");
+        assert_eq!(snapshot.status, "Fake Codex succeeded");
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].speaker.as_deref(), Some("Fake Codex"));
+        assert_eq!(segments[0].text, "Fake Codex received: hi");
+    }
+
+    #[test]
     fn compose_backend_structured_output_without_reply_uses_status() {
         let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
         let raw_output = r#"{"status":"Scene status patch only","patch":{"scene_patch_version":1,"status":"Scene status patch only"}}"#;
@@ -3161,6 +3274,22 @@ mod tests {
         assert!(is_stt_toggle_key(KeyCode::Char('v'), Modifiers::ALT));
         assert!(is_stt_toggle_key(KeyCode::Char('V'), Modifiers::ALT));
         assert!(!is_stt_toggle_key(KeyCode::Char('v'), Modifiers::NONE));
+    }
+
+    #[test]
+    fn compose_debug_backend_toggle_uses_alt_c_without_consuming_plain_c() {
+        assert!(is_compose_debug_backend_toggle_key(
+            KeyCode::Char('c'),
+            Modifiers::ALT
+        ));
+        assert!(is_compose_debug_backend_toggle_key(
+            KeyCode::Char('C'),
+            Modifiers::ALT
+        ));
+        assert!(!is_compose_debug_backend_toggle_key(
+            KeyCode::Char('c'),
+            Modifiers::NONE
+        ));
     }
 
     #[test]

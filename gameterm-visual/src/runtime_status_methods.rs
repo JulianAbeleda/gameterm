@@ -32,8 +32,14 @@ impl SceneRuntime {
         } else {
             format!("{:?}: {speaker}: {trimmed_reply}", role)
         };
-        self.compose_state.mark_succeeded(trimmed_reply);
+        self.compose_state.mark_succeeded(speaker, trimmed_reply);
         self.record_runtime_event("compose", event_detail);
+        self.bump_generation();
+    }
+
+    pub fn clear_compose_history(&mut self) {
+        self.compose_state.clear();
+        self.record_runtime_event("compose", "cleared transcript");
         self.bump_generation();
     }
 

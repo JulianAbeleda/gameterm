@@ -1251,6 +1251,7 @@ enum VisualComposeRole {
 struct VisualComposeMessage {
     role: VisualComposeRole,
     text: String,
+    speaker: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -1272,15 +1273,48 @@ impl VisualComposeRuntimeState {
     }
 
     fn push_message(&mut self, role: VisualComposeRole, text: String) {
+        self.push_message_with_speaker(role, text, None);
+    }
+
+    fn push_message_with_speaker(
+        &mut self,
+        role: VisualComposeRole,
+        text: String,
+        speaker: Option<String>,
+    ) {
         if text.trim().is_empty() {
             return;
         }
         const MAX_COMPOSE_HISTORY: usize = 20;
-        self.history.push(VisualComposeMessage { role, text });
+        self.history.push(VisualComposeMessage {
+            role,
+            text,
+            speaker,
+        });
         if self.history.len() > MAX_COMPOSE_HISTORY {
             let excess = self.history.len() - MAX_COMPOSE_HISTORY;
             self.history.drain(0..excess);
         }
+    }
+
+    fn clear(&mut self) {
+        self.phase = VisualComposePhase::Idle;
+        self.history.clear();
+        self.last_prompt = None;
+        self.last_reply = None;
+    }
+
+    fn latest_assistant_speaker(&self) -> Option<&str> {
+        self.history.iter().rev().find_map(|message| {
+            if matches!(
+                message.role,
+                VisualComposeRole::Assistant | VisualComposeRole::System
+            ) {
+                message.speaker.as_deref()
+            } else {
+                None
+            }
+        })
     }
 
     fn set_phase_and_history(&mut self, phase: VisualComposePhase) {
@@ -1294,10 +1328,19 @@ impl VisualComposeRuntimeState {
         self.push_message(VisualComposeRole::User, prompt.to_string());
     }
 
-    fn mark_succeeded(&mut self, reply: &str) {
+    fn mark_succeeded(&mut self, speaker: &str, reply: &str) {
         self.set_phase_and_history(VisualComposePhase::Succeeded);
         self.last_reply = Some(reply.to_string());
-        self.push_message(VisualComposeRole::Assistant, reply.to_string());
+        let speaker = if speaker.trim().is_empty() {
+            "Codex".to_string()
+        } else {
+            speaker.trim().to_string()
+        };
+        self.push_message_with_speaker(
+            VisualComposeRole::Assistant,
+            reply.to_string(),
+            Some(speaker),
+        );
     }
 
     fn mark_failed(&mut self, reason: &str) {
@@ -3059,7 +3102,10 @@ impl SceneRuntime {
         if self.compose_state.history.is_empty() {
             dialogue.speaker.clone()
         } else {
-            "Codex".to_string()
+            self.compose_state
+                .latest_assistant_speaker()
+                .unwrap_or("Codex")
+                .to_string()
         }
     }
 
@@ -5604,6 +5650,25 @@ mod tests {
         let reply_idx = frame.find("Hello from Scene Mode.").unwrap();
 
         assert!(prompt_idx < reply_idx);
+    }
+
+    #[test]
+    fn staged_scene_uses_compose_speaker_for_nameplate_and_can_clear_history() {
+        let mut runtime = SceneRuntime::new(staged_compose_scene()).unwrap();
+
+        runtime.mark_compose_running("Fake Codex running: say hi", "say hi");
+        runtime.mark_compose_succeeded("Fake Codex", "Fake reply.");
+        let frame = runtime.render_text_frame(100, 30);
+
+        assert!(frame.contains("Fake Codex"));
+        assert!(frame.contains("Fake reply."));
+        assert!(!frame.contains("Narrator"));
+
+        runtime.clear_compose_history();
+        let frame = runtime.render_text_frame(100, 30);
+
+        assert!(!frame.contains("Fake reply."));
+        assert!(!frame.contains("> say hi"));
     }
 
     #[test]
