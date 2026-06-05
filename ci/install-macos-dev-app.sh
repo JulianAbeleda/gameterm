@@ -133,8 +133,9 @@ for bin in gameterm gameterm-mux-server gameterm-gui strip-ansi-escapes; do
 done
 
 # Ad-hoc signing keeps local Gatekeeper checks predictable without requiring a
-# developer identity.
-codesign --force --deep --sign - "${app_path}" >/dev/null
+# developer identity. The entitlements keep local Scene voice capture available
+# in the installed development app.
+codesign --force --deep --sign - --entitlements "${repo_root}/ci/macos-entitlement.plist" "${app_path}" >/dev/null
 
 if [[ -x /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister ]]; then
   /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
