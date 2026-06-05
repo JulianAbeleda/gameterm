@@ -9,6 +9,7 @@ use termwiz::surface::{Change, Position};
 use termwiz::terminal::Terminal;
 use window::WindowOps;
 
+use super::visual_stt::SceneSttConfig;
 use super::visual_tts::SceneTtsConfig;
 
 #[derive(Clone, Copy)]
@@ -21,7 +22,7 @@ enum BootChoice {
 impl BootChoice {
     fn label(self) -> &'static str {
         match self {
-            BootChoice::SceneVoicevox => "1. Scene Mode + VOICEVOX",
+            BootChoice::SceneVoicevox => "1. Scene Mode + Voice",
             BootChoice::Scene => "2. Scene Mode",
             BootChoice::Native => "3. Native Terminal Mode",
         }
@@ -168,6 +169,10 @@ pub(crate) fn voicevox_scene_tts_config() -> Result<SceneTtsConfig, String> {
     Ok(SceneTtsConfig::voicevox_default())
 }
 
+pub(crate) fn voice_scene_stt_config() -> Result<SceneSttConfig, String> {
+    Ok(SceneSttConfig::whisper_default())
+}
+
 pub fn boot_menu(mut term: TermWizTerminal, window: ::window::Window) -> anyhow::Result<()> {
     let pane_id = term.pane_id().ok_or_else(|| {
         anyhow::anyhow!("GameTerm boot menu terminal is not attached to a mux pane")
@@ -190,10 +195,7 @@ mod tests {
 
     #[test]
     fn boot_menu_voicevox_scene_choice_routes_to_configured_scene_mode() {
-        assert_eq!(
-            BootChoice::SceneVoicevox.label(),
-            "1. Scene Mode + VOICEVOX"
-        );
+        assert_eq!(BootChoice::SceneVoicevox.label(), "1. Scene Mode + Voice");
         assert!(matches!(
             BootChoice::SceneVoicevox.assignment(),
             Some(KeyAssignment::ShowGameTermSceneVoicevox)
@@ -229,5 +231,12 @@ mod tests {
         let config = super::voicevox_scene_tts_config().unwrap();
 
         assert!(config.is_voicevox_backend());
+    }
+
+    #[test]
+    fn boot_menu_voice_scene_choice_builds_stt_config() {
+        let config = super::voice_scene_stt_config().unwrap();
+
+        assert!(config.is_whisper_backend());
     }
 }

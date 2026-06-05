@@ -2658,8 +2658,12 @@ impl TermWindow {
     fn show_game_term_scene_voicevox_overlay(&mut self) -> anyhow::Result<()> {
         let tts_config = crate::overlay::boot_menu::voicevox_scene_tts_config()
             .map_err(|err| anyhow::anyhow!("failed to configure Scene VOICEVOX TTS: {err}"))?;
+        let stt_config = crate::overlay::boot_menu::voice_scene_stt_config()
+            .map_err(|err| anyhow::anyhow!("failed to configure Scene Whisper STT: {err}"))?;
         self.show_game_term_scene_overlay_with_options(
-            crate::overlay::visual::SceneOverlayLaunchOptions::with_tts_config(tts_config),
+            crate::overlay::visual::SceneOverlayLaunchOptions::with_voice_config(
+                tts_config, stt_config,
+            ),
         )
     }
 
