@@ -2473,6 +2473,7 @@ mod tests {
         VisualStage, VisualStageDisplayable, VisualStageLayer, VisualStagePlacement,
         VN_OVERLAY_COMPOSER_NAMEPLATE_TEXT_INSET_ROWS,
         VN_OVERLAY_DIALOGUE_NAMEPLATE_TEXT_INSET_COLS,
+        VN_OVERLAY_NAMEPLATE_OPACITY, VN_OVERLAY_PANEL_OPACITY,
     };
 
     fn scene_fixture_path(name: &str) -> PathBuf {
@@ -2636,6 +2637,8 @@ mod tests {
         let mut overrides = VnOverlayDebugOverrides::default();
         overrides.dialogue_text_inset_cols = 9;
         overrides.composer_text_inset_rows = 3;
+        overrides.dialogue_panel_opacity = 0.35;
+        overrides.composer_nameplate_opacity = 0.72;
         overrides.editing_buffer = Some("partial".to_string());
 
         save_vn_overlay_layout_config_to_path(&path, &overrides).unwrap();
@@ -2645,6 +2648,8 @@ mod tests {
         let loaded = load_vn_overlay_layout_config_from_path(&path).unwrap();
         assert_eq!(loaded.dialogue_text_inset_cols, 9);
         assert_eq!(loaded.composer_text_inset_rows, 3);
+        assert!((loaded.dialogue_panel_opacity - 0.35).abs() < 0.001);
+        assert!((loaded.composer_nameplate_opacity - 0.72).abs() < 0.001);
         assert_eq!(loaded.editing_buffer, None);
     }
 
@@ -2688,6 +2693,14 @@ mod tests {
             loaded.composer_nameplate_text_inset_rows,
             VN_OVERLAY_COMPOSER_NAMEPLATE_TEXT_INSET_ROWS
         );
+        assert!((loaded.dialogue_panel_opacity - VN_OVERLAY_PANEL_OPACITY).abs() < 0.001);
+        assert!((loaded.composer_panel_opacity - VN_OVERLAY_PANEL_OPACITY).abs() < 0.001);
+        assert!(
+            (loaded.dialogue_nameplate_opacity - VN_OVERLAY_NAMEPLATE_OPACITY).abs() < 0.001
+        );
+        assert!(
+            (loaded.composer_nameplate_opacity - VN_OVERLAY_NAMEPLATE_OPACITY).abs() < 0.001
+        );
     }
 
     #[test]
@@ -2701,7 +2714,7 @@ mod tests {
             persistable_vn_overlay_layout(&after)
         );
 
-        before.dialogue_text_inset_rows = 4;
+        before.dialogue_panel_opacity = 0.25;
         assert_ne!(
             persistable_vn_overlay_layout(&before),
             persistable_vn_overlay_layout(&after)

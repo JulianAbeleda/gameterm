@@ -10,7 +10,7 @@ use config::HsbTransform;
 use gameterm_visual::{
     vn_overlay_layout, vn_overlay_layout_with_overrides, VisualRenderEntity, VisualRenderSnapshot,
     VisualRenderStageDisplayable, VisualRenderTile, VisualStagePlacement, VisualView,
-    VnOverlayRect,
+    VnOverlayDebugOverrides, VnOverlayRect, VN_OVERLAY_NAMEPLATE_OPACITY, VN_OVERLAY_PANEL_OPACITY,
 };
 use std::sync::{Arc, LazyLock};
 use termwiz::color::LinearRgba;
@@ -75,41 +75,54 @@ struct VnPanelStyle {
 }
 
 impl VnPanelStyle {
-    fn dialogue_panel() -> Self {
+    fn dialogue_panel(opacity: f32) -> Self {
         Self {
-            fill: VN_PANEL_FILL,
-            border: VN_PANEL_BORDER,
+            fill: with_alpha(VN_PANEL_FILL, opacity),
+            border: with_scaled_alpha(VN_PANEL_BORDER, VN_OVERLAY_PANEL_OPACITY, opacity),
             border_width: VN_PANEL_BORDER_WIDTH_PX,
             radius: VN_DIALOGUE_PANEL_RADIUS_PX,
         }
     }
 
-    fn composer_panel() -> Self {
+    fn composer_panel(opacity: f32) -> Self {
         Self {
-            fill: VN_PANEL_FILL,
-            border: VN_PANEL_BORDER,
+            fill: with_alpha(VN_PANEL_FILL, opacity),
+            border: with_scaled_alpha(VN_PANEL_BORDER, VN_OVERLAY_PANEL_OPACITY, opacity),
             border_width: VN_PANEL_BORDER_WIDTH_PX,
             radius: VN_COMPOSER_PANEL_RADIUS_PX,
         }
     }
 
-    fn dialogue_nameplate() -> Self {
+    fn dialogue_nameplate(opacity: f32) -> Self {
         Self {
-            fill: VN_NAMEPLATE_FILL,
-            border: VN_NAMEPLATE_BORDER,
+            fill: with_alpha(VN_NAMEPLATE_FILL, opacity),
+            border: with_scaled_alpha(VN_NAMEPLATE_BORDER, VN_OVERLAY_NAMEPLATE_OPACITY, opacity),
             border_width: VN_PANEL_BORDER_WIDTH_PX,
             radius: VN_DIALOGUE_NAMEPLATE_RADIUS_PX,
         }
     }
 
-    fn composer_nameplate() -> Self {
+    fn composer_nameplate(opacity: f32) -> Self {
         Self {
-            fill: VN_NAMEPLATE_FILL,
-            border: VN_NAMEPLATE_BORDER,
+            fill: with_alpha(VN_NAMEPLATE_FILL, opacity),
+            border: with_scaled_alpha(VN_NAMEPLATE_BORDER, VN_OVERLAY_NAMEPLATE_OPACITY, opacity),
             border_width: VN_PANEL_BORDER_WIDTH_PX,
             radius: VN_COMPOSER_NAMEPLATE_RADIUS_PX,
         }
     }
+}
+
+fn with_alpha(color: LinearRgba, alpha: f32) -> LinearRgba {
+    LinearRgba(color.0, color.1, color.2, alpha.clamp(0.0, 1.0))
+}
+
+fn with_scaled_alpha(color: LinearRgba, baseline: f32, alpha: f32) -> LinearRgba {
+    let scale = if baseline <= 0.0 {
+        1.0
+    } else {
+        color.3 / baseline
+    };
+    with_alpha(color, alpha * scale)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -238,15 +251,18 @@ impl TermWindow {
             ),
             None => vn_overlay_layout(layout_cols, layout_rows, speaker, "Composer"),
         };
+        let overrides = params
+            .visual_snapshot
+            .and_then(|snapshot| snapshot.vn_layout_debug.as_ref());
         for (rect, style) in vn_panel_rects(&layout, stage_rect, cell_width, cell_height)
             .into_iter()
-            .zip(vn_panel_styles(&layout))
+            .zip(vn_panel_styles(&layout, overrides))
         {
             self.populate_vn_panel_surface(layers, 1, rect, cell_width, params, style, hsv)?;
         }
         for (rect, style) in vn_panel_nameplate_rects(&layout, stage_rect, cell_width, cell_height)
             .into_iter()
-            .zip(vn_panel_nameplate_styles(&layout))
+            .zip(vn_panel_nameplate_styles(&layout, overrides))
         {
             self.populate_vn_panel_surface(layers, 1, rect, cell_width, params, style, hsv)?;
         }
@@ -274,7 +290,9 @@ impl TermWindow {
         hsv: Option<HsbTransform>,
     ) -> anyhow::Result<()> {
         if vn_panel_texture_rendering_enabled()
-            && self.populate_vn_panel_texture(layers, layer_num, rect, cell_width, params, hsv)?
+            && self.populate_vn_panel_texture(
+                layers, layer_num, rect, cell_width, params, style, hsv,
+            )?
         {
             return Ok(());
         }
@@ -294,6 +312,7 @@ impl TermWindow {
         rect: RectF,
         cell_width: f32,
         params: &RenderScreenLineParams,
+        style: VnPanelStyle,
         hsv: Option<HsbTransform>,
     ) -> anyhow::Result<bool> {
         if self.allow_images == AllowImage::No {
@@ -336,7 +355,7 @@ impl TermWindow {
                 screen_rect.max_y() - top_offset,
             );
             quad.set_texture(sprite_texture_rect(&sprite, texture_rect));
-            quad.set_fg_color(LinearRgba::with_components(1.0, 1.0, 1.0, 1.0));
+            quad.set_fg_color(LinearRgba::with_components(1.0, 1.0, 1.0, style.fill.3));
             quad.set_hsv(hsv);
             quad.set_has_color(true);
         }
@@ -694,21 +713,43 @@ fn vn_dialogue_scrollbar_rects(
     Some((track, thumb))
 }
 
-fn vn_panel_styles(layout: &gameterm_visual::VnOverlayLayout) -> Vec<VnPanelStyle> {
+fn vn_panel_styles(
+    layout: &gameterm_visual::VnOverlayLayout,
+    overrides: Option<&VnOverlayDebugOverrides>,
+) -> Vec<VnPanelStyle> {
     let mut styles = Vec::new();
     if layout.composer_panel.is_some() {
-        styles.push(VnPanelStyle::composer_panel());
+        styles.push(VnPanelStyle::composer_panel(
+            overrides
+                .map(|overrides| overrides.composer_panel_opacity)
+                .unwrap_or(VN_OVERLAY_PANEL_OPACITY),
+        ));
     }
-    styles.push(VnPanelStyle::dialogue_panel());
+    styles.push(VnPanelStyle::dialogue_panel(
+        overrides
+            .map(|overrides| overrides.dialogue_panel_opacity)
+            .unwrap_or(VN_OVERLAY_PANEL_OPACITY),
+    ));
     styles
 }
 
-fn vn_panel_nameplate_styles(layout: &gameterm_visual::VnOverlayLayout) -> Vec<VnPanelStyle> {
+fn vn_panel_nameplate_styles(
+    layout: &gameterm_visual::VnOverlayLayout,
+    overrides: Option<&VnOverlayDebugOverrides>,
+) -> Vec<VnPanelStyle> {
     let mut styles = Vec::new();
     if layout.composer_nameplate.is_some() {
-        styles.push(VnPanelStyle::composer_nameplate());
+        styles.push(VnPanelStyle::composer_nameplate(
+            overrides
+                .map(|overrides| overrides.composer_nameplate_opacity)
+                .unwrap_or(VN_OVERLAY_NAMEPLATE_OPACITY),
+        ));
     }
-    styles.push(VnPanelStyle::dialogue_nameplate());
+    styles.push(VnPanelStyle::dialogue_nameplate(
+        overrides
+            .map(|overrides| overrides.dialogue_nameplate_opacity)
+            .unwrap_or(VN_OVERLAY_NAMEPLATE_OPACITY),
+    ));
     styles
 }
 
@@ -994,6 +1035,26 @@ mod tests {
 
         assert_eq!(first, second);
         assert_ne!(first, other);
+    }
+
+    #[test]
+    fn vn_panel_styles_apply_debug_opacity_overrides() {
+        let layout = vn_overlay_layout(120, 50, "Codex", "Composer");
+        let overrides = VnOverlayDebugOverrides {
+            dialogue_panel_opacity: 0.25,
+            composer_panel_opacity: 0.35,
+            dialogue_nameplate_opacity: 0.45,
+            composer_nameplate_opacity: 0.55,
+            ..VnOverlayDebugOverrides::default()
+        };
+
+        let panel_styles = vn_panel_styles(&layout, Some(&overrides));
+        let nameplate_styles = vn_panel_nameplate_styles(&layout, Some(&overrides));
+
+        assert_approx_eq(panel_styles[0].fill.3, 0.35);
+        assert_approx_eq(panel_styles[1].fill.3, 0.25);
+        assert_approx_eq(nameplate_styles[0].fill.3, 0.55);
+        assert_approx_eq(nameplate_styles[1].fill.3, 0.45);
     }
 
     #[test]
@@ -1452,7 +1513,10 @@ mod tests {
     #[test]
     fn rounded_rect_primitive_derives_inner_shape_from_style() {
         let rect = euclid::rect(4.0, 6.0, 120.0, 48.0);
-        let primitive = RoundedRectPrimitive::new(rect, VnPanelStyle::dialogue_panel());
+        let primitive = RoundedRectPrimitive::new(
+            rect,
+            VnPanelStyle::dialogue_panel(VN_OVERLAY_PANEL_OPACITY),
+        );
 
         assert_eq!(primitive.rect, rect);
         assert_eq!(primitive.fill, VN_PANEL_FILL);
@@ -1470,17 +1534,18 @@ mod tests {
 
         let small = RoundedRectPrimitive::new(
             euclid::rect(0.0, 0.0, 12.0, 8.0),
-            VnPanelStyle::dialogue_panel(),
+            VnPanelStyle::dialogue_panel(VN_OVERLAY_PANEL_OPACITY),
         );
         assert_eq!(small.radius, 4.0);
     }
 
     #[test]
     fn vn_panel_styles_use_extracted_procedural_values() {
-        let panel = VnPanelStyle::dialogue_panel();
-        let composer = VnPanelStyle::composer_panel();
-        let nameplate = VnPanelStyle::dialogue_nameplate();
-        let composer_nameplate = VnPanelStyle::composer_nameplate();
+        let panel = VnPanelStyle::dialogue_panel(VN_OVERLAY_PANEL_OPACITY);
+        let composer = VnPanelStyle::composer_panel(VN_OVERLAY_PANEL_OPACITY);
+        let nameplate = VnPanelStyle::dialogue_nameplate(VN_OVERLAY_NAMEPLATE_OPACITY);
+        let composer_nameplate =
+            VnPanelStyle::composer_nameplate(VN_OVERLAY_NAMEPLATE_OPACITY);
 
         assert_eq!(panel.fill, LinearRgba(0.102, 0.1137, 0.1333, 0.4627));
         assert_eq!(panel.border, LinearRgba(0.1608, 0.1725, 0.1961, 0.3608));

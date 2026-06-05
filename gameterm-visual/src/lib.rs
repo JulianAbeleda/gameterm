@@ -94,6 +94,8 @@ pub const VN_OVERLAY_NAMEPLATE_OFFSET_ROWS: usize = 0;
 pub const VN_OVERLAY_NAMEPLATE_HEIGHT_ROWS: usize = 3;
 pub const VN_OVERLAY_DIALOGUE_NAMEPLATE_HEIGHT_ROWS: usize = VN_OVERLAY_NAMEPLATE_HEIGHT_ROWS;
 pub const VN_OVERLAY_COMPOSER_NAMEPLATE_HEIGHT_ROWS: usize = VN_OVERLAY_NAMEPLATE_HEIGHT_ROWS;
+pub const VN_OVERLAY_PANEL_OPACITY: f32 = 0.4627;
+pub const VN_OVERLAY_NAMEPLATE_OPACITY: f32 = 0.58;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -115,6 +117,10 @@ pub struct VnOverlayDebugOverrides {
     pub composer_text_inset_cols: usize,
     pub dialogue_text_inset_rows: usize,
     pub composer_text_inset_rows: usize,
+    pub dialogue_panel_opacity: f32,
+    pub composer_panel_opacity: f32,
+    pub dialogue_nameplate_opacity: f32,
+    pub composer_nameplate_opacity: f32,
     pub selected_param: usize,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub editing_buffer: Option<String>,
@@ -140,6 +146,10 @@ impl Default for VnOverlayDebugOverrides {
             composer_text_inset_cols: VN_OVERLAY_COMPOSER_TEXT_INSET_COLS,
             dialogue_text_inset_rows: VN_OVERLAY_DIALOGUE_TEXT_INSET_ROWS,
             composer_text_inset_rows: VN_OVERLAY_COMPOSER_TEXT_INSET_ROWS,
+            dialogue_panel_opacity: VN_OVERLAY_PANEL_OPACITY,
+            composer_panel_opacity: VN_OVERLAY_PANEL_OPACITY,
+            dialogue_nameplate_opacity: VN_OVERLAY_NAMEPLATE_OPACITY,
+            composer_nameplate_opacity: VN_OVERLAY_NAMEPLATE_OPACITY,
             selected_param: 0,
             editing_buffer: None,
         }
@@ -147,7 +157,7 @@ impl Default for VnOverlayDebugOverrides {
 }
 
 impl VnOverlayDebugOverrides {
-    pub const PARAM_COUNT: usize = 17;
+    pub const PARAM_COUNT: usize = 21;
 
     pub fn select_next(&mut self) {
         self.selected_param = (self.selected_param + 1) % Self::PARAM_COUNT;
@@ -222,6 +232,22 @@ impl VnOverlayDebugOverrides {
             16 => {
                 adjust_usize(&mut self.composer_text_inset_rows, delta, 0, 12);
             }
+            17 => {
+                self.dialogue_panel_opacity =
+                    adjust_opacity(self.dialogue_panel_opacity, delta);
+            }
+            18 => {
+                self.composer_panel_opacity =
+                    adjust_opacity(self.composer_panel_opacity, delta);
+            }
+            19 => {
+                self.dialogue_nameplate_opacity =
+                    adjust_opacity(self.dialogue_nameplate_opacity, delta);
+            }
+            20 => {
+                self.composer_nameplate_opacity =
+                    adjust_opacity(self.composer_nameplate_opacity, delta);
+            }
             _ => {}
         }
     }
@@ -245,6 +271,10 @@ impl VnOverlayDebugOverrides {
             14 => "composer_text_inset_cols",
             15 => "dialogue_text_inset_rows",
             16 => "composer_text_inset_rows",
+            17 => "dialogue_panel_opacity",
+            18 => "composer_panel_opacity",
+            19 => "dialogue_nameplate_opacity",
+            20 => "composer_nameplate_opacity",
             _ => "?",
         }
     }
@@ -268,6 +298,10 @@ impl VnOverlayDebugOverrides {
             14 => "composer text left inset",
             15 => "dialogue text top inset",
             16 => "composer text top inset",
+            17 => "dialogue box opacity",
+            18 => "composer box opacity",
+            19 => "dialogue nameplate opacity",
+            20 => "composer nameplate opacity",
             _ => "",
         }
     }
@@ -291,6 +325,10 @@ impl VnOverlayDebugOverrides {
             14 => self.composer_text_inset_cols.to_string(),
             15 => self.dialogue_text_inset_rows.to_string(),
             16 => self.composer_text_inset_rows.to_string(),
+            17 => format!("{:.3}", self.dialogue_panel_opacity),
+            18 => format!("{:.3}", self.composer_panel_opacity),
+            19 => format!("{:.3}", self.dialogue_nameplate_opacity),
+            20 => format!("{:.3}", self.composer_nameplate_opacity),
             _ => String::new(),
         }
     }
@@ -411,9 +449,37 @@ impl VnOverlayDebugOverrides {
                     self.composer_text_inset_rows = v.clamp(0, 12);
                 }
             }
+            17 => {
+                if let Ok(v) = buf.parse::<f32>() {
+                    self.dialogue_panel_opacity = clamp_opacity(v);
+                }
+            }
+            18 => {
+                if let Ok(v) = buf.parse::<f32>() {
+                    self.composer_panel_opacity = clamp_opacity(v);
+                }
+            }
+            19 => {
+                if let Ok(v) = buf.parse::<f32>() {
+                    self.dialogue_nameplate_opacity = clamp_opacity(v);
+                }
+            }
+            20 => {
+                if let Ok(v) = buf.parse::<f32>() {
+                    self.composer_nameplate_opacity = clamp_opacity(v);
+                }
+            }
             _ => {}
         }
     }
+}
+
+fn adjust_opacity(value: f32, delta: i32) -> f32 {
+    clamp_opacity(value + delta as f32 * 0.025)
+}
+
+fn clamp_opacity(value: f32) -> f32 {
+    value.clamp(0.0, 1.0)
 }
 
 fn adjust_usize(value: &mut usize, delta: i32, min: usize, max: usize) {
@@ -4916,6 +4982,27 @@ mod tests {
     }
 
     #[test]
+    fn vn_layout_debug_overrides_adjust_opacity_params() {
+        let mut overrides = VnOverlayDebugOverrides::default();
+
+        overrides.selected_param = 17;
+        overrides.adjust(-1);
+        assert!(overrides.dialogue_panel_opacity < VN_OVERLAY_PANEL_OPACITY);
+
+        overrides.selected_param = 18;
+        overrides.adjust(1);
+        assert!(overrides.composer_panel_opacity > VN_OVERLAY_PANEL_OPACITY);
+
+        overrides.selected_param = 19;
+        overrides.adjust(-1);
+        assert!(overrides.dialogue_nameplate_opacity < VN_OVERLAY_NAMEPLATE_OPACITY);
+
+        overrides.selected_param = 20;
+        overrides.adjust(1);
+        assert!(overrides.composer_nameplate_opacity > VN_OVERLAY_NAMEPLATE_OPACITY);
+    }
+
+    #[test]
     fn vn_layout_debug_overrides_text_edit_commits_typed_value() {
         let mut overrides = VnOverlayDebugOverrides::default();
         overrides.begin_edit();
@@ -4997,6 +5084,34 @@ mod tests {
         }
         overrides.commit_edit();
         assert!(overrides.dialogue_margin_ratio <= 0.45);
+    }
+
+    #[test]
+    fn vn_layout_debug_opacity_edit_clamps_to_unit_interval() {
+        let mut overrides = VnOverlayDebugOverrides {
+            selected_param: 17,
+            ..VnOverlayDebugOverrides::default()
+        };
+        overrides.begin_edit();
+        for _ in 0..16 {
+            overrides.pop_char();
+        }
+        for c in "9.999".chars() {
+            overrides.push_char(c);
+        }
+        overrides.commit_edit();
+        assert_eq!(overrides.dialogue_panel_opacity, 1.0);
+
+        overrides.selected_param = 20;
+        overrides.begin_edit();
+        for _ in 0..16 {
+            overrides.pop_char();
+        }
+        for c in "-1.000".chars() {
+            overrides.push_char(c);
+        }
+        overrides.commit_edit();
+        assert_eq!(overrides.composer_nameplate_opacity, 0.0);
     }
 
     #[test]
