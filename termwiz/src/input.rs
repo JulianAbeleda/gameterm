@@ -50,6 +50,7 @@ pub use gameterm_escape_parser::csi::MouseButtons;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InputEvent {
     Key(KeyEvent),
+    KeyUp(KeyEvent),
     Mouse(MouseEvent),
     PixelMouse(PixelMouseEvent),
     /// Detected that the user has resized the terminal

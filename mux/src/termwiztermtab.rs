@@ -231,7 +231,15 @@ impl Pane for TermWizTerminalPane {
         Ok(())
     }
 
-    fn key_up(&self, _key: KeyCode, _modifiers: KeyModifiers) -> anyhow::Result<()> {
+    fn key_up(&self, key: KeyCode, modifiers: KeyModifiers) -> anyhow::Result<()> {
+        let event = InputEvent::KeyUp(KeyEvent {
+            key,
+            modifiers: modifiers.remove_positional_mods(),
+        });
+        if let Err(e) = self.input_tx.send(event) {
+            *self.dead.lock() = true;
+            return Err(e.into());
+        }
         Ok(())
     }
 
