@@ -1,15 +1,27 @@
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::Sample;
 use std::io::Read;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc, LazyLock, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
 const STT_BACKEND_ENV: &str = "GAMETERM_SCENE_STT_BACKEND";
 const STT_COMMAND_ENV: &str = "GAMETERM_SCENE_STT_COMMAND";
 const STT_TIMEOUT_ENV: &str = "GAMETERM_SCENE_STT_TIMEOUT_SECONDS";
 const STT_AUTO_SUBMIT_ENV: &str = "GAMETERM_SCENE_STT_AUTO_SUBMIT";
+const STT_WHISPER_MODEL_ENV: &str = "GAMETERM_SCENE_STT_WHISPER_MODEL";
+const STT_WHISPER_LANGUAGE_ENV: &str = "GAMETERM_SCENE_STT_LANGUAGE";
+const STT_WHISPER_MAX_SECONDS_ENV: &str = "GAMETERM_SCENE_STT_MAX_SECONDS";
 const STT_DEFAULT_TIMEOUT: Duration = Duration::from_secs(20);
+const STT_DEFAULT_MAX_SECONDS: Duration = Duration::from_secs(20);
 const STT_MAX_TRANSCRIPT_CHARS: usize = 800;
+const WHISPER_SAMPLE_RATE: u32 = 16_000;
+
+static WHISPER_CONTEXT_CACHE: LazyLock<Mutex<Option<(PathBuf, Arc<WhisperContext>)>>> =
+    LazyLock::new(|| Mutex::new(None));
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct SceneSttResult {
@@ -29,13 +41,21 @@ impl SceneSttResult {
 enum SceneSttBackend {
     Disabled,
     Command(Vec<String>),
+    Whisper(SceneWhisperConfig),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct SceneSttConfig {
+pub(crate) struct SceneSttConfig {
     backend: SceneSttBackend,
     timeout: Duration,
     auto_submit: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SceneWhisperConfig {
+    model_path: PathBuf,
+    language: String,
+    max_recording: Duration,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -69,6 +89,11 @@ impl SceneSttState {
         self.last_status.clone()
     }
 
+    pub(super) fn mark_processing(&mut self) -> String {
+        self.last_status = "Voice processing".to_string();
+        self.last_status.clone()
+    }
+
     pub(super) fn apply_result(&mut self, result: &SceneSttResult) -> String {
         self.running = false;
         self.last_status = result.status.clone();
@@ -77,27 +102,39 @@ impl SceneSttState {
 }
 
 #[derive(Debug)]
-pub(super) struct SceneSttCancel {
-    tx: mpsc::Sender<()>,
+pub(super) struct SceneSttSession {
+    tx: mpsc::Sender<SceneSttControl>,
 }
 
-impl SceneSttCancel {
+impl SceneSttSession {
     pub(super) fn cancel(&self) {
-        let _ = self.tx.send(());
+        let _ = self.tx.send(SceneSttControl::Cancel);
+    }
+
+    pub(super) fn stop(&self) {
+        let _ = self.tx.send(SceneSttControl::Stop);
     }
 }
 
-pub(super) fn spawn_stt_backend(tx: mpsc::Sender<SceneSttResult>) -> SceneSttCancel {
-    let config = scene_stt_config_from_env();
-    let (cancel_tx, cancel_rx) = mpsc::channel();
-    thread::spawn(move || {
-        let result = run_stt_backend(config, cancel_rx);
-        let _ = tx.send(result);
-    });
-    SceneSttCancel { tx: cancel_tx }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SceneSttControl {
+    Stop,
+    Cancel,
 }
 
-fn scene_stt_config_from_env() -> SceneSttConfig {
+pub(super) fn spawn_stt_backend(
+    config: SceneSttConfig,
+    tx: mpsc::Sender<SceneSttResult>,
+) -> SceneSttSession {
+    let (control_tx, control_rx) = mpsc::channel();
+    thread::spawn(move || {
+        let result = run_stt_backend(config, control_rx);
+        let _ = tx.send(result);
+    });
+    SceneSttSession { tx: control_tx }
+}
+
+pub(crate) fn scene_stt_config_from_env() -> SceneSttConfig {
     let backend = match std::env::var(STT_BACKEND_ENV)
         .ok()
         .map(|value| value.trim().to_ascii_lowercase())
@@ -111,6 +148,7 @@ fn scene_stt_config_from_env() -> SceneSttConfig {
             Some(argv) => SceneSttBackend::Command(argv),
             None => SceneSttBackend::Disabled,
         },
+        Some("whisper") => SceneSttBackend::Whisper(SceneWhisperConfig::from_env()),
         _ => SceneSttBackend::Disabled,
     };
 
@@ -128,7 +166,59 @@ fn scene_stt_config_from_env() -> SceneSttConfig {
     }
 }
 
-fn run_stt_backend(config: SceneSttConfig, cancel_rx: mpsc::Receiver<()>) -> SceneSttResult {
+impl SceneSttConfig {
+    pub(crate) fn from_env() -> Self {
+        scene_stt_config_from_env()
+    }
+
+    pub(crate) fn whisper_default() -> Self {
+        Self {
+            backend: SceneSttBackend::Whisper(SceneWhisperConfig::from_env()),
+            timeout: STT_DEFAULT_TIMEOUT,
+            auto_submit: false,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn is_whisper_backend(&self) -> bool {
+        matches!(self.backend, SceneSttBackend::Whisper(_))
+    }
+}
+
+impl SceneWhisperConfig {
+    fn from_env() -> Self {
+        Self {
+            model_path: std::env::var(STT_WHISPER_MODEL_ENV)
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+                .map(PathBuf::from)
+                .unwrap_or_else(default_whisper_model_path),
+            language: std::env::var(STT_WHISPER_LANGUAGE_ENV)
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or_else(|| "en".to_string()),
+            max_recording: std::env::var(STT_WHISPER_MAX_SECONDS_ENV)
+                .ok()
+                .and_then(|value| value.parse::<u64>().ok())
+                .map(Duration::from_secs)
+                .unwrap_or(STT_DEFAULT_MAX_SECONDS),
+        }
+    }
+}
+
+fn default_whisper_model_path() -> PathBuf {
+    dirs_next::cache_dir()
+        .unwrap_or_else(std::env::temp_dir)
+        .join("gameterm")
+        .join("scene-stt")
+        .join("models")
+        .join("ggml-base.en.bin")
+}
+
+fn run_stt_backend(
+    config: SceneSttConfig,
+    control_rx: mpsc::Receiver<SceneSttControl>,
+) -> SceneSttResult {
     match &config.backend {
         SceneSttBackend::Disabled => SceneSttResult {
             status: "Voice disabled".to_string(),
@@ -136,14 +226,17 @@ fn run_stt_backend(config: SceneSttConfig, cancel_rx: mpsc::Receiver<()>) -> Sce
             auto_submit: false,
             error: Some("STT backend is disabled".to_string()),
         },
-        SceneSttBackend::Command(argv) => run_command_stt_backend(&config, argv.clone(), cancel_rx),
+        SceneSttBackend::Command(argv) => {
+            run_command_stt_backend(&config, argv.clone(), control_rx)
+        }
+        SceneSttBackend::Whisper(whisper) => run_whisper_stt_backend(&config, whisper, control_rx),
     }
 }
 
 fn run_command_stt_backend(
     config: &SceneSttConfig,
     argv: Vec<String>,
-    cancel_rx: mpsc::Receiver<()>,
+    control_rx: mpsc::Receiver<SceneSttControl>,
 ) -> SceneSttResult {
     let Some((program, args)) = argv.split_first() else {
         return SceneSttResult {
@@ -175,7 +268,7 @@ fn run_command_stt_backend(
 
     let started = std::time::Instant::now();
     loop {
-        if cancel_rx.try_recv().is_ok() {
+        if matches!(control_rx.try_recv(), Ok(SceneSttControl::Cancel)) {
             let _ = child.kill();
             return SceneSttResult {
                 status: "Voice canceled".to_string(),
@@ -242,6 +335,299 @@ fn run_command_stt_backend(
         auto_submit: config.auto_submit,
         error: None,
     }
+}
+
+fn run_whisper_stt_backend(
+    config: &SceneSttConfig,
+    whisper: &SceneWhisperConfig,
+    control_rx: mpsc::Receiver<SceneSttControl>,
+) -> SceneSttResult {
+    if !whisper.model_path.exists() {
+        return SceneSttResult {
+            status: "Voice failed".to_string(),
+            transcript: None,
+            auto_submit: false,
+            error: Some(format!(
+                "missing Whisper model at {}",
+                whisper.model_path.display()
+            )),
+        };
+    }
+
+    let recording = match record_until_stop(whisper.max_recording, control_rx) {
+        Ok(Some(recording)) => recording,
+        Ok(None) => {
+            return SceneSttResult {
+                status: "Voice canceled".to_string(),
+                transcript: None,
+                auto_submit: false,
+                error: Some("STT canceled".to_string()),
+            };
+        }
+        Err(err) => {
+            return SceneSttResult {
+                status: "Voice failed".to_string(),
+                transcript: None,
+                auto_submit: false,
+                error: Some(err),
+            };
+        }
+    };
+
+    let samples = resample_linear_mono(
+        &recording.samples,
+        recording.sample_rate,
+        WHISPER_SAMPLE_RATE,
+    );
+    if samples.len() < (WHISPER_SAMPLE_RATE / 4) as usize {
+        return SceneSttResult {
+            status: "Voice failed".to_string(),
+            transcript: None,
+            auto_submit: false,
+            error: Some("recording too short".to_string()),
+        };
+    }
+
+    let transcript =
+        match transcribe_whisper_samples(&whisper.model_path, &whisper.language, &samples) {
+            Ok(transcript) => sanitize_transcript(&transcript),
+            Err(err) => {
+                return SceneSttResult {
+                    status: "Voice failed".to_string(),
+                    transcript: None,
+                    auto_submit: false,
+                    error: Some(err),
+                };
+            }
+        };
+    if transcript.is_empty() {
+        return SceneSttResult {
+            status: "Voice failed".to_string(),
+            transcript: None,
+            auto_submit: false,
+            error: Some("empty transcript".to_string()),
+        };
+    }
+
+    SceneSttResult {
+        status: "Voice transcript ready".to_string(),
+        transcript: Some(transcript),
+        auto_submit: config.auto_submit,
+        error: None,
+    }
+}
+
+struct RecordedAudio {
+    samples: Vec<f32>,
+    sample_rate: u32,
+}
+
+fn record_until_stop(
+    max_recording: Duration,
+    control_rx: mpsc::Receiver<SceneSttControl>,
+) -> Result<Option<RecordedAudio>, String> {
+    let host = cpal::default_host();
+    let device = host
+        .default_input_device()
+        .ok_or_else(|| "no default microphone input device".to_string())?;
+    let supported = device
+        .default_input_config()
+        .map_err(|err| format!("failed to read default microphone config: {err}"))?;
+    let sample_rate = supported.sample_rate().0;
+    let channels = supported.channels().max(1) as usize;
+    let stream_config = supported.config();
+    let samples = Arc::new(Mutex::new(Vec::<f32>::new()));
+    let stream = build_recording_stream(
+        &device,
+        &stream_config,
+        supported.sample_format(),
+        channels,
+        samples.clone(),
+    )?;
+    stream
+        .play()
+        .map_err(|err| format!("failed to start microphone stream: {err}"))?;
+
+    let started = Instant::now();
+    loop {
+        match control_rx.recv_timeout(Duration::from_millis(25)) {
+            Ok(SceneSttControl::Stop) => break,
+            Ok(SceneSttControl::Cancel) => return Ok(None),
+            Err(mpsc::RecvTimeoutError::Timeout) if started.elapsed() >= max_recording => break,
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::RecvTimeoutError::Disconnected) => return Ok(None),
+        }
+    }
+    drop(stream);
+
+    let samples = samples
+        .lock()
+        .map_err(|_| "failed to read recorded microphone samples".to_string())?
+        .clone();
+    Ok(Some(RecordedAudio {
+        samples,
+        sample_rate,
+    }))
+}
+
+fn build_recording_stream(
+    device: &cpal::Device,
+    stream_config: &cpal::StreamConfig,
+    sample_format: cpal::SampleFormat,
+    channels: usize,
+    samples: Arc<Mutex<Vec<f32>>>,
+) -> Result<cpal::Stream, String> {
+    let err_fn = |err| log::warn!("Scene STT microphone stream error: {err}");
+    match sample_format {
+        cpal::SampleFormat::F32 => {
+            build_recording_stream_for::<f32>(device, stream_config, channels, samples, err_fn)
+        }
+        cpal::SampleFormat::F64 => {
+            build_recording_stream_for::<f64>(device, stream_config, channels, samples, err_fn)
+        }
+        cpal::SampleFormat::I8 => {
+            build_recording_stream_for::<i8>(device, stream_config, channels, samples, err_fn)
+        }
+        cpal::SampleFormat::I16 => {
+            build_recording_stream_for::<i16>(device, stream_config, channels, samples, err_fn)
+        }
+        cpal::SampleFormat::I24 => build_recording_stream_for::<cpal::I24>(
+            device,
+            stream_config,
+            channels,
+            samples,
+            err_fn,
+        ),
+        cpal::SampleFormat::I32 => {
+            build_recording_stream_for::<i32>(device, stream_config, channels, samples, err_fn)
+        }
+        cpal::SampleFormat::I64 => {
+            build_recording_stream_for::<i64>(device, stream_config, channels, samples, err_fn)
+        }
+        cpal::SampleFormat::U8 => {
+            build_recording_stream_for::<u8>(device, stream_config, channels, samples, err_fn)
+        }
+        cpal::SampleFormat::U16 => {
+            build_recording_stream_for::<u16>(device, stream_config, channels, samples, err_fn)
+        }
+        cpal::SampleFormat::U32 => {
+            build_recording_stream_for::<u32>(device, stream_config, channels, samples, err_fn)
+        }
+        cpal::SampleFormat::U64 => {
+            build_recording_stream_for::<u64>(device, stream_config, channels, samples, err_fn)
+        }
+        format => Err(format!("unsupported microphone sample format: {format}")),
+    }
+}
+
+fn build_recording_stream_for<T>(
+    device: &cpal::Device,
+    stream_config: &cpal::StreamConfig,
+    channels: usize,
+    samples: Arc<Mutex<Vec<f32>>>,
+    err_fn: impl FnMut(cpal::StreamError) + Send + 'static,
+) -> Result<cpal::Stream, String>
+where
+    T: cpal::SizedSample,
+    f32: cpal::FromSample<T>,
+{
+    device
+        .build_input_stream(
+            stream_config,
+            move |data: &[T], _| append_recorded_samples(data, channels, &samples),
+            err_fn,
+            None,
+        )
+        .map_err(|err| format!("failed to build microphone stream: {err}"))
+}
+
+fn append_recorded_samples<T>(data: &[T], channels: usize, samples: &Arc<Mutex<Vec<f32>>>)
+where
+    T: cpal::Sample,
+    f32: cpal::FromSample<T>,
+{
+    if let Ok(mut out) = samples.lock() {
+        for frame in data.chunks(channels.max(1)) {
+            let sum: f32 = frame.iter().map(|sample| f32::from_sample(*sample)).sum();
+            out.push(sum / frame.len().max(1) as f32);
+        }
+    }
+}
+
+fn transcribe_whisper_samples(
+    model_path: &Path,
+    language: &str,
+    samples: &[f32],
+) -> Result<String, String> {
+    let context = cached_whisper_context(model_path)?;
+    let mut state = context
+        .create_state()
+        .map_err(|err| format!("failed to create Whisper state: {err}"))?;
+    let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+    params.set_language(Some(language));
+    params.set_translate(false);
+    params.set_no_context(true);
+    params.set_no_timestamps(true);
+    params.set_print_special(false);
+    params.set_print_progress(false);
+    params.set_print_realtime(false);
+    params.set_print_timestamps(false);
+    state
+        .full(params, samples)
+        .map_err(|err| format!("Whisper transcription failed: {err}"))?;
+    let mut transcript = String::new();
+    for segment in state.as_iter() {
+        if let Ok(text) = segment.to_str_lossy() {
+            transcript.push_str(text.trim());
+            transcript.push(' ');
+        }
+    }
+    Ok(transcript)
+}
+
+fn cached_whisper_context(model_path: &Path) -> Result<Arc<WhisperContext>, String> {
+    let model_path = model_path.to_path_buf();
+    let mut cache = WHISPER_CONTEXT_CACHE
+        .lock()
+        .map_err(|_| "failed to lock Whisper model cache".to_string())?;
+    if let Some((cached_path, context)) = cache.as_ref() {
+        if cached_path == &model_path {
+            return Ok(context.clone());
+        }
+    }
+
+    let context = WhisperContext::new_with_params(&model_path, WhisperContextParameters::default())
+        .map_err(|err| {
+            format!(
+                "failed to load Whisper model {}: {err}",
+                model_path.display()
+            )
+        })?;
+    let context = Arc::new(context);
+    *cache = Some((model_path, context.clone()));
+    Ok(context)
+}
+
+fn resample_linear_mono(samples: &[f32], source_rate: u32, target_rate: u32) -> Vec<f32> {
+    if samples.is_empty() || source_rate == 0 || target_rate == 0 {
+        return Vec::new();
+    }
+    if source_rate == target_rate {
+        return samples.to_vec();
+    }
+
+    let target_len =
+        ((samples.len() as u64 * target_rate as u64) / source_rate as u64).max(1) as usize;
+    let ratio = source_rate as f64 / target_rate as f64;
+    let mut out = Vec::with_capacity(target_len);
+    for idx in 0..target_len {
+        let src_pos = idx as f64 * ratio;
+        let left = src_pos.floor() as usize;
+        let right = (left + 1).min(samples.len() - 1);
+        let frac = (src_pos - left as f64) as f32;
+        out.push(samples[left] * (1.0 - frac) + samples[right] * frac);
+    }
+    out
 }
 
 pub(super) fn sanitize_transcript(raw: &str) -> String {
@@ -347,5 +733,39 @@ mod tests {
 
         assert!(result.succeeded());
         assert_eq!(result.transcript.as_deref(), Some("open the roadmap"));
+    }
+
+    #[test]
+    fn visual_stt_whisper_backend_reports_missing_model() {
+        let missing_model = std::env::temp_dir().join("gameterm-missing-whisper-model.bin");
+        let (_control_tx, control_rx) = mpsc::channel();
+        let result = run_stt_backend(
+            SceneSttConfig {
+                backend: SceneSttBackend::Whisper(SceneWhisperConfig {
+                    model_path: missing_model.clone(),
+                    language: "en".to_string(),
+                    max_recording: Duration::from_secs(1),
+                }),
+                timeout: Duration::from_secs(2),
+                auto_submit: false,
+            },
+            control_rx,
+        );
+
+        assert_eq!(result.status, "Voice failed");
+        assert!(result
+            .error
+            .as_deref()
+            .is_some_and(|err| err.contains(&missing_model.display().to_string())));
+    }
+
+    #[test]
+    fn visual_stt_resamples_mono_to_whisper_rate() {
+        let samples = vec![0.0, 1.0, 0.0, -1.0];
+        let resampled = resample_linear_mono(&samples, 8_000, WHISPER_SAMPLE_RATE);
+
+        assert_eq!(resampled.len(), samples.len() * 2);
+        assert_eq!(resampled[0], 0.0);
+        assert!(resampled[1] > 0.0);
     }
 }

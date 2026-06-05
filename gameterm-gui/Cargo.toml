@@ -42,6 +42,7 @@ clap.workspace = true
 codec.workspace = true
 colorgrad.workspace = true
 config.workspace = true
+cpal.workspace = true
 dhat = {workspace=true, optional=true}
 dirs-next.workspace = true
 downcast-rs.workspace = true
@@ -105,6 +106,7 @@ gameterm-term.workspace = true
 gameterm-toast-notification.workspace = true
 gameterm-visual.workspace = true
 wgpu.workspace = true
+whisper-rs.workspace = true
 window-funcs.workspace = true
 window.workspace = true
 

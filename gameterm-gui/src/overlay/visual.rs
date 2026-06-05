@@ -45,7 +45,9 @@ use super::visual_compose::ComposeBackendLabel;
 use super::visual_compose::{
     compose_running_status, spawn_compose_backend, ComposeBackendRequest, ComposeBackendResult,
 };
-use super::visual_stt::{spawn_stt_backend, SceneSttCancel, SceneSttResult, SceneSttState};
+use super::visual_stt::{
+    spawn_stt_backend, SceneSttConfig, SceneSttResult, SceneSttSession, SceneSttState,
+};
 use super::visual_tts::{
     extract_speakable_segments, SceneTtsConfig, SceneTtsRequest, SceneTtsResult, SceneTtsState,
     SceneTtsWorker, SpeakableSegment, SpeakableSource,
@@ -117,12 +119,17 @@ pub fn show_generated_visual_scene_overlay(
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct SceneOverlayLaunchOptions {
     tts_config: Option<SceneTtsConfig>,
+    stt_config: Option<SceneSttConfig>,
 }
 
 impl SceneOverlayLaunchOptions {
-    pub(crate) fn with_tts_config(tts_config: SceneTtsConfig) -> Self {
+    pub(crate) fn with_voice_config(
+        tts_config: SceneTtsConfig,
+        stt_config: SceneSttConfig,
+    ) -> Self {
         Self {
             tts_config: Some(tts_config),
+            stt_config: Some(stt_config),
         }
     }
 }
@@ -235,8 +242,11 @@ fn show_visual_scene_overlay_with_source(
     let mut first_voice_reveal_done = false;
     let mut pending_first_voice_reveal: Option<PendingFirstVoiceReveal> = None;
     let (stt_tx, stt_rx) = mpsc::channel();
+    let stt_config = launch_options
+        .stt_config
+        .unwrap_or_else(SceneSttConfig::from_env);
     let mut stt_state = SceneSttState::default();
-    let mut stt_cancel: Option<SceneSttCancel> = None;
+    let mut stt_session: Option<SceneSttSession> = None;
     let mut last_idle_sprite: Option<String> = None;
 
     loop {
@@ -305,7 +315,7 @@ fn show_visual_scene_overlay_with_source(
             }
         }
         while let Ok(result) = stt_rx.try_recv() {
-            stt_cancel = None;
+            stt_session = None;
             if let Some(runtime) = runtime.as_mut() {
                 apply_stt_result(
                     runtime,
@@ -388,6 +398,20 @@ fn show_visual_scene_overlay_with_source(
         match input {
             InputEvent::Key(KeyEvent { key, modifiers }) => {
                 if let Some(runtime) = runtime.as_mut() {
+                    if stt_state.is_running() && matches!(key, KeyCode::Escape) {
+                        if let Some(session) = stt_session.take() {
+                            session.cancel();
+                        }
+                        runtime.mark_action_status(stt_state.mark_canceling());
+                        render_runtime_with_compose_and_scroll(
+                            &mut term,
+                            runtime,
+                            &sprite_manifest,
+                            &compose_dock,
+                            &dialogue_scroll,
+                        )?;
+                        continue;
+                    }
                     if is_tts_toggle_key(key, modifiers) {
                         runtime.mark_action_status(tts_state.toggle_muted());
                         render_runtime_with_compose_and_scroll(
@@ -399,15 +423,11 @@ fn show_visual_scene_overlay_with_source(
                         )?;
                         continue;
                     }
-                    if is_stt_toggle_key(key, modifiers) {
-                        if stt_state.is_running() {
-                            if let Some(cancel) = stt_cancel.take() {
-                                cancel.cancel();
-                            }
-                            runtime.mark_action_status(stt_state.mark_canceling());
-                        } else {
+                    if is_stt_hold_key(key, modifiers) {
+                        if !stt_state.is_running() {
                             runtime.mark_action_status(stt_state.mark_started());
-                            stt_cancel = Some(spawn_stt_backend(stt_tx.clone()));
+                            stt_session =
+                                Some(spawn_stt_backend(stt_config.clone(), stt_tx.clone()));
                         }
                         render_runtime_with_compose_and_scroll(
                             &mut term,
@@ -500,7 +520,8 @@ fn show_visual_scene_overlay_with_source(
                                     } else {
                                         let speakable_segments =
                                             apply_compose_backend_result(runtime, result);
-                                        if !first_voice_reveal_done && !speakable_segments.is_empty()
+                                        if !first_voice_reveal_done
+                                            && !speakable_segments.is_empty()
                                         {
                                             first_voice_reveal_done = true;
                                         }
@@ -639,6 +660,23 @@ fn show_visual_scene_overlay_with_source(
                         &compose_dock,
                         &dialogue_scroll,
                     )?;
+                }
+            }
+            InputEvent::KeyUp(KeyEvent { key, modifiers: _ }) => {
+                if let Some(runtime) = runtime.as_mut() {
+                    if is_stt_hold_release_key(key) && stt_state.is_running() {
+                        if let Some(session) = stt_session.take() {
+                            session.stop();
+                        }
+                        runtime.mark_action_status(stt_state.mark_processing());
+                        render_runtime_with_compose_and_scroll(
+                            &mut term,
+                            runtime,
+                            &sprite_manifest,
+                            &compose_dock,
+                            &dialogue_scroll,
+                        )?;
+                    }
                 }
             }
             InputEvent::Mouse(MouseEvent {
@@ -1524,8 +1562,12 @@ fn is_tts_toggle_key(key: KeyCode, modifiers: Modifiers) -> bool {
     matches!(key, KeyCode::Char('m') | KeyCode::Char('M')) && modifiers.contains(Modifiers::ALT)
 }
 
-fn is_stt_toggle_key(key: KeyCode, modifiers: Modifiers) -> bool {
-    matches!(key, KeyCode::Char('v') | KeyCode::Char('V')) && modifiers.contains(Modifiers::ALT)
+fn is_stt_hold_key(key: KeyCode, modifiers: Modifiers) -> bool {
+    matches!(key, KeyCode::Char(' ')) && modifiers.contains(Modifiers::SHIFT)
+}
+
+fn is_stt_hold_release_key(key: KeyCode) -> bool {
+    matches!(key, KeyCode::Char(' '))
 }
 
 fn is_compose_debug_backend_toggle_key(key: KeyCode, modifiers: Modifiers) -> bool {
@@ -1566,7 +1608,11 @@ fn compose_result_speakable_segments(result: &ComposeBackendResult) -> Vec<Speak
     let Some((speaker, dialogue_text)) = compose_result_reply_preview(result) else {
         return Vec::new();
     };
-    extract_speakable_segments(Some(&speaker), &dialogue_text, SpeakableSource::ComposeReply)
+    extract_speakable_segments(
+        Some(&speaker),
+        &dialogue_text,
+        SpeakableSource::ComposeReply,
+    )
 }
 
 fn compose_result_reply_preview(result: &ComposeBackendResult) -> Option<(String, String)> {
@@ -2472,8 +2518,8 @@ mod tests {
     use gameterm_visual::{
         VisualStage, VisualStageDisplayable, VisualStageLayer, VisualStagePlacement,
         VN_OVERLAY_COMPOSER_NAMEPLATE_TEXT_INSET_ROWS,
-        VN_OVERLAY_DIALOGUE_NAMEPLATE_TEXT_INSET_COLS,
-        VN_OVERLAY_NAMEPLATE_OPACITY, VN_OVERLAY_PANEL_OPACITY,
+        VN_OVERLAY_DIALOGUE_NAMEPLATE_TEXT_INSET_COLS, VN_OVERLAY_NAMEPLATE_OPACITY,
+        VN_OVERLAY_PANEL_OPACITY,
     };
 
     fn scene_fixture_path(name: &str) -> PathBuf {
@@ -2695,12 +2741,8 @@ mod tests {
         );
         assert!((loaded.dialogue_panel_opacity - VN_OVERLAY_PANEL_OPACITY).abs() < 0.001);
         assert!((loaded.composer_panel_opacity - VN_OVERLAY_PANEL_OPACITY).abs() < 0.001);
-        assert!(
-            (loaded.dialogue_nameplate_opacity - VN_OVERLAY_NAMEPLATE_OPACITY).abs() < 0.001
-        );
-        assert!(
-            (loaded.composer_nameplate_opacity - VN_OVERLAY_NAMEPLATE_OPACITY).abs() < 0.001
-        );
+        assert!((loaded.dialogue_nameplate_opacity - VN_OVERLAY_NAMEPLATE_OPACITY).abs() < 0.001);
+        assert!((loaded.composer_nameplate_opacity - VN_OVERLAY_NAMEPLATE_OPACITY).abs() < 0.001);
     }
 
     #[test]
@@ -3478,10 +3520,12 @@ mod tests {
     }
 
     #[test]
-    fn scene_stt_toggle_uses_alt_v_without_consuming_plain_v() {
-        assert!(is_stt_toggle_key(KeyCode::Char('v'), Modifiers::ALT));
-        assert!(is_stt_toggle_key(KeyCode::Char('V'), Modifiers::ALT));
-        assert!(!is_stt_toggle_key(KeyCode::Char('v'), Modifiers::NONE));
+    fn scene_stt_hold_to_talk_uses_shift_space_without_consuming_plain_space() {
+        assert!(is_stt_hold_key(KeyCode::Char(' '), Modifiers::SHIFT));
+        assert!(!is_stt_hold_key(KeyCode::Char(' '), Modifiers::NONE));
+        assert!(!is_stt_hold_key(KeyCode::Char('v'), Modifiers::SHIFT));
+        assert!(is_stt_hold_release_key(KeyCode::Char(' ')));
+        assert!(!is_stt_hold_release_key(KeyCode::Char('v')));
     }
 
     #[test]
