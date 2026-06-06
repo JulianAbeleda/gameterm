@@ -122,9 +122,6 @@ pub(super) fn render_runtime_with_compose_and_scroll(
         runtime,
         &dialogue_scroll.voice_debug,
     );
-    if !snapshot.stage.is_empty() {
-        snapshot.vn_text_rows = staged_text_rows(&frame, size.rows);
-    }
     term.set_metadata(
         "gameterm_visual_snapshot",
         Value::String(serde_json::to_string(&snapshot)?),
@@ -144,21 +141,6 @@ pub(super) fn render_runtime_with_compose_and_scroll(
     ])?;
     term.flush()?;
     Ok(())
-}
-
-pub(super) fn staged_text_rows(frame: &str, rows: usize) -> Vec<usize> {
-    frame
-        .lines()
-        .take(rows)
-        .enumerate()
-        .filter_map(|(row, line)| {
-            if line.chars().any(|ch| !ch.is_whitespace()) {
-                Some(row)
-            } else {
-                None
-            }
-        })
-        .collect()
 }
 
 pub(super) fn apply_voice_debug_frame(
@@ -216,17 +198,4 @@ pub(super) fn render_error(
     ])?;
     term.flush()?;
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::staged_text_rows;
-
-    #[test]
-    fn staged_text_rows_only_marks_non_blank_rows() {
-        let frame = "     \r\n  Codex  \r\n\t\r\n> prompt\r\n";
-
-        assert_eq!(staged_text_rows(frame, 10), vec![1, 3]);
-        assert_eq!(staged_text_rows(frame, 2), vec![1]);
-    }
 }

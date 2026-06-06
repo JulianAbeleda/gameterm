@@ -98,7 +98,6 @@ pub(super) fn snapshot_for_filtering() -> VisualRenderSnapshot {
         overlay_rows: None,
         vn_dialogue_scroll: None,
         vn_layout_debug: None,
-        vn_text_rows: Vec::new(),
         interactive_debug_menu: VisualInteractiveDebugMenu::SceneModeDebugMenu,
         vn_voice_hold_active: false,
     }

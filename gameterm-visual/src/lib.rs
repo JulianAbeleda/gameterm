@@ -560,8 +560,6 @@ pub struct VisualRenderSnapshot {
     pub vn_dialogue_scroll: Option<VnDialogueScrollMetrics>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vn_layout_debug: Option<VnOverlayDebugOverrides>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub vn_text_rows: Vec<usize>,
     #[serde(default = "default_interactive_debug_menu")]
     pub interactive_debug_menu: VisualInteractiveDebugMenu,
     #[serde(default, skip_serializing_if = "is_false")]
@@ -1964,7 +1962,6 @@ impl SceneRuntime {
             overlay_rows: None,
             vn_dialogue_scroll: None,
             vn_layout_debug: self.vn_layout_debug.clone(),
-            vn_text_rows: Vec::new(),
             interactive_debug_menu: self.interactive_debug_menu,
             vn_voice_hold_active: false,
             choices: self
