@@ -40,8 +40,11 @@ into the default cache path. Runtime does not download models automatically.
 - Hold `Command+Shift`: start listening.
 - Release `Command+Shift`: stop recording and transcribe.
 - `Esc` while listening: cancel the active recording.
-- `Alt+V`: show or hide Scene Voice Diagnostics.
-- `Alt+T`: toggle voice test mode.
+- `Tab`: enter the Scene debug surface.
+- `v` while in the debug surface: open the Scene Voice Debug menu.
+- `j/k` or arrows in the voice menu: select a voice debug item.
+- `Enter` in the voice menu: toggle the selected voice debug item.
+- `Tab` or `Esc` in the voice menu: return to the main debug surface.
 
 Completed transcripts land in the composer dock by default. They are editable
 before sending. Auto-submit is opt-in through
@@ -49,13 +52,13 @@ before sending. Auto-submit is opt-in through
 Scene compose backend boundary.
 
 Voice test mode is for checking whether the microphone and Whisper recognize
-speech. While it is enabled, hold `Command+Shift` and speak normally. The
-transcript appears in Scene Voice Diagnostics, but it is not inserted into the
-composer and is not submitted to Codex.
+speech. Open `Debug -> Voice -> Voice test mode`, hold `Command+Shift`, and
+speak normally. The transcript appears in Scene Voice Diagnostics, but it is
+not inserted into the composer and is not submitted to Codex.
 
 ## Diagnostics
 
-Scene Voice Diagnostics shows:
+Open `Debug -> Voice -> Scene voice diagnostics` to show:
 
 - STT backend
 - selected microphone, or `system default`
