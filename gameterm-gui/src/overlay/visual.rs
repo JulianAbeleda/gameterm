@@ -24,6 +24,8 @@ mod visual_compose_dock;
 mod visual_compose_result;
 #[path = "visual_dialogue_scroll.rs"]
 mod visual_dialogue_scroll;
+#[path = "visual_event_drain.rs"]
+mod visual_event_drain;
 #[path = "visual_frame.rs"]
 mod visual_frame;
 #[path = "visual_input_keys.rs"]
@@ -55,7 +57,7 @@ use super::visual_tts::{
 #[cfg(test)]
 use super::visual_tts::{SpeakableSegment, SpeakableSource};
 use visual_command_dispatch::{
-    RunCommandDispatch, RunCommandResult, dispatch_pending_action, write_story_state_file,
+    RunCommandDispatch, dispatch_pending_action, write_story_state_file,
 };
 use visual_compose_dock::{SceneComposeAction, SceneComposeDock};
 #[cfg(test)]
@@ -67,6 +69,9 @@ use visual_compose_result::{
 use visual_dialogue_scroll::{
     SceneDialogueScrollback, apply_dialogue_scroll_key, apply_dialogue_scroll_wheel,
     handle_dialogue_scroll_key, handle_dialogue_scroll_wheel,
+};
+use visual_event_drain::{
+    drain_command_results, drain_compose_results, drain_stt_results, drain_tts_results,
 };
 #[cfg(test)]
 use visual_frame::replace_last_screen_line;
@@ -85,7 +90,6 @@ use visual_voice_debug::{
     SceneVoiceDebugState, VoiceDebugMenuEffect, handle_voice_debug_menu_key,
     is_voice_debug_menu_open_key,
 };
-use visual_voice_events::{apply_stt_result, apply_tts_result};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SceneComposeDebugBackend {
@@ -227,106 +231,38 @@ fn show_visual_scene_overlay_with_source(
     let mut last_idle_sprite: Option<String> = None;
 
     loop {
-        let mut needs_render = false;
-        while let Ok(result) = command_rx.try_recv() {
-            if let Some(runtime) = runtime.as_mut() {
-                match result {
-                    RunCommandResult::Spawned {
-                        argv,
-                        target,
-                        pane_id,
-                    } => {
-                        runtime.mark_run_command_spawned(&argv, target, pane_id);
-                    }
-                    RunCommandResult::Failed {
-                        argv,
-                        target,
-                        error,
-                    } => {
-                        runtime.mark_run_command_failed(&argv, target, error);
-                    }
-                }
-                needs_render = true;
-            }
-        }
-        while let Ok(result) = compose_rx.try_recv() {
-            compose_backend_running = false;
-            if let Some(runtime) = runtime.as_mut() {
-                dialogue_scroll.reset_to_bottom();
-                let speakable_segments = compose_result_speakable_segments(&result);
-                if should_delay_first_voice_reveal(
-                    sync_first_voice_reveal,
-                    first_voice_reveal_done,
-                    pending_first_voice_reveal.is_some(),
-                    tts_state.is_muted(),
-                    &speakable_segments,
-                ) {
-                    for segment in speakable_segments {
-                        tts_worker.speak(SceneTtsRequest { segment });
-                    }
-                    pending_first_voice_reveal = Some(PendingFirstVoiceReveal { result });
-                    runtime.mark_action_status("Voice preparing first reply");
-                } else {
-                    let speakable_segments = apply_compose_backend_result(runtime, result);
-                    if !first_voice_reveal_done && !speakable_segments.is_empty() {
-                        first_voice_reveal_done = true;
-                    }
-                    if !tts_state.is_muted() {
-                        for segment in speakable_segments {
-                            tts_worker.speak(SceneTtsRequest { segment });
-                        }
-                    }
-                }
-                needs_render = true;
-            }
-        }
-        while let Ok(result) = tts_rx.try_recv() {
-            if let Some(runtime) = runtime.as_mut() {
-                if let Some(pending) = pending_first_voice_reveal.take() {
-                    apply_compose_backend_result(runtime, pending.result);
-                    first_voice_reveal_done = true;
-                    dialogue_scroll.reset_to_bottom();
-                }
-                apply_tts_result(runtime, &mut tts_state, result);
-                needs_render = true;
-            }
-        }
-        while let Ok(result) = stt_rx.try_recv() {
-            stt_session = None;
-            dialogue_scroll.voice_hold_active = false;
-            if let Some(runtime) = runtime.as_mut() {
-                dialogue_scroll.voice_debug.apply_result(&result);
-                if dialogue_scroll.voice_debug.test_mode {
-                    let status = stt_state.apply_result(&result);
-                    if let Some(transcript) = result.transcript.as_deref() {
-                        runtime.mark_action_status(format!("Voice test recognized: {transcript}"));
-                    } else if let Some(error) = result.error.as_deref() {
-                        runtime.mark_action_status(format!("{status}: {error}"));
-                    } else {
-                        runtime.mark_action_status(status);
-                    }
-                    dialogue_scroll
-                        .voice_debug
-                        .sync_status(stt_state.last_status());
-                } else {
-                    apply_stt_result(
-                        runtime,
-                        &mut compose_dock,
-                        &mut stt_state,
-                        result,
-                        &mut compose_backend_running,
-                        &compose_tx,
-                        &scene_path,
-                        pane_id,
-                    );
-                    dialogue_scroll
-                        .voice_debug
-                        .sync_status(stt_state.last_status());
-                }
-                dialogue_scroll.reset_to_bottom();
-                needs_render = true;
-            }
-        }
+        let mut needs_render = drain_command_results(&command_rx, &mut runtime);
+        needs_render |= drain_compose_results(
+            &compose_rx,
+            &mut runtime,
+            &mut compose_backend_running,
+            &mut dialogue_scroll,
+            sync_first_voice_reveal,
+            &mut first_voice_reveal_done,
+            &mut pending_first_voice_reveal,
+            &tts_state,
+            &tts_worker,
+        );
+        needs_render |= drain_tts_results(
+            &tts_rx,
+            &mut runtime,
+            &mut tts_state,
+            &mut dialogue_scroll,
+            &mut pending_first_voice_reveal,
+            &mut first_voice_reveal_done,
+        );
+        needs_render |= drain_stt_results(
+            &stt_rx,
+            &mut runtime,
+            &mut stt_session,
+            &mut dialogue_scroll,
+            &mut compose_dock,
+            &mut stt_state,
+            &mut compose_backend_running,
+            &compose_tx,
+            &scene_path,
+            pane_id,
+        );
         if needs_render {
             if let Some(runtime) = runtime.as_ref() {
                 render_runtime_with_compose_and_scroll(
