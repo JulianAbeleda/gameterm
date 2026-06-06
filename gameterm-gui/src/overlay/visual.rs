@@ -178,6 +178,8 @@ impl SceneDialogueScrollback {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct SceneVoiceDebugState {
+    menu_open: bool,
+    selected_item: usize,
     visible: bool,
     test_mode: bool,
     config_lines: Vec<String>,
@@ -195,6 +197,33 @@ impl SceneVoiceDebugState {
         }
     }
 
+    fn open_menu(&mut self) -> &'static str {
+        self.menu_open = true;
+        self.visible = true;
+        "Voice debug menu opened"
+    }
+
+    fn close_menu(&mut self) -> &'static str {
+        self.menu_open = false;
+        "Voice debug menu closed"
+    }
+
+    fn select_next(&mut self) {
+        self.selected_item = (self.selected_item + 1).min(Self::MENU_ITEM_COUNT - 1);
+    }
+
+    fn select_previous(&mut self) {
+        self.selected_item = self.selected_item.saturating_sub(1);
+    }
+
+    fn toggle_selected(&mut self) -> &'static str {
+        match self.selected_item {
+            Self::MENU_ITEM_DIAGNOSTICS => self.toggle_visible(),
+            Self::MENU_ITEM_TEST_MODE => self.toggle_test_mode(),
+            _ => "Voice debug menu unchanged",
+        }
+    }
+
     fn toggle_visible(&mut self) -> &'static str {
         self.visible = !self.visible;
         if self.visible {
@@ -203,6 +232,10 @@ impl SceneVoiceDebugState {
             "Voice diagnostics hidden"
         }
     }
+
+    const MENU_ITEM_COUNT: usize = 2;
+    const MENU_ITEM_DIAGNOSTICS: usize = 0;
+    const MENU_ITEM_TEST_MODE: usize = 1;
 
     fn toggle_test_mode(&mut self) -> &'static str {
         self.visible = true;
@@ -225,29 +258,51 @@ impl SceneVoiceDebugState {
     }
 
     fn render_lines(&self) -> Vec<String> {
-        if !self.visible {
+        if !self.menu_open {
             return Vec::new();
         }
         let mut lines = Vec::new();
-        lines.push("Scene Voice Diagnostics".to_string());
-        lines.push("[alt+v: hide] [alt+t: test mode] [cmd+shift: hold mic]".to_string());
-        lines.push(format!(
-            "Mode: {}",
-            if self.test_mode {
-                "test recognition only"
-            } else {
-                "compose transcript"
-            }
+        lines.push("Scene Voice Debug".to_string());
+        lines.push(
+            "[jk: select] [enter: toggle] [tab/esc: debug] [cmd+shift: hold mic]".to_string(),
+        );
+        lines.push(String::new());
+        lines.push(self.menu_item_line(
+            Self::MENU_ITEM_DIAGNOSTICS,
+            "Scene voice diagnostics",
+            if self.visible { "on" } else { "off" },
         ));
-        lines.push(format!("Status: {}", self.last_status));
-        lines.extend(self.config_lines.iter().cloned());
-        if let Some(transcript) = self.last_transcript.as_deref() {
-            lines.push(format!("Last transcript: {transcript}"));
-        }
-        if let Some(error) = self.last_error.as_deref() {
-            lines.push(format!("Last error: {error}"));
+        lines.push(self.menu_item_line(
+            Self::MENU_ITEM_TEST_MODE,
+            "Voice test mode",
+            if self.test_mode { "on" } else { "off" },
+        ));
+
+        if self.visible {
+            lines.push(String::new());
+            lines.push(format!(
+                "Mode: {}",
+                if self.test_mode {
+                    "test recognition only"
+                } else {
+                    "compose transcript"
+                }
+            ));
+            lines.push(format!("Status: {}", self.last_status));
+            lines.extend(self.config_lines.iter().cloned());
+            if let Some(transcript) = self.last_transcript.as_deref() {
+                lines.push(format!("Last transcript: {transcript}"));
+            }
+            if let Some(error) = self.last_error.as_deref() {
+                lines.push(format!("Last error: {error}"));
+            }
         }
         lines
+    }
+
+    fn menu_item_line(&self, item: usize, label: &str, value: &str) -> String {
+        let marker = if self.selected_item == item { ">" } else { " " };
+        format!("{marker} {label:<28} {value}")
     }
 }
 
@@ -513,27 +568,28 @@ fn show_visual_scene_overlay_with_source(
                         )?;
                         continue;
                     }
-                    if is_voice_debug_toggle_key(key, modifiers) {
-                        let status = dialogue_scroll.voice_debug.toggle_visible();
-                        runtime.mark_action_status(status);
-                        render_runtime_with_compose_and_scroll(
-                            &mut term,
+                    if dialogue_scroll.voice_debug.menu_open {
+                        if handle_voice_debug_menu_key(
+                            key,
                             runtime,
-                            &sprite_manifest,
-                            &compose_dock,
-                            &dialogue_scroll,
-                        )?;
-                        continue;
-                    }
-                    if is_voice_test_mode_toggle_key(key, modifiers) {
-                        if stt_state.is_running() {
-                            runtime.mark_action_status(
-                                "Voice test mode toggle unavailable: voice is listening",
-                            );
-                        } else {
-                            let status = dialogue_scroll.voice_debug.toggle_test_mode();
-                            runtime.mark_action_status(status);
+                            &mut dialogue_scroll.voice_debug,
+                            stt_state.is_running(),
+                        ) {
+                            render_runtime_with_compose_and_scroll(
+                                &mut term,
+                                runtime,
+                                &sprite_manifest,
+                                &compose_dock,
+                                &dialogue_scroll,
+                            )?;
+                            continue;
                         }
+                    }
+                    if runtime.view() == VisualView::TileDebugger
+                        && is_voice_debug_menu_open_key(key, modifiers)
+                    {
+                        let status = dialogue_scroll.voice_debug.open_menu();
+                        runtime.mark_action_status(status);
                         render_runtime_with_compose_and_scroll(
                             &mut term,
                             runtime,
@@ -1707,12 +1763,42 @@ fn is_tts_toggle_key(key: KeyCode, modifiers: Modifiers) -> bool {
     matches!(key, KeyCode::Char('m') | KeyCode::Char('M')) && modifiers.contains(Modifiers::ALT)
 }
 
-fn is_voice_debug_toggle_key(key: KeyCode, modifiers: Modifiers) -> bool {
-    matches!(key, KeyCode::Char('v') | KeyCode::Char('V')) && modifiers.contains(Modifiers::ALT)
+fn is_voice_debug_menu_open_key(key: KeyCode, modifiers: Modifiers) -> bool {
+    matches!(key, KeyCode::Char('v') | KeyCode::Char('V')) && modifiers == Modifiers::NONE
 }
 
-fn is_voice_test_mode_toggle_key(key: KeyCode, modifiers: Modifiers) -> bool {
-    matches!(key, KeyCode::Char('t') | KeyCode::Char('T')) && modifiers.contains(Modifiers::ALT)
+fn handle_voice_debug_menu_key(
+    key: KeyCode,
+    runtime: &mut SceneRuntime,
+    voice_debug: &mut SceneVoiceDebugState,
+    voice_running: bool,
+) -> bool {
+    match key {
+        KeyCode::Escape | KeyCode::Tab => {
+            runtime.mark_action_status(voice_debug.close_menu());
+            true
+        }
+        KeyCode::DownArrow | KeyCode::Char('j') | KeyCode::Char('J') => {
+            voice_debug.select_next();
+            true
+        }
+        KeyCode::UpArrow | KeyCode::Char('k') | KeyCode::Char('K') => {
+            voice_debug.select_previous();
+            true
+        }
+        KeyCode::Enter => {
+            if voice_running
+                && voice_debug.selected_item == SceneVoiceDebugState::MENU_ITEM_TEST_MODE
+            {
+                runtime
+                    .mark_action_status("Voice test mode toggle unavailable: voice is listening");
+            } else {
+                runtime.mark_action_status(voice_debug.toggle_selected());
+            }
+            true
+        }
+        _ => false,
+    }
 }
 
 fn is_stt_hold_key(key: KeyCode, modifiers: Modifiers) -> bool {
@@ -2543,7 +2629,8 @@ fn render_runtime_with_compose_and_scroll(
         frame,
         size.cols,
         size.rows,
-        &dialogue_scroll.voice_debug.render_lines(),
+        runtime,
+        &dialogue_scroll.voice_debug,
     );
     term.render(&[
         Change::ClearScreen(ColorAttribute::Default),
@@ -2557,8 +2644,19 @@ fn apply_voice_debug_frame(
     mut frame: String,
     cols: usize,
     rows: usize,
-    lines: &[String],
+    runtime: &SceneRuntime,
+    voice_debug: &SceneVoiceDebugState,
 ) -> String {
+    if runtime.view() == VisualView::TileDebugger && !voice_debug.menu_open {
+        frame = replace_screen_line(
+            frame,
+            cols,
+            rows,
+            1,
+            "[tab: layout debug] [v: voice] [arrows/hjkl: select entity] [esc/q: close]",
+        );
+    }
+    let lines = voice_debug.render_lines();
     if lines.is_empty() {
         return frame;
     }
@@ -3720,48 +3818,34 @@ mod tests {
     }
 
     #[test]
-    fn scene_voice_debug_controls_use_alt_v_and_alt_t() {
-        assert!(is_voice_debug_toggle_key(
+    fn scene_voice_debug_menu_opens_from_plain_v_only() {
+        assert!(is_voice_debug_menu_open_key(
             KeyCode::Char('v'),
-            Modifiers::ALT
+            Modifiers::NONE
         ));
-        assert!(is_voice_debug_toggle_key(
+        assert!(is_voice_debug_menu_open_key(
             KeyCode::Char('V'),
-            Modifiers::ALT
+            Modifiers::NONE
         ));
-        assert!(!is_voice_debug_toggle_key(
+        assert!(!is_voice_debug_menu_open_key(
             KeyCode::Char('v'),
-            Modifiers::NONE
-        ));
-
-        assert!(is_voice_test_mode_toggle_key(
-            KeyCode::Char('t'),
             Modifiers::ALT
-        ));
-        assert!(is_voice_test_mode_toggle_key(
-            KeyCode::Char('T'),
-            Modifiers::ALT
-        ));
-        assert!(!is_voice_test_mode_toggle_key(
-            KeyCode::Char('t'),
-            Modifiers::NONE
         ));
     }
 
     #[test]
     fn scene_voice_debug_frame_replaces_bounded_top_lines() {
         let frame = "one\r\ntwo\r\nthree\r\n".to_string();
-        let rendered = apply_voice_debug_frame(
-            frame,
-            20,
-            3,
-            &[
-                "Scene Voice Diagnostics".to_string(),
-                "Status: Voice idle".to_string(),
-            ],
-        );
+        let runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        let config = SceneSttConfig::whisper_default();
+        let state = SceneSttState::default();
+        let mut debug = SceneVoiceDebugState::new(&config, &state);
+        debug.open_menu();
+        let rendered = apply_voice_debug_frame(frame, 20, 3, &runtime, &debug);
 
-        assert!(rendered.starts_with("Scene Voice Diagnost\r\nStatus: Voice idle\r\nthree"));
+        let lines = rendered.lines().collect::<Vec<_>>();
+        assert_eq!(lines[0], "Scene Voice Debug");
+        assert_eq!(lines[1], "[jk: select] [enter:");
     }
 
     #[test]
@@ -3769,7 +3853,9 @@ mod tests {
         let config = SceneSttConfig::whisper_default();
         let state = SceneSttState::default();
         let mut debug = SceneVoiceDebugState::new(&config, &state);
-        debug.toggle_test_mode();
+        debug.open_menu();
+        debug.select_next();
+        assert_eq!(debug.toggle_selected(), "Voice test mode enabled");
         debug.apply_result(&SceneSttResult {
             status: "Voice transcript ready".to_string(),
             transcript: Some("hello scene".to_string()),
@@ -3781,6 +3867,48 @@ mod tests {
         assert!(lines.contains("Mode: test recognition only"));
         assert!(lines.contains("Backend: whisper"));
         assert!(lines.contains("Last transcript: hello scene"));
+    }
+
+    #[test]
+    fn scene_voice_debug_menu_toggles_selected_items() {
+        let config = SceneSttConfig::whisper_default();
+        let state = SceneSttState::default();
+        let mut debug = SceneVoiceDebugState::new(&config, &state);
+        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+
+        assert_eq!(debug.open_menu(), "Voice debug menu opened");
+        assert!(debug.menu_open);
+        assert!(debug.visible);
+
+        assert!(handle_voice_debug_menu_key(
+            KeyCode::Enter,
+            &mut runtime,
+            &mut debug,
+            false
+        ));
+        assert!(!debug.visible);
+
+        assert!(handle_voice_debug_menu_key(
+            KeyCode::DownArrow,
+            &mut runtime,
+            &mut debug,
+            false
+        ));
+        assert!(handle_voice_debug_menu_key(
+            KeyCode::Enter,
+            &mut runtime,
+            &mut debug,
+            false
+        ));
+        assert!(debug.test_mode);
+
+        assert!(handle_voice_debug_menu_key(
+            KeyCode::Tab,
+            &mut runtime,
+            &mut debug,
+            false
+        ));
+        assert!(!debug.menu_open);
     }
 
     #[test]
