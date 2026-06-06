@@ -47,6 +47,7 @@ pub mod screen_line;
 pub mod split;
 pub mod tab_bar;
 pub mod visual_quad;
+mod visual_vn_panel;
 pub mod window_buttons;
 
 /// The data that we associate with a line; we use this to cache it shape hash
