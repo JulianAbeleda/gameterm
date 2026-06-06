@@ -14,10 +14,7 @@ These fixtures exercise Scene Mode without touching user config.
 - `chained-transitions.json`: guarded multi-step state transition fixture for dialogue, inventory, quest, command, stat, and agent state.
 - `workspace-agent.json`: Agent/Workspace product slice for workspace, project, task, agent, process, and file entities.
 - `multi-agent-coordination.json`: two-agent/two-task coordination fixture with ownership, waiting, blocking, and completion state.
-- `renpy-demo-source.rpy`: GameTerm-owned `.rpy` source fixture for VN script import verification; not copied from Ren'Py.
-- `renpy-demo.json`: generated Scene Mode import of the `.rpy` fixture source.
-- `renpy-demo-attribution.json`: attribution/provenance manifest generated beside the imported demo scene.
-- `renpy-demo-open-assets.json`: curated open-license VN asset source policy for DDLC-adjacent demo art.
+- `vn-demo-open-assets.json`: curated open-license VN asset source policy for native Scene Mode demo art.
 - `smoke-scenarios.psv`: pipe-delimited smoke scenario metadata consumed by `ci/gameterm-scene-smoke.sh`.
 - `mux-context-active.json`: deterministic active pane/process context for live mux discovery helper checks.
 - `mux-context-missing.json`: deterministic unavailable mux context for fallback checks.
@@ -44,8 +41,7 @@ These fixtures exercise Scene Mode without touching user config.
 | `chained-transitions.json` | Guarded deterministic transition chains over dialogue, inventory, quest, command, stat, and agent state. | `scene_fixture_chained_transitions_completes_state_chain`, fixture `chained-transitions` |
 | `workspace-agent.json` | Agent/Workspace product loop across workspace, project, task, agent, process, and file entities. | `scene_fixture_workspace_agent_completes_product_loop`, smoke scenario `workspace-agent`, fixture `workspace-agent` |
 | `multi-agent-coordination.json` | Multi-agent coordination across two agents, two tasks, relationship ownership, waiting, blocking, and completion state. | `scene_fixture_multi_agent_coordination_updates_independently`, fixture `multi-agent-coordination` |
-| `renpy-demo.json` | VN script import path for labels, dialogue, menu choices, guards, policy metadata, and attribution. | `scene_fixture_renpy_demo_import_loads_story_choices`, importer check, fixture `renpy-demo` |
-| `renpy-demo-open-assets.json` | Open-license asset source policy for optional VN demo art, including repo-safe and local-only boundaries. | script import and asset intake checks |
+| `vn-demo-open-assets.json` | Open-license asset source policy for optional native VN demo art, including repo-safe and local-only boundaries. | asset intake checks |
 | `smoke-scenarios.psv` | Smoke scenario names, default fixtures/input, descriptions, expected statuses, and audit messages. | `run_smoke_asset_check`, `ci/gameterm-scene-smoke.sh --list-scenarios`, `--describe-scenario` |
 | `mux-context-active.json` | Normalized active mux pane/process metadata for helper-driven workspace discovery. | mux context helper check |
 | `mux-context-missing.json` | Safe fallback when mux context is unavailable. | mux context helper check |

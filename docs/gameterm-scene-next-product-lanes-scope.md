@@ -302,7 +302,6 @@ should render as a staged background plus character, not as a tiny grid entity.
 Focused:
 
 ```sh
-cargo test -p gameterm-visual vn_script_import
 cargo test -p gameterm-visual stage
 cargo test -p gameterm-gui visual_quad --bin gameterm-gui
 cargo check -p gameterm-gui

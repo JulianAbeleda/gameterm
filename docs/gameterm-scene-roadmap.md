@@ -98,10 +98,8 @@ implementation details.
 | Command policy second pass | [Command Policy Second-Pass Scope](gameterm-scene-command-policy-second-pass-scope.md) | Complete |
 | Live mux discovery | [Live Mux Discovery Scope](gameterm-scene-live-mux-discovery-scope.md) | Complete |
 | Active-pane GUI entrypoint | [Active Pane GUI Entrypoint Scope](gameterm-scene-active-pane-gui-entrypoint-scope.md) | Complete |
-| Ren'Py demo import | [Ren'Py Demo Scope](gameterm-scene-renpy-demo-scope.md) | Prototype implemented |
-| VN script importer | [VN Script Import Scope](gameterm-scene-vn-script-import-scope.md) | First-pass implemented |
+| Retired RPY/Ren'Py import lane | [Refactor Plan](gameterm-scene-refactor-plan.md) | Retired from active code and CI |
 | VN asset intake | [VN Asset Intake Scope](gameterm-scene-vn-asset-intake-scope.md) | First-pass implemented |
-| VN demo install | [VN Demo Install Scope](gameterm-scene-vn-demo-install-scope.md) | First-pass implemented |
 | VN real asset run | [VN Real Assets Run Scope](gameterm-scene-vn-real-assets-run-scope.md) | Complete |
 | VN local PSD/image export | [VN Real Assets Run Scope](gameterm-scene-vn-real-assets-run-scope.md) | Complete |
 | VN staged presentation | [VN Presentation Scope](gameterm-scene-vn-presentation-scope.md) | First-pass implemented |
@@ -144,52 +142,41 @@ It is a stateful visual layer over them.
 
 ## Priority Stack
 
-### Priority 0: VN Script Import
+### Priority 0: Native VN Assets And Presentation
 
-Status: first-pass implemented. The canonical `.rpy` subset importer is now
-Rust-native and engine-agnostic at the product layer.
+Status: active path. The RPY/Ren'Py importer lane has been retired from active
+code, fixtures, and CI. Scene Mode visual-novel content now uses native
+GameTerm scene JSON plus Rust asset intake.
 
-Goal: prove Scene Mode can host a real visual-novel-shaped demo by importing a
-conservative visual-novel script subset into a valid Scene Mode fixture.
+Goal: keep the first-pass VN experience focused on primitives GameTerm owns:
+stage displayables, character sprites, backgrounds, dialogue panels, compose
+dock, scrollback, voice controls, state, and explicit action policy.
 
-Why it matters: Scene Mode already has dialogue, choices, variables, guarded
-state, story persistence, and action policy. A VN script import tests whether
-those primitives can carry outside VN-style authoring formats without turning
-GameTerm into a full VN engine.
+Why it matters: the product should not carry an outside engine compatibility
+surface while the core runtime is still stabilizing. Native scene JSON keeps the
+behavior inspectable, Rust-owned, and aligned with the terminal/mux workspace
+model.
 
-Scope owners:
+Current active pieces:
 
-- [Ren'Py Demo Scope](gameterm-scene-renpy-demo-scope.md)
-- [VN Script Import Scope](gameterm-scene-vn-script-import-scope.md)
+- `scene_vn_asset_intake` maps approved local art into sprite manifests,
+  bindings, and attribution.
+- `ci/fixtures/gameterm-scene/vn-demo-open-assets.json` records the curated
+  VN asset policy.
+- VN stage rendering, aspect-safe image placement, rounded/procedural panels,
+  dialogue scrollback, compose dock, and voice debug controls are native Scene
+  Mode surfaces.
 
-Completed first slice:
+Retired pieces:
 
-- import a small GameTerm-authored Ren'Py-shaped fixture source
-- preserve source/license attribution
-- convert labels, dialogue, menus, jumps, simple assignments, and simple guards
-- generate a valid Scene Mode fixture
-- verify import, doctor, and runtime traversal in CI
-- record open-license VN asset source policy
-- move the importer from Python to Rust
-- name the product layer around VN scripts, not a single source engine
-- construct `VisualScene` directly in `gameterm-visual`
-- expose a Rust example/CLI for fixture generation
-- remove the Python helper so there is only one canonical importer
-
-Verified behavior:
-
-- `scene_vn_script_import` reads the GameTerm-owned `.rpy` fixture source.
-- Generated choices use `policy.origin=vn_script_import`.
-- `ci/gameterm-scene-verify.sh --all` covers Rust import, attribution, doctor
-  validation, and runtime traversal.
-- Legacy `renpy_import` remains accepted by validation for older scenes.
+- importer module and example CLI
+- generated importer demo helper and generated importer fixtures
+- importer-specific action policy origins in validation
 
 Deferred:
 
-- full Ren'Py interpreter
-- Python execution
-- audio, transitions, rollback, screen language, and exact VN staging
-- committing demo assets before attribution is fully represented
+- any future script import format must be rescoped as an explicit native
+  authoring format, not as an engine-compatibility promise
 
 ### Priority 0.5: VN Asset Intake
 
@@ -234,85 +221,6 @@ Deferred:
 - automatic itch.io download/login
 - committing third-party art before attribution is represented
 - sprite-parts composition beyond warning/reporting
-
-### Priority 0.75: VN Demo Install
-
-Status: first-pass implemented.
-
-Goal: combine Rust VN script import and Rust VN asset intake into one safe local
-demo install workflow.
-
-Why it matters: VN Script Import and VN Asset Intake now work independently.
-The user still needs a single workflow that writes `default.json`,
-`sprites.json`, bindings, and attribution into the Scene config directory
-without hand-wiring commands or risking accidental overwrite.
-
-Scope owner:
-
-- [VN Demo Install Scope](gameterm-scene-vn-demo-install-scope.md)
-
-Implemented first pass:
-
-- `scene_vn_script_import` accepts `--bindings` and can reference VN sprite IDs
-- `ci/gameterm-scene-vn-demo.sh` supports `generate`, `install`, and `doctor`
-- generated output is validated and doctored before install
-- installs refuse overwrites unless `--force` is passed
-- verifier coverage checks generate, install, doctor, bindings, attribution,
-  and overwrite protection
-
-Deferred:
-
-- automatic asset downloads
-- full VN staging/expression changes per dialogue line
-- app bundle installer integration
-
-### Priority 0.8: VN Real Asset Run
-
-Status: complete.
-
-Goal: make the VN demo run with real local PNG assets, make doctor catch fake
-image placeholders in strict mode, and add a repeatable `vn-demo` smoke
-scenario.
-
-Why it matters: the current VN pipeline proves Rust import, intake, bindings,
-attribution, install safety, and doctor wiring, but the repo-safe fixture assets
-are text placeholders. A real asset run proves Scene Mode can render an actual
-VN-shaped demo without committing unclear-license art.
-
-Scope owner:
-
-- [VN Real Assets Run Scope](gameterm-scene-vn-real-assets-run-scope.md)
-
-Completed slice:
-
-- repo-safe VN fixture assets are real PNG files
-- approved local PNG assets can flow through `--asset-source-root`
-- opt-in strict image validation is available through doctor
-- `vn-demo` smoke scenario opens and captures the generated VN demo
-- live smoke is recorded with fixture-mode real PNG assets
-- `ci/gameterm-scene-vn-image-export.sh` can flatten local PSD/image downloads
-  into the current VN source-root layout
-- live smoke is recorded with local downloaded PSD character art and
-  local school backgrounds
-
-Non-goals:
-
-- automatic asset downloads
-- DDLC/proprietary asset import
-- committing user-downloaded third-party art
-- renderer redesign for full VN staging
-
-Next likely VN pass:
-
-- staged VN presentation with expression/background changes from imported VN
-  script state
-- better normal-view placement/scaling for character and background assets
-- clearer support for alternate local source ids and multi-character local
-  asset roots
-
-Scope owner:
-
-- [VN Presentation Scope](gameterm-scene-vn-presentation-scope.md)
 
 ### Priority 1: Live Pane And Process Context
 

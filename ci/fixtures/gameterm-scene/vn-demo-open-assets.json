@@ -1,6 +1,6 @@
 {
   "asset_catalog_version": 1,
-  "purpose": "Open-license visual novel asset sources for the GameTerm Ren'Py demo path.",
+  "purpose": "Open-license visual novel asset sources for the GameTerm Rust-native VN demo asset path.",
   "policy": {
     "default": "Do not commit downloaded asset archives unless the source entry allows redistribution and attribution/provenance is preserved.",
     "preferred_repo_assets": [

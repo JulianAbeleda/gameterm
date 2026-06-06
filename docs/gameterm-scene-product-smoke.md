@@ -90,8 +90,20 @@ Launch GameTerm and open Scene Mode with the configured keybinding:
 
 ## VN Demo Assets
 
-- Run `ci/gameterm-scene-vn-demo.sh generate --output-dir /tmp/gameterm-vn-demo --asset-source-root ci/fixtures/gameterm-scene/vn-asset-source --force --strict-images`.
-- Run `ci/gameterm-scene-vn-demo.sh doctor --output-dir /tmp/gameterm-vn-demo --strict-images`.
+- Run the Rust asset intake helper against the repo-safe source root:
+
+```sh
+cargo run -p gameterm-visual --example scene_vn_asset_intake -- \
+  --catalog ci/fixtures/gameterm-scene/vn-demo-open-assets.json \
+  --source-root ci/fixtures/gameterm-scene/vn-asset-source \
+  --output-root /tmp/gameterm-vn-demo/assets/vn-demo \
+  --sprite-manifest /tmp/gameterm-vn-demo/sprites.json \
+  --attribution /tmp/gameterm-vn-demo/vn-demo-attribution.json \
+  --bindings /tmp/gameterm-vn-demo/vn-demo-bindings.json \
+  --base-manifest ci/fixtures/gameterm-scene/sprites.json \
+  --force
+```
+
 - Confirm `/tmp/gameterm-vn-demo/sprites.json` includes
   `vn.character.kiki.neutral`.
 - If testing local downloaded PSD/image art, export it into an ignored
@@ -106,17 +118,9 @@ ci/gameterm-scene-vn-image-export.sh \
 
 - Keep downloaded PSDs, ZIPs, RARs, and unclear-license derived files out of
   git unless redistribution and attribution/provenance are clean.
-- When live smoke is available, run fullscreen VN smoke:
-
-```sh
-ci/gameterm-scene-smoke.sh \
-  --launch \
-  --scenario vn-demo \
-  --vn-asset-source-root .cache/gameterm-scene/vn-assets \
-  --wait-before-capture 3 \
-  --capture-timeout 8 \
-  --output /tmp/gameterm-scene-vn-demo-local.png
-```
+- For live smoke, use the current native Scene Mode scenarios such as
+  `renderer-rows`, `dogfood`, or `authoring-loop`; the retired VN demo helper
+  scenario is no longer part of CI.
 
 ## Asset And Scene Failure Recovery
 

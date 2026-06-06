@@ -255,29 +255,15 @@ fallback scene, add `--allow-missing`. If the active pane cwd is invalid, the
 helper fails before writing the default scene; rerun from a valid pane or pass
 an explicit `--cwd PATH`.
 
-## VN script import
+## VN assets
 
-Scene Mode can import a conservative visual-novel script subset into native
-Scene JSON. The first supported dialect is `.rpy`:
-
-```sh
-cargo run -p gameterm-visual --example scene_vn_script_import -- \
-  --source ci/fixtures/gameterm-scene/renpy-demo-source.rpy \
-  --output /tmp/gameterm-renpy-demo.json \
-  --attribution /tmp/gameterm-renpy-demo-attribution.json \
-  --source-dialect rpy \
-  --source-title "GameTerm Ren'Py Demo Fixture" \
-  --source-version fixture
-ci/gameterm-scene-author.sh validate /tmp/gameterm-renpy-demo.json
-```
-
-The checked-in fixture source is GameTerm-authored test content, not copied
-from Ren'Py. To try this with a local Ren'Py demo/tutorial install, pass that
-local `.rpy` file as `--source` and keep the generated attribution manifest
-beside the generated scene.
+Scene Mode visual-novel content is native GameTerm scene JSON. The retired
+RPY/Ren'Py importer is no longer part of the active runtime or CI path. Use
+Scene Mode authoring, generated workspace scenes, or hand-written JSON for story
+structure, dialogue, choices, and state.
 
 For DDLC-adjacent open-license art, use the curated source catalog at
-`ci/fixtures/gameterm-scene/renpy-demo-open-assets.json`. The current preferred
+`ci/fixtures/gameterm-scene/vn-demo-open-assets.json`. The current preferred
 public demo sources are:
 
 - Tainara-P's `Female Character Sprite Creator`, listed as CC0 and non-AI.
@@ -293,7 +279,7 @@ intake helper:
 
 ```sh
 cargo run -p gameterm-visual --example scene_vn_asset_intake -- \
-  --catalog ci/fixtures/gameterm-scene/renpy-demo-open-assets.json \
+  --catalog ci/fixtures/gameterm-scene/vn-demo-open-assets.json \
   --source-root ~/Downloads/vn-assets \
   --output-root ~/.config/gameterm/scenes/assets/vn-demo \
   --sprite-manifest ~/.config/gameterm/scenes/sprites.json \
@@ -306,36 +292,6 @@ The helper copies only approved local files, writes a normal Scene
 `sprites.json`, writes attribution, and writes bindings such as
 `vn.character.kiki.neutral`. Existing output files are not overwritten unless
 `--force` is passed.
-
-For the full local demo workflow, use the VN demo helper. Script-only installs
-copy the base Scene sprite manifest so fallback sprites resolve:
-
-```sh
-ci/gameterm-scene-vn-demo.sh install --skip-assets --force
-```
-
-Asset-backed installs use approved local files from an extracted asset
-directory, write `default.json`, `sprites.json`, script attribution, asset
-attribution, and bindings beside the installed scene, and validate the output
-before touching config:
-
-```sh
-ci/gameterm-scene-vn-demo.sh install \
-  --asset-source-root ~/Downloads/vn-assets \
-  --force
-```
-
-The install target is
-`${XDG_CONFIG_HOME:-~/.config}/gameterm/scenes/`. The helper refuses to
-overwrite existing generated or installed files unless `--force` is passed. It
-does not download third-party assets or commit extracted art.
-
-First-pass support is intentionally small: `label`, dialogue/say lines,
-`menu`, `jump`, simple literal assignments, and simple variable guards. The
-script import helper does not execute Python, copy assets, emulate Ren'Py
-screens, or import third-party games automatically. Unsupported statements are
-reported as warnings. Imported choices use `policy.origin=vn_script_import` so
-they remain auditable in Scene Mode.
 
 For final app-level verification, use the product smoke checklist in
 [`docs/gameterm-scene-product-smoke.md`](gameterm-scene-product-smoke.md).

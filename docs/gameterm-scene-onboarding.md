@@ -114,27 +114,24 @@ ci/gameterm-scene-smoke.sh --launch --scenario workspace-discovery
 ci/gameterm-scene-smoke.sh --launch --scenario dogfood
 ```
 
-## VN Demo
+## VN Assets
 
-To install the Rust VN demo path without local art:
-
-```sh
-ci/gameterm-scene-vn-demo.sh install --skip-assets --force
-ci/gameterm-scene-vn-demo.sh doctor
-```
-
-To use approved local art, extract the asset sources outside the repo and pass
-the root directory:
+To verify the Rust-native VN asset path with repo-safe local fixtures:
 
 ```sh
-ci/gameterm-scene-vn-demo.sh install \
-  --asset-source-root ~/Downloads/vn-assets \
+cargo run -p gameterm-visual --example scene_vn_asset_intake -- \
+  --catalog ci/fixtures/gameterm-scene/vn-demo-open-assets.json \
+  --source-root ci/fixtures/gameterm-scene/vn-asset-source \
+  --output-root /tmp/gameterm-vn-demo/assets/vn-demo \
+  --sprite-manifest /tmp/gameterm-vn-demo/sprites.json \
+  --attribution /tmp/gameterm-vn-demo/vn-demo-attribution.json \
+  --bindings /tmp/gameterm-vn-demo/vn-demo-bindings.json \
+  --base-manifest ci/fixtures/gameterm-scene/sprites.json \
   --force
-ci/gameterm-scene-vn-demo.sh doctor
 ```
 
-The helper validates generated output before install and refuses overwrites
-unless `--force` is passed. It does not download or commit third-party assets.
+The helper writes sprite IDs such as `vn.character.kiki.neutral`, attribution,
+and bindings. It does not download or commit third-party assets.
 
 If a downloaded VN character source is a layered PSD instead of ready-to-run
 PNG sprites, flatten it into the expected local source-root layout first:
@@ -147,11 +144,10 @@ ci/gameterm-scene-vn-image-export.sh \
 
 ci/gameterm-scene-smoke.sh \
   --launch \
-  --scenario vn-demo \
-  --vn-asset-source-root ~/.cache/gameterm-scene/vn-assets \
+  --scenario renderer-rows \
   --wait-before-capture 3 \
   --capture-timeout 8 \
-  --output /tmp/gameterm-scene-vn-demo-local.png
+  --output /tmp/gameterm-scene-renderer-rows.png
 ```
 
 Downloaded PSDs and unclear-license art should stay local unless the source

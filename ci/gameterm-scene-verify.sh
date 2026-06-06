@@ -14,8 +14,7 @@ Options:
                         sprites, missing-sprite, run-command-targets,
                         layered-mode, vertical-slice, authoring-loop,
                         game-states, chained-transitions, or
-                        workspace-agent, multi-agent-coordination, or
-                        renpy-demo.
+                        workspace-agent, or multi-agent-coordination.
   -h, --help            Show this help.
 EOF
 }
@@ -36,7 +35,6 @@ scene_scripts=(
   gameterm-scene-smoke.sh
   gameterm-scene-story.sh
   gameterm-scene-verify.sh
-  gameterm-scene-vn-demo.sh
   gameterm-scene-vn-image-export.sh
   gameterm-scene-workspace.sh
 )
@@ -137,9 +135,6 @@ scene_file_for_fixture() {
       ;;
     multi-agent-coordination)
       printf '%s\n' "${fixture_root}/multi-agent-coordination.json"
-      ;;
-    renpy-demo)
-      printf '%s\n' "${fixture_root}/renpy-demo.json"
       ;;
     invalid)
       printf '%s\n' "${fixture_root}/invalid.json"
@@ -525,61 +520,6 @@ run_doctor_check() {
   echo "doctor: ok"
 }
 
-run_vn_script_import_check() {
-  local tmp_dir
-  local scene_output
-  local attribution_output
-  tmp_dir="$(mktemp -d /tmp/gameterm-scene-vn-script-verify.XXXXXX)"
-  tmp_paths+=("${tmp_dir}")
-  scene_output="${tmp_dir}/renpy-demo.json"
-  attribution_output="${tmp_dir}/renpy-demo-attribution.json"
-
-  cargo run -q -p gameterm-visual --example scene_vn_script_import -- \
-    --source "${fixture_root}/renpy-demo-source.rpy" \
-    --output "${scene_output}" \
-    --attribution "${attribution_output}" \
-    --source-dialect rpy \
-    --source-title "GameTerm Ren'Py Demo Fixture" \
-    --source-version fixture \
-    --title "VN Script Demo Import" \
-    >/tmp/gameterm-scene-vn-script-verify.out \
-    2>/tmp/gameterm-scene-vn-script-verify.err
-
-  jq -e '
-    .variables[] | select(.key == "source_dialect" and .value.Text == "rpy")
-  ' "${scene_output}" >/dev/null
-  jq -e '
-    any(.choices[]; .policy.origin == "vn_script_import"
-      and .policy.risk == "state_change"
-      and .policy.scope == "scene")
-    and any(.choices[]; .conditions[]? | .variable == "met_kiki")
-  ' "${scene_output}" >/dev/null
-  jq -e '
-    .license_url == "https://www.renpy.org/doc/html/license.html"
-    and .source_dialect == "rpy"
-    and .source_version == "fixture"
-    and (.assets | length) == 0
-    and any(.notes[]; contains("does not copy assets"))
-  ' "${attribution_output}" >/dev/null
-  jq -e '
-    any(.sources[]; .id == "tainara_p_female_character_creator"
-      and .license == "CC0-1.0"
-      and .repo_policy == "allowed_with_provenance")
-    and any(.sources[]; .id == "4cher_set4_vn_sprites"
-      and .license == "CC-BY-4.0"
-      and .repo_policy == "allowed_with_attribution")
-    and all(.sources[]; .id != "potat0master_school_mini_pack_1")
-  ' "${fixture_root}/renpy-demo-open-assets.json" >/dev/null
-  grep -q "non-menu jump is recorded" /tmp/gameterm-scene-vn-script-verify.err
-  cargo run -q -p gameterm-visual --example scene_validate -- "${scene_output}" >/dev/null
-  "${repo_root}/ci/gameterm-scene-doctor.sh" \
-    --scene "${scene_output}" \
-    --sprites "${fixture_root}/sprites.json" >/tmp/gameterm-scene-vn-script-doctor.out
-  grep -q "Doctor summary: 0 error(s)" /tmp/gameterm-scene-vn-script-doctor.out
-
-  echo "vn script import: ok"
-}
-
 run_vn_asset_intake_check() {
   local tmp_dir
   local output_root
@@ -594,7 +534,7 @@ run_vn_asset_intake_check() {
   bindings="${tmp_dir}/vn-demo-bindings.json"
 
   cargo run -q -p gameterm-visual --example scene_vn_asset_intake -- \
-    --catalog "${fixture_root}/renpy-demo-open-assets.json" \
+    --catalog "${fixture_root}/vn-demo-open-assets.json" \
     --source-root "${fixture_root}/vn-asset-source" \
     --output-root "${output_root}" \
     --sprite-manifest "${sprite_manifest}" \
@@ -629,119 +569,11 @@ run_vn_asset_intake_check() {
   test -f "${output_root}/backgrounds/school-classroom.png"
 
   "${repo_root}/ci/gameterm-scene-doctor.sh" \
-    --scene "${fixture_root}/renpy-demo.json" \
+    --scene "${fixture_root}/default.json" \
     --sprites "${sprite_manifest}" >/tmp/gameterm-scene-vn-assets-doctor.out
   grep -q "Doctor summary: 0 error(s)" /tmp/gameterm-scene-vn-assets-doctor.out
 
   echo "vn asset intake: ok"
-}
-
-run_vn_demo_install_check() {
-  local tmp_dir
-  local generated_dir
-  local fake_image_dir
-  local config_home
-  local installed_dir
-  local overwrite_rc
-  local fake_image_rc
-  tmp_dir="$(mktemp -d /tmp/gameterm-scene-vn-demo-verify.XXXXXX)"
-  tmp_paths+=("${tmp_dir}")
-  generated_dir="${tmp_dir}/generated"
-  config_home="${tmp_dir}/config"
-  installed_dir="${config_home}/gameterm/scenes"
-
-  "${repo_root}/ci/gameterm-scene-vn-demo.sh" generate \
-    --output-dir "${generated_dir}" \
-    --asset-source-root "${fixture_root}/vn-asset-source" \
-    --force \
-    >/tmp/gameterm-scene-vn-demo-generate.out \
-    2>/tmp/gameterm-scene-vn-demo-generate.err
-
-  cargo run -q -p gameterm-visual --example scene_validate -- \
-    "${generated_dir}/default.json" >/dev/null
-  jq -e '
-    .background == "vn.background.school_classroom"
-    and any(.entities[]; .id == "vn-script-narrator"
-      and .sprite == "vn.character.kiki.neutral")
-  ' "${generated_dir}/default.json" >/dev/null
-  jq -e '
-    any(.stage.layers[]?; .layer_id == "background"
-      and any(.displayables[]; .tag == "background"
-        and .sprite == "vn.background.school_classroom"
-        and .placement == "fullscreen"))
-    and any(.stage.layers[]?; .layer_id == "characters"
-      and any(.displayables[]; .tag == "kiki"
-        and .sprite == "vn.character.kiki.neutral"
-        and .placement == "center"))
-  ' "${generated_dir}/default.json" >/dev/null
-  jq -e '
-    any(.sprites[]; .id == "workspace-map")
-    and any(.sprites[]; .id == "vn.character.kiki.neutral")
-    and any(.sprites[]; .id == "vn.background.school_classroom")
-  ' "${generated_dir}/sprites.json" >/dev/null
-  jq -e '
-    .characters.kiki.expressions.neutral == "vn.character.kiki.neutral"
-  ' "${generated_dir}/vn-demo-bindings.json" >/dev/null
-  jq -e '.source_dialect == "rpy"' \
-    "${generated_dir}/vn-demo-script-attribution.json" >/dev/null
-  jq -e '.generated_by == "scene_vn_asset_intake"' \
-    "${generated_dir}/vn-demo-asset-attribution.json" >/dev/null
-  test -f "${generated_dir}/assets/vn-demo/characters/kiki-neutral.png"
-  test -f "${generated_dir}/assets/vn-demo/backgrounds/school-classroom.png"
-  jq -e '
-    any(.sources[]; .id == "tainara_p_school_backgrounds"
-      and .repo_policy == "local_only"
-      and (.used_assets | length) == 2)
-  ' "${generated_dir}/vn-demo-asset-attribution.json" >/dev/null
-
-  "${repo_root}/ci/gameterm-scene-vn-demo.sh" doctor \
-    --output-dir "${generated_dir}" \
-    >/tmp/gameterm-scene-vn-demo-doctor.out
-  grep -q "Doctor summary: 0 error(s)" /tmp/gameterm-scene-vn-demo-doctor.out
-  "${repo_root}/ci/gameterm-scene-vn-demo.sh" doctor \
-    --output-dir "${generated_dir}" \
-    --strict-images \
-    >/tmp/gameterm-scene-vn-demo-strict-doctor.out
-  grep -q "Doctor summary: 0 error(s)" /tmp/gameterm-scene-vn-demo-strict-doctor.out
-
-  fake_image_dir="${tmp_dir}/fake-image"
-  cp -R "${generated_dir}" "${fake_image_dir}"
-  printf 'not a png\n' \
-    >"${fake_image_dir}/assets/vn-demo/characters/kiki-neutral.png"
-  assert_failing_command \
-    "expected strict VN image doctor to reject text placeholder PNG" \
-    /tmp/gameterm-scene-vn-demo-fake-image.out \
-    /tmp/gameterm-scene-vn-demo-fake-image.err \
-    "${repo_root}/ci/gameterm-scene-vn-demo.sh" \
-    doctor \
-    --output-dir "${fake_image_dir}" \
-    --strict-images
-  grep -q "sprite asset is not PNG image data: vn.character.kiki.neutral" \
-    /tmp/gameterm-scene-vn-demo-fake-image.out
-
-  "${repo_root}/ci/gameterm-scene-vn-demo.sh" install \
-    --config-home "${config_home}" \
-    --asset-source-root "${fixture_root}/vn-asset-source" \
-    --force \
-    >/tmp/gameterm-scene-vn-demo-install.out \
-    2>/tmp/gameterm-scene-vn-demo-install.err
-  cargo run -q -p gameterm-visual --example scene_validate -- \
-    "${installed_dir}/default.json" >/dev/null
-
-  cp "${installed_dir}/default.json" "${tmp_dir}/default.before.json"
-  assert_failing_command \
-    "expected vn demo install to refuse overwrite without --force" \
-    /tmp/gameterm-scene-vn-demo-overwrite.out \
-    /tmp/gameterm-scene-vn-demo-overwrite.err \
-    "${repo_root}/ci/gameterm-scene-vn-demo.sh" \
-    install \
-    --config-home "${config_home}" \
-    --asset-source-root "${fixture_root}/vn-asset-source"
-  cmp -s "${tmp_dir}/default.before.json" "${installed_dir}/default.json"
-  grep -q "refusing to overwrite existing file without --force" \
-    /tmp/gameterm-scene-vn-demo-overwrite.err
-
-  echo "vn demo install: ok"
 }
 
 run_vn_image_export_check() {
@@ -782,18 +614,6 @@ run_vn_image_export_check() {
   test -f "${output_root}/4cher_set4_vn_sprites/kiki-blink-0.png"
   test -f "${output_root}/4cher_set4_vn_sprites/kiki-blink-5.png"
 
-  "${repo_root}/ci/gameterm-scene-vn-demo.sh" generate \
-    --output-dir "${generated_dir}" \
-    --asset-source-root "${output_root}" \
-    --force \
-    --strict-images \
-    >/tmp/gameterm-scene-vn-image-export-generate.out \
-    2>/tmp/gameterm-scene-vn-image-export-generate.err
-
-  jq -e '
-    any(.sprites[]; .id == "vn.character.kiki.neutral"
-      and (.path | endswith("assets/vn-demo/characters/kiki-neutral.png")))
-  ' "${generated_dir}/sprites.json" >/dev/null
 
   echo "vn image export: ok"
 }
@@ -1799,9 +1619,7 @@ run_all() {
   run_init_helper_check
   run_author_helper_check
   run_doctor_check
-  run_vn_script_import_check
   run_vn_asset_intake_check
-  run_vn_demo_install_check
   run_vn_image_export_check
   run_patch_check
   run_agent_check
@@ -1812,7 +1630,7 @@ run_all() {
   run_onboarding_check
   run_smoke_asset_check
   run_panel_style_check
-  for fixture in basic navigate invalid sprites missing-sprite run-command-targets layered-mode vertical-slice authoring-loop game-states chained-transitions workspace-agent multi-agent-coordination renpy-demo; do
+  for fixture in basic navigate invalid sprites missing-sprite run-command-targets layered-mode vertical-slice authoring-loop game-states chained-transitions workspace-agent multi-agent-coordination; do
     run_fixture_setup_check "${fixture}"
   done
   run_cargo_checks
@@ -1824,7 +1642,7 @@ case "${mode}" in
   all)
     run_all
     ;;
-  basic|navigate|invalid|sprites|missing-sprite|run-command-targets|layered-mode|vertical-slice|authoring-loop|game-states|chained-transitions|workspace-agent|multi-agent-coordination|renpy-demo)
+  basic|navigate|invalid|sprites|missing-sprite|run-command-targets|layered-mode|vertical-slice|authoring-loop|game-states|chained-transitions|workspace-agent|multi-agent-coordination)
     run_static_checks
     run_fixture_setup_check "${mode}"
     ;;

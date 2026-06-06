@@ -16,7 +16,6 @@ mod story_state;
 mod validation;
 mod vn_asset_intake;
 mod vn_layout;
-mod vn_script_import;
 mod workspace_scene;
 
 use actions::{action_kind_name, action_policy_summary, derived_action_policy};
@@ -54,11 +53,6 @@ pub use vn_asset_intake::{
     VnAssetUsedAsset,
 };
 pub use vn_layout::*;
-pub use vn_script_import::{
-    import_vn_script_scene, VnScriptAssetAttribution, VnScriptAttributionManifest, VnScriptDialect,
-    VnScriptImportError, VnScriptImportOptions, VnScriptImportReport, VnScriptImportWarning,
-    VnScriptImportWarningKind,
-};
 pub use workspace_scene::{
     generate_workspace_context_error_scene, generate_workspace_scene, ScenePaneContext,
     SceneWorkspaceContext, WorkspaceSceneReport,
@@ -1446,7 +1440,7 @@ impl VisualScene {
                     visible: true,
                     state_flags: vec!["running".to_string()],
                     metadata: vec![
-                        ("reference".to_string(), "Ren'Py scene flow".to_string()),
+                        ("reference".to_string(), "visual novel scene flow".to_string()),
                         ("reference".to_string(), "mGBA PPU/debug split".to_string()),
                     ],
                 },
@@ -4000,36 +3994,6 @@ mod tests {
     }
 
     #[test]
-    fn scene_fixture_renpy_demo_import_loads_story_choices() {
-        let scene = VisualScene::load_from_path(scene_fixture_path("renpy-demo.json")).unwrap();
-        let mut runtime = SceneRuntime::new(scene).unwrap();
-
-        let snapshot = runtime.render_snapshot();
-        assert_eq!(snapshot.title, "VN Script Demo Import");
-        assert!(snapshot.variables.iter().any(|entry| {
-            entry.key == "source_dialect"
-                && entry.value == VisualStateValue::Text("rpy".to_string())
-        }));
-        assert!(snapshot
-            .choices
-            .iter()
-            .any(|choice| choice == "Ask about Scene Mode."));
-
-        let options = runtime.command_options();
-        assert!(options.iter().any(|option| {
-            option.origin == "vn_script_import"
-                && option.risk == "state_change"
-                && option.scope == "scene"
-        }));
-
-        runtime.activate_choice();
-        assert_eq!(
-            runtime.active_dialogue_line().text,
-            "Labels become dialogue targets, and menu items become Scene Mode choices."
-        );
-    }
-
-    #[test]
     fn render_snapshot_uses_stage_displayables_when_present() {
         let mut scene = VisualScene::demo();
         scene.stage = VisualStage {
@@ -6515,7 +6479,7 @@ mod tests {
         assert!(report
             .selected_entity_metadata
             .iter()
-            .any(|(key, value)| key == "reference" && value == "Ren'Py scene flow"));
+            .any(|(key, value)| key == "reference" && value == "visual novel scene flow"));
         assert_eq!(report.selected_choice, 1);
         assert_eq!(
             report.selected_choice_label.as_deref(),

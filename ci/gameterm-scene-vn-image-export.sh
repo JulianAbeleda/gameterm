@@ -7,8 +7,8 @@ Usage:
   ci/gameterm-scene-vn-image-export.sh --source PATH --output-source-root PATH [OPTIONS]
 
 Exports a local VN character image into the source-root layout consumed by
-ci/gameterm-scene-vn-demo.sh. PSD, PNG, TIFF, and other sips-readable formats
-are flattened to PNG before export.
+the Rust scene_vn_asset_intake example. PSD, PNG, TIFF, and other sips-readable
+formats are flattened to PNG before export.
 
 Options:
   --source PATH              Local source image, usually a PSD.

@@ -22,11 +22,8 @@ Options:
                            navigate, invalid, sprites, missing-sprite,
                            run-command-targets, layered-mode, vertical-slice,
                            workspace-agent, workspace-discovery, dogfood,
-                           authoring-loop, vn-demo, or renderer-rows. Default:
+                           authoring-loop, or renderer-rows. Default:
                            renderer-rows.
-  --vn-asset-source-root PATH
-                           Local VN asset source root for the vn-demo scenario.
-                           Defaults to the repo-safe fixture asset source.
   --patch-inbox PATH       Set GAMETERM_SCENE_PATCH_FILE to PATH when
                            launching. Use "auto" to create a temporary inbox.
   --submit-mux-patch PATH  After --launch wait, submit PATCH through
@@ -108,7 +105,6 @@ submit_mux_patch=""
 submit_target_pane_id=""
 key_sequence=""
 scene_open_shortcut="configured"
-vn_asset_source_root=""
 log_file="/tmp/gameterm-scene-smoke-ffmpeg.log"
 
 while [[ $# -gt 0 ]]; do
@@ -135,10 +131,6 @@ while [[ $# -gt 0 ]]; do
       ;;
     --fixture)
       fixture="$2"
-      shift 2
-      ;;
-    --vn-asset-source-root)
-      vn_asset_source_root="$2"
       shift 2
       ;;
     --patch-inbox)
@@ -501,19 +493,6 @@ install_scene_fixture() {
     authoring-loop)
       cp "${fixture_root}/authoring-loop.json" "${scene_dir}/default.json"
       install_sprite_manifest "${scene_dir}/sprites.json"
-      ;;
-    vn-demo)
-      if [[ -z "${vn_asset_source_root}" ]]; then
-        vn_asset_source_root="${fixture_root}/vn-asset-source"
-      fi
-      vn_demo_args=(
-        --output-dir "${scene_dir}"
-        --asset-source-root "${vn_asset_source_root}"
-        --strict-images
-        --force
-      )
-      "${repo_root}/ci/gameterm-scene-vn-demo.sh" generate \
-        "${vn_demo_args[@]}" >/dev/null
       ;;
     *)
       echo "unknown fixture: ${fixture}" >&2

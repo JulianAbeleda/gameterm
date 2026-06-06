@@ -23,7 +23,8 @@ GameTerm is not a configuration fork. The differences are architectural:
 
 - Scene Mode: a full scene runtime with entities, dialogue, state variables,
   RPG mechanics, and a GPU-rendered stage
-- VN Script Import: parse Ren'Py `.rpy` scripts into GameTerm scenes
+- Native VN Runtime: render visual-novel stage assets, dialogue panels,
+  scrollback, voice controls, and RPG state from GameTerm scene JSON
 - Asset Pipeline: sprite manifests, asset catalogs, and attribution tracking
 - Workspace Scene Generator: generate a scene from your current project and
   terminal pane context
@@ -54,11 +55,11 @@ debugger is built in.
 
 Read more in [GameTerm Scene Mode](docs/gameterm-scene-mode.md).
 
-## Ren'Py Import
+## VN Assets
 
-GameTerm can parse a conservative subset of Ren'Py `.rpy` scripts and convert
-them into native Scene Mode scenes. Asset bindings map Ren'Py character
-definitions and image paths to GameTerm sprite IDs.
+GameTerm no longer ships a Ren'Py/RPY import path. Visual-novel content is
+modeled as native Scene Mode JSON, and local art is wired through the Rust asset
+intake helper with sprite manifests, attribution, and bindings.
 
 ## Workspace Scene
 
