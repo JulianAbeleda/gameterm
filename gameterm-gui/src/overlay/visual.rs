@@ -1723,13 +1723,17 @@ mod tests {
     }
 
     #[test]
-    fn scene_voice_debug_frame_replaces_bounded_top_lines() {
+    fn scene_voice_debug_frame_only_replaces_debug_view_lines() {
         let frame = "one\r\ntwo\r\nthree\r\n".to_string();
-        let runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
         let config = SceneSttConfig::whisper_default();
         let state = SceneSttState::default();
         let mut debug = SceneVoiceDebugState::new(&config, &state);
         debug.open_menu();
+        let scene_rendered = apply_voice_debug_frame(frame.clone(), 48, 3, &runtime, &debug);
+        assert_eq!(scene_rendered, frame);
+
+        runtime.toggle_debugger();
         let rendered = apply_voice_debug_frame(frame, 48, 3, &runtime, &debug);
 
         let lines = rendered.lines().collect::<Vec<_>>();

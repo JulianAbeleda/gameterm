@@ -5,7 +5,7 @@ use gameterm_visual::{
     VisualSceneSource, VisualSpriteManifestStatus, VisualView, VnOverlayRect,
 };
 use mux::termwiztermtab::TermWizTerminal;
-use termwiz::surface::{Change, CursorVisibility};
+use termwiz::surface::{Change, CursorVisibility, Position};
 use termwiz::terminal::Terminal;
 
 use super::visual_compose_dock::SceneComposeDock;
@@ -133,6 +133,10 @@ pub(super) fn render_runtime_with_compose_and_scroll(
     term.render(&[
         Change::ClearScreen(ColorAttribute::Default),
         Change::CursorVisibility(CursorVisibility::Hidden),
+        Change::CursorPosition {
+            x: Position::Absolute(0),
+            y: Position::Absolute(0),
+        },
         Change::Text(truncate_to_screen(frame, size.cols, size.rows)),
     ])?;
     term.flush()?;
@@ -143,9 +147,12 @@ pub(super) fn apply_voice_debug_frame(
     mut frame: String,
     cols: usize,
     rows: usize,
-    _runtime: &SceneRuntime,
+    runtime: &SceneRuntime,
     voice_debug: &SceneVoiceDebugState,
 ) -> String {
+    if runtime.view() != VisualView::VnLayoutDebugger {
+        return frame;
+    }
     let lines = voice_debug.render_lines();
     if lines.is_empty() {
         return frame;
@@ -183,6 +190,10 @@ pub(super) fn render_error(
     term.render(&[
         Change::ClearScreen(ColorAttribute::Default),
         Change::CursorVisibility(CursorVisibility::Hidden),
+        Change::CursorPosition {
+            x: Position::Absolute(0),
+            y: Position::Absolute(0),
+        },
         Change::Text(truncate_to_screen(frame, size.cols, size.rows)),
     ])?;
     term.flush()?;
