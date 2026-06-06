@@ -192,9 +192,17 @@ impl crate::TermWindow {
                 self.populate_visual_stage(snapshot, layers, &params, cell_height, hsv)
                     .context("populate_visual_stage")?;
             }
-            for tile in visible_tiles_for_row(snapshot, row, 0..num_cols) {
-                self.populate_visual_tile(tile, layers, &params, cell_width, cell_height, hsv)
-                    .context("populate_visual_tile")?;
+            if snapshot.stage.is_empty() {
+                for tile in visible_tiles_for_row(snapshot, row, 0..num_cols) {
+                    self.populate_visual_tile(tile, layers, &params, cell_width, cell_height, hsv)
+                        .context("populate_visual_tile")?;
+                }
+            }
+            if !snapshot.stage.is_empty() && !snapshot.vn_text_rows.contains(&row) {
+                metrics::histogram!("render_screen_line").record(start.elapsed());
+                return Ok(RenderScreenLineResult {
+                    invalidate_on_hover_change,
+                });
             }
         }
 
@@ -723,9 +731,11 @@ impl crate::TermWindow {
         }
 
         if let (Some(snapshot), Some(row)) = (params.visual_snapshot, params.visual_row) {
-            for entity in intersecting_entities_for_row(snapshot, row, 0..num_cols) {
-                self.populate_visual_entity(entity, layers, &params, cell_width, cell_height, hsv)
-                    .context("populate_visual_entity")?;
+            if snapshot.stage.is_empty() {
+                for entity in intersecting_entities_for_row(snapshot, row, 0..num_cols) {
+                    self.populate_visual_entity(entity, layers, &params, cell_width, cell_height, hsv)
+                        .context("populate_visual_entity")?;
+                }
             }
         }
 
