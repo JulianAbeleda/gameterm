@@ -101,6 +101,7 @@ implementation details.
 | Retired RPY/Ren'Py import lane | [Refactor Plan](gameterm-scene-refactor-plan.md) | Retired from active code and CI |
 | VN asset intake | [VN Asset Intake Scope](gameterm-scene-vn-asset-intake-scope.md) | First-pass implemented |
 | VN real asset run | [VN Real Assets Run Scope](gameterm-scene-vn-real-assets-run-scope.md) | Complete |
+| VN config module ownership | [VN Config Module Scope](gameterm-scene-vn-config-module-scope.md) | Scoped |
 | VN local PSD/image export | [VN Real Assets Run Scope](gameterm-scene-vn-real-assets-run-scope.md) | Complete |
 | VN staged presentation | [VN Presentation Scope](gameterm-scene-vn-presentation-scope.md) | First-pass implemented |
 | Aspect-safe Scene images | [Aspect-Safe Image Scope](gameterm-scene-aspect-safe-image-scope.md) | Complete |
