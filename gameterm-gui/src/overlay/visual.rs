@@ -25,6 +25,8 @@ mod visual_compose_dock;
 mod visual_compose_result;
 #[path = "visual_dialogue_scroll.rs"]
 mod visual_dialogue_scroll;
+#[path = "visual_frame.rs"]
+mod visual_frame;
 #[path = "visual_input_keys.rs"]
 mod visual_input_keys;
 #[path = "visual_kiki_idle.rs"]
@@ -63,6 +65,7 @@ use visual_dialogue_scroll::{
     SceneDialogueScrollback, apply_dialogue_scroll_key, apply_dialogue_scroll_wheel,
     handle_dialogue_scroll_key, handle_dialogue_scroll_wheel,
 };
+use visual_frame::{clip_text, replace_last_screen_line, replace_screen_line};
 use visual_input_keys::{
     is_stt_hold_key, is_stt_hold_release_key, is_tts_toggle_key, visual_input_from_key,
     visual_input_resets_dialogue_scroll,
@@ -973,34 +976,6 @@ fn apply_voice_debug_frame(
         frame = replace_screen_line(frame, cols, rows, idx, &clip_text(line, max_width));
     }
     frame
-}
-
-fn replace_last_screen_line(frame: String, cols: usize, rows: usize, replacement: &str) -> String {
-    let rows = rows.max(1);
-    replace_screen_line(frame, cols, rows, rows - 1, replacement)
-}
-
-fn replace_screen_line(
-    frame: String,
-    cols: usize,
-    rows: usize,
-    target_row: usize,
-    replacement: &str,
-) -> String {
-    let rows = rows.max(1);
-    let mut lines = frame.lines().map(str::to_string).collect::<Vec<_>>();
-    while lines.len() < rows {
-        lines.push(String::new());
-    }
-    lines.truncate(rows);
-    lines[target_row.min(rows - 1)] = clip_text(replacement, cols.max(1));
-    let mut out = lines.join("\r\n");
-    out.push_str("\r\n");
-    out
-}
-
-fn clip_text(text: &str, max_chars: usize) -> String {
-    text.chars().take(max_chars).collect()
 }
 
 #[cfg(test)]
