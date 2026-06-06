@@ -440,6 +440,97 @@ Current status:
 - Completed selection-method grouping.
 - Completed status-helper grouping.
 
+## Priority 7: Retire Unneeded Scene Compatibility Paths
+
+Current pressure: the first product pass intentionally kept several demo,
+compatibility, and fallback paths while the product direction was still
+settling. Those paths are useful only if they still support the current Rust
+native Scene Mode direction. They should be audited explicitly instead of
+remaining as silent complexity.
+
+Principle fit: this is cleanup, but not automatically NFC. Removing a supported
+demo, importer, fixture, or fallback changes the product surface. Each removal
+must either be docs-only scoping or a small behavior-changing commit with tests
+updated in the same commit. Do not mix this with mechanical module moves.
+
+Candidates to audit:
+
+1. RPY/VN import demo lane
+   - `gameterm-visual/src/vn_script_import.rs`
+   - `gameterm-visual/examples/scene_vn_script_import.rs`
+   - `ci/gameterm-scene-vn-demo.sh`
+   - `ci/fixtures/gameterm-scene/renpy-demo*`
+   - Decision: keep as a generic VN script subset importer, rename/scope it
+     away from Ren'Py-specific product language, or remove it if Rust-native
+     authored scenes are the only supported direction.
+2. PNG panel compatibility path
+   - `assets/gameterm-scene/vn-panel.png`
+   - `GAMETERM_SCENE_VN_PANEL_TEXTURE=1`
+   - `populate_vn_panel_texture` and nine-slice fallback path in
+     `gameterm-gui/src/termwindow/render/visual_quad.rs`
+   - Decision: keep as a visual regression/fallback path, or remove once the
+     procedural rounded panel renderer is accepted as the permanent renderer.
+3. Unwired image placement primitives
+   - `VisualImageScaleMode::FitCenter`
+   - `VisualImageScaleMode::IntegerFitCenter`
+   - Decision: keep if they are part of the planned renderer primitive toolkit,
+     or remove if they are only speculative.
+4. Historical Scene scope docs
+   - older one-off scope documents that are superseded by roadmap, handoff,
+     smoke report, and this refactor plan
+   - Decision: archive, consolidate, or leave if they still provide useful
+     audit history.
+
+Non-candidates:
+
+- `mux`
+- terminal compatibility crates
+- Unicode/generated table files
+- platform windowing code
+- Scene tests that cover active behavior
+- Fake Codex, TTS, STT, and current voice diagnostics
+- Kiki/background fixture assets used by current smoke/demo validation
+
+Commit lanes:
+
+1. `[docs] scope Scene compatibility retirement`
+   - Record the keep/remove decision for RPY import, PNG panel fallback, unused
+     image placement primitives, and historical docs.
+   - Check: `rg -n "renpy|rpy|VN_PANEL_TEXTURE|IntegerFitCenter|FitCenter" docs ci gameterm-visual gameterm-gui`.
+2. `[visual] retire or rename Scene VN script import compatibility`
+   - Only if the decision is to remove or de-Ren'Py the importer.
+   - Update verifier fixture lists, examples, docs, and validation origin names
+     in the same behavior commit.
+   - Focused check: `cargo test -p gameterm-visual vn_script_import`.
+3. `[render] retire VN PNG panel fallback`
+   - Only if procedural panels are accepted as the permanent path.
+   - Remove the env toggle, embedded image data, nine-slice panel fallback, and
+     related smoke verifier expectations.
+   - Focused check: `cargo test -p gameterm-gui vn_panel --bin gameterm-gui`.
+4. `[render] retire unused image placement primitives`
+   - Only if `FitCenter` and `IntegerFitCenter` are not part of the next
+     renderer toolkit.
+   - Keep tests for the active `FillCenter` and `FitBottomCenter` primitives.
+   - Focused check: `cargo test -p gameterm-gui visual_quad --bin gameterm-gui`.
+5. `[docs] consolidate historical Scene scope docs`
+   - Move old scope material into a compact archive/index if it is no longer
+     active planning material.
+   - Check: `rg -n "Current status|Status:" docs/gameterm-scene-*.md`.
+
+Acceptance:
+
+- No current app-launch Scene Mode path regresses.
+- `ci/gameterm-scene-verify.sh --all` remains green or is intentionally
+  updated because a retired fixture/test is no longer part of the contract.
+- Deleted functionality is documented as intentionally retired, not lost by
+  accident.
+- No generated/table data is removed merely to reduce raw LOC.
+- No upstream terminal feature is removed as part of Scene cleanup.
+
+Current status:
+
+- Scoped here only. No compatibility path has been retired yet.
+
 ## Full Refactor Definition
 
 This refactor is considered complete for the first maintainable pass when:
@@ -466,6 +557,8 @@ arbitrary line count. Line count is a signal, not the acceptance criterion.
    not churn repeatedly.
 6. Split runtime method groups only where it improves reviewability without
    exposing internals.
+7. Audit and retire only those Scene compatibility paths that no longer match
+   the Rust-native Scene Mode product direction.
 
 Do not start second-pass product features until these refactors either land or
 are explicitly deferred.
