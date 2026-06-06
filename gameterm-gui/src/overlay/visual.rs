@@ -1,7 +1,8 @@
 use anyhow::Context;
 use gameterm_term::TerminalSize;
 use gameterm_visual::{
-    VisualInput, VisualMode, VisualModeOutcome, VisualScene, VisualSceneSource, VisualView,
+    VisualInput, VisualInteractiveDebugMenu, VisualMode, VisualModeOutcome, VisualScene,
+    VisualSceneSource, VisualView,
 };
 use mux::termwiztermtab::TermWizTerminal;
 use std::path::PathBuf;
@@ -344,7 +345,9 @@ fn show_visual_scene_overlay_with_source(
                             continue;
                         }
                     }
-                    if runtime.view() == VisualView::TileDebugger
+                    if runtime.view() == VisualView::VnLayoutDebugger
+                        && runtime.interactive_debug_menu()
+                            == VisualInteractiveDebugMenu::SceneModeDebugMenu
                         && is_voice_debug_menu_open_key(key, modifiers)
                     {
                         let status = session.dialogue_scroll.voice_debug.open_menu();
@@ -1727,11 +1730,11 @@ mod tests {
         let state = SceneSttState::default();
         let mut debug = SceneVoiceDebugState::new(&config, &state);
         debug.open_menu();
-        let rendered = apply_voice_debug_frame(frame, 20, 3, &runtime, &debug);
+        let rendered = apply_voice_debug_frame(frame, 48, 3, &runtime, &debug);
 
         let lines = rendered.lines().collect::<Vec<_>>();
-        assert_eq!(lines[0], "Scene Voice Debug");
-        assert_eq!(lines[1], "[jk: select] [enter:");
+        assert_eq!(lines[0], "Scene Mode Debug Menu / Voice");
+        assert!(lines[1].starts_with("[jk: select] [enter: toggle] [tab/esc: debug]"));
     }
 
     #[test]

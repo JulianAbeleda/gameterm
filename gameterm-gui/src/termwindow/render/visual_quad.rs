@@ -7,8 +7,12 @@ use ::window::RectF;
 use anyhow::Context;
 use config::HsbTransform;
 use gameterm_visual::{
-    vn_overlay_layout, vn_overlay_layout_with_overrides, VisualRenderEntity, VisualRenderSnapshot,
-    VisualRenderStageDisplayable, VisualRenderTile, VisualStagePlacement, VisualView,
+    vn_overlay_layout, vn_overlay_layout_with_overrides, VisualInteractiveDebugMenu,
+    VisualRenderEntity, VisualRenderSnapshot, VisualRenderStageDisplayable, VisualRenderTile,
+    VisualStagePlacement, VisualView,
+};
+#[cfg(test)]
+use gameterm_visual::{
     VnOverlayDebugOverrides, VN_OVERLAY_NAMEPLATE_OPACITY, VN_OVERLAY_PANEL_OPACITY,
 };
 use std::sync::Arc;
@@ -31,9 +35,16 @@ impl TermWindow {
         if matches!(snapshot.view, VisualView::TileDebugger) {
             return Ok(());
         }
-        // The VN layout debugger keeps the panels and nameplates visible so the
-        // boxes can be tuned live, but drops the background and character art.
+        // The Scene Mode Debug Menu keeps panels and nameplates visible for
+        // layout tuning. The Tile Debug Menu is a text/entity inspector.
         let suppress_stage_art = matches!(snapshot.view, VisualView::VnLayoutDebugger);
+        let suppress_vn_panels = matches!(
+            (snapshot.view, snapshot.interactive_debug_menu),
+            (
+                VisualView::VnLayoutDebugger,
+                VisualInteractiveDebugMenu::TileDebugMenu
+            )
+        );
 
         let stage_rect = stage_viewport_rect(params, cell_height);
         if !suppress_stage_art {
@@ -67,7 +78,9 @@ impl TermWindow {
                 quad.set_hsv(hsv);
             }
         }
-        self.populate_visual_vn_panels(layers, stage_rect, params, cell_height, hsv)?;
+        if !suppress_vn_panels {
+            self.populate_visual_vn_panels(layers, stage_rect, params, cell_height, hsv)?;
+        }
 
         Ok(())
     }

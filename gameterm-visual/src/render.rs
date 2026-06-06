@@ -43,8 +43,8 @@ fn clipped_columns(columns: Range<usize>, width: usize) -> Range<usize> {
 mod tests {
     use super::*;
     use crate::{
-        VisualModeDescriptor, VisualPosition, VisualRenderEntity, VisualRenderLayer,
-        VisualSceneLoadStatus, VisualSceneSource, VisualView,
+        VisualInteractiveDebugMenu, VisualModeDescriptor, VisualPosition, VisualRenderEntity,
+        VisualRenderLayer, VisualSceneLoadStatus, VisualSceneSource, VisualView,
     };
 
     fn snapshot_for_filtering() -> VisualRenderSnapshot {
@@ -123,6 +123,7 @@ mod tests {
             overlay_rows: None,
             vn_dialogue_scroll: None,
             vn_layout_debug: None,
+            interactive_debug_menu: VisualInteractiveDebugMenu::SceneModeDebugMenu,
             vn_voice_hold_active: false,
         }
     }

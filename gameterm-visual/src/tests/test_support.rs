@@ -2,9 +2,9 @@ use std::path::PathBuf;
 
 use super::{
     default_scene_mode, SceneAction, SceneActionKind, VisualCondition, VisualDialogueLine,
-    VisualEntityKind, VisualPosition, VisualRenderEntity, VisualRenderLayer, VisualRenderSnapshot,
-    VisualRenderTile, VisualRpgState, VisualScene, VisualSceneLoadStatus, VisualSceneSource,
-    VisualStateValue, VisualView,
+    VisualEntityKind, VisualInteractiveDebugMenu, VisualPosition, VisualRenderEntity,
+    VisualRenderLayer, VisualRenderSnapshot, VisualRenderTile, VisualRpgState, VisualScene,
+    VisualSceneLoadStatus, VisualSceneSource, VisualStateValue, VisualView,
 };
 
 pub(super) fn scene_fixture_path(name: &str) -> PathBuf {
@@ -98,6 +98,7 @@ pub(super) fn snapshot_for_filtering() -> VisualRenderSnapshot {
         overlay_rows: None,
         vn_dialogue_scroll: None,
         vn_layout_debug: None,
+        interactive_debug_menu: VisualInteractiveDebugMenu::SceneModeDebugMenu,
         vn_voice_hold_active: false,
     }
 }

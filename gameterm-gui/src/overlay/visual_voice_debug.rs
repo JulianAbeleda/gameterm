@@ -91,7 +91,7 @@ impl SceneVoiceDebugState {
             return Vec::new();
         }
         let mut lines = Vec::new();
-        lines.push("Scene Voice Debug".to_string());
+        lines.push("Scene Mode Debug Menu / Voice".to_string());
         lines.push(
             "[jk: select] [enter: toggle] [tab/esc: debug] [cmd+shift: hold mic]".to_string(),
         );

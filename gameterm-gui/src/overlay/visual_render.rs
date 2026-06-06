@@ -1,8 +1,8 @@
 use gameterm_dynamic::Value;
 use gameterm_term::color::ColorAttribute;
 use gameterm_visual::{
-    SceneRuntime, VisualSceneSource, VisualSpriteManifestStatus, VisualView, VnOverlayRect,
-    truncate_to_screen, vn_overlay_layout, vn_overlay_layout_with_overrides,
+    truncate_to_screen, vn_overlay_layout, vn_overlay_layout_with_overrides, SceneRuntime,
+    VisualSceneSource, VisualSpriteManifestStatus, VisualView, VnOverlayRect,
 };
 use mux::termwiztermtab::TermWizTerminal;
 use termwiz::surface::Change;
@@ -78,7 +78,7 @@ pub(super) fn render_runtime_with_compose_and_scroll(
             dialogue_scroll.voice_hold_active,
         ),
     );
-    if !snapshot.stage.is_empty() {
+    if !snapshot.stage.is_empty() && runtime.view() == VisualView::Scene {
         let layout = match snapshot.vn_layout_debug.as_ref() {
             Some(overrides) => vn_overlay_layout_with_overrides(
                 size.cols,
@@ -142,18 +142,9 @@ pub(super) fn apply_voice_debug_frame(
     mut frame: String,
     cols: usize,
     rows: usize,
-    runtime: &SceneRuntime,
+    _runtime: &SceneRuntime,
     voice_debug: &SceneVoiceDebugState,
 ) -> String {
-    if runtime.view() == VisualView::TileDebugger && !voice_debug.menu_open {
-        frame = replace_screen_line(
-            frame,
-            cols,
-            rows,
-            1,
-            "[tab: layout debug] [v: voice] [arrows/hjkl: select entity] [esc/q: close]",
-        );
-    }
     let lines = voice_debug.render_lines();
     if lines.is_empty() {
         return frame;
