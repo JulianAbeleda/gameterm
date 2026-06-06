@@ -14,14 +14,12 @@ use gameterm_visual::{
 use mux::domain::SplitSource;
 use mux::tab::{SplitDirection, SplitRequest, SplitSize};
 use mux::termwiztermtab::TermWizTerminal;
-use mux::{Mux, MuxNotification};
+use mux::Mux;
 use portable_pty::CommandBuilder;
 use serde::Deserialize;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
-use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use termwiz::input::{InputEvent, KeyCode, KeyEvent, Modifiers, MouseButtons, MouseEvent};
 use termwiz::surface::Change;
@@ -44,6 +42,8 @@ mod visual_compose_dock;
 mod visual_dialogue_scroll;
 #[path = "visual_scene_files.rs"]
 mod visual_scene_files;
+#[path = "visual_scene_patches.rs"]
+mod visual_scene_patches;
 #[path = "visual_voice_debug.rs"]
 mod visual_voice_debug;
 
@@ -65,6 +65,7 @@ use visual_dialogue_scroll::{
 };
 pub(crate) use visual_scene_files::SceneOverlayLaunchOptions;
 use visual_scene_files::*;
+use visual_scene_patches::*;
 use visual_voice_debug::{
     handle_voice_debug_menu_key, is_voice_debug_menu_open_key, SceneVoiceDebugState,
     VoiceDebugMenuEffect,
@@ -754,166 +755,6 @@ fn show_visual_scene_overlay_with_source(
     }
 
     Ok(())
-}
-
-struct ScenePatchNotificationSubscription {
-    dead: Arc<AtomicBool>,
-}
-
-struct ScenePatchNotification {
-    patch_json: String,
-    source_pane_id: Option<mux::pane::PaneId>,
-}
-
-impl ScenePatchNotificationSubscription {
-    fn new(
-        pane_id: mux::pane::PaneId,
-        route_pane_id: Option<mux::pane::PaneId>,
-        scene_patch_tx: mpsc::Sender<ScenePatchNotification>,
-    ) -> Self {
-        let dead = Arc::new(AtomicBool::new(false));
-        let subscription_dead = Arc::clone(&dead);
-        Mux::get().subscribe(move |notification| {
-            if subscription_dead.load(Ordering::Relaxed) {
-                return false;
-            }
-            if let MuxNotification::GameTermScenePatch {
-                patch_json,
-                target_pane_id,
-                source_pane_id,
-            } = notification
-            {
-                if !scene_patch_target_matches(
-                    target_pane_id,
-                    Mux::get().active_gameterm_scene_pane(),
-                    pane_id,
-                    route_pane_id,
-                ) {
-                    return true;
-                }
-                let _ = scene_patch_tx.send(ScenePatchNotification {
-                    patch_json,
-                    source_pane_id,
-                });
-            }
-            true
-        });
-        Self { dead }
-    }
-}
-
-fn scene_patch_target_matches(
-    target_pane_id: Option<mux::pane::PaneId>,
-    active_pane_id: Option<mux::pane::PaneId>,
-    overlay_pane_id: mux::pane::PaneId,
-    route_pane_id: Option<mux::pane::PaneId>,
-) -> bool {
-    let target_pane_id = target_pane_id.or(active_pane_id);
-    target_pane_id == Some(overlay_pane_id) || target_pane_id == route_pane_id
-}
-
-struct ActiveSceneOverlay {
-    pane_id: mux::pane::PaneId,
-}
-
-impl ActiveSceneOverlay {
-    fn new(pane_id: mux::pane::PaneId) -> Self {
-        Mux::get().set_active_gameterm_scene_pane(pane_id);
-        Self { pane_id }
-    }
-}
-
-impl Drop for ActiveSceneOverlay {
-    fn drop(&mut self) {
-        Mux::get().clear_active_gameterm_scene_pane(self.pane_id);
-    }
-}
-
-impl Drop for ScenePatchNotificationSubscription {
-    fn drop(&mut self) {
-        self.dead.store(true, Ordering::Relaxed);
-    }
-}
-
-#[derive(Debug, Clone)]
-struct ScenePatchInbox {
-    path: Option<PathBuf>,
-    stamp: Option<SystemTime>,
-}
-
-impl ScenePatchInbox {
-    fn disabled() -> Self {
-        Self {
-            path: None,
-            stamp: None,
-        }
-    }
-
-    fn from_env() -> Self {
-        let Some(path) = std::env::var_os("GAMETERM_SCENE_PATCH_FILE").map(PathBuf::from) else {
-            return Self::disabled();
-        };
-        Self::watching(path)
-    }
-
-    fn watching(path: PathBuf) -> Self {
-        let stamp = modified_time(&path);
-        Self {
-            path: Some(path),
-            stamp,
-        }
-    }
-
-    fn refresh(&mut self) {
-        if let Some(path) = &self.path {
-            self.stamp = modified_time(path);
-        }
-    }
-
-    fn changed_path(&self) -> Option<PathBuf> {
-        let path = self.path.as_ref()?;
-        let stamp = modified_time(path);
-        if stamp.is_some() && stamp != self.stamp {
-            Some(path.clone())
-        } else {
-            None
-        }
-    }
-}
-
-fn apply_scene_patch_file(
-    term: &mut TermWizTerminal,
-    runtime: &mut SceneRuntime,
-    sprite_manifest: &VisualSpriteManifestStatus,
-    path: &Path,
-) -> anyhow::Result<()> {
-    match VisualScenePatch::load_from_path(path).and_then(|patch| {
-        runtime.apply_scene_patch_with_source(patch, Some("file".to_string()), None)
-    }) {
-        Ok(()) => {}
-        Err(err) => {
-            runtime.mark_scene_patch_failed(format!("file {}", path.display()), None, err);
-        }
-    }
-    render_runtime(term, runtime, sprite_manifest)
-}
-
-fn apply_scene_patch_json(
-    term: &mut TermWizTerminal,
-    runtime: &mut SceneRuntime,
-    sprite_manifest: &VisualSpriteManifestStatus,
-    patch_json: &str,
-    source_pane_id: Option<mux::pane::PaneId>,
-) -> anyhow::Result<()> {
-    match VisualScenePatch::from_json(patch_json).and_then(|patch| {
-        runtime.apply_scene_patch_with_source(patch, Some("mux".to_string()), source_pane_id)
-    }) {
-        Ok(()) => {}
-        Err(err) => {
-            runtime.mark_scene_patch_failed("mux", source_pane_id, err);
-        }
-    }
-    render_runtime(term, runtime, sprite_manifest)
 }
 
 enum RunCommandResult {
