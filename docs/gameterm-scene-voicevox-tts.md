@@ -150,14 +150,15 @@ Use the Scene compose debug backend when you want to test the dialogue and TTS
 path without waiting on real Codex:
 
 ```text
-Alt+C
+Tab -> v -> Fake Codex backend -> Enter
 ```
 
-`Alt+C` toggles Scene compose between `Codex` and `Fake Codex`. Toggling clears
-the current dialogue transcript so the next prompt starts from a clean panel. In
-fake mode, submitted Composer prompts produce a deterministic `Fake Codex`
-reply, update the dialogue nameplate to `Fake Codex`, and still flow through the
-same Scene TTS command backend when TTS is enabled and unmuted.
+`Debug -> Voice -> Fake Codex backend` toggles Scene compose between the
+configured compose backend and `Fake Codex`. Toggling clears the current
+dialogue transcript so the next prompt starts from a clean panel. In fake mode,
+submitted Composer prompts produce a deterministic `Fake Codex` reply, update
+the dialogue nameplate to `Fake Codex`, and still flow through the same Scene
+TTS command backend when TTS is enabled and unmuted.
 
 Known current status:
 
@@ -166,8 +167,8 @@ Known current status:
   the Scene test WAV in `1.617s` before playback. The old Codex translation path
   took roughly `6.1s` before audio was ready for the same text.
 - Scene Mode VOICEVOX from the clicked app reaches `TTS ready` after choosing
-  boot option `1. Scene Mode + VOICEVOX`, toggling `Alt+C` Fake Codex, and
-  submitting a short prompt.
+  boot option `1. Scene Mode + VOICEVOX`, toggling
+  `Debug -> Voice -> Fake Codex backend`, and submitting a short prompt.
 - Boot option `1. Scene Mode + VOICEVOX` now passes a Rust VOICEVOX TTS config
   directly into the Scene overlay. Setting env only inside the native
   terminal/Codex child process still will not configure Scene TTS for an

@@ -42,7 +42,8 @@ Recent committed work:
 
 Latest behavior change:
 
-- Scene Mode now has an `Alt+C` debug toggle for `Codex` vs `Fake Codex`.
+- Scene Mode now has `Debug -> Voice -> Fake Codex backend` for toggling
+  between the configured compose backend and deterministic `Fake Codex`.
 - Toggling clears the dialogue transcript, changes the compose backend state,
   and lets the next prompt render a deterministic `Fake Codex` reply.
 - Fake Codex replies flow through the same speakable-segment/TTS path as real
@@ -68,8 +69,8 @@ VOICEVOX/TTS status:
 - `vs hello` works from the regular terminal path, but has roughly 5-6 seconds
   of latency before audio playback.
 - The clicked GameTerm app Scene Mode VOICEVOX path now reaches `TTS ready`
-  after boot option `1. Scene Mode + VOICEVOX`, `Alt+C` Fake Codex, and a
-  short `hi` prompt.
+  after boot option `1. Scene Mode + VOICEVOX`,
+  `Debug -> Voice -> Fake Codex backend`, and a short `hi` prompt.
 - Before the explicit launch-config fix, option 1 reached Scene Mode but Scene
   status still reported `TTS disabled` and no VOICEVOX command spawned.
 - The expected Scene voice path is:
@@ -196,8 +197,8 @@ Scene Mode now has a first dogfoodable Codex-in-VN loop:
 3. Type in the Composer dock.
 4. Press Enter.
 5. See the submitted prompt and Codex reply in the dialogue panel.
-6. Press `Alt+C` to toggle between real Codex and deterministic `Fake Codex`
-   for TTS/debug testing.
+6. Open `Debug -> Voice -> Fake Codex backend` to toggle between the configured
+   compose backend and deterministic `Fake Codex` for TTS/debug testing.
 
 This is still a one-shot local Codex bridge. It does not yet preserve Codex
 session identity, stream progress into the dialogue panel, or support

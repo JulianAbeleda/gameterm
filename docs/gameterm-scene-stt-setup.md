@@ -56,6 +56,10 @@ speech. Open `Debug -> Voice -> Voice test mode`, hold `Command+Shift`, and
 speak normally. The transcript appears in Scene Voice Diagnostics, but it is
 not inserted into the composer and is not submitted to Codex.
 
+`Debug -> Voice -> Fake Codex backend` toggles the composer between the
+configured compose backend and deterministic Fake Codex replies. Toggling it
+clears the dialogue transcript so the next prompt starts from a clean panel.
+
 ## Diagnostics
 
 Open `Debug -> Voice -> Scene voice diagnostics` to show:
