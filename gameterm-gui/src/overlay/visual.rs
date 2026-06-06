@@ -182,6 +182,7 @@ struct SceneVoiceDebugState {
     selected_item: usize,
     visible: bool,
     test_mode: bool,
+    fake_codex_backend: bool,
     config_lines: Vec<String>,
     last_status: String,
     last_transcript: Option<String>,
@@ -233,9 +234,10 @@ impl SceneVoiceDebugState {
         }
     }
 
-    const MENU_ITEM_COUNT: usize = 2;
+    const MENU_ITEM_COUNT: usize = 3;
     const MENU_ITEM_DIAGNOSTICS: usize = 0;
     const MENU_ITEM_TEST_MODE: usize = 1;
+    const MENU_ITEM_FAKE_CODEX: usize = 2;
 
     fn toggle_test_mode(&mut self) -> &'static str {
         self.visible = true;
@@ -276,6 +278,11 @@ impl SceneVoiceDebugState {
             Self::MENU_ITEM_TEST_MODE,
             "Voice test mode",
             if self.test_mode { "on" } else { "off" },
+        ));
+        lines.push(self.menu_item_line(
+            Self::MENU_ITEM_FAKE_CODEX,
+            "Fake Codex backend",
+            if self.fake_codex_backend { "on" } else { "off" },
         ));
 
         if self.visible {
@@ -569,12 +576,20 @@ fn show_visual_scene_overlay_with_source(
                         continue;
                     }
                     if dialogue_scroll.voice_debug.menu_open {
-                        if handle_voice_debug_menu_key(
+                        let voice_debug_effect = handle_voice_debug_menu_key(
                             key,
                             runtime,
                             &mut dialogue_scroll.voice_debug,
                             stt_state.is_running(),
-                        ) {
+                            compose_backend_running,
+                            &mut compose_debug_backend,
+                        );
+                        if voice_debug_effect.handled {
+                            if voice_debug_effect.reset_compose_dialogue {
+                                first_voice_reveal_done = false;
+                                pending_first_voice_reveal = None;
+                                dialogue_scroll.reset_to_bottom();
+                            }
                             render_runtime_with_compose_and_scroll(
                                 &mut term,
                                 runtime,
@@ -622,28 +637,6 @@ fn show_visual_scene_overlay_with_source(
                             stt_session =
                                 Some(spawn_stt_backend(stt_config.clone(), stt_tx.clone()));
                             dialogue_scroll.voice_hold_active = true;
-                        }
-                        render_runtime_with_compose_and_scroll(
-                            &mut term,
-                            runtime,
-                            &sprite_manifest,
-                            &compose_dock,
-                            &dialogue_scroll,
-                        )?;
-                        continue;
-                    }
-                    if is_compose_debug_backend_toggle_key(key, modifiers) {
-                        if compose_backend_running {
-                            runtime.mark_action_status(
-                                "Compose debug backend toggle unavailable: compose is running",
-                            );
-                        } else {
-                            let status = compose_debug_backend.toggle();
-                            runtime.clear_compose_history();
-                            runtime.mark_action_status(status);
-                            first_voice_reveal_done = false;
-                            pending_first_voice_reveal = None;
-                            dialogue_scroll.reset_to_bottom();
                         }
                         render_runtime_with_compose_and_scroll(
                             &mut term,
@@ -1767,24 +1760,49 @@ fn is_voice_debug_menu_open_key(key: KeyCode, modifiers: Modifiers) -> bool {
     matches!(key, KeyCode::Char('v') | KeyCode::Char('V')) && modifiers == Modifiers::NONE
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct VoiceDebugMenuEffect {
+    handled: bool,
+    reset_compose_dialogue: bool,
+}
+
+impl VoiceDebugMenuEffect {
+    const IGNORED: Self = Self {
+        handled: false,
+        reset_compose_dialogue: false,
+    };
+
+    const HANDLED: Self = Self {
+        handled: true,
+        reset_compose_dialogue: false,
+    };
+
+    const RESET_COMPOSE_DIALOGUE: Self = Self {
+        handled: true,
+        reset_compose_dialogue: true,
+    };
+}
+
 fn handle_voice_debug_menu_key(
     key: KeyCode,
     runtime: &mut SceneRuntime,
     voice_debug: &mut SceneVoiceDebugState,
     voice_running: bool,
-) -> bool {
+    compose_running: bool,
+    compose_debug_backend: &mut SceneComposeDebugBackend,
+) -> VoiceDebugMenuEffect {
     match key {
         KeyCode::Escape | KeyCode::Tab => {
             runtime.mark_action_status(voice_debug.close_menu());
-            true
+            VoiceDebugMenuEffect::HANDLED
         }
         KeyCode::DownArrow | KeyCode::Char('j') | KeyCode::Char('J') => {
             voice_debug.select_next();
-            true
+            VoiceDebugMenuEffect::HANDLED
         }
         KeyCode::UpArrow | KeyCode::Char('k') | KeyCode::Char('K') => {
             voice_debug.select_previous();
-            true
+            VoiceDebugMenuEffect::HANDLED
         }
         KeyCode::Enter => {
             if voice_running
@@ -1792,12 +1810,24 @@ fn handle_voice_debug_menu_key(
             {
                 runtime
                     .mark_action_status("Voice test mode toggle unavailable: voice is listening");
+            } else if compose_running
+                && voice_debug.selected_item == SceneVoiceDebugState::MENU_ITEM_FAKE_CODEX
+            {
+                runtime.mark_action_status(
+                    "Compose debug backend toggle unavailable: compose is running",
+                );
+            } else if voice_debug.selected_item == SceneVoiceDebugState::MENU_ITEM_FAKE_CODEX {
+                let status = compose_debug_backend.toggle();
+                voice_debug.fake_codex_backend = compose_debug_backend.is_fake();
+                runtime.clear_compose_history();
+                runtime.mark_action_status(status);
+                return VoiceDebugMenuEffect::RESET_COMPOSE_DIALOGUE;
             } else {
                 runtime.mark_action_status(voice_debug.toggle_selected());
             }
-            true
+            VoiceDebugMenuEffect::HANDLED
         }
-        _ => false,
+        _ => VoiceDebugMenuEffect::IGNORED,
     }
 }
 
@@ -1824,10 +1854,6 @@ fn is_stt_hold_release_key(key: KeyCode) -> bool {
             | KeyCode::LeftWindows
             | KeyCode::RightWindows
     )
-}
-
-fn is_compose_debug_backend_toggle_key(key: KeyCode, modifiers: Modifiers) -> bool {
-    matches!(key, KeyCode::Char('c') | KeyCode::Char('C')) && modifiers.contains(Modifiers::ALT)
 }
 
 const COMPOSE_OUTPUT_LIMIT: usize = 1200;
@@ -3867,6 +3893,7 @@ mod tests {
         assert!(lines.contains("Mode: test recognition only"));
         assert!(lines.contains("Backend: whisper"));
         assert!(lines.contains("Last transcript: hello scene"));
+        assert!(lines.contains("Fake Codex backend"));
     }
 
     #[test]
@@ -3875,39 +3902,85 @@ mod tests {
         let state = SceneSttState::default();
         let mut debug = SceneVoiceDebugState::new(&config, &state);
         let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        let mut compose_debug_backend = SceneComposeDebugBackend::RealCodex;
 
         assert_eq!(debug.open_menu(), "Voice debug menu opened");
         assert!(debug.menu_open);
         assert!(debug.visible);
 
-        assert!(handle_voice_debug_menu_key(
-            KeyCode::Enter,
-            &mut runtime,
-            &mut debug,
-            false
-        ));
+        assert_eq!(
+            handle_voice_debug_menu_key(
+                KeyCode::Enter,
+                &mut runtime,
+                &mut debug,
+                false,
+                false,
+                &mut compose_debug_backend,
+            ),
+            VoiceDebugMenuEffect::HANDLED
+        );
         assert!(!debug.visible);
 
-        assert!(handle_voice_debug_menu_key(
-            KeyCode::DownArrow,
-            &mut runtime,
-            &mut debug,
-            false
-        ));
-        assert!(handle_voice_debug_menu_key(
-            KeyCode::Enter,
-            &mut runtime,
-            &mut debug,
-            false
-        ));
+        assert_eq!(
+            handle_voice_debug_menu_key(
+                KeyCode::DownArrow,
+                &mut runtime,
+                &mut debug,
+                false,
+                false,
+                &mut compose_debug_backend,
+            ),
+            VoiceDebugMenuEffect::HANDLED
+        );
+        assert_eq!(
+            handle_voice_debug_menu_key(
+                KeyCode::Enter,
+                &mut runtime,
+                &mut debug,
+                false,
+                false,
+                &mut compose_debug_backend,
+            ),
+            VoiceDebugMenuEffect::HANDLED
+        );
         assert!(debug.test_mode);
 
-        assert!(handle_voice_debug_menu_key(
-            KeyCode::Tab,
-            &mut runtime,
-            &mut debug,
-            false
-        ));
+        assert_eq!(
+            handle_voice_debug_menu_key(
+                KeyCode::DownArrow,
+                &mut runtime,
+                &mut debug,
+                false,
+                false,
+                &mut compose_debug_backend,
+            ),
+            VoiceDebugMenuEffect::HANDLED
+        );
+        assert_eq!(
+            handle_voice_debug_menu_key(
+                KeyCode::Enter,
+                &mut runtime,
+                &mut debug,
+                false,
+                false,
+                &mut compose_debug_backend,
+            ),
+            VoiceDebugMenuEffect::RESET_COMPOSE_DIALOGUE
+        );
+        assert!(compose_debug_backend.is_fake());
+        assert!(debug.fake_codex_backend);
+
+        assert_eq!(
+            handle_voice_debug_menu_key(
+                KeyCode::Tab,
+                &mut runtime,
+                &mut debug,
+                false,
+                false,
+                &mut compose_debug_backend,
+            ),
+            VoiceDebugMenuEffect::HANDLED
+        );
         assert!(!debug.menu_open);
     }
 
@@ -3925,19 +3998,60 @@ mod tests {
     }
 
     #[test]
-    fn compose_debug_backend_toggle_uses_alt_c_without_consuming_plain_c() {
-        assert!(is_compose_debug_backend_toggle_key(
-            KeyCode::Char('c'),
-            Modifiers::ALT
-        ));
-        assert!(is_compose_debug_backend_toggle_key(
-            KeyCode::Char('C'),
-            Modifiers::ALT
-        ));
-        assert!(!is_compose_debug_backend_toggle_key(
-            KeyCode::Char('c'),
-            Modifiers::NONE
-        ));
+    fn scene_voice_debug_fake_codex_toggle_blocks_while_compose_runs() {
+        let config = SceneSttConfig::whisper_default();
+        let state = SceneSttState::default();
+        let mut debug = SceneVoiceDebugState::new(&config, &state);
+        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        let mut compose_debug_backend = SceneComposeDebugBackend::RealCodex;
+        debug.open_menu();
+        debug.select_next();
+        debug.select_next();
+
+        assert_eq!(
+            handle_voice_debug_menu_key(
+                KeyCode::Enter,
+                &mut runtime,
+                &mut debug,
+                false,
+                true,
+                &mut compose_debug_backend,
+            ),
+            VoiceDebugMenuEffect::HANDLED
+        );
+        assert_eq!(compose_debug_backend, SceneComposeDebugBackend::RealCodex);
+        assert!(!debug.fake_codex_backend);
+        assert_eq!(
+            runtime.render_snapshot().status,
+            "Compose debug backend toggle unavailable: compose is running"
+        );
+    }
+
+    #[test]
+    fn scene_voice_debug_fake_codex_toggle_clears_dialogue_history() {
+        let config = SceneSttConfig::whisper_default();
+        let state = SceneSttState::default();
+        let mut debug = SceneVoiceDebugState::new(&config, &state);
+        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        let mut compose_debug_backend = SceneComposeDebugBackend::RealCodex;
+        runtime.mark_compose_running("Codex running: hi", "hi");
+        runtime.mark_compose_succeeded("Codex", "hello");
+        debug.open_menu();
+        debug.select_next();
+        debug.select_next();
+
+        assert_eq!(
+            handle_voice_debug_menu_key(
+                KeyCode::Enter,
+                &mut runtime,
+                &mut debug,
+                false,
+                false,
+                &mut compose_debug_backend,
+            ),
+            VoiceDebugMenuEffect::RESET_COMPOSE_DIALOGUE
+        );
+        assert!(runtime.render_snapshot().dialogue_history.is_empty());
     }
 
     #[test]
