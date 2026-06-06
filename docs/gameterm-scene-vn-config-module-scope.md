@@ -1,6 +1,6 @@
 # GameTerm Scene Mode VN Config Module Scope
 
-Status: scoped.
+Status: first-pass implemented.
 
 This scope defines the ownership boundary for the current Kiki visual-novel
 demo. The Kiki sprites, school backgrounds, VN scene JSON, sprite manifest,
@@ -84,6 +84,20 @@ The first-pass end state is:
 7. Docs clearly say that Kiki/school/VN assets belong to config and are not
    part of the core GameTerm engine.
 
+First-pass implementation:
+
+- `ci/gameterm-scene-vn-demo.sh` owns generate, install, update, doctor,
+  backup, and smoke entrypoints for the local VN demo module.
+- The helper uses the existing Rust VN asset intake path to copy approved
+  local assets into config-owned `assets/vn-demo` content and generate
+  `sprites.json`, bindings, and attribution.
+- `doctor` validates the active module scene, sprites, strict PNG assets,
+  optional layout config, and optional compose config before launch.
+- `update` explicitly migrates stale `policy.origin = "vn_script_import"` to
+  `authored`, after creating a timestamped backup.
+- `ci/gameterm-scene-verify.sh --all` covers install, stale-origin failure,
+  migration, backup, strict image validation, and manifest checks.
+
 ## Non-Goals
 
 - No committing downloaded third-party assets into the repo.
@@ -96,7 +110,7 @@ The first-pass end state is:
 
 ## Module Helper
 
-Add or extend a dedicated helper:
+Added dedicated helper:
 
 ```sh
 ci/gameterm-scene-vn-demo.sh
@@ -112,8 +126,9 @@ ci/gameterm-scene-vn-demo.sh backup [OPTIONS]
 ci/gameterm-scene-vn-demo.sh smoke [OPTIONS]
 ```
 
-If the helper already exists, this pass should tighten it. If a command is
-missing, add it rather than creating another helper.
+The helper is intentionally explicit. It does not run during app launch, and it
+does not replace user config unless the user runs `install --force` or
+`update`.
 
 ## Command Semantics
 
@@ -240,6 +255,7 @@ Unit and helper tests:
 bash -n ci/gameterm-scene-vn-demo.sh
 ci/gameterm-scene-vn-demo.sh doctor --config-home /tmp/gameterm-vn-config
 ci/gameterm-scene-vn-demo.sh update --config-home /tmp/gameterm-vn-config --dry-run
+ci/gameterm-scene-verify.sh --all
 ```
 
 Fixture coverage:
@@ -269,9 +285,19 @@ Acceptance:
 - screenshot does not show `Scene file failed to load`.
 - doctor reports `0 error(s), 0 warning(s)` before smoke.
 
+Latest verification:
+
+- `bash -n ci/gameterm-scene-vn-demo.sh ci/gameterm-scene-verify.sh`: PASS
+- `git diff --check`: PASS
+- `ci/gameterm-scene-vn-demo.sh doctor --config-home ~/.config
+  --strict-images`: PASS on the current local config
+- `ci/gameterm-scene-verify.sh --all`: PASS
+
 ## Implementation Lanes
 
 ### 1. Module Doctor Tightening
+
+Status: complete.
 
 Commit prefix: `[tools]`.
 
@@ -287,6 +313,8 @@ Done when:
 - installed module doctor passes on the current local config
 
 ### 2. Config Migration And Backup
+
+Status: complete.
 
 Commit prefix: `[tools]`.
 
@@ -304,6 +332,8 @@ Done when:
 - no app launch side effects are needed
 
 ### 3. Installed Config Smoke
+
+Status: first-pass implemented.
 
 Commit prefix: `[test]`.
 
@@ -345,4 +375,3 @@ This scope is complete when:
 - Installed-app smoke confirms Scene Mode loads the configured Kiki/school VN
   scene.
 - Docs make the module ownership boundary explicit.
-

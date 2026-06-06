@@ -7,14 +7,14 @@ status and next priorities.
 ## Current Status
 
 Status: first shippable Scene Mode pass complete; command policy second pass
-complete; VN asset intake, VN script import, VN demo install, real asset run,
-strict image validation, fullscreen smoke capture, local PSD/image export, and
-native active-pane GUI first-pass closure complete. Staged VN text presentation
-and compose dock input are implemented; the Codex compose bridge local-backend
-first pass is implemented. The local Codex CLI session bridge first pass is
-implemented with a deterministic fake-Codex smoke path. VN dialogue/composer
-panel text, nameplates, and GPU quads now share one dynamic overlay layout
-primitive.
+complete; VN asset intake, VN script import, VN demo install, VN config module
+ownership, real asset run, strict image validation, fullscreen smoke capture,
+local PSD/image export, and native active-pane GUI first-pass closure complete.
+Staged VN text presentation and compose dock input are implemented; the Codex
+compose bridge local-backend first pass is implemented. The local Codex CLI
+session bridge first pass is implemented with a deterministic fake-Codex smoke
+path. VN dialogue/composer panel text, nameplates, and GPU quads now share one
+dynamic overlay layout primitive.
 
 Scene Mode currently has:
 
@@ -36,8 +36,9 @@ Scene Mode currently has:
 - native active-pane Scene action that opens a transient generated workspace
   scene without overwriting the configured scene
 - Rust VN script import, local VN asset intake, generated VN demo
-  install/doctor workflow, strict PNG validation, fullscreen `vn-demo` smoke,
-  and a local PSD/image export helper for downloaded assets
+  install/doctor workflow, config-owned VN demo module helper, strict PNG
+  validation, fullscreen `vn-demo` smoke, and a local PSD/image export helper
+  for downloaded assets
 - staged VN background/character rendering, wide VN text presentation, and a
   typeable compose dock surface
 - structured Scene VN compose submit events, dialogue patch replies, sanitized
@@ -101,7 +102,7 @@ implementation details.
 | Retired RPY/Ren'Py import lane | [Refactor Plan](gameterm-scene-refactor-plan.md) | Retired from active code and CI |
 | VN asset intake | [VN Asset Intake Scope](gameterm-scene-vn-asset-intake-scope.md) | First-pass implemented |
 | VN real asset run | [VN Real Assets Run Scope](gameterm-scene-vn-real-assets-run-scope.md) | Complete |
-| VN config module ownership | [VN Config Module Scope](gameterm-scene-vn-config-module-scope.md) | Scoped |
+| VN config module ownership | [VN Config Module Scope](gameterm-scene-vn-config-module-scope.md) | First-pass implemented |
 | VN local PSD/image export | [VN Real Assets Run Scope](gameterm-scene-vn-real-assets-run-scope.md) | Complete |
 | VN staged presentation | [VN Presentation Scope](gameterm-scene-vn-presentation-scope.md) | First-pass implemented |
 | Aspect-safe Scene images | [Aspect-Safe Image Scope](gameterm-scene-aspect-safe-image-scope.md) | Complete |
