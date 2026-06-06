@@ -1563,11 +1563,28 @@ fn is_tts_toggle_key(key: KeyCode, modifiers: Modifiers) -> bool {
 }
 
 fn is_stt_hold_key(key: KeyCode, modifiers: Modifiers) -> bool {
-    matches!(key, KeyCode::Char(' ')) && modifiers.contains(Modifiers::SHIFT)
+    matches!(
+        key,
+        KeyCode::Shift
+            | KeyCode::LeftShift
+            | KeyCode::RightShift
+            | KeyCode::Super
+            | KeyCode::LeftWindows
+            | KeyCode::RightWindows
+    ) && modifiers.contains(Modifiers::SHIFT)
+        && modifiers.contains(Modifiers::SUPER)
 }
 
 fn is_stt_hold_release_key(key: KeyCode) -> bool {
-    matches!(key, KeyCode::Char(' '))
+    matches!(
+        key,
+        KeyCode::Shift
+            | KeyCode::LeftShift
+            | KeyCode::RightShift
+            | KeyCode::Super
+            | KeyCode::LeftWindows
+            | KeyCode::RightWindows
+    )
 }
 
 fn is_compose_debug_backend_toggle_key(key: KeyCode, modifiers: Modifiers) -> bool {
@@ -3520,12 +3537,16 @@ mod tests {
     }
 
     #[test]
-    fn scene_stt_hold_to_talk_uses_shift_space_without_consuming_plain_space() {
-        assert!(is_stt_hold_key(KeyCode::Char(' '), Modifiers::SHIFT));
-        assert!(!is_stt_hold_key(KeyCode::Char(' '), Modifiers::NONE));
-        assert!(!is_stt_hold_key(KeyCode::Char('v'), Modifiers::SHIFT));
-        assert!(is_stt_hold_release_key(KeyCode::Char(' ')));
-        assert!(!is_stt_hold_release_key(KeyCode::Char('v')));
+    fn scene_stt_hold_to_talk_uses_shift_command_modifiers() {
+        let shift_command = Modifiers::SHIFT | Modifiers::SUPER;
+        assert!(is_stt_hold_key(KeyCode::LeftWindows, shift_command));
+        assert!(is_stt_hold_key(KeyCode::LeftShift, shift_command));
+        assert!(!is_stt_hold_key(KeyCode::LeftWindows, Modifiers::SUPER));
+        assert!(!is_stt_hold_key(KeyCode::LeftShift, Modifiers::SHIFT));
+        assert!(!is_stt_hold_key(KeyCode::Char(' '), shift_command));
+        assert!(is_stt_hold_release_key(KeyCode::LeftWindows));
+        assert!(is_stt_hold_release_key(KeyCode::LeftShift));
+        assert!(!is_stt_hold_release_key(KeyCode::Char(' ')));
     }
 
     #[test]
