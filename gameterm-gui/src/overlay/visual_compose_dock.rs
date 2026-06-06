@@ -1,4 +1,4 @@
-use super::clip_text;
+use super::visual_frame::clip_text;
 use gameterm_visual::VnOverlayRect;
 use termwiz::input::KeyCode;
 
