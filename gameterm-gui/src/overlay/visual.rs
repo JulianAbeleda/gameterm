@@ -1,20 +1,26 @@
 use anyhow::Context;
 use gameterm_term::TerminalSize;
 use gameterm_visual::{
-    SceneRuntime, VisualInput, VisualMode, VisualModeOutcome, VisualResolvedSprite, VisualScene,
-    VisualSceneSource, VisualSpriteManifestStatus, VisualView, VnDialogueScrollMetrics,
+    VisualInput, VisualMode, VisualModeOutcome, VisualScene, VisualSceneSource, VisualView,
 };
 use mux::termwiztermtab::TermWizTerminal;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::mpsc;
 use std::time::Duration;
-use termwiz::input::{InputEvent, KeyCode, KeyEvent, Modifiers, MouseButtons, MouseEvent};
+use termwiz::input::{InputEvent, KeyCode, KeyEvent, MouseButtons, MouseEvent};
 use termwiz::surface::Change;
 use termwiz::terminal::Terminal;
 use window::Window;
 
 #[cfg(test)]
-use gameterm_visual::{VisualRenderSnapshot, VnOverlayRect, vn_overlay_layout};
+use gameterm_visual::{
+    vn_overlay_layout, SceneRuntime, VisualRenderSnapshot, VisualResolvedSprite,
+    VisualSpriteManifestStatus, VnDialogueScrollMetrics, VnOverlayRect,
+};
+#[cfg(test)]
+use std::path::Path;
+#[cfg(test)]
+use termwiz::input::Modifiers;
 
 #[path = "visual_command_dispatch.rs"]
 mod visual_command_dispatch;
@@ -32,6 +38,8 @@ mod visual_frame;
 mod visual_input_keys;
 #[path = "visual_kiki_idle.rs"]
 mod visual_kiki_idle;
+#[path = "visual_overlay_session.rs"]
+mod visual_overlay_session;
 #[path = "visual_render.rs"]
 mod visual_render;
 #[path = "visual_scene_files.rs"]
@@ -45,31 +53,32 @@ mod visual_voice_events;
 
 #[cfg(test)]
 use super::visual_compose::ComposeBackendLabel;
-use super::visual_compose::{
-    ComposeBackendRequest, ComposeBackendResult, compose_running_status, spawn_compose_backend,
-};
-use super::visual_stt::{
-    SceneSttConfig, SceneSttResult, SceneSttSession, SceneSttState, spawn_stt_backend,
-};
-use super::visual_tts::{
-    SceneTtsConfig, SceneTtsRequest, SceneTtsState, SceneTtsWorker,
-};
+#[cfg(test)]
+use super::visual_compose::ComposeBackendResult;
+use super::visual_compose::{compose_running_status, spawn_compose_backend, ComposeBackendRequest};
+use super::visual_stt::{spawn_stt_backend, SceneSttConfig};
+#[cfg(test)]
+use super::visual_stt::{SceneSttResult, SceneSttState};
+use super::visual_tts::{SceneTtsConfig, SceneTtsRequest};
 #[cfg(test)]
 use super::visual_tts::{SpeakableSegment, SpeakableSource};
-use visual_command_dispatch::{
-    RunCommandDispatch, dispatch_pending_action, write_story_state_file,
-};
-use visual_compose_dock::{SceneComposeAction, SceneComposeDock};
 #[cfg(test)]
-use visual_compose_result::{COMPOSE_OUTPUT_LIMIT, sanitize_compose_output};
+use visual_command_dispatch::write_story_state_file;
+use visual_command_dispatch::{dispatch_pending_action, RunCommandDispatch};
+use visual_compose_dock::SceneComposeAction;
+#[cfg(test)]
+use visual_compose_dock::SceneComposeDock;
 use visual_compose_result::{
-    PendingFirstVoiceReveal, apply_compose_backend_result, compose_result_speakable_segments,
-    fake_codex_compose_result, should_delay_first_voice_reveal,
+    apply_compose_backend_result, compose_result_speakable_segments, fake_codex_compose_result,
+    should_delay_first_voice_reveal, PendingFirstVoiceReveal,
 };
+#[cfg(test)]
+use visual_compose_result::{sanitize_compose_output, COMPOSE_OUTPUT_LIMIT};
+#[cfg(test)]
 use visual_dialogue_scroll::{
-    SceneDialogueScrollback, apply_dialogue_scroll_key, apply_dialogue_scroll_wheel,
-    handle_dialogue_scroll_key, handle_dialogue_scroll_wheel,
+    apply_dialogue_scroll_key, apply_dialogue_scroll_wheel, SceneDialogueScrollback,
 };
+use visual_dialogue_scroll::{handle_dialogue_scroll_key, handle_dialogue_scroll_wheel};
 use visual_event_drain::{
     drain_command_results, drain_compose_results, drain_stt_results, drain_tts_results,
 };
@@ -80,43 +89,16 @@ use visual_input_keys::{
     visual_input_resets_dialogue_scroll,
 };
 use visual_kiki_idle::*;
-use visual_render::{
-    apply_voice_debug_frame, render_error, render_runtime, render_runtime_with_compose_and_scroll,
-};
+use visual_overlay_session::{SceneComposeDebugBackend, VisualOverlaySession};
+#[cfg(test)]
+use visual_render::apply_voice_debug_frame;
+use visual_render::{render_error, render_runtime, render_runtime_with_compose_and_scroll};
 pub(crate) use visual_scene_files::SceneOverlayLaunchOptions;
 use visual_scene_files::*;
 use visual_scene_patches::*;
-use visual_voice_debug::{
-    SceneVoiceDebugState, VoiceDebugMenuEffect, handle_voice_debug_menu_key,
-    is_voice_debug_menu_open_key,
-};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SceneComposeDebugBackend {
-    RealCodex,
-    FakeCodex,
-}
-
-impl SceneComposeDebugBackend {
-    fn toggle(&mut self) -> &'static str {
-        *self = match self {
-            Self::RealCodex => Self::FakeCodex,
-            Self::FakeCodex => Self::RealCodex,
-        };
-        self.status()
-    }
-
-    fn status(self) -> &'static str {
-        match self {
-            Self::RealCodex => "Compose debug backend: Codex",
-            Self::FakeCodex => "Compose debug backend: Fake Codex",
-        }
-    }
-
-    fn is_fake(self) -> bool {
-        matches!(self, Self::FakeCodex)
-    }
-}
+#[cfg(test)]
+use visual_voice_debug::VoiceDebugMenuEffect;
+use visual_voice_debug::{handle_voice_debug_menu_key, is_voice_debug_menu_open_key};
 
 pub(crate) fn show_visual_scene_overlay_with_options(
     term: TermWizTerminal,
@@ -207,58 +189,46 @@ fn show_visual_scene_overlay_with_source(
     let (scene_patch_tx, scene_patch_rx) = mpsc::channel();
     let _scene_patch_subscription =
         ScenePatchNotificationSubscription::new(pane_id, route_pane_id, scene_patch_tx);
-    let mut compose_dock = SceneComposeDock::default();
-    let mut dialogue_scroll = SceneDialogueScrollback::default();
-    let mut compose_debug_backend = SceneComposeDebugBackend::RealCodex;
     let (compose_tx, compose_rx) = mpsc::channel();
-    let mut compose_backend_running = false;
     let (tts_tx, tts_rx) = mpsc::channel();
     let tts_config = launch_options
         .tts_config
         .unwrap_or_else(SceneTtsConfig::from_env);
-    let sync_first_voice_reveal = tts_config.can_play_audio();
-    let tts_worker = SceneTtsWorker::new(tts_config, tts_tx.clone());
-    let mut tts_state = SceneTtsState::default();
-    let mut first_voice_reveal_done = false;
-    let mut pending_first_voice_reveal: Option<PendingFirstVoiceReveal> = None;
     let (stt_tx, stt_rx) = mpsc::channel();
     let stt_config = launch_options
         .stt_config
         .unwrap_or_else(SceneSttConfig::from_env);
-    let mut stt_state = SceneSttState::default();
-    dialogue_scroll.voice_debug = SceneVoiceDebugState::new(&stt_config, &stt_state);
-    let mut stt_session: Option<SceneSttSession> = None;
-    let mut last_idle_sprite: Option<String> = None;
+    let mut session = VisualOverlaySession::new(tts_config, tts_tx.clone(), stt_config);
 
     loop {
         let mut needs_render = drain_command_results(&command_rx, &mut runtime);
         needs_render |= drain_compose_results(
             &compose_rx,
             &mut runtime,
-            &mut compose_backend_running,
-            &mut dialogue_scroll,
-            sync_first_voice_reveal,
-            &mut first_voice_reveal_done,
-            &mut pending_first_voice_reveal,
-            &tts_state,
-            &tts_worker,
+            &mut session.compose_backend_running,
+            &mut session.dialogue_scroll,
+            session.sync_first_voice_reveal,
+            &mut session.first_voice_reveal_done,
+            &mut session.pending_first_voice_reveal,
+            &session.tts_state,
+            &session.tts_worker,
         );
         needs_render |= drain_tts_results(
             &tts_rx,
             &mut runtime,
-            &mut tts_state,
-            &mut dialogue_scroll,
-            &mut pending_first_voice_reveal,
-            &mut first_voice_reveal_done,
+            &mut session.tts_state,
+            &mut session.dialogue_scroll,
+            &mut session.pending_first_voice_reveal,
+            &mut session.first_voice_reveal_done,
         );
         needs_render |= drain_stt_results(
             &stt_rx,
             &mut runtime,
-            &mut stt_session,
-            &mut dialogue_scroll,
-            &mut compose_dock,
-            &mut stt_state,
-            &mut compose_backend_running,
+            &mut session.stt_session,
+            &mut session.dialogue_scroll,
+            &mut session.compose_dock,
+            &mut session.stt_state,
+            &mut session.compose_backend_running,
             &compose_tx,
             &scene_path,
             pane_id,
@@ -269,8 +239,8 @@ fn show_visual_scene_overlay_with_source(
                     &mut term,
                     runtime,
                     &sprite_manifest,
-                    &compose_dock,
-                    &dialogue_scroll,
+                    &session.compose_dock,
+                    &session.dialogue_scroll,
                 )?;
             }
         }
@@ -286,13 +256,13 @@ fn show_visual_scene_overlay_with_source(
                     &mut sprite_manifest,
                     &mut load_error,
                 )?;
-                dialogue_scroll.reset_to_bottom();
+                session.dialogue_scroll.reset_to_bottom();
                 file_watcher.refresh(&scene_path, &sprite_manifest_path);
             }
             if let Some(path) = patch_inbox.changed_path() {
                 if let Some(runtime) = runtime.as_mut() {
                     apply_scene_patch_file(&mut term, runtime, &sprite_manifest, &path)?;
-                    dialogue_scroll.reset_to_bottom();
+                    session.dialogue_scroll.reset_to_bottom();
                 }
                 patch_inbox.refresh();
             }
@@ -305,24 +275,24 @@ fn show_visual_scene_overlay_with_source(
                         &scene_patch.patch_json,
                         scene_patch.source_pane_id,
                     )?;
-                    dialogue_scroll.reset_to_bottom();
+                    session.dialogue_scroll.reset_to_bottom();
                 }
             }
             if let Some(runtime) = runtime.as_ref() {
                 let sprite = current_kiki_idle_sprite(&sprite_manifest);
                 if runtime_has_kiki_idle_animation(runtime, &sprite_manifest) {
-                    if last_idle_sprite != sprite {
+                    if session.last_idle_sprite != sprite {
                         render_runtime_with_compose_and_scroll(
                             &mut term,
                             runtime,
                             &sprite_manifest,
-                            &compose_dock,
-                            &dialogue_scroll,
+                            &session.compose_dock,
+                            &session.dialogue_scroll,
                         )?;
-                        last_idle_sprite = sprite;
+                        session.last_idle_sprite = sprite;
                     }
                 } else {
-                    last_idle_sprite = None;
+                    session.last_idle_sprite = None;
                 }
             }
             continue;
@@ -330,45 +300,46 @@ fn show_visual_scene_overlay_with_source(
         match input {
             InputEvent::Key(KeyEvent { key, modifiers }) => {
                 if let Some(runtime) = runtime.as_mut() {
-                    if stt_state.is_running() && matches!(key, KeyCode::Escape) {
-                        if let Some(session) = stt_session.take() {
-                            session.cancel();
+                    if session.stt_state.is_running() && matches!(key, KeyCode::Escape) {
+                        if let Some(stt_session) = session.stt_session.take() {
+                            stt_session.cancel();
                         }
-                        dialogue_scroll.voice_hold_active = false;
-                        runtime.mark_action_status(stt_state.mark_canceling());
-                        dialogue_scroll
+                        session.dialogue_scroll.voice_hold_active = false;
+                        runtime.mark_action_status(session.stt_state.mark_canceling());
+                        session
+                            .dialogue_scroll
                             .voice_debug
-                            .sync_status(stt_state.last_status());
+                            .sync_status(session.stt_state.last_status());
                         render_runtime_with_compose_and_scroll(
                             &mut term,
                             runtime,
                             &sprite_manifest,
-                            &compose_dock,
-                            &dialogue_scroll,
+                            &session.compose_dock,
+                            &session.dialogue_scroll,
                         )?;
                         continue;
                     }
-                    if dialogue_scroll.voice_debug.menu_open {
+                    if session.dialogue_scroll.voice_debug.menu_open {
                         let voice_debug_effect = handle_voice_debug_menu_key(
                             key,
                             runtime,
-                            &mut dialogue_scroll.voice_debug,
-                            stt_state.is_running(),
-                            compose_backend_running,
-                            &mut compose_debug_backend,
+                            &mut session.dialogue_scroll.voice_debug,
+                            session.stt_state.is_running(),
+                            session.compose_backend_running,
+                            &mut session.compose_debug_backend,
                         );
                         if voice_debug_effect.handled {
                             if voice_debug_effect.reset_compose_dialogue {
-                                first_voice_reveal_done = false;
-                                pending_first_voice_reveal = None;
-                                dialogue_scroll.reset_to_bottom();
+                                session.first_voice_reveal_done = false;
+                                session.pending_first_voice_reveal = None;
+                                session.dialogue_scroll.reset_to_bottom();
                             }
                             render_runtime_with_compose_and_scroll(
                                 &mut term,
                                 runtime,
                                 &sprite_manifest,
-                                &compose_dock,
-                                &dialogue_scroll,
+                                &session.compose_dock,
+                                &session.dialogue_scroll,
                             )?;
                             continue;
                         }
@@ -376,47 +347,50 @@ fn show_visual_scene_overlay_with_source(
                     if runtime.view() == VisualView::TileDebugger
                         && is_voice_debug_menu_open_key(key, modifiers)
                     {
-                        let status = dialogue_scroll.voice_debug.open_menu();
+                        let status = session.dialogue_scroll.voice_debug.open_menu();
                         runtime.mark_action_status(status);
                         render_runtime_with_compose_and_scroll(
                             &mut term,
                             runtime,
                             &sprite_manifest,
-                            &compose_dock,
-                            &dialogue_scroll,
+                            &session.compose_dock,
+                            &session.dialogue_scroll,
                         )?;
                         continue;
                     }
                     if is_tts_toggle_key(key, modifiers) {
-                        runtime.mark_action_status(tts_state.toggle_muted());
+                        runtime.mark_action_status(session.tts_state.toggle_muted());
                         render_runtime_with_compose_and_scroll(
                             &mut term,
                             runtime,
                             &sprite_manifest,
-                            &compose_dock,
-                            &dialogue_scroll,
+                            &session.compose_dock,
+                            &session.dialogue_scroll,
                         )?;
                         continue;
                     }
                     if is_stt_hold_key(key, modifiers) {
-                        if !stt_state.is_running() {
-                            runtime.mark_action_status(stt_state.mark_started());
-                            if dialogue_scroll.voice_debug.test_mode {
+                        if !session.stt_state.is_running() {
+                            runtime.mark_action_status(session.stt_state.mark_started());
+                            if session.dialogue_scroll.voice_debug.test_mode {
                                 runtime.mark_action_status("Voice test listening");
                             }
-                            dialogue_scroll
+                            session
+                                .dialogue_scroll
                                 .voice_debug
-                                .sync_status(stt_state.last_status());
-                            stt_session =
-                                Some(spawn_stt_backend(stt_config.clone(), stt_tx.clone()));
-                            dialogue_scroll.voice_hold_active = true;
+                                .sync_status(session.stt_state.last_status());
+                            session.stt_session = Some(spawn_stt_backend(
+                                session.stt_config.clone(),
+                                stt_tx.clone(),
+                            ));
+                            session.dialogue_scroll.voice_hold_active = true;
                         }
                         render_runtime_with_compose_and_scroll(
                             &mut term,
                             runtime,
                             &sprite_manifest,
-                            &compose_dock,
-                            &dialogue_scroll,
+                            &session.compose_dock,
+                            &session.dialogue_scroll,
                         )?;
                         continue;
                     }
@@ -425,19 +399,19 @@ fn show_visual_scene_overlay_with_source(
                     // input before the debugger can select, adjust, or edit.
                     let in_layout_debug = runtime.view() == VisualView::VnLayoutDebugger;
                     if !runtime.scene().stage.is_empty() && !in_layout_debug {
-                        match compose_dock.handle_key(key) {
+                        match session.compose_dock.handle_key(key) {
                             SceneComposeAction::Consumed => {
                                 render_runtime_with_compose_and_scroll(
                                     &mut term,
                                     runtime,
                                     &sprite_manifest,
-                                    &compose_dock,
-                                    &dialogue_scroll,
+                                    &session.compose_dock,
+                                    &session.dialogue_scroll,
                                 )?;
                                 continue;
                             }
                             SceneComposeAction::Submitted(prompt) => {
-                                if compose_backend_running {
+                                if session.compose_backend_running {
                                     runtime
                                         .mark_compose_failed("Compose backend is already running");
                                     runtime.mark_action_status(
@@ -447,47 +421,49 @@ fn show_visual_scene_overlay_with_source(
                                         &mut term,
                                         runtime,
                                         &sprite_manifest,
-                                        &compose_dock,
-                                        &dialogue_scroll,
+                                        &session.compose_dock,
+                                        &session.dialogue_scroll,
                                     )?;
                                     continue;
                                 }
-                                compose_dock.mark_submitted(&prompt);
-                                let running_status = if compose_debug_backend.is_fake() {
+                                session.compose_dock.mark_submitted(&prompt);
+                                let running_status = if session.compose_debug_backend.is_fake() {
                                     format!("Fake Codex running: {prompt}")
                                 } else {
                                     compose_running_status(&prompt)
                                 };
                                 runtime.mark_compose_running(running_status, &prompt);
-                                dialogue_scroll.reset_to_bottom();
-                                if compose_debug_backend.is_fake() {
+                                session.dialogue_scroll.reset_to_bottom();
+                                if session.compose_debug_backend.is_fake() {
                                     let result = fake_codex_compose_result(prompt);
                                     let speakable_segments =
                                         compose_result_speakable_segments(&result);
                                     if should_delay_first_voice_reveal(
-                                        sync_first_voice_reveal,
-                                        first_voice_reveal_done,
-                                        pending_first_voice_reveal.is_some(),
-                                        tts_state.is_muted(),
+                                        session.sync_first_voice_reveal,
+                                        session.first_voice_reveal_done,
+                                        session.pending_first_voice_reveal.is_some(),
+                                        session.tts_state.is_muted(),
                                         &speakable_segments,
                                     ) {
                                         for segment in speakable_segments {
-                                            tts_worker.speak(SceneTtsRequest { segment });
+                                            session.tts_worker.speak(SceneTtsRequest { segment });
                                         }
-                                        pending_first_voice_reveal =
+                                        session.pending_first_voice_reveal =
                                             Some(PendingFirstVoiceReveal { result });
                                         runtime.mark_action_status("Voice preparing first reply");
                                     } else {
                                         let speakable_segments =
                                             apply_compose_backend_result(runtime, result);
-                                        if !first_voice_reveal_done
+                                        if !session.first_voice_reveal_done
                                             && !speakable_segments.is_empty()
                                         {
-                                            first_voice_reveal_done = true;
+                                            session.first_voice_reveal_done = true;
                                         }
-                                        if !tts_state.is_muted() {
+                                        if !session.tts_state.is_muted() {
                                             for segment in speakable_segments {
-                                                tts_worker.speak(SceneTtsRequest { segment });
+                                                session
+                                                    .tts_worker
+                                                    .speak(SceneTtsRequest { segment });
                                             }
                                         }
                                     }
@@ -495,12 +471,12 @@ fn show_visual_scene_overlay_with_source(
                                         &mut term,
                                         runtime,
                                         &sprite_manifest,
-                                        &compose_dock,
-                                        &dialogue_scroll,
+                                        &session.compose_dock,
+                                        &session.dialogue_scroll,
                                     )?;
                                     continue;
                                 }
-                                compose_backend_running = true;
+                                session.compose_backend_running = true;
                                 spawn_compose_backend(
                                     ComposeBackendRequest {
                                         prompt,
@@ -513,8 +489,8 @@ fn show_visual_scene_overlay_with_source(
                                     &mut term,
                                     runtime,
                                     &sprite_manifest,
-                                    &compose_dock,
-                                    &dialogue_scroll,
+                                    &session.compose_dock,
+                                    &session.dialogue_scroll,
                                 )?;
                                 continue;
                             }
@@ -533,7 +509,7 @@ fn show_visual_scene_overlay_with_source(
                     if let Some(runtime) = runtime.as_ref() {
                         if handle_dialogue_scroll_key(
                             runtime,
-                            &mut dialogue_scroll,
+                            &mut session.dialogue_scroll,
                             visual_input,
                             term.get_screen_size()?,
                         ) {
@@ -541,8 +517,8 @@ fn show_visual_scene_overlay_with_source(
                                 &mut term,
                                 runtime,
                                 &sprite_manifest,
-                                &compose_dock,
-                                &dialogue_scroll,
+                                &session.compose_dock,
+                                &session.dialogue_scroll,
                             )?;
                             continue;
                         }
@@ -575,7 +551,7 @@ fn show_visual_scene_overlay_with_source(
                             &mut load_error,
                         )?;
                     }
-                    dialogue_scroll.reset_to_bottom();
+                    session.dialogue_scroll.reset_to_bottom();
                     file_watcher.refresh(&scene_path, &sprite_manifest_path);
                     continue;
                 }
@@ -587,7 +563,7 @@ fn show_visual_scene_overlay_with_source(
                         break;
                     }
                     if visual_input_resets_dialogue_scroll(visual_input) {
-                        dialogue_scroll.reset_to_bottom();
+                        session.dialogue_scroll.reset_to_bottom();
                     }
                     persist_vn_overlay_layout_if_changed(vn_layout_before, runtime);
                     let size = term.get_screen_size()?;
@@ -617,31 +593,32 @@ fn show_visual_scene_overlay_with_source(
                         &mut term,
                         runtime,
                         &sprite_manifest,
-                        &compose_dock,
-                        &dialogue_scroll,
+                        &session.compose_dock,
+                        &session.dialogue_scroll,
                     )?;
                 }
             }
             InputEvent::KeyUp(KeyEvent { key, modifiers: _ }) => {
                 if let Some(runtime) = runtime.as_mut() {
-                    if is_stt_hold_release_key(key) && stt_state.is_running() {
-                        if let Some(session) = stt_session.take() {
-                            session.stop();
+                    if is_stt_hold_release_key(key) && session.stt_state.is_running() {
+                        if let Some(stt_session) = session.stt_session.take() {
+                            stt_session.stop();
                         }
-                        dialogue_scroll.voice_hold_active = false;
-                        runtime.mark_action_status(stt_state.mark_processing());
-                        if dialogue_scroll.voice_debug.test_mode {
+                        session.dialogue_scroll.voice_hold_active = false;
+                        runtime.mark_action_status(session.stt_state.mark_processing());
+                        if session.dialogue_scroll.voice_debug.test_mode {
                             runtime.mark_action_status("Voice test processing");
                         }
-                        dialogue_scroll
+                        session
+                            .dialogue_scroll
                             .voice_debug
-                            .sync_status(stt_state.last_status());
+                            .sync_status(session.stt_state.last_status());
                         render_runtime_with_compose_and_scroll(
                             &mut term,
                             runtime,
                             &sprite_manifest,
-                            &compose_dock,
-                            &dialogue_scroll,
+                            &session.compose_dock,
+                            &session.dialogue_scroll,
                         )?;
                     }
                 }
@@ -656,7 +633,7 @@ fn show_visual_scene_overlay_with_source(
                     let size = term.get_screen_size()?;
                     if handle_dialogue_scroll_wheel(
                         runtime,
-                        &mut dialogue_scroll,
+                        &mut session.dialogue_scroll,
                         size.cols,
                         size.rows,
                         x,
@@ -667,8 +644,8 @@ fn show_visual_scene_overlay_with_source(
                             &mut term,
                             runtime,
                             &sprite_manifest,
-                            &compose_dock,
-                            &dialogue_scroll,
+                            &session.compose_dock,
+                            &session.dialogue_scroll,
                         )?;
                         continue;
                     }
@@ -680,15 +657,15 @@ fn show_visual_scene_overlay_with_source(
                     let metrics = runtime.vn_dialogue_scroll_metrics(
                         size.cols,
                         size.rows,
-                        dialogue_scroll.offset,
+                        session.dialogue_scroll.offset,
                     );
-                    dialogue_scroll.clamp(metrics.max_scroll_offset);
+                    session.dialogue_scroll.clamp(metrics.max_scroll_offset);
                     render_runtime_with_compose_and_scroll(
                         &mut term,
                         runtime,
                         &sprite_manifest,
-                        &compose_dock,
-                        &dialogue_scroll,
+                        &session.compose_dock,
+                        &session.dialogue_scroll,
                     )?;
                 } else {
                     let error = load_error
@@ -712,15 +689,17 @@ fn show_visual_scene_overlay_with_source(
 #[cfg(test)]
 mod tests {
     use super::super::visual_compose::{
-        CodexComposeConfig, ComposeBackendConfig, codex_compose_argv, codex_output_text,
-        compose_backend_config, run_codex_compose_backend,
+        codex_compose_argv, codex_output_text, compose_backend_config, run_codex_compose_backend,
+        CodexComposeConfig, ComposeBackendConfig,
     };
+    use super::visual_voice_debug::SceneVoiceDebugState;
     use super::*;
     use gameterm_visual::{
+        VisualSceneLoadStatus, VisualStage, VisualStageDisplayable, VisualStageLayer,
+        VisualStagePlacement, VnOverlayDebugOverrides,
         VN_OVERLAY_COMPOSER_NAMEPLATE_TEXT_INSET_ROWS,
         VN_OVERLAY_DIALOGUE_NAMEPLATE_TEXT_INSET_COLS, VN_OVERLAY_NAMEPLATE_OPACITY,
-        VN_OVERLAY_PANEL_OPACITY, VisualSceneLoadStatus, VisualStage, VisualStageDisplayable,
-        VisualStageLayer, VisualStagePlacement, VnOverlayDebugOverrides,
+        VN_OVERLAY_PANEL_OPACITY,
     };
     use std::collections::HashSet;
 
@@ -1014,12 +993,10 @@ mod tests {
         let status = load_sprite_manifest_status(&path);
 
         assert!(status.warnings.is_empty());
-        assert!(
-            status
-                .sprites
-                .iter()
-                .any(|sprite| sprite.id == "project_core")
-        );
+        assert!(status
+            .sprites
+            .iter()
+            .any(|sprite| sprite.id == "project_core"));
     }
 
     #[test]
@@ -1160,12 +1137,10 @@ mod tests {
             runtime.debug_report().last_story_state_action.as_deref(),
             Some("export")
         );
-        assert!(
-            runtime
-                .render_snapshot()
-                .status
-                .starts_with("Story state exported: ")
-        );
+        assert!(runtime
+            .render_snapshot()
+            .status
+            .starts_with("Story state exported: "));
     }
 
     #[test]
@@ -1224,14 +1199,12 @@ mod tests {
 
         let report = runtime.debug_report();
         assert_eq!(report.last_story_state_action.as_deref(), Some("import"));
-        assert!(
-            report
-                .variables
-                .contains(&gameterm_visual::VisualStateEntry {
-                    key: "loaded_from_gui".to_string(),
-                    value: gameterm_visual::VisualStateValue::Bool(true),
-                })
-        );
+        assert!(report
+            .variables
+            .contains(&gameterm_visual::VisualStateEntry {
+                key: "loaded_from_gui".to_string(),
+                value: gameterm_visual::VisualStateValue::Bool(true),
+            }));
     }
 
     #[test]
