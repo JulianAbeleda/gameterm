@@ -15,10 +15,14 @@ GAMETERM_SCENE_STT_LANGUAGE=en
 GAMETERM_SCENE_STT_MAX_SECONDS=20
 GAMETERM_SCENE_STT_TIMEOUT_SECONDS=20
 GAMETERM_SCENE_STT_AUTO_SUBMIT=false
+GAMETERM_SCENE_STT_DEVICE="MacBook Pro Microphone"
 ```
 
 The default boot menu voice option builds this config in-process. The env vars
 are useful when launching from a regular terminal or overriding the model path.
+`GAMETERM_SCENE_STT_DEVICE` is optional. If omitted, GameTerm uses the system
+default input device. If set, GameTerm matches the configured microphone name
+case-insensitively and reports the available devices if it cannot find it.
 
 ## Model Setup
 
@@ -33,14 +37,37 @@ into the default cache path. Runtime does not download models automatically.
 
 ## Controls
 
-- Hold `Shift+Space`: start listening.
-- Release `Shift+Space`: stop recording and transcribe.
+- Hold `Command+Shift`: start listening.
+- Release `Command+Shift`: stop recording and transcribe.
 - `Esc` while listening: cancel the active recording.
+- `Alt+V`: show or hide Scene Voice Diagnostics.
+- `Alt+T`: toggle voice test mode.
 
 Completed transcripts land in the composer dock by default. They are editable
 before sending. Auto-submit is opt-in through
 `GAMETERM_SCENE_STT_AUTO_SUBMIT=true`; even then, submission uses the existing
 Scene compose backend boundary.
+
+Voice test mode is for checking whether the microphone and Whisper recognize
+speech. While it is enabled, hold `Command+Shift` and speak normally. The
+transcript appears in Scene Voice Diagnostics, but it is not inserted into the
+composer and is not submitted to Codex.
+
+## Diagnostics
+
+Scene Voice Diagnostics shows:
+
+- STT backend
+- selected microphone, or `system default`
+- Whisper model path
+- language
+- max recording duration
+- current status
+- last transcript
+- last error
+
+Use this before debugging Codex or VOICEVOX. It isolates the input primitive:
+microphone capture -> Whisper -> transcript.
 
 ## Command Backend
 
@@ -64,8 +91,8 @@ nonzero: STT failed
 ## Privacy
 
 GameTerm does not listen globally and does not use wake words. Recording only
-starts while the user holds `Shift+Space` in Scene Mode. The local Whisper path
-does not send microphone audio to a network service.
+starts while the user holds `Command+Shift` in Scene Mode. The local Whisper
+path does not send microphone audio to a network service.
 
 ## Not Implemented Yet
 
