@@ -35,6 +35,7 @@ scene_scripts=(
   gameterm-scene-smoke.sh
   gameterm-scene-story.sh
   gameterm-scene-verify.sh
+  gameterm-scene-vn-demo.sh
   gameterm-scene-vn-image-export.sh
   gameterm-scene-workspace.sh
 )
@@ -574,6 +575,67 @@ run_vn_asset_intake_check() {
   grep -q "Doctor summary: 0 error(s)" /tmp/gameterm-scene-vn-assets-doctor.out
 
   echo "vn asset intake: ok"
+}
+
+run_vn_config_module_check() {
+  local tmp_home
+  local scene_path
+  tmp_home="$(mktemp -d /tmp/gameterm-scene-vn-module-verify.XXXXXX)"
+  tmp_paths+=("${tmp_home}")
+  scene_path="${tmp_home}/gameterm/scenes/default.json"
+
+  "${repo_root}/ci/gameterm-scene-vn-demo.sh" \
+    install \
+    --config-home "${tmp_home}" \
+    --asset-source-root "${fixture_root}/vn-asset-source" \
+    --strict-images \
+    --force >/tmp/gameterm-scene-vn-module-install.out
+
+  grep -q "Installed VN config module" /tmp/gameterm-scene-vn-module-install.out
+  grep -q "Doctor summary: 0 error(s), 0 warning(s)" \
+    /tmp/gameterm-scene-vn-module-install.out
+  jq -e '
+    .title == "Kiki VN Config Module"
+    and .background == "vn.background.school_classroom"
+    and any(.stage.layers[]?.displayables[]?; .tag == "kiki"
+      and .sprite == "vn.character.kiki.neutral")
+    and all(.choices[]?; .policy.origin == "authored")
+  ' "${scene_path}" >/dev/null
+  jq -e '
+    any(.sprites[]; .id == "vn.character.kiki.neutral")
+    and any(.sprites[]; .id == "vn.background.school_classroom")
+  ' "${tmp_home}/gameterm/scenes/sprites.json" >/dev/null
+
+  jq '(.choices[]?.policy.origin) = "vn_script_import"' \
+    "${scene_path}" >"${tmp_home}/stale-default.json"
+  mv "${tmp_home}/stale-default.json" "${scene_path}"
+
+  assert_failing_command \
+    "expected VN module doctor to fail on stale policy origin" \
+    /tmp/gameterm-scene-vn-module-stale.out \
+    /tmp/gameterm-scene-vn-module-stale.err \
+    "${repo_root}/ci/gameterm-scene-vn-demo.sh" \
+    doctor \
+    --config-home "${tmp_home}"
+  grep -q "stale policy origin" /tmp/gameterm-scene-vn-module-stale.out
+  grep -q "vn_script_import" /tmp/gameterm-scene-vn-module-stale.out
+
+  "${repo_root}/ci/gameterm-scene-vn-demo.sh" \
+    update \
+    --config-home "${tmp_home}" \
+    --strict-images >/tmp/gameterm-scene-vn-module-update.out
+  grep -q "Migrated stale policy origins" /tmp/gameterm-scene-vn-module-update.out
+  grep -q "Doctor summary: 0 error(s), 0 warning(s)" \
+    /tmp/gameterm-scene-vn-module-update.out
+  jq -e 'all(.choices[]?; .policy.origin != "vn_script_import")' \
+    "${scene_path}" >/dev/null
+  find "${tmp_home}/gameterm/scenes/backups" \
+    -type f \
+    -name default.json \
+    -print \
+    -quit | grep -q default.json
+
+  echo "vn config module: ok"
 }
 
 run_vn_image_export_check() {
@@ -1620,6 +1682,7 @@ run_all() {
   run_author_helper_check
   run_doctor_check
   run_vn_asset_intake_check
+  run_vn_config_module_check
   run_vn_image_export_check
   run_patch_check
   run_agent_check
