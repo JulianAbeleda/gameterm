@@ -123,6 +123,7 @@ mod tests {
             overlay_rows: None,
             vn_dialogue_scroll: None,
             vn_layout_debug: None,
+            vn_voice_hold_active: false,
         }
     }
 

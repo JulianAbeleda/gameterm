@@ -146,6 +146,7 @@ enum VisualSceneOverlaySource {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct SceneDialogueScrollback {
     offset: usize,
+    voice_hold_active: bool,
 }
 
 impl SceneDialogueScrollback {
@@ -316,6 +317,7 @@ fn show_visual_scene_overlay_with_source(
         }
         while let Ok(result) = stt_rx.try_recv() {
             stt_session = None;
+            dialogue_scroll.voice_hold_active = false;
             if let Some(runtime) = runtime.as_mut() {
                 apply_stt_result(
                     runtime,
@@ -402,6 +404,7 @@ fn show_visual_scene_overlay_with_source(
                         if let Some(session) = stt_session.take() {
                             session.cancel();
                         }
+                        dialogue_scroll.voice_hold_active = false;
                         runtime.mark_action_status(stt_state.mark_canceling());
                         render_runtime_with_compose_and_scroll(
                             &mut term,
@@ -428,6 +431,7 @@ fn show_visual_scene_overlay_with_source(
                             runtime.mark_action_status(stt_state.mark_started());
                             stt_session =
                                 Some(spawn_stt_backend(stt_config.clone(), stt_tx.clone()));
+                            dialogue_scroll.voice_hold_active = true;
                         }
                         render_runtime_with_compose_and_scroll(
                             &mut term,
@@ -668,6 +672,7 @@ fn show_visual_scene_overlay_with_source(
                         if let Some(session) = stt_session.take() {
                             session.stop();
                         }
+                        dialogue_scroll.voice_hold_active = false;
                         runtime.mark_action_status(stt_state.mark_processing());
                         render_runtime_with_compose_and_scroll(
                             &mut term,
@@ -2318,6 +2323,7 @@ fn render_runtime_with_compose_and_scroll(
     snapshot.overlay_rows = Some(size.rows);
     snapshot.vn_dialogue_scroll =
         Some(runtime.vn_dialogue_scroll_metrics(size.cols, size.rows, dialogue_scroll.offset));
+    snapshot.vn_voice_hold_active = dialogue_scroll.voice_hold_active;
     term.set_metadata(
         "gameterm_visual_snapshot",
         Value::String(serde_json::to_string(&snapshot)?),
@@ -2332,11 +2338,14 @@ fn render_runtime_with_compose_and_scroll(
         frame.push_str(&sprite_manifest.warnings.join("; "));
         frame.push_str("\r\n\r\n");
     }
-    frame.push_str(&runtime.render_text_frame_with_dialogue_scroll(
-        size.cols,
-        size.rows,
-        dialogue_scroll.offset,
-    ));
+    frame.push_str(
+        &runtime.render_text_frame_with_dialogue_scroll_and_voice_hold(
+            size.cols,
+            size.rows,
+            dialogue_scroll.offset,
+            dialogue_scroll.voice_hold_active,
+        ),
+    );
     if !snapshot.stage.is_empty() {
         let layout = match snapshot.vn_layout_debug.as_ref() {
             Some(overrides) => vn_overlay_layout_with_overrides(
@@ -3125,7 +3134,10 @@ mod tests {
 
     #[test]
     fn scene_dialogue_scrollback_moves_within_bounds() {
-        let mut scroll = SceneDialogueScrollback { offset: 1 };
+        let mut scroll = SceneDialogueScrollback {
+            offset: 1,
+            ..SceneDialogueScrollback::default()
+        };
         let metrics = VnDialogueScrollMetrics {
             total_lines: 20,
             visible_rows: 5,

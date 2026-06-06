@@ -96,6 +96,8 @@ pub const VN_OVERLAY_DIALOGUE_NAMEPLATE_HEIGHT_ROWS: usize = VN_OVERLAY_NAMEPLAT
 pub const VN_OVERLAY_COMPOSER_NAMEPLATE_HEIGHT_ROWS: usize = VN_OVERLAY_NAMEPLATE_HEIGHT_ROWS;
 pub const VN_OVERLAY_PANEL_OPACITY: f32 = 0.4627;
 pub const VN_OVERLAY_NAMEPLATE_OPACITY: f32 = 0.58;
+pub const VN_OVERLAY_VOICE_INDICATOR_WIDTH_COLS: usize = 7;
+pub const VN_OVERLAY_VOICE_INDICATOR_HEIGHT_ROWS: usize = 2;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -233,12 +235,10 @@ impl VnOverlayDebugOverrides {
                 adjust_usize(&mut self.composer_text_inset_rows, delta, 0, 12);
             }
             17 => {
-                self.dialogue_panel_opacity =
-                    adjust_opacity(self.dialogue_panel_opacity, delta);
+                self.dialogue_panel_opacity = adjust_opacity(self.dialogue_panel_opacity, delta);
             }
             18 => {
-                self.composer_panel_opacity =
-                    adjust_opacity(self.composer_panel_opacity, delta);
+                self.composer_panel_opacity = adjust_opacity(self.composer_panel_opacity, delta);
             }
             19 => {
                 self.dialogue_nameplate_opacity =
@@ -521,6 +521,8 @@ pub struct VnOverlayLayout {
     pub composer_text_inset_cols: usize,
     pub dialogue_text_row: usize,
     pub composer_text_row: Option<usize>,
+    pub voice_hold_indicator: VnOverlayRect,
+    pub voice_hold_indicator_text: VnOverlayRect,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -716,6 +718,19 @@ fn vn_overlay_layout_inner(
             composer_nameplate_text_inset_rows,
         )
     });
+    let voice_hold_indicator = vn_overlay_voice_hold_indicator_rect(cols, rows);
+    let voice_hold_indicator_text = VnOverlayRect {
+        col: voice_hold_indicator
+            .col
+            .saturating_add(1)
+            .min(cols.saturating_sub(1)),
+        row: voice_hold_indicator
+            .row
+            .saturating_add(voice_hold_indicator.height.saturating_sub(1))
+            .min(rows.saturating_sub(1)),
+        width: voice_hold_indicator.width.saturating_sub(2).max(1),
+        height: 1,
+    };
 
     VnOverlayLayout {
         fullscreen,
@@ -737,6 +752,8 @@ fn vn_overlay_layout_inner(
         composer_nameplate_text,
         dialogue_text_inset_cols,
         composer_text_inset_cols,
+        voice_hold_indicator,
+        voice_hold_indicator_text,
     }
 }
 
@@ -764,6 +781,20 @@ fn vn_overlay_nameplate_rect(
     VnOverlayRect {
         col: panel.col.saturating_add(inset),
         row: panel.row.saturating_sub(row_offset),
+        width,
+        height,
+    }
+}
+
+fn vn_overlay_voice_hold_indicator_rect(cols: usize, rows: usize) -> VnOverlayRect {
+    let cols = cols.max(1);
+    let rows = rows.max(1);
+    let width = VN_OVERLAY_VOICE_INDICATOR_WIDTH_COLS.min(cols).max(1);
+    let height = VN_OVERLAY_VOICE_INDICATOR_HEIGHT_ROWS.min(rows).max(1);
+    let bottom_margin = usize::from(rows > height);
+    VnOverlayRect {
+        col: usize::from(cols > 1),
+        row: rows.saturating_sub(height.saturating_add(bottom_margin)),
         width,
         height,
     }
@@ -1275,6 +1306,8 @@ pub struct VisualRenderSnapshot {
     pub vn_dialogue_scroll: Option<VnDialogueScrollMetrics>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vn_layout_debug: Option<VnOverlayDebugOverrides>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub vn_voice_hold_active: bool,
 }
 
 impl VisualRenderSnapshot {
@@ -2590,11 +2623,30 @@ impl SceneRuntime {
         rows: usize,
         dialogue_scroll_offset: usize,
     ) -> String {
+        self.render_text_frame_with_dialogue_scroll_and_voice_hold(
+            cols,
+            rows,
+            dialogue_scroll_offset,
+            false,
+        )
+    }
+
+    pub fn render_text_frame_with_dialogue_scroll_and_voice_hold(
+        &self,
+        cols: usize,
+        rows: usize,
+        dialogue_scroll_offset: usize,
+        voice_hold_active: bool,
+    ) -> String {
         match self.view {
-            VisualView::Scene => self.render_scene(cols, rows, dialogue_scroll_offset),
+            VisualView::Scene => {
+                self.render_scene(cols, rows, dialogue_scroll_offset, voice_hold_active)
+            }
             VisualView::CommandSelection => self.render_command_selection(cols, rows),
             VisualView::TileDebugger => self.render_debugger(cols, rows),
-            VisualView::VnLayoutDebugger => self.render_scene(cols, rows, dialogue_scroll_offset),
+            VisualView::VnLayoutDebugger => {
+                self.render_scene(cols, rows, dialogue_scroll_offset, voice_hold_active)
+            }
         }
     }
 
@@ -2725,6 +2777,7 @@ impl SceneRuntime {
             overlay_rows: None,
             vn_dialogue_scroll: None,
             vn_layout_debug: self.vn_layout_debug.clone(),
+            vn_voice_hold_active: false,
             choices: self
                 .scene
                 .choices
@@ -2812,9 +2865,15 @@ impl SceneRuntime {
         }
     }
 
-    fn render_scene(&self, cols: usize, rows: usize, dialogue_scroll_offset: usize) -> String {
+    fn render_scene(
+        &self,
+        cols: usize,
+        rows: usize,
+        dialogue_scroll_offset: usize,
+        voice_hold_active: bool,
+    ) -> String {
         if !self.scene.stage.is_empty() {
-            return self.render_staged_scene(cols, rows, dialogue_scroll_offset);
+            return self.render_staged_scene(cols, rows, dialogue_scroll_offset, voice_hold_active);
         }
 
         let mut out = String::new();
@@ -3044,6 +3103,7 @@ impl SceneRuntime {
         cols: usize,
         rows: usize,
         dialogue_scroll_offset: usize,
+        voice_hold_active: bool,
     ) -> String {
         let cols = cols.max(1);
         let rows = rows.max(1);
@@ -3158,6 +3218,16 @@ impl SceneRuntime {
                 dialogue_col,
                 dialogue_width,
                 &line,
+            );
+        }
+        if !voice_hold_active {
+            place_vn_overlay_text(
+                &mut screen,
+                cols,
+                layout.voice_hold_indicator_text.row,
+                layout.voice_hold_indicator_text.col,
+                layout.voice_hold_indicator_text.width,
+                "[off]",
             );
         }
         let frame = screen.join("\r\n") + "\r\n";
@@ -5795,6 +5865,22 @@ mod tests {
         assert!(!frame.contains("placeholder narrator line"));
         assert!(!frame.contains("Ask about Scene Mode."));
         assert!(!frame.contains("End the demo."));
+    }
+
+    #[test]
+    fn staged_scene_voice_hold_indicator_renders_off_label_only_when_idle() {
+        let runtime = SceneRuntime::new(staged_compose_scene()).unwrap();
+        let idle = runtime.render_text_frame_with_dialogue_scroll_and_voice_hold(100, 30, 0, false);
+        let active =
+            runtime.render_text_frame_with_dialogue_scroll_and_voice_hold(100, 30, 0, true);
+        let layout = vn_overlay_layout(100, 30, "Narrator", "Composer");
+        let row = idle
+            .lines()
+            .nth(layout.voice_hold_indicator_text.row)
+            .unwrap();
+
+        assert!(row.contains("[off]"));
+        assert!(!active.contains("[off]"));
     }
 
     #[test]

@@ -32,6 +32,10 @@ const VN_STAGE_CHARACTER_HEIGHT_RATIO: f32 = 0.78;
 const VN_STAGE_CHARACTER_TARGET_WIDTH_RATIO: f32 = 0.34;
 const VN_DIALOGUE_SCROLLBAR_TRACK_COLOR: LinearRgba = LinearRgba(0.86, 0.88, 0.94, 0.22);
 const VN_DIALOGUE_SCROLLBAR_THUMB_COLOR: LinearRgba = LinearRgba(0.96, 0.97, 1.0, 0.74);
+const VN_VOICE_INDICATOR_OFF_FILL: LinearRgba = LinearRgba(0.0, 0.0, 0.0, 0.78);
+const VN_VOICE_INDICATOR_OFF_BORDER: LinearRgba = LinearRgba(0.9, 0.9, 0.9, 0.22);
+const VN_VOICE_INDICATOR_ON_FILL: LinearRgba = LinearRgba(0.08, 0.72, 0.25, 0.88);
+const VN_VOICE_INDICATOR_ON_BORDER: LinearRgba = LinearRgba(0.7, 1.0, 0.78, 0.36);
 static VN_PANEL_TEXTURE_RENDERING: LazyLock<bool> = LazyLock::new(|| {
     std::env::var("GAMETERM_SCENE_VN_PANEL_TEXTURE")
         .map(|value| {
@@ -106,6 +110,20 @@ impl VnPanelStyle {
         Self {
             fill: with_alpha(VN_NAMEPLATE_FILL, opacity),
             border: with_scaled_alpha(VN_NAMEPLATE_BORDER, VN_OVERLAY_NAMEPLATE_OPACITY, opacity),
+            border_width: VN_PANEL_BORDER_WIDTH_PX,
+            radius: VN_COMPOSER_NAMEPLATE_RADIUS_PX,
+        }
+    }
+
+    fn voice_indicator(active: bool) -> Self {
+        let (fill, border) = if active {
+            (VN_VOICE_INDICATOR_ON_FILL, VN_VOICE_INDICATOR_ON_BORDER)
+        } else {
+            (VN_VOICE_INDICATOR_OFF_FILL, VN_VOICE_INDICATOR_OFF_BORDER)
+        };
+        Self {
+            fill,
+            border,
             border_width: VN_PANEL_BORDER_WIDTH_PX,
             radius: VN_COMPOSER_NAMEPLATE_RADIUS_PX,
         }
@@ -266,6 +284,24 @@ impl TermWindow {
         {
             self.populate_vn_panel_surface(layers, 1, rect, cell_width, params, style, hsv)?;
         }
+        let voice_hold_active = params
+            .visual_snapshot
+            .map(|snapshot| snapshot.vn_voice_hold_active)
+            .unwrap_or(false);
+        self.populate_vn_panel_surface(
+            layers,
+            1,
+            vn_overlay_rect_to_pixels(
+                layout.voice_hold_indicator,
+                stage_rect,
+                cell_width,
+                cell_height,
+            ),
+            cell_width,
+            params,
+            VnPanelStyle::voice_indicator(voice_hold_active),
+            hsv,
+        )?;
         if let Some((track, thumb)) = params.visual_snapshot.and_then(|snapshot| {
             vn_dialogue_scrollbar_rects(&layout, snapshot, stage_rect, cell_width, cell_height)
         }) {
@@ -1513,10 +1549,8 @@ mod tests {
     #[test]
     fn rounded_rect_primitive_derives_inner_shape_from_style() {
         let rect = euclid::rect(4.0, 6.0, 120.0, 48.0);
-        let primitive = RoundedRectPrimitive::new(
-            rect,
-            VnPanelStyle::dialogue_panel(VN_OVERLAY_PANEL_OPACITY),
-        );
+        let primitive =
+            RoundedRectPrimitive::new(rect, VnPanelStyle::dialogue_panel(VN_OVERLAY_PANEL_OPACITY));
 
         assert_eq!(primitive.rect, rect);
         assert_eq!(primitive.fill, VN_PANEL_FILL);
@@ -1540,12 +1574,23 @@ mod tests {
     }
 
     #[test]
+    fn voice_indicator_style_switches_between_off_and_active() {
+        let off = VnPanelStyle::voice_indicator(false);
+        let active = VnPanelStyle::voice_indicator(true);
+
+        assert_eq!(off.fill, VN_VOICE_INDICATOR_OFF_FILL);
+        assert_eq!(off.border, VN_VOICE_INDICATOR_OFF_BORDER);
+        assert_eq!(active.fill, VN_VOICE_INDICATOR_ON_FILL);
+        assert_eq!(active.border, VN_VOICE_INDICATOR_ON_BORDER);
+        assert!(active.fill.1 > active.fill.0);
+    }
+
+    #[test]
     fn vn_panel_styles_use_extracted_procedural_values() {
         let panel = VnPanelStyle::dialogue_panel(VN_OVERLAY_PANEL_OPACITY);
         let composer = VnPanelStyle::composer_panel(VN_OVERLAY_PANEL_OPACITY);
         let nameplate = VnPanelStyle::dialogue_nameplate(VN_OVERLAY_NAMEPLATE_OPACITY);
-        let composer_nameplate =
-            VnPanelStyle::composer_nameplate(VN_OVERLAY_NAMEPLATE_OPACITY);
+        let composer_nameplate = VnPanelStyle::composer_nameplate(VN_OVERLAY_NAMEPLATE_OPACITY);
 
         assert_eq!(panel.fill, LinearRgba(0.102, 0.1137, 0.1333, 0.4627));
         assert_eq!(panel.border, LinearRgba(0.1608, 0.1725, 0.1961, 0.3608));
