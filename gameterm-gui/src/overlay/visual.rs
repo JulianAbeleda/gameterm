@@ -8,9 +8,8 @@ use gameterm_visual::{
     truncate_to_screen, vn_overlay_layout, vn_overlay_layout_with_overrides, RunCommandTarget,
     SceneRuntime, VisualActionRequest, VisualInput, VisualMode, VisualModeOutcome,
     VisualRenderSnapshot, VisualResolvedSprite, VisualScene, VisualSceneDialoguePatch,
-    VisualSceneLoadStatus, VisualScenePatch, VisualSceneSource, VisualSpriteManifest,
-    VisualSpriteManifestStatus, VisualStoryState, VisualView, VnDialogueScrollMetrics,
-    VnOverlayDebugOverrides, VnOverlayRect,
+    VisualScenePatch, VisualSceneSource, VisualSpriteManifestStatus, VisualStoryState, VisualView,
+    VnDialogueScrollMetrics, VnOverlayRect,
 };
 use mux::domain::SplitSource;
 use mux::tab::{SplitDirection, SplitRequest, SplitSize};
@@ -18,7 +17,6 @@ use mux::termwiztermtab::TermWizTerminal;
 use mux::{Mux, MuxNotification};
 use portable_pty::CommandBuilder;
 use serde::Deserialize;
-use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -30,7 +28,6 @@ use termwiz::surface::Change;
 use termwiz::terminal::Terminal;
 use window::{Window, WindowOps};
 
-const VN_OVERLAY_LAYOUT_CONFIG_FILE: &str = "vn-overlay-layout.json";
 const KIKI_STAGE_TAG: &str = "kiki";
 const KIKI_BASE_SPRITE: &str = "vn.character.kiki.neutral";
 const KIKI_BREATH_FRAME_PREFIX: &str = "vn.character.kiki.breath.";
@@ -45,6 +42,8 @@ const KIKI_BLINK_INTERVAL_MS: u128 = 4_200;
 mod visual_compose_dock;
 #[path = "visual_dialogue_scroll.rs"]
 mod visual_dialogue_scroll;
+#[path = "visual_scene_files.rs"]
+mod visual_scene_files;
 #[path = "visual_voice_debug.rs"]
 mod visual_voice_debug;
 
@@ -64,6 +63,8 @@ use visual_dialogue_scroll::{
     apply_dialogue_scroll_key, apply_dialogue_scroll_wheel, handle_dialogue_scroll_key,
     handle_dialogue_scroll_wheel, SceneDialogueScrollback,
 };
+pub(crate) use visual_scene_files::SceneOverlayLaunchOptions;
+use visual_scene_files::*;
 use visual_voice_debug::{
     handle_voice_debug_menu_key, is_voice_debug_menu_open_key, SceneVoiceDebugState,
     VoiceDebugMenuEffect,
@@ -130,33 +131,6 @@ pub fn show_generated_visual_scene_overlay(
         },
         SceneOverlayLaunchOptions::default(),
     )
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct SceneOverlayLaunchOptions {
-    tts_config: Option<SceneTtsConfig>,
-    stt_config: Option<SceneSttConfig>,
-}
-
-impl SceneOverlayLaunchOptions {
-    pub(crate) fn with_voice_config(
-        tts_config: SceneTtsConfig,
-        stt_config: SceneSttConfig,
-    ) -> Self {
-        Self {
-            tts_config: Some(tts_config),
-            stt_config: Some(stt_config),
-        }
-    }
-}
-
-enum VisualSceneOverlaySource {
-    Default,
-    Generated {
-        scene: VisualScene,
-        action_base_dir: PathBuf,
-        source_label: String,
-    },
 }
 
 fn show_visual_scene_overlay_with_source(
@@ -861,137 +835,6 @@ impl Drop for ScenePatchNotificationSubscription {
     }
 }
 
-fn reload_active_scene(
-    term: &mut TermWizTerminal,
-    scene_path: &PathBuf,
-    sprite_manifest_path: &PathBuf,
-    reload_count: &mut u64,
-    runtime: &mut Option<SceneRuntime>,
-    sprite_manifest: &mut VisualSpriteManifestStatus,
-    load_error: &mut Option<String>,
-) -> anyhow::Result<()> {
-    *reload_count = reload_count.saturating_add(1);
-    *sprite_manifest = load_sprite_manifest_status(sprite_manifest_path);
-    match load_scene(scene_path, *reload_count) {
-        Ok((scene, source)) => {
-            if let Some(runtime) = runtime.as_mut() {
-                runtime.replace_scene_preserving_state(scene, source)?;
-                render_runtime(term, runtime, sprite_manifest)?;
-            } else {
-                let mut loaded = SceneRuntime::new_with_source(scene, source)?;
-                apply_configured_vn_overlay_layout(&mut loaded);
-                render_runtime(term, &loaded, sprite_manifest)?;
-                *runtime = Some(loaded);
-            }
-            *load_error = None;
-        }
-        Err(err) => {
-            let error = err.to_string();
-            if let Some(runtime) = runtime.as_mut() {
-                runtime.mark_reload_failed(*reload_count, error);
-                render_runtime(term, runtime, sprite_manifest)?;
-            } else {
-                let source = VisualSceneSource::invalid(
-                    scene_path.display().to_string(),
-                    *reload_count,
-                    error.clone(),
-                );
-                render_error(term, &source)?;
-                *load_error = Some(error);
-            }
-        }
-    }
-    Ok(())
-}
-
-fn reload_generated_scene(
-    term: &mut TermWizTerminal,
-    scene: VisualScene,
-    source_label: &str,
-    sprite_manifest_path: &PathBuf,
-    action_base_dir: &Path,
-    reload_count: &mut u64,
-    runtime: &mut Option<SceneRuntime>,
-    sprite_manifest: &mut VisualSpriteManifestStatus,
-    load_error: &mut Option<String>,
-) -> anyhow::Result<()> {
-    *reload_count = reload_count.saturating_add(1);
-    *sprite_manifest = load_sprite_manifest_status(sprite_manifest_path);
-    let source = VisualSceneSource::new(
-        source_label.to_string(),
-        VisualSceneLoadStatus::Loaded,
-        *reload_count,
-    );
-    if let Some(runtime) = runtime.as_mut() {
-        runtime.replace_scene_preserving_state(scene, source)?;
-        render_runtime(term, runtime, sprite_manifest)?;
-    } else {
-        let mut loaded =
-            SceneRuntime::new_with_source_and_action_base_dir(scene, source, action_base_dir)?;
-        apply_configured_vn_overlay_layout(&mut loaded);
-        render_runtime(term, &loaded, sprite_manifest)?;
-        *runtime = Some(loaded);
-    }
-    *load_error = None;
-    Ok(())
-}
-
-#[derive(Debug, Clone)]
-struct SceneFileWatcher {
-    enabled: bool,
-    scene_stamp: Option<SystemTime>,
-    sprite_stamp: Option<SystemTime>,
-    scene_dir_stamp: Option<SystemTime>,
-}
-
-impl SceneFileWatcher {
-    fn disabled() -> Self {
-        Self {
-            enabled: false,
-            scene_stamp: None,
-            sprite_stamp: None,
-            scene_dir_stamp: None,
-        }
-    }
-
-    fn from_env(scene_path: &Path, sprite_path: &Path) -> Self {
-        if std::env::var("GAMETERM_SCENE_AUTO_RELOAD").ok().as_deref() != Some("1") {
-            return Self::disabled();
-        }
-        Self::enabled(scene_path, sprite_path)
-    }
-
-    fn enabled(scene_path: &Path, sprite_path: &Path) -> Self {
-        let mut watcher = Self {
-            enabled: true,
-            scene_stamp: None,
-            sprite_stamp: None,
-            scene_dir_stamp: None,
-        };
-        watcher.refresh(scene_path, sprite_path);
-        watcher
-    }
-
-    fn refresh(&mut self, scene_path: &Path, sprite_path: &Path) {
-        self.scene_stamp = modified_time(scene_path);
-        self.sprite_stamp = modified_time(sprite_path);
-        self.scene_dir_stamp = scene_path.parent().and_then(modified_time);
-    }
-
-    fn changed(&self, scene_path: &Path, sprite_path: &Path) -> bool {
-        self.enabled
-            && (self.scene_stamp != modified_time(scene_path)
-                || self.sprite_stamp != modified_time(sprite_path)
-                || self.scene_dir_stamp != scene_path.parent().and_then(modified_time))
-    }
-}
-
-fn modified_time(path: &Path) -> Option<SystemTime> {
-    fs::metadata(path)
-        .and_then(|metadata| metadata.modified())
-        .ok()
-}
-
 #[derive(Debug, Clone)]
 struct ScenePatchInbox {
     path: Option<PathBuf>,
@@ -1250,330 +1093,6 @@ async fn spawn_run_command(
             Ok(pane.pane_id())
         }
     }
-}
-
-fn initial_scene_state(
-    term: &mut TermWizTerminal,
-    scene_path: &PathBuf,
-    sprite_manifest_path: &PathBuf,
-    reload_count: u64,
-) -> anyhow::Result<(
-    Option<SceneRuntime>,
-    VisualSpriteManifestStatus,
-    Option<String>,
-)> {
-    let sprite_manifest = load_sprite_manifest_status(sprite_manifest_path);
-    match load_scene(scene_path, reload_count) {
-        Ok((scene, source)) => {
-            let mut runtime = SceneRuntime::new_with_source(scene, source)?;
-            apply_configured_vn_overlay_layout(&mut runtime);
-            render_runtime(term, &runtime, &sprite_manifest)?;
-            Ok((Some(runtime), sprite_manifest, None))
-        }
-        Err(err) => {
-            let error = err.to_string();
-            let source = VisualSceneSource::invalid(
-                scene_path.display().to_string(),
-                reload_count,
-                error.clone(),
-            );
-            render_error(term, &source)?;
-            Ok((None, sprite_manifest, Some(error)))
-        }
-    }
-}
-
-fn initial_generated_scene_state(
-    term: &mut TermWizTerminal,
-    scene: VisualScene,
-    source_label: String,
-    sprite_manifest_path: &PathBuf,
-    action_base_dir: PathBuf,
-    reload_count: u64,
-) -> anyhow::Result<(
-    Option<SceneRuntime>,
-    VisualSpriteManifestStatus,
-    Option<String>,
-)> {
-    let sprite_manifest = load_sprite_manifest_status(sprite_manifest_path);
-    let source = VisualSceneSource::new(source_label, VisualSceneLoadStatus::Loaded, reload_count);
-    match SceneRuntime::new_with_source_and_action_base_dir(scene, source.clone(), action_base_dir)
-    {
-        Ok(mut runtime) => {
-            apply_configured_vn_overlay_layout(&mut runtime);
-            render_runtime(term, &runtime, &sprite_manifest)?;
-            Ok((Some(runtime), sprite_manifest, None))
-        }
-        Err(err) => {
-            let error = err.to_string();
-            let source = VisualSceneSource::invalid(source.scene_path, reload_count, error.clone());
-            render_error(term, &source)?;
-            Ok((None, sprite_manifest, Some(error)))
-        }
-    }
-}
-
-const BUNDLED_SCENE_JSON: &str = include_str!("../../../docs/examples/gameterm-scene-default.json");
-
-fn load_scene(
-    scene_path: &PathBuf,
-    reload_count: u64,
-) -> anyhow::Result<(VisualScene, VisualSceneSource)> {
-    if scene_path.exists() {
-        let scene = VisualScene::load_from_path(scene_path)?;
-        Ok((
-            scene,
-            VisualSceneSource::new(
-                scene_path.display().to_string(),
-                VisualSceneLoadStatus::Loaded,
-                reload_count,
-            ),
-        ))
-    } else {
-        let scene = VisualScene::from_json(BUNDLED_SCENE_JSON)
-            .context("load bundled Scene Mode default")?;
-        Ok((
-            scene,
-            VisualSceneSource::new(
-                "bundled default",
-                VisualSceneLoadStatus::Bundled,
-                reload_count,
-            ),
-        ))
-    }
-}
-
-fn load_scene_required(
-    scene_path: &Path,
-    reload_count: u64,
-) -> anyhow::Result<(VisualScene, VisualSceneSource)> {
-    let scene = VisualScene::load_from_path(scene_path)?;
-    Ok((
-        scene,
-        VisualSceneSource::new(
-            scene_path.display().to_string(),
-            VisualSceneLoadStatus::Loaded,
-            reload_count,
-        ),
-    ))
-}
-
-fn resolve_scene_target(current_scene_path: &Path, target: &str) -> PathBuf {
-    let raw_target = PathBuf::from(target);
-    if raw_target.is_absolute() {
-        return raw_target;
-    }
-
-    current_scene_path
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .join(raw_target)
-}
-
-fn default_scene_path() -> PathBuf {
-    default_scene_dir().join("default.json")
-}
-
-fn default_sprite_manifest_path() -> PathBuf {
-    default_scene_dir().join("sprites.json")
-}
-
-fn default_vn_overlay_layout_config_path() -> PathBuf {
-    default_scene_dir().join(VN_OVERLAY_LAYOUT_CONFIG_FILE)
-}
-
-fn default_scene_dir() -> PathBuf {
-    let config_home = config::CONFIG_DIRS
-        .first()
-        .cloned()
-        .unwrap_or_else(|| config::HOME_DIR.join(".config").join("gameterm"));
-    config_home.join("scenes")
-}
-
-fn apply_configured_vn_overlay_layout(runtime: &mut SceneRuntime) {
-    if let Some(overrides) = load_vn_overlay_layout_config() {
-        runtime.set_vn_layout_debug_overrides(overrides);
-    }
-}
-
-fn load_vn_overlay_layout_config() -> Option<VnOverlayDebugOverrides> {
-    load_vn_overlay_layout_config_from_path(&default_vn_overlay_layout_config_path())
-}
-
-fn load_vn_overlay_layout_config_from_path(path: &Path) -> Option<VnOverlayDebugOverrides> {
-    let data = match fs::read_to_string(&path) {
-        Ok(data) => data,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return None,
-        Err(err) => {
-            log::warn!(
-                "failed to read VN overlay layout config {}: {err}",
-                path.display()
-            );
-            return None;
-        }
-    };
-    match serde_json::from_str::<VnOverlayDebugOverrides>(&data) {
-        Ok(mut overrides) => {
-            overrides.editing_buffer = None;
-            Some(overrides)
-        }
-        Err(err) => {
-            log::warn!(
-                "failed to parse VN overlay layout config {}: {err}",
-                path.display()
-            );
-            None
-        }
-    }
-}
-
-fn persistable_vn_overlay_layout(overrides: &VnOverlayDebugOverrides) -> VnOverlayDebugOverrides {
-    let mut overrides = overrides.clone();
-    overrides.editing_buffer = None;
-    overrides
-}
-
-fn save_vn_overlay_layout_config(overrides: &VnOverlayDebugOverrides) -> anyhow::Result<()> {
-    save_vn_overlay_layout_config_to_path(&default_vn_overlay_layout_config_path(), overrides)
-}
-
-fn save_vn_overlay_layout_config_to_path(
-    path: &Path,
-    overrides: &VnOverlayDebugOverrides,
-) -> anyhow::Result<()> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let overrides = persistable_vn_overlay_layout(overrides);
-    fs::write(path, serde_json::to_string_pretty(&overrides)?)?;
-    Ok(())
-}
-
-fn persist_vn_overlay_layout_if_changed(
-    before: Option<VnOverlayDebugOverrides>,
-    runtime: &SceneRuntime,
-) {
-    let after = runtime
-        .vn_layout_debug_overrides()
-        .map(persistable_vn_overlay_layout);
-    if after == before {
-        return;
-    }
-    if let Some(after) = after {
-        if let Err(err) = save_vn_overlay_layout_config(&after) {
-            log::warn!("failed to save VN overlay layout config: {err}");
-        }
-    }
-}
-
-fn load_sprite_manifest_status(path: &PathBuf) -> VisualSpriteManifestStatus {
-    if !path.exists() {
-        return bundled_sprite_manifest_status(path);
-    }
-
-    match VisualSpriteManifest::load_from_path(path) {
-        Ok(manifest) => {
-            let mut status = manifest.resolve_against(path);
-            for sprite in &status.sprites {
-                if let Err(err) = std::fs::metadata(&sprite.path) {
-                    status.warnings.push(format!(
-                        "sprite `{}` could not read {}: {}",
-                        sprite.id, sprite.path, err
-                    ));
-                }
-            }
-            status
-        }
-        Err(err) => VisualSpriteManifestStatus {
-            manifest_path: Some(path.display().to_string()),
-            sprites: Vec::new(),
-            warnings: vec![err.to_string()],
-        },
-    }
-}
-
-fn bundled_sprite_manifest_status(user_path: &PathBuf) -> VisualSpriteManifestStatus {
-    let mut warnings = Vec::new();
-    let sprite_ids = match bundled_scene_sprite_ids() {
-        Ok(ids) => ids,
-        Err(err) => {
-            warnings.push(format!(
-                "bundled sprite ids could not be derived from bundled scene: {err}"
-            ));
-            Vec::new()
-        }
-    };
-    let sprites = sprite_ids
-        .into_iter()
-        .map(|id| {
-            let sprite_path = bundled_sprite_asset_path(&id);
-            if let Err(err) = std::fs::metadata(&sprite_path) {
-                warnings.push(format!(
-                    "bundled sprite asset `{}` could not read {}: {}",
-                    id,
-                    sprite_path.display(),
-                    err
-                ));
-            }
-            VisualResolvedSprite {
-                id,
-                path: sprite_path.display().to_string(),
-            }
-        })
-        .collect();
-
-    VisualSpriteManifestStatus {
-        manifest_path: Some(format!(
-            "bundled defaults because {} was not found",
-            user_path.display()
-        )),
-        sprites,
-        warnings,
-    }
-}
-
-fn bundled_sprite_asset_path(sprite_id: &str) -> PathBuf {
-    let file_name = match sprite_id {
-        "workspace-map" => "workspace-map.png",
-        "project_core" => "project-core.png",
-        "task_tile" => "task-tile.png",
-        "agent_idle" => "agent-idle.png",
-        _ => "terminal.png",
-    };
-    let asset_dir = if file_name == "terminal.png" {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .map(|root| root.join("assets").join("icon"))
-    } else {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .map(|root| root.join("assets").join("gameterm-scene"))
-    };
-
-    asset_dir.map(|dir| dir.join(file_name)).unwrap_or_else(|| {
-        if file_name == "terminal.png" {
-            PathBuf::from("assets").join("icon").join(file_name)
-        } else {
-            PathBuf::from("assets")
-                .join("gameterm-scene")
-                .join(file_name)
-        }
-    })
-}
-
-fn bundled_scene_sprite_ids() -> anyhow::Result<Vec<String>> {
-    let scene = VisualScene::from_json(BUNDLED_SCENE_JSON).context("parse bundled scene")?;
-    let mut seen = HashSet::new();
-    let mut ids = Vec::new();
-    if seen.insert(scene.background.clone()) {
-        ids.push(scene.background);
-    }
-    for entity in scene.entities {
-        if seen.insert(entity.sprite.clone()) {
-            ids.push(entity.sprite);
-        }
-    }
-    Ok(ids)
 }
 
 fn visual_input_from_key(key: KeyCode) -> VisualInput {
@@ -2325,10 +1844,12 @@ mod tests {
     use super::*;
     use gameterm_visual::{
         VisualStage, VisualStageDisplayable, VisualStageLayer, VisualStagePlacement,
+        VisualSceneLoadStatus, VnOverlayDebugOverrides,
         VN_OVERLAY_COMPOSER_NAMEPLATE_TEXT_INSET_ROWS,
         VN_OVERLAY_DIALOGUE_NAMEPLATE_TEXT_INSET_COLS, VN_OVERLAY_NAMEPLATE_OPACITY,
         VN_OVERLAY_PANEL_OPACITY,
     };
+    use std::collections::HashSet;
 
     fn scene_fixture_path(name: &str) -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
