@@ -1,10 +1,12 @@
 use gameterm_dynamic::Value;
-use gameterm_term::color::ColorAttribute;
 use gameterm_visual::{
     truncate_to_screen, vn_overlay_layout, vn_overlay_layout_with_overrides, SceneRuntime,
-    VisualSceneSource, VisualSpriteManifestStatus, VisualView, VnOverlayRect,
+    VisualInteractiveDebugMenu, VisualSceneSource, VisualSpriteManifestStatus, VisualView,
+    VnOverlayRect,
 };
 use mux::termwiztermtab::TermWizTerminal;
+use termwiz::cell::{AttributeChange, CellAttributes};
+use termwiz::color::{ColorAttribute, SrgbaTuple};
 use termwiz::surface::{Change, CursorVisibility, Position};
 use termwiz::terminal::Terminal;
 
@@ -130,15 +132,29 @@ pub(super) fn render_runtime_with_compose_and_scroll(
         "gameterm_visual_sprites",
         Value::String(serde_json::to_string(sprite_manifest)?),
     );
-    term.render(&[
+    let mut changes = vec![
         Change::CursorPosition {
             x: Position::Absolute(0),
             y: Position::Absolute(0),
         },
         Change::ClearScreen(ColorAttribute::Default),
         Change::CursorVisibility(CursorVisibility::Hidden),
-        Change::Text(truncate_to_screen(frame, size.cols, size.rows)),
-    ])?;
+    ];
+    if runtime.view() == VisualView::VnLayoutDebugger {
+        changes.push(
+            AttributeChange::Foreground(ColorAttribute::TrueColorWithDefaultFallback(SrgbaTuple(
+                0.72, 0.42, 1.0, 1.0,
+            )))
+            .into(),
+        );
+    }
+    changes.push(Change::Text(truncate_to_screen(
+        frame, size.cols, size.rows,
+    )));
+    if runtime.view() == VisualView::VnLayoutDebugger {
+        changes.push(Change::AllAttributes(CellAttributes::default()));
+    }
+    term.render(&changes)?;
     term.flush()?;
     Ok(())
 }
@@ -153,14 +169,30 @@ pub(super) fn apply_voice_debug_frame(
     if runtime.view() != VisualView::VnLayoutDebugger {
         return frame;
     }
-    let lines = voice_debug.render_lines();
+    let lines = match runtime.interactive_debug_menu() {
+        VisualInteractiveDebugMenu::Voice => {
+            voice_debug.render_voice_lines(runtime.interactive_debug_row())
+        }
+        VisualInteractiveDebugMenu::Compose => voice_debug.render_compose_lines(
+            runtime.interactive_debug_row(),
+            runtime.compose_history_len(),
+        ),
+        _ => Vec::new(),
+    };
     if lines.is_empty() {
         return frame;
     }
     let max_width = cols.min(96);
-    let max_lines = rows.saturating_sub(1).min(lines.len());
+    let start_row = 5;
+    let max_lines = rows.saturating_sub(start_row).min(lines.len());
     for (idx, line) in lines.iter().take(max_lines).enumerate() {
-        frame = replace_screen_line(frame, cols, rows, idx, &clip_text(line, max_width));
+        frame = replace_screen_line(
+            frame,
+            cols,
+            rows,
+            start_row + idx,
+            &clip_text(&format!("  {line}"), max_width),
+        );
     }
     frame
 }

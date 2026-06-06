@@ -567,7 +567,7 @@ pub struct VisualRenderSnapshot {
 }
 
 fn default_interactive_debug_menu() -> VisualInteractiveDebugMenu {
-    VisualInteractiveDebugMenu::SceneModeDebugMenu
+    VisualInteractiveDebugMenu::SceneLayout
 }
 
 impl VisualRenderSnapshot {
@@ -1399,7 +1399,49 @@ pub enum VisualView {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum VisualInteractiveDebugMenu {
     TileDebugMenu,
-    SceneModeDebugMenu,
+    #[serde(alias = "SceneModeDebugMenu")]
+    SceneLayout,
+    Text,
+    Voice,
+    Compose,
+    Runtime,
+}
+
+impl VisualInteractiveDebugMenu {
+    pub const SCENE_SECTIONS: [Self; 5] = [
+        Self::SceneLayout,
+        Self::Text,
+        Self::Voice,
+        Self::Compose,
+        Self::Runtime,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::TileDebugMenu => "Tile",
+            Self::SceneLayout => "Scene Layout",
+            Self::Text => "Text",
+            Self::Voice => "Voice",
+            Self::Compose => "Compose",
+            Self::Runtime => "Runtime",
+        }
+    }
+
+    fn next_scene_section(self) -> Self {
+        let idx = Self::SCENE_SECTIONS
+            .iter()
+            .position(|section| *section == self)
+            .unwrap_or(0);
+        Self::SCENE_SECTIONS[(idx + 1) % Self::SCENE_SECTIONS.len()]
+    }
+
+    fn previous_scene_section(self) -> Self {
+        let idx = Self::SCENE_SECTIONS
+            .iter()
+            .position(|section| *section == self)
+            .unwrap_or(0);
+        Self::SCENE_SECTIONS[(idx + Self::SCENE_SECTIONS.len() - 1) % Self::SCENE_SECTIONS.len()]
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1426,6 +1468,7 @@ pub struct SceneRuntime {
     compose_state: VisualComposeRuntimeState,
     vn_layout_debug: Option<VnOverlayDebugOverrides>,
     interactive_debug_menu: VisualInteractiveDebugMenu,
+    debug_selected_row: usize,
 }
 
 impl SceneRuntime {
@@ -1473,7 +1516,8 @@ impl SceneRuntime {
             transition_history: Vec::new(),
             compose_state: VisualComposeRuntimeState::new(),
             vn_layout_debug: None,
-            interactive_debug_menu: VisualInteractiveDebugMenu::SceneModeDebugMenu,
+            interactive_debug_menu: VisualInteractiveDebugMenu::SceneLayout,
+            debug_selected_row: 0,
         };
         runtime.run_mode_enter_hooks();
         Ok(runtime)
@@ -1493,6 +1537,14 @@ impl SceneRuntime {
 
     pub fn interactive_debug_menu(&self) -> VisualInteractiveDebugMenu {
         self.interactive_debug_menu
+    }
+
+    pub fn interactive_debug_row(&self) -> usize {
+        self.debug_selected_row
+    }
+
+    pub fn compose_history_len(&self) -> usize {
+        self.compose_state.history.len()
     }
 
     pub fn set_vn_layout_debug_overrides(&mut self, overrides: VnOverlayDebugOverrides) {
@@ -1659,7 +1711,8 @@ impl SceneRuntime {
                 if self.vn_layout_debug.is_none() {
                     self.vn_layout_debug = Some(VnOverlayDebugOverrides::default());
                 }
-                self.interactive_debug_menu = VisualInteractiveDebugMenu::SceneModeDebugMenu;
+                self.interactive_debug_menu = VisualInteractiveDebugMenu::SceneLayout;
+                self.debug_selected_row = self.debug_selected_row.min(self.debug_menu_row_count());
                 VisualView::VnLayoutDebugger
             }
             VisualView::VnLayoutDebugger => VisualView::Scene,
@@ -1670,6 +1723,7 @@ impl SceneRuntime {
     fn show_interactive_debug_menu(&mut self, menu: VisualInteractiveDebugMenu) {
         if self.interactive_debug_menu != menu {
             self.interactive_debug_menu = menu;
+            self.debug_selected_row = 0;
             self.bump_generation();
         }
     }
@@ -1807,25 +1861,58 @@ impl SceneRuntime {
         }
     }
 
+    fn debug_menu_row_count_for(&self, section: VisualInteractiveDebugMenu) -> usize {
+        match section {
+            VisualInteractiveDebugMenu::SceneLayout => VnOverlayDebugOverrides::PARAM_COUNT,
+            VisualInteractiveDebugMenu::Text => 6,
+            VisualInteractiveDebugMenu::Voice => 5,
+            VisualInteractiveDebugMenu::Compose => 4,
+            VisualInteractiveDebugMenu::Runtime => 6,
+            VisualInteractiveDebugMenu::TileDebugMenu => 0,
+        }
+    }
+
+    fn debug_menu_row_count(&self) -> usize {
+        self.debug_menu_row_count_for(self.interactive_debug_menu)
+    }
+
+    fn selected_debug_marker(&self, row: usize) -> &'static str {
+        if self.debug_selected_row == row {
+            ">"
+        } else {
+            " "
+        }
+    }
+
+    fn debug_section_tabs(&self) -> String {
+        VisualInteractiveDebugMenu::SCENE_SECTIONS
+            .iter()
+            .map(|section| {
+                if *section == self.interactive_debug_menu {
+                    format!("[{}]", section.label())
+                } else {
+                    format!(" {} ", section.label())
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" | ")
+    }
+
     fn vn_layout_debug_menu_lines(&self) -> Vec<String> {
         let overrides = self.vn_layout_debug.clone().unwrap_or_default();
         let editing = overrides.editing_buffer.is_some();
         let mut lines = Vec::new();
-        lines.push("Scene Mode Debug Menu".to_string());
-        lines.push("[tab/esc: scene]".to_string());
-        if editing {
-            lines.push("[enter: confirm] [esc: cancel]".to_string());
-        } else {
-            lines.push("[jk: param] [+-: adjust] [enter: type] [r: reset]".to_string());
-        }
+        lines.push(format!(
+            "{} Sections {}",
+            self.selected_debug_marker(0),
+            self.debug_section_tabs()
+        ));
+        lines.push("  left/right on this row changes section".to_string());
         lines.push(String::new());
         lines.push("Scene Layout".to_string());
         for i in 0..VnOverlayDebugOverrides::PARAM_COUNT {
-            let marker = if i == overrides.selected_param {
-                ">"
-            } else {
-                " "
-            };
+            let row = i + 1;
+            let marker = self.selected_debug_marker(row);
             let value = if i == overrides.selected_param && editing {
                 format!("{}_", overrides.editing_buffer.as_deref().unwrap_or(""))
             } else {
@@ -1841,25 +1928,159 @@ impl SceneRuntime {
         lines
     }
 
+    fn static_debug_menu_lines(
+        &self,
+        title: &str,
+        rows: Vec<(String, String)>,
+        details: &[String],
+    ) -> Vec<String> {
+        let mut lines = Vec::new();
+        lines.push(format!(
+            "{} Sections {}",
+            self.selected_debug_marker(0),
+            self.debug_section_tabs()
+        ));
+        lines.push("  left/right on this row changes section".to_string());
+        lines.push(String::new());
+        lines.push(title.to_string());
+        for (idx, (label, value)) in rows.iter().enumerate() {
+            lines.push(format!(
+                "{} {:<28} {}",
+                self.selected_debug_marker(idx + 1),
+                label,
+                value
+            ));
+        }
+        if !details.is_empty() {
+            lines.push(String::new());
+            lines.extend(details.iter().cloned());
+        }
+        lines
+    }
+
+    fn text_debug_menu_lines(&self) -> Vec<String> {
+        self.static_debug_menu_lines(
+            "Text",
+            vec![
+                ("Dialogue font scale".to_string(), "planned".to_string()),
+                ("Composer font scale".to_string(), "planned".to_string()),
+                ("Nameplate font scale".to_string(), "planned".to_string()),
+                (
+                    "Dialogue text offset".to_string(),
+                    "use Scene Layout text insets".to_string(),
+                ),
+                (
+                    "Composer text offset".to_string(),
+                    "use Scene Layout text insets".to_string(),
+                ),
+                (
+                    "Scrollback rows".to_string(),
+                    "auto from dialogue box height".to_string(),
+                ),
+            ],
+            &[String::from(
+                "Text primitives are staged here; current adjustable text positions live in Scene Layout.",
+            )],
+        )
+    }
+
+    fn voice_debug_menu_lines(&self) -> Vec<String> {
+        self.static_debug_menu_lines(
+            "Voice",
+            vec![
+                (
+                    "Scene voice diagnostics".to_string(),
+                    "overlay session".to_string(),
+                ),
+                ("Voice test mode".to_string(), "overlay session".to_string()),
+                ("TTS mute".to_string(), "overlay session".to_string()),
+                (
+                    "Microphone status".to_string(),
+                    "overlay session".to_string(),
+                ),
+                ("Test TTS playback".to_string(), "planned".to_string()),
+            ],
+            &[String::from(
+                "Use enter or left/right on a voice row to toggle supported items.",
+            )],
+        )
+    }
+
+    fn compose_debug_menu_lines(&self) -> Vec<String> {
+        self.static_debug_menu_lines(
+            "Compose",
+            vec![
+                ("Codex backend".to_string(), "overlay session".to_string()),
+                ("Clear dialogue history".to_string(), "enter".to_string()),
+                ("Compose running".to_string(), "overlay session".to_string()),
+                (
+                    "History entries".to_string(),
+                    self.compose_state.history.len().to_string(),
+                ),
+            ],
+            &[String::from(
+                "Fake Codex is controlled here; toggling it clears the dialogue box.",
+            )],
+        )
+    }
+
+    fn runtime_debug_menu_lines(&self) -> Vec<String> {
+        let scene_path = if self.scene_source.scene_path.is_empty() {
+            "(bundled)".to_string()
+        } else {
+            self.scene_source.scene_path.clone()
+        };
+        self.static_debug_menu_lines(
+            "Runtime",
+            vec![
+                ("Status".to_string(), self.status.clone()),
+                ("Generation".to_string(), self.generation.to_string()),
+                ("Scene source".to_string(), scene_path),
+                (
+                    "Sprite stage layers".to_string(),
+                    self.scene.stage.layers.len().to_string(),
+                ),
+                ("Choices".to_string(), self.scene.choices.len().to_string()),
+                (
+                    "RPG/tile layer".to_string(),
+                    "disabled in staged VN mode".to_string(),
+                ),
+            ],
+            &[],
+        )
+    }
+
     fn render_interactive_debugger(&self, cols: usize, rows: usize) -> String {
         let mut out = String::new();
-        out.push_str("Debug 2\r\n");
-        out.push_str("[tab/esc: scene]\r\n\r\n");
-        out.push_str("> Scene Mode Debug Menu\r\n\r\n");
-        for line in self.vn_layout_debug_menu_lines() {
+        out.push_str("  Debug 2\r\n");
+        let editing = self
+            .vn_layout_debug
+            .as_ref()
+            .map_or(false, |d| d.editing_buffer.is_some());
+        if editing {
+            out.push_str("  [enter: confirm] [esc: cancel]\r\n\r\n");
+        } else {
+            out.push_str("  [tab/esc: scene] [up/down: row] [left/right: section or value] [enter: action/edit] [r: reset]\r\n\r\n");
+        }
+        for line in match self.interactive_debug_menu {
+            VisualInteractiveDebugMenu::SceneLayout => self.vn_layout_debug_menu_lines(),
+            VisualInteractiveDebugMenu::Text => self.text_debug_menu_lines(),
+            VisualInteractiveDebugMenu::Voice => self.voice_debug_menu_lines(),
+            VisualInteractiveDebugMenu::Compose => self.compose_debug_menu_lines(),
+            VisualInteractiveDebugMenu::Runtime => self.runtime_debug_menu_lines(),
+            VisualInteractiveDebugMenu::TileDebugMenu => self.static_debug_menu_lines(
+                "Tile",
+                vec![(
+                    "Tile debug menu".to_string(),
+                    "disabled for VN Scene Mode".to_string(),
+                )],
+                &[],
+            ),
+        } {
+            out.push_str("  ");
             out.push_str(&line);
             out.push_str("\r\n");
         }
-        out.push_str("\r\nVoice\r\n");
-        out.push_str("  Press v to open voice diagnostics and fake Codex controls.\r\n");
-        out.push_str("Compose\r\n");
-        out.push_str(&format!(
-            "  History entries: {}\r\n",
-            self.compose_state.history.len()
-        ));
-        out.push_str("Runtime\r\n");
-        out.push_str(&format!("  Status: {}\r\n", self.status));
-        out.push_str(&format!("  Generation: {}\r\n", self.generation));
         truncate_to_screen(out, cols, rows)
     }
 
@@ -1868,8 +2089,6 @@ impl SceneRuntime {
             .vn_layout_debug
             .as_ref()
             .map_or(false, |d| d.editing_buffer.is_some());
-        let in_scene_debug_menu =
-            self.interactive_debug_menu == VisualInteractiveDebugMenu::SceneModeDebugMenu;
         match input {
             VisualInput::Close if editing => {
                 if let Some(ref mut d) = self.vn_layout_debug {
@@ -1879,56 +2098,119 @@ impl SceneRuntime {
             VisualInput::Close | VisualInput::ToggleDebug => {
                 self.view = VisualView::Scene;
             }
-            VisualInput::Right if !editing => {
-                self.show_interactive_debug_menu(VisualInteractiveDebugMenu::SceneModeDebugMenu);
+            VisualInput::Right if !editing && self.debug_selected_row == 0 => {
+                self.show_interactive_debug_menu(self.interactive_debug_menu.next_scene_section());
             }
-            VisualInput::Activate if in_scene_debug_menu && editing => {
+            VisualInput::Left if !editing && self.debug_selected_row == 0 => {
+                self.show_interactive_debug_menu(
+                    self.interactive_debug_menu.previous_scene_section(),
+                );
+            }
+            VisualInput::Activate
+                if self.interactive_debug_menu == VisualInteractiveDebugMenu::SceneLayout
+                    && editing =>
+            {
                 if let Some(ref mut d) = self.vn_layout_debug {
                     d.commit_edit();
                 }
             }
-            VisualInput::Activate if in_scene_debug_menu => {
+            VisualInput::Activate
+                if self.interactive_debug_menu == VisualInteractiveDebugMenu::SceneLayout
+                    && self.debug_selected_row > 0 =>
+            {
                 if let Some(ref mut d) = self.vn_layout_debug {
+                    d.selected_param = self.debug_selected_row.saturating_sub(1);
                     d.begin_edit();
                 }
             }
-            VisualInput::Backspace if in_scene_debug_menu => {
+            VisualInput::Backspace
+                if self.interactive_debug_menu == VisualInteractiveDebugMenu::SceneLayout =>
+            {
                 if let Some(ref mut d) = self.vn_layout_debug {
                     d.pop_char();
                 }
             }
-            VisualInput::Next if in_scene_debug_menu && !editing => {
-                if let Some(ref mut d) = self.vn_layout_debug {
-                    d.select_next();
-                }
+            VisualInput::Next if !editing => {
+                self.debug_selected_row =
+                    (self.debug_selected_row + 1).min(self.debug_menu_row_count());
+                self.sync_layout_selected_param();
             }
-            VisualInput::Previous if in_scene_debug_menu && !editing => {
-                if let Some(ref mut d) = self.vn_layout_debug {
-                    d.select_prev();
-                }
+            VisualInput::Previous if !editing => {
+                self.debug_selected_row = self.debug_selected_row.saturating_sub(1);
+                self.sync_layout_selected_param();
             }
-            VisualInput::Char('+') | VisualInput::Char('=') if in_scene_debug_menu && !editing => {
+            VisualInput::Right
+                if self.interactive_debug_menu == VisualInteractiveDebugMenu::SceneLayout
+                    && self.debug_selected_row > 0
+                    && !editing =>
+            {
                 if let Some(ref mut d) = self.vn_layout_debug {
+                    d.selected_param = self.debug_selected_row.saturating_sub(1);
                     d.adjust(1);
                 }
             }
-            VisualInput::Char('-') | VisualInput::Char('_') if in_scene_debug_menu && !editing => {
+            VisualInput::Left
+                if self.interactive_debug_menu == VisualInteractiveDebugMenu::SceneLayout
+                    && self.debug_selected_row > 0
+                    && !editing =>
+            {
                 if let Some(ref mut d) = self.vn_layout_debug {
+                    d.selected_param = self.debug_selected_row.saturating_sub(1);
                     d.adjust(-1);
                 }
             }
-            VisualInput::Char(c) if in_scene_debug_menu && editing => {
+            VisualInput::Char('+') | VisualInput::Char('=')
+                if self.interactive_debug_menu == VisualInteractiveDebugMenu::SceneLayout
+                    && self.debug_selected_row > 0
+                    && !editing =>
+            {
+                if let Some(ref mut d) = self.vn_layout_debug {
+                    d.selected_param = self.debug_selected_row.saturating_sub(1);
+                    d.adjust(1);
+                }
+            }
+            VisualInput::Char('-') | VisualInput::Char('_')
+                if self.interactive_debug_menu == VisualInteractiveDebugMenu::SceneLayout
+                    && self.debug_selected_row > 0
+                    && !editing =>
+            {
+                if let Some(ref mut d) = self.vn_layout_debug {
+                    d.selected_param = self.debug_selected_row.saturating_sub(1);
+                    d.adjust(-1);
+                }
+            }
+            VisualInput::Char(c)
+                if self.interactive_debug_menu == VisualInteractiveDebugMenu::SceneLayout
+                    && editing =>
+            {
                 if let Some(ref mut d) = self.vn_layout_debug {
                     d.push_char(c);
                 }
             }
-            VisualInput::Reload if in_scene_debug_menu && !editing => {
+            VisualInput::Reload
+                if self.interactive_debug_menu == VisualInteractiveDebugMenu::SceneLayout
+                    && !editing =>
+            {
                 self.vn_layout_debug = Some(VnOverlayDebugOverrides::default());
+                self.sync_layout_selected_param();
             }
             _ => return VisualModeOutcome::Continue,
         }
         self.bump_generation();
         VisualModeOutcome::Continue
+    }
+
+    fn sync_layout_selected_param(&mut self) {
+        if self.interactive_debug_menu == VisualInteractiveDebugMenu::SceneLayout
+            && self.debug_selected_row > 0
+        {
+            if let Some(ref mut d) = self.vn_layout_debug {
+                d.selected_param = self
+                    .debug_selected_row
+                    .saturating_sub(1)
+                    .min(VnOverlayDebugOverrides::PARAM_COUNT - 1);
+            }
+        }
     }
 
     pub fn render_snapshot(&self) -> VisualRenderSnapshot {
@@ -2293,24 +2575,13 @@ impl SceneRuntime {
     ) -> String {
         let cols = cols.max(1);
         let rows = rows.max(1);
+        if self.view == VisualView::VnLayoutDebugger {
+            return self.render_interactive_debugger(cols, rows);
+        }
         let dialogue = self.active_dialogue_line();
         let layout = self.active_vn_overlay_layout(cols, rows, &dialogue);
-        let in_layout_debug =
-            self.view == VisualView::VnLayoutDebugger && self.vn_layout_debug.is_some();
 
         let mut screen = vec![" ".repeat(cols); rows];
-
-        if in_layout_debug {
-            // Render the adjustable menu in the left margin so the live boxes
-            // stay visible to the right while tuning.
-            for (idx, line) in self.vn_layout_debug_menu_lines().into_iter().enumerate() {
-                if idx >= rows {
-                    break;
-                }
-                let width = line.chars().count().max(1);
-                place_vn_overlay_text(&mut screen, cols, idx, 0, width, &line);
-            }
-        }
         let dialogue_col = layout
             .dialogue_panel
             .col
@@ -3899,7 +4170,9 @@ mod tests {
         assert!(!frame.contains("Codex:"));
         assert!(frame.contains("transparent VN overlay"));
         assert!(!frame.contains("Compose: _"));
-        assert!(frame.ends_with("\r\n\r\n"));
+        let lines = frame.lines().collect::<Vec<_>>();
+        assert_eq!(lines.len(), 24);
+        assert!(lines.iter().all(|line| line.chars().count() == 80));
     }
 
     #[test]
@@ -4240,11 +4513,11 @@ mod tests {
         assert_eq!(runtime.view(), VisualView::VnLayoutDebugger);
         assert_eq!(
             runtime.interactive_debug_menu(),
-            VisualInteractiveDebugMenu::SceneModeDebugMenu
+            VisualInteractiveDebugMenu::SceneLayout
         );
 
         let frame = runtime.render_text_frame(200, 60);
-        assert!(frame.contains("> Scene Mode Debug Menu"));
+        assert!(frame.contains("> Sections [Scene Layout]"));
         assert!(frame.contains("dialogue_margin_ratio"));
         assert!(frame.contains("Voice"));
         assert!(frame.contains("Compose"));
@@ -4255,12 +4528,24 @@ mod tests {
         runtime.handle_input(VisualInput::Left);
         assert_eq!(
             runtime.interactive_debug_menu(),
-            VisualInteractiveDebugMenu::SceneModeDebugMenu
+            VisualInteractiveDebugMenu::Runtime
         );
         let frame = runtime.render_text_frame(200, 60);
         assert!(!frame.contains("Tile Debug Menu"));
         assert!(!frame.contains("Entities:"));
+        runtime.handle_input(VisualInput::Right);
+        assert_eq!(
+            runtime.interactive_debug_menu(),
+            VisualInteractiveDebugMenu::SceneLayout
+        );
 
+        runtime.handle_input(VisualInput::Activate);
+        assert!(runtime
+            .vn_layout_debug
+            .as_ref()
+            .and_then(|debug| debug.editing_buffer.as_ref())
+            .is_none());
+        runtime.handle_input(VisualInput::Next);
         runtime.handle_input(VisualInput::Activate);
         assert!(runtime
             .vn_layout_debug

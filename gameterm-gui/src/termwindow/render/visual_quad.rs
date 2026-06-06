@@ -35,14 +35,19 @@ impl TermWindow {
         if matches!(snapshot.view, VisualView::TileDebugger) {
             return Ok(());
         }
-        // The Scene Mode Debug Menu keeps panels and nameplates visible for
-        // layout tuning. The Tile Debug Menu is a text/entity inspector.
+        // Scene Layout keeps panels and nameplates visible for live tuning.
+        // The other interactive debug sections are text panes and suppress
+        // the VN overlay surfaces so the selected pane is visually isolated.
         let suppress_stage_art = matches!(snapshot.view, VisualView::VnLayoutDebugger);
         let suppress_vn_panels = matches!(
             (snapshot.view, snapshot.interactive_debug_menu),
             (
                 VisualView::VnLayoutDebugger,
                 VisualInteractiveDebugMenu::TileDebugMenu
+                    | VisualInteractiveDebugMenu::Text
+                    | VisualInteractiveDebugMenu::Voice
+                    | VisualInteractiveDebugMenu::Compose
+                    | VisualInteractiveDebugMenu::Runtime
             )
         );
 
