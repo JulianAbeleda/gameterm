@@ -147,6 +147,7 @@ enum VisualSceneOverlaySource {
 struct SceneDialogueScrollback {
     offset: usize,
     voice_hold_active: bool,
+    voice_debug: SceneVoiceDebugState,
 }
 
 impl SceneDialogueScrollback {
@@ -172,6 +173,81 @@ impl SceneDialogueScrollback {
 
     fn clamp(&mut self, max_offset: usize) {
         self.offset = self.offset.min(max_offset);
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct SceneVoiceDebugState {
+    visible: bool,
+    test_mode: bool,
+    config_lines: Vec<String>,
+    last_status: String,
+    last_transcript: Option<String>,
+    last_error: Option<String>,
+}
+
+impl SceneVoiceDebugState {
+    fn new(config: &SceneSttConfig, state: &SceneSttState) -> Self {
+        Self {
+            config_lines: config.diagnostics_lines(),
+            last_status: state.last_status().to_string(),
+            ..Self::default()
+        }
+    }
+
+    fn toggle_visible(&mut self) -> &'static str {
+        self.visible = !self.visible;
+        if self.visible {
+            "Voice diagnostics shown"
+        } else {
+            "Voice diagnostics hidden"
+        }
+    }
+
+    fn toggle_test_mode(&mut self) -> &'static str {
+        self.visible = true;
+        self.test_mode = !self.test_mode;
+        if self.test_mode {
+            "Voice test mode enabled"
+        } else {
+            "Voice test mode disabled"
+        }
+    }
+
+    fn sync_status(&mut self, status: &str) {
+        self.last_status = status.to_string();
+    }
+
+    fn apply_result(&mut self, result: &SceneSttResult) {
+        self.last_status = result.status.clone();
+        self.last_transcript = result.transcript.clone();
+        self.last_error = result.error.clone();
+    }
+
+    fn render_lines(&self) -> Vec<String> {
+        if !self.visible {
+            return Vec::new();
+        }
+        let mut lines = Vec::new();
+        lines.push("Scene Voice Diagnostics".to_string());
+        lines.push("[alt+v: hide] [alt+t: test mode] [cmd+shift: hold mic]".to_string());
+        lines.push(format!(
+            "Mode: {}",
+            if self.test_mode {
+                "test recognition only"
+            } else {
+                "compose transcript"
+            }
+        ));
+        lines.push(format!("Status: {}", self.last_status));
+        lines.extend(self.config_lines.iter().cloned());
+        if let Some(transcript) = self.last_transcript.as_deref() {
+            lines.push(format!("Last transcript: {transcript}"));
+        }
+        if let Some(error) = self.last_error.as_deref() {
+            lines.push(format!("Last error: {error}"));
+        }
+        lines
     }
 }
 
@@ -247,6 +323,7 @@ fn show_visual_scene_overlay_with_source(
         .stt_config
         .unwrap_or_else(SceneSttConfig::from_env);
     let mut stt_state = SceneSttState::default();
+    dialogue_scroll.voice_debug = SceneVoiceDebugState::new(&stt_config, &stt_state);
     let mut stt_session: Option<SceneSttSession> = None;
     let mut last_idle_sprite: Option<String> = None;
 
@@ -319,16 +396,34 @@ fn show_visual_scene_overlay_with_source(
             stt_session = None;
             dialogue_scroll.voice_hold_active = false;
             if let Some(runtime) = runtime.as_mut() {
-                apply_stt_result(
-                    runtime,
-                    &mut compose_dock,
-                    &mut stt_state,
-                    result,
-                    &mut compose_backend_running,
-                    &compose_tx,
-                    &scene_path,
-                    pane_id,
-                );
+                dialogue_scroll.voice_debug.apply_result(&result);
+                if dialogue_scroll.voice_debug.test_mode {
+                    let status = stt_state.apply_result(&result);
+                    if let Some(transcript) = result.transcript.as_deref() {
+                        runtime.mark_action_status(format!("Voice test recognized: {transcript}"));
+                    } else if let Some(error) = result.error.as_deref() {
+                        runtime.mark_action_status(format!("{status}: {error}"));
+                    } else {
+                        runtime.mark_action_status(status);
+                    }
+                    dialogue_scroll
+                        .voice_debug
+                        .sync_status(stt_state.last_status());
+                } else {
+                    apply_stt_result(
+                        runtime,
+                        &mut compose_dock,
+                        &mut stt_state,
+                        result,
+                        &mut compose_backend_running,
+                        &compose_tx,
+                        &scene_path,
+                        pane_id,
+                    );
+                    dialogue_scroll
+                        .voice_debug
+                        .sync_status(stt_state.last_status());
+                }
                 dialogue_scroll.reset_to_bottom();
                 needs_render = true;
             }
@@ -406,6 +501,39 @@ fn show_visual_scene_overlay_with_source(
                         }
                         dialogue_scroll.voice_hold_active = false;
                         runtime.mark_action_status(stt_state.mark_canceling());
+                        dialogue_scroll
+                            .voice_debug
+                            .sync_status(stt_state.last_status());
+                        render_runtime_with_compose_and_scroll(
+                            &mut term,
+                            runtime,
+                            &sprite_manifest,
+                            &compose_dock,
+                            &dialogue_scroll,
+                        )?;
+                        continue;
+                    }
+                    if is_voice_debug_toggle_key(key, modifiers) {
+                        let status = dialogue_scroll.voice_debug.toggle_visible();
+                        runtime.mark_action_status(status);
+                        render_runtime_with_compose_and_scroll(
+                            &mut term,
+                            runtime,
+                            &sprite_manifest,
+                            &compose_dock,
+                            &dialogue_scroll,
+                        )?;
+                        continue;
+                    }
+                    if is_voice_test_mode_toggle_key(key, modifiers) {
+                        if stt_state.is_running() {
+                            runtime.mark_action_status(
+                                "Voice test mode toggle unavailable: voice is listening",
+                            );
+                        } else {
+                            let status = dialogue_scroll.voice_debug.toggle_test_mode();
+                            runtime.mark_action_status(status);
+                        }
                         render_runtime_with_compose_and_scroll(
                             &mut term,
                             runtime,
@@ -429,6 +557,12 @@ fn show_visual_scene_overlay_with_source(
                     if is_stt_hold_key(key, modifiers) {
                         if !stt_state.is_running() {
                             runtime.mark_action_status(stt_state.mark_started());
+                            if dialogue_scroll.voice_debug.test_mode {
+                                runtime.mark_action_status("Voice test listening");
+                            }
+                            dialogue_scroll
+                                .voice_debug
+                                .sync_status(stt_state.last_status());
                             stt_session =
                                 Some(spawn_stt_backend(stt_config.clone(), stt_tx.clone()));
                             dialogue_scroll.voice_hold_active = true;
@@ -674,6 +808,12 @@ fn show_visual_scene_overlay_with_source(
                         }
                         dialogue_scroll.voice_hold_active = false;
                         runtime.mark_action_status(stt_state.mark_processing());
+                        if dialogue_scroll.voice_debug.test_mode {
+                            runtime.mark_action_status("Voice test processing");
+                        }
+                        dialogue_scroll
+                            .voice_debug
+                            .sync_status(stt_state.last_status());
                         render_runtime_with_compose_and_scroll(
                             &mut term,
                             runtime,
@@ -1567,6 +1707,14 @@ fn is_tts_toggle_key(key: KeyCode, modifiers: Modifiers) -> bool {
     matches!(key, KeyCode::Char('m') | KeyCode::Char('M')) && modifiers.contains(Modifiers::ALT)
 }
 
+fn is_voice_debug_toggle_key(key: KeyCode, modifiers: Modifiers) -> bool {
+    matches!(key, KeyCode::Char('v') | KeyCode::Char('V')) && modifiers.contains(Modifiers::ALT)
+}
+
+fn is_voice_test_mode_toggle_key(key: KeyCode, modifiers: Modifiers) -> bool {
+    matches!(key, KeyCode::Char('t') | KeyCode::Char('T')) && modifiers.contains(Modifiers::ALT)
+}
+
 fn is_stt_hold_key(key: KeyCode, modifiers: Modifiers) -> bool {
     matches!(
         key,
@@ -2391,12 +2539,35 @@ fn render_runtime_with_compose_and_scroll(
             &compose_dock.render_line(size.cols),
         );
     }
+    frame = apply_voice_debug_frame(
+        frame,
+        size.cols,
+        size.rows,
+        &dialogue_scroll.voice_debug.render_lines(),
+    );
     term.render(&[
         Change::ClearScreen(ColorAttribute::Default),
         Change::Text(truncate_to_screen(frame, size.cols, size.rows)),
     ])?;
     term.flush()?;
     Ok(())
+}
+
+fn apply_voice_debug_frame(
+    mut frame: String,
+    cols: usize,
+    rows: usize,
+    lines: &[String],
+) -> String {
+    if lines.is_empty() {
+        return frame;
+    }
+    let max_width = cols.min(96);
+    let max_lines = rows.saturating_sub(1).min(lines.len());
+    for (idx, line) in lines.iter().take(max_lines).enumerate() {
+        frame = replace_screen_line(frame, cols, rows, idx, &clip_text(line, max_width));
+    }
+    frame
 }
 
 fn current_kiki_idle_sprite(sprite_manifest: &VisualSpriteManifestStatus) -> Option<String> {
@@ -3546,6 +3717,70 @@ mod tests {
         assert!(is_tts_toggle_key(KeyCode::Char('m'), Modifiers::ALT));
         assert!(is_tts_toggle_key(KeyCode::Char('M'), Modifiers::ALT));
         assert!(!is_tts_toggle_key(KeyCode::Char('m'), Modifiers::NONE));
+    }
+
+    #[test]
+    fn scene_voice_debug_controls_use_alt_v_and_alt_t() {
+        assert!(is_voice_debug_toggle_key(
+            KeyCode::Char('v'),
+            Modifiers::ALT
+        ));
+        assert!(is_voice_debug_toggle_key(
+            KeyCode::Char('V'),
+            Modifiers::ALT
+        ));
+        assert!(!is_voice_debug_toggle_key(
+            KeyCode::Char('v'),
+            Modifiers::NONE
+        ));
+
+        assert!(is_voice_test_mode_toggle_key(
+            KeyCode::Char('t'),
+            Modifiers::ALT
+        ));
+        assert!(is_voice_test_mode_toggle_key(
+            KeyCode::Char('T'),
+            Modifiers::ALT
+        ));
+        assert!(!is_voice_test_mode_toggle_key(
+            KeyCode::Char('t'),
+            Modifiers::NONE
+        ));
+    }
+
+    #[test]
+    fn scene_voice_debug_frame_replaces_bounded_top_lines() {
+        let frame = "one\r\ntwo\r\nthree\r\n".to_string();
+        let rendered = apply_voice_debug_frame(
+            frame,
+            20,
+            3,
+            &[
+                "Scene Voice Diagnostics".to_string(),
+                "Status: Voice idle".to_string(),
+            ],
+        );
+
+        assert!(rendered.starts_with("Scene Voice Diagnost\r\nStatus: Voice idle\r\nthree"));
+    }
+
+    #[test]
+    fn scene_voice_debug_test_mode_records_transcript_without_hiding_config() {
+        let config = SceneSttConfig::whisper_default();
+        let state = SceneSttState::default();
+        let mut debug = SceneVoiceDebugState::new(&config, &state);
+        debug.toggle_test_mode();
+        debug.apply_result(&SceneSttResult {
+            status: "Voice transcript ready".to_string(),
+            transcript: Some("hello scene".to_string()),
+            auto_submit: false,
+            error: None,
+        });
+
+        let lines = debug.render_lines().join("\n");
+        assert!(lines.contains("Mode: test recognition only"));
+        assert!(lines.contains("Backend: whisper"));
+        assert!(lines.contains("Last transcript: hello scene"));
     }
 
     #[test]
