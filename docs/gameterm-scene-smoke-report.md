@@ -72,6 +72,32 @@ Validated named scenarios:
 
 ## Live Results
 
+### vn-config-module-installed-pass-20260606-1313
+
+Command:
+
+```sh
+ci/gameterm-scene-vn-demo.sh smoke \
+  --config-home /Users/julianabeleda/.config \
+  --output /tmp/gameterm-vn-config-module-smoke.png
+```
+
+Result: PASS.
+
+Capture:
+
+```text
+/tmp/gameterm-vn-config-module-smoke.png
+```
+
+Observation: the helper validated the installed user config with the Scene
+doctor, confirmed sprite assets and optional config JSON parse cleanly, opened
+the installed GameTerm app, entered Scene Mode, and captured a non-empty PNG.
+Visual inspection confirmed the school background, Kiki sprite, dialogue panel,
+composer dock, and no Scene Mode load-error frame. Caveat: macOS captured
+another foreground Settings window in the desktop screenshot, so this pass is a
+config/load smoke, not a final fullscreen visual-polish sign-off.
+
 ### vn-compose-codex-fake-pass-20260603-0055
 
 Command:
