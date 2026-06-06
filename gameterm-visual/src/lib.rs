@@ -33,9 +33,10 @@ pub use render::{intersecting_entities_for_row, visible_tiles_for_row};
 use runtime_input::default_mode_input_action;
 use runtime_status::{
     format_layer_summary, format_metadata_summary, format_process_summary,
-    format_relationship_metadata, format_relationship_summary, format_state_summary,
-    relationship_entity_label, wrap_text,
+    format_relationship_summary, format_state_summary, wrap_text,
 };
+#[cfg(test)]
+use runtime_status::{format_relationship_metadata, relationship_entity_label};
 #[cfg(test)]
 pub(crate) use schema::default_scene_mode;
 pub(crate) use schema::is_default_scene_mode;
@@ -1654,9 +1655,7 @@ fn command_option_matches_filter(
 impl SceneRuntime {
     pub fn toggle_debugger(&mut self) {
         self.view = match self.view {
-            VisualView::Scene => VisualView::TileDebugger,
-            VisualView::CommandSelection => VisualView::TileDebugger,
-            VisualView::TileDebugger => {
+            VisualView::Scene | VisualView::CommandSelection | VisualView::TileDebugger => {
                 if self.vn_layout_debug.is_none() {
                     self.vn_layout_debug = Some(VnOverlayDebugOverrides::default());
                 }
@@ -1803,7 +1802,7 @@ impl SceneRuntime {
                 self.render_scene(cols, rows, dialogue_scroll_offset, voice_hold_active)
             }
             VisualView::CommandSelection => self.render_command_selection(cols, rows),
-            VisualView::TileDebugger => self.render_debugger(cols, rows),
+            VisualView::TileDebugger => self.render_interactive_debugger(cols, rows),
             VisualView::VnLayoutDebugger => self.render_interactive_debugger(cols, rows),
         }
     }
@@ -1813,7 +1812,7 @@ impl SceneRuntime {
         let editing = overrides.editing_buffer.is_some();
         let mut lines = Vec::new();
         lines.push("Scene Mode Debug Menu".to_string());
-        lines.push("[left/right: Tile Debug Menu] [tab/esc: scene]".to_string());
+        lines.push("[tab/esc: scene]".to_string());
         if editing {
             lines.push("[enter: confirm] [esc: cancel]".to_string());
         } else {
@@ -1845,66 +1844,22 @@ impl SceneRuntime {
     fn render_interactive_debugger(&self, cols: usize, rows: usize) -> String {
         let mut out = String::new();
         out.push_str("Debug 2\r\n");
-        out.push_str("[left/right: switch menu] [tab/esc: scene]\r\n\r\n");
-        match self.interactive_debug_menu {
-            VisualInteractiveDebugMenu::TileDebugMenu => {
-                out.push_str("> Tile Debug Menu\r\n");
-                out.push_str("  Scene Mode Debug Menu\r\n\r\n");
-                out.push_str("[jk/arrows: select entity]\r\n\r\n");
-                out.push_str(&format!(
-                    "Grid: {}x{} background={}\r\n",
-                    self.scene.width, self.scene.height, self.scene.background
-                ));
-                out.push_str(&format!(
-                    "Tiles: {}  Entities: {}  Choices: {}\r\n\r\n",
-                    self.scene.width.saturating_mul(self.scene.height),
-                    self.scene.entities.len(),
-                    self.scene.choices.len()
-                ));
-                out.push_str("Entities:\r\n");
-                for (idx, entity) in self.scene.entities.iter().enumerate() {
-                    let marker = if idx == self.selected_entity {
-                        ">"
-                    } else {
-                        " "
-                    };
-                    out.push_str(&format!(
-                        "{marker} id={} kind={:?} pos={},{} sprite={} flags={}\r\n",
-                        entity.id,
-                        entity.kind,
-                        entity.position.x,
-                        entity.position.y,
-                        entity.sprite,
-                        entity.state_flags.join(", ")
-                    ));
-                }
-                if let Some(entity) = self.selected_entity() {
-                    out.push_str("\r\nSelected Tile Entity:\r\n");
-                    out.push_str(&format!(
-                        "  label: {}\r\n  kind: {:?}\r\n  sprite: {}\r\n",
-                        entity.label, entity.kind, entity.sprite
-                    ));
-                }
-            }
-            VisualInteractiveDebugMenu::SceneModeDebugMenu => {
-                out.push_str("  Tile Debug Menu\r\n");
-                out.push_str("> Scene Mode Debug Menu\r\n\r\n");
-                for line in self.vn_layout_debug_menu_lines() {
-                    out.push_str(&line);
-                    out.push_str("\r\n");
-                }
-                out.push_str("\r\nVoice\r\n");
-                out.push_str("  Press v to open voice diagnostics and fake Codex controls.\r\n");
-                out.push_str("Compose\r\n");
-                out.push_str(&format!(
-                    "  History entries: {}\r\n",
-                    self.compose_state.history.len()
-                ));
-                out.push_str("Runtime\r\n");
-                out.push_str(&format!("  Status: {}\r\n", self.status));
-                out.push_str(&format!("  Generation: {}\r\n", self.generation));
-            }
+        out.push_str("[tab/esc: scene]\r\n\r\n");
+        out.push_str("> Scene Mode Debug Menu\r\n\r\n");
+        for line in self.vn_layout_debug_menu_lines() {
+            out.push_str(&line);
+            out.push_str("\r\n");
         }
+        out.push_str("\r\nVoice\r\n");
+        out.push_str("  Press v to open voice diagnostics and fake Codex controls.\r\n");
+        out.push_str("Compose\r\n");
+        out.push_str(&format!(
+            "  History entries: {}\r\n",
+            self.compose_state.history.len()
+        ));
+        out.push_str("Runtime\r\n");
+        out.push_str(&format!("  Status: {}\r\n", self.status));
+        out.push_str(&format!("  Generation: {}\r\n", self.generation));
         truncate_to_screen(out, cols, rows)
     }
 
@@ -1924,23 +1879,8 @@ impl SceneRuntime {
             VisualInput::Close | VisualInput::ToggleDebug => {
                 self.view = VisualView::Scene;
             }
-            VisualInput::Left if !editing => {
-                self.show_interactive_debug_menu(VisualInteractiveDebugMenu::TileDebugMenu);
-            }
             VisualInput::Right if !editing => {
                 self.show_interactive_debug_menu(VisualInteractiveDebugMenu::SceneModeDebugMenu);
-            }
-            VisualInput::Previous
-                if !editing
-                    && self.interactive_debug_menu == VisualInteractiveDebugMenu::TileDebugMenu =>
-            {
-                self.select_prev_entity();
-            }
-            VisualInput::Next
-                if !editing
-                    && self.interactive_debug_menu == VisualInteractiveDebugMenu::TileDebugMenu =>
-            {
-                self.select_next_entity();
             }
             VisualInput::Activate if in_scene_debug_menu && editing => {
                 if let Some(ref mut d) = self.vn_layout_debug {
@@ -2545,6 +2485,7 @@ impl SceneRuntime {
         truncate_to_screen(out, cols, rows)
     }
 
+    #[cfg(test)]
     fn render_debugger(&self, cols: usize, rows: usize) -> String {
         let report = self.debug_report();
         let mut out = String::new();
@@ -3005,8 +2946,7 @@ mod tests {
             Some("Conversation update")
         );
 
-        runtime.toggle_debugger();
-        let frame = runtime.render_text_frame(200, 80);
+        let frame = runtime.render_debugger(200, 80);
         assert!(frame.contains("Lifecycle: enter update exit"));
     }
 
@@ -3040,7 +2980,7 @@ mod tests {
 
     #[test]
     fn rpg_state_is_visible_in_snapshot_and_debugger() {
-        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        let runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
         let snapshot = runtime.render_snapshot();
 
         assert_eq!(snapshot.rpg.inventory.len(), 1);
@@ -3052,8 +2992,7 @@ mod tests {
         let report = runtime.debug_report();
         assert_eq!(report.rpg, snapshot.rpg);
 
-        runtime.toggle_debugger();
-        let frame = runtime.render_text_frame(120, 48);
+        let frame = runtime.render_debugger(120, 48);
         assert!(frame.contains("RPG:"));
         assert!(frame.contains("Inventory items: 1"));
         assert!(frame.contains("Relationships: 1"));
@@ -4268,8 +4207,7 @@ mod tests {
         let mut runtime = SceneRuntime::new(scene).unwrap();
         runtime.mark_compose_running("Compose running", "debug layout");
         runtime.mark_compose_succeeded("Codex", "Live tuning line.");
-        runtime.toggle_debugger(); // Scene -> TileDebugger
-        runtime.toggle_debugger(); // TileDebugger -> VnLayoutDebugger
+        runtime.toggle_debugger();
         assert_eq!(runtime.view(), VisualView::VnLayoutDebugger);
         assert_eq!(
             runtime.interactive_debug_menu(),
@@ -4281,25 +4219,25 @@ mod tests {
         assert!(frame.contains("dialogue_margin_ratio"));
         assert!(frame.contains("Voice"));
         assert!(frame.contains("Compose"));
+        assert!(!frame.contains("Tile Debug Menu"));
+        assert!(!frame.contains("Entities:"));
         assert!(!frame.contains("Live tuning line."));
 
         runtime.handle_input(VisualInput::Left);
         assert_eq!(
             runtime.interactive_debug_menu(),
-            VisualInteractiveDebugMenu::TileDebugMenu
+            VisualInteractiveDebugMenu::SceneModeDebugMenu
         );
         let frame = runtime.render_text_frame(200, 60);
-        assert!(frame.contains("> Tile Debug Menu"));
-        assert!(frame.contains("Entities:"));
-        assert!(!frame.contains("dialogue_margin_ratio"));
-        assert!(!frame.contains("Voice"));
+        assert!(!frame.contains("Tile Debug Menu"));
+        assert!(!frame.contains("Entities:"));
 
         runtime.handle_input(VisualInput::Activate);
         assert!(runtime
             .vn_layout_debug
             .as_ref()
             .and_then(|debug| debug.editing_buffer.as_ref())
-            .is_none());
+            .is_some());
     }
 
     #[test]
@@ -4553,7 +4491,9 @@ mod tests {
         let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
         assert_eq!(runtime.view(), VisualView::Scene);
         runtime.toggle_debugger();
-        assert_eq!(runtime.view(), VisualView::TileDebugger);
+        assert_eq!(runtime.view(), VisualView::VnLayoutDebugger);
+        runtime.toggle_debugger();
+        assert_eq!(runtime.view(), VisualView::Scene);
     }
 
     #[test]
@@ -4564,7 +4504,7 @@ mod tests {
         let outcome = runtime.handle_input(VisualInput::ToggleDebug);
 
         assert_eq!(outcome, VisualModeOutcome::Continue);
-        assert_eq!(runtime.view(), VisualView::TileDebugger);
+        assert_eq!(runtime.view(), VisualView::VnLayoutDebugger);
         assert!(runtime.generation() > initial_generation);
     }
 
@@ -4706,8 +4646,7 @@ mod tests {
             "run_update_hooks"
         );
 
-        runtime.toggle_debugger();
-        let frame = runtime.render_text_frame(200, 80);
+        let frame = runtime.render_debugger(200, 80);
         assert!(frame.contains("Input map:"));
         assert!(frame.contains("other -> run_update_hooks"));
     }
@@ -4816,8 +4755,7 @@ mod tests {
             Some("transitioned")
         );
 
-        runtime.toggle_debugger();
-        let frame = runtime.render_text_frame(120, 40);
+        let frame = runtime.render_debugger(120, 40);
         assert!(frame.contains("Layers:"));
         assert!(frame.contains("story state=choice label=Story"));
         assert!(frame.contains("Last transition: story activate dialogue -> choice (transitioned)"));
@@ -4889,8 +4827,7 @@ mod tests {
             .iter()
             .any(|event| { event.kind == "patch" && event.detail == "mux failed: bad patch" }));
 
-        runtime.toggle_debugger();
-        let frame = runtime.render_text_frame(120, 40);
+        let frame = runtime.render_debugger(120, 40);
         assert!(frame.contains("History:"));
         assert!(frame.contains("transition: story dialogue -> choice"));
     }
@@ -5245,7 +5182,7 @@ mod tests {
             variable: "workspace_level".to_string(),
             equals: VisualStateValue::Number(2),
         }];
-        let mut runtime = SceneRuntime::new(scene).unwrap();
+        let runtime = SceneRuntime::new(scene).unwrap();
 
         let report = runtime.debug_report();
 
@@ -5255,8 +5192,7 @@ mod tests {
             Some("requires workspace_level=2")
         );
 
-        runtime.toggle_debugger();
-        let frame = runtime.render_text_frame(100, 40);
+        let frame = runtime.render_debugger(100, 40);
         assert!(frame.contains("Choice enabled: false"));
         assert!(frame.contains("Choice guard: requires workspace_level=2"));
     }
@@ -5406,8 +5342,7 @@ mod tests {
         );
         assert_eq!(report.selected_choice_detail.as_deref(), Some("target=1"));
 
-        runtime.toggle_debugger();
-        let frame = runtime.render_text_frame(120, 40);
+        let frame = runtime.render_debugger(120, 40);
         assert!(frame.contains("Active line: 2 of 3"));
         assert!(frame.contains("History entries: 2"));
         assert!(frame.contains("Choice kind: AdvanceDialogue"));
@@ -5727,8 +5662,7 @@ mod tests {
             Some(path.display().to_string())
         );
 
-        runtime.toggle_debugger();
-        let frame = runtime.render_text_frame(120, 40);
+        let frame = runtime.render_debugger(120, 40);
         assert!(frame.contains("Last story state: export"));
     }
 
@@ -6362,9 +6296,8 @@ mod tests {
     fn debugger_frame_contains_scene_source_status() {
         let source = VisualSceneSource::new("/tmp/default.json", VisualSceneLoadStatus::Loaded, 3);
         let mut runtime = SceneRuntime::new_with_source(VisualScene::demo(), source).unwrap();
-        runtime.toggle_debugger();
         runtime.activate_choice();
-        let frame = runtime.render_text_frame(200, 80);
+        let frame = runtime.render_debugger(200, 80);
 
         assert!(frame.contains("Scene path: /tmp/default.json"));
         assert!(frame.contains("Load status: loaded"));
@@ -6466,8 +6399,7 @@ mod tests {
             Some("argv=cargo check -p gameterm-visual target=tab")
         );
 
-        runtime.toggle_debugger();
-        let frame = runtime.render_text_frame(100, 32);
+        let frame = runtime.render_debugger(100, 32);
         assert!(frame.contains("Choice label: Run cargo check -p gameterm-visual"));
         assert!(frame.contains("Choice kind: RunCommand"));
         assert!(frame
@@ -6807,8 +6739,7 @@ mod tests {
         assert_eq!(report.last_patch_transport.as_deref(), Some("mux"));
         assert_eq!(report.last_patch_source_pane_id, Some(42));
 
-        runtime.toggle_debugger();
-        let frame = runtime.render_text_frame(100, 40);
+        let frame = runtime.render_debugger(100, 40);
         assert!(frame.contains("Last patch: mux from pane 42"));
     }
 
@@ -6939,8 +6870,7 @@ mod tests {
                 .and_then(|state| state.entity_id.as_deref()),
             Some("task-render")
         );
-        runtime.toggle_debugger();
-        let frame = runtime.render_text_frame(100, 40);
+        let frame = runtime.render_debugger(100, 40);
         assert!(frame.contains("Process phase: Running"));
         assert!(frame.contains("Process command: cargo check"));
     }

@@ -49,6 +49,7 @@ pub(crate) fn relationship_entity_label(scene: &VisualScene, entity_id: &str) ->
         .unwrap_or_else(|| entity_id.to_string())
 }
 
+#[cfg(test)]
 pub(crate) fn format_relationship_metadata(metadata: &[(String, String)]) -> String {
     let metadata = format_metadata_summary(metadata, 2);
     if metadata.is_empty() {

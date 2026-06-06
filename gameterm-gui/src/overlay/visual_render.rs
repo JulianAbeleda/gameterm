@@ -5,7 +5,7 @@ use gameterm_visual::{
     VisualSceneSource, VisualSpriteManifestStatus, VisualView, VnOverlayRect,
 };
 use mux::termwiztermtab::TermWizTerminal;
-use termwiz::surface::Change;
+use termwiz::surface::{Change, CursorVisibility};
 use termwiz::terminal::Terminal;
 
 use super::visual_compose_dock::SceneComposeDock;
@@ -132,6 +132,7 @@ pub(super) fn render_runtime_with_compose_and_scroll(
     );
     term.render(&[
         Change::ClearScreen(ColorAttribute::Default),
+        Change::CursorVisibility(CursorVisibility::Hidden),
         Change::Text(truncate_to_screen(frame, size.cols, size.rows)),
     ])?;
     term.flush()?;
@@ -181,6 +182,7 @@ pub(super) fn render_error(
     );
     term.render(&[
         Change::ClearScreen(ColorAttribute::Default),
+        Change::CursorVisibility(CursorVisibility::Hidden),
         Change::Text(truncate_to_screen(frame, size.cols, size.rows)),
     ])?;
     term.flush()?;
