@@ -2298,7 +2298,7 @@ impl SceneRuntime {
         let in_layout_debug =
             self.view == VisualView::VnLayoutDebugger && self.vn_layout_debug.is_some();
 
-        let mut screen = vec![String::new(); rows];
+        let mut screen = vec![" ".repeat(cols); rows];
 
         if in_layout_debug {
             // Render the adjustable menu in the left margin so the live boxes
@@ -4182,6 +4182,35 @@ mod tests {
         assert!(!frame.contains("Stage:"));
         assert!(frame.contains("Normal scene line."));
         assert!(frame.contains("Codex"));
+    }
+
+    #[test]
+    fn staged_scene_view_fills_blank_rows_to_clear_stale_text() {
+        let mut scene = VisualScene::demo();
+        scene.dialogue = "Normal scene line.".to_string();
+        scene.dialogue_speaker = "Narrator".to_string();
+        scene.dialogue_lines.clear();
+        scene.choices.clear();
+        scene.stage = VisualStage {
+            layers: vec![VisualStageLayer {
+                layer_id: "background".to_string(),
+                zorder: 0,
+                displayables: vec![VisualStageDisplayable {
+                    tag: "background".to_string(),
+                    sprite: "vn.background.school_classroom".to_string(),
+                    placement: VisualStagePlacement::Fullscreen,
+                    zorder: 0,
+                    visible: true,
+                }],
+            }],
+        };
+        let runtime = SceneRuntime::new(scene).unwrap();
+
+        let frame = runtime.render_text_frame(24, 12);
+        let lines = frame.lines().collect::<Vec<_>>();
+
+        assert_eq!(lines[0].chars().count(), 24);
+        assert!(lines[0].chars().all(|ch| ch == ' '));
     }
 
     #[test]
