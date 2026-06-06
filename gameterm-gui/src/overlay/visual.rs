@@ -41,6 +41,9 @@ const KIKI_BLINK_FRAME_COUNT: usize = 6;
 const KIKI_BLINK_FRAME_MS: u128 = 90;
 const KIKI_BLINK_INTERVAL_MS: u128 = 4_200;
 
+#[path = "visual_voice_debug.rs"]
+mod visual_voice_debug;
+
 use super::visual_compose::ComposeBackendLabel;
 use super::visual_compose::{
     compose_running_status, spawn_compose_backend, ComposeBackendRequest, ComposeBackendResult,
@@ -51,6 +54,10 @@ use super::visual_stt::{
 use super::visual_tts::{
     extract_speakable_segments, SceneTtsConfig, SceneTtsRequest, SceneTtsResult, SceneTtsState,
     SceneTtsWorker, SpeakableSegment, SpeakableSource,
+};
+use visual_voice_debug::{
+    handle_voice_debug_menu_key, is_voice_debug_menu_open_key, SceneVoiceDebugState,
+    VoiceDebugMenuEffect,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -173,143 +180,6 @@ impl SceneDialogueScrollback {
 
     fn clamp(&mut self, max_offset: usize) {
         self.offset = self.offset.min(max_offset);
-    }
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-struct SceneVoiceDebugState {
-    menu_open: bool,
-    selected_item: usize,
-    visible: bool,
-    test_mode: bool,
-    fake_codex_backend: bool,
-    config_lines: Vec<String>,
-    last_status: String,
-    last_transcript: Option<String>,
-    last_error: Option<String>,
-}
-
-impl SceneVoiceDebugState {
-    fn new(config: &SceneSttConfig, state: &SceneSttState) -> Self {
-        Self {
-            config_lines: config.diagnostics_lines(),
-            last_status: state.last_status().to_string(),
-            ..Self::default()
-        }
-    }
-
-    fn open_menu(&mut self) -> &'static str {
-        self.menu_open = true;
-        self.visible = true;
-        "Voice debug menu opened"
-    }
-
-    fn close_menu(&mut self) -> &'static str {
-        self.menu_open = false;
-        "Voice debug menu closed"
-    }
-
-    fn select_next(&mut self) {
-        self.selected_item = (self.selected_item + 1).min(Self::MENU_ITEM_COUNT - 1);
-    }
-
-    fn select_previous(&mut self) {
-        self.selected_item = self.selected_item.saturating_sub(1);
-    }
-
-    fn toggle_selected(&mut self) -> &'static str {
-        match self.selected_item {
-            Self::MENU_ITEM_DIAGNOSTICS => self.toggle_visible(),
-            Self::MENU_ITEM_TEST_MODE => self.toggle_test_mode(),
-            _ => "Voice debug menu unchanged",
-        }
-    }
-
-    fn toggle_visible(&mut self) -> &'static str {
-        self.visible = !self.visible;
-        if self.visible {
-            "Voice diagnostics shown"
-        } else {
-            "Voice diagnostics hidden"
-        }
-    }
-
-    const MENU_ITEM_COUNT: usize = 3;
-    const MENU_ITEM_DIAGNOSTICS: usize = 0;
-    const MENU_ITEM_TEST_MODE: usize = 1;
-    const MENU_ITEM_FAKE_CODEX: usize = 2;
-
-    fn toggle_test_mode(&mut self) -> &'static str {
-        self.visible = true;
-        self.test_mode = !self.test_mode;
-        if self.test_mode {
-            "Voice test mode enabled"
-        } else {
-            "Voice test mode disabled"
-        }
-    }
-
-    fn sync_status(&mut self, status: &str) {
-        self.last_status = status.to_string();
-    }
-
-    fn apply_result(&mut self, result: &SceneSttResult) {
-        self.last_status = result.status.clone();
-        self.last_transcript = result.transcript.clone();
-        self.last_error = result.error.clone();
-    }
-
-    fn render_lines(&self) -> Vec<String> {
-        if !self.menu_open {
-            return Vec::new();
-        }
-        let mut lines = Vec::new();
-        lines.push("Scene Voice Debug".to_string());
-        lines.push(
-            "[jk: select] [enter: toggle] [tab/esc: debug] [cmd+shift: hold mic]".to_string(),
-        );
-        lines.push(String::new());
-        lines.push(self.menu_item_line(
-            Self::MENU_ITEM_DIAGNOSTICS,
-            "Scene voice diagnostics",
-            if self.visible { "on" } else { "off" },
-        ));
-        lines.push(self.menu_item_line(
-            Self::MENU_ITEM_TEST_MODE,
-            "Voice test mode",
-            if self.test_mode { "on" } else { "off" },
-        ));
-        lines.push(self.menu_item_line(
-            Self::MENU_ITEM_FAKE_CODEX,
-            "Fake Codex backend",
-            if self.fake_codex_backend { "on" } else { "off" },
-        ));
-
-        if self.visible {
-            lines.push(String::new());
-            lines.push(format!(
-                "Mode: {}",
-                if self.test_mode {
-                    "test recognition only"
-                } else {
-                    "compose transcript"
-                }
-            ));
-            lines.push(format!("Status: {}", self.last_status));
-            lines.extend(self.config_lines.iter().cloned());
-            if let Some(transcript) = self.last_transcript.as_deref() {
-                lines.push(format!("Last transcript: {transcript}"));
-            }
-            if let Some(error) = self.last_error.as_deref() {
-                lines.push(format!("Last error: {error}"));
-            }
-        }
-        lines
-    }
-
-    fn menu_item_line(&self, item: usize, label: &str, value: &str) -> String {
-        let marker = if self.selected_item == item { ">" } else { " " };
-        format!("{marker} {label:<28} {value}")
     }
 }
 
@@ -1754,81 +1624,6 @@ fn visual_input_resets_dialogue_scroll(input: VisualInput) -> bool {
 
 fn is_tts_toggle_key(key: KeyCode, modifiers: Modifiers) -> bool {
     matches!(key, KeyCode::Char('m') | KeyCode::Char('M')) && modifiers.contains(Modifiers::ALT)
-}
-
-fn is_voice_debug_menu_open_key(key: KeyCode, modifiers: Modifiers) -> bool {
-    matches!(key, KeyCode::Char('v') | KeyCode::Char('V')) && modifiers == Modifiers::NONE
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct VoiceDebugMenuEffect {
-    handled: bool,
-    reset_compose_dialogue: bool,
-}
-
-impl VoiceDebugMenuEffect {
-    const IGNORED: Self = Self {
-        handled: false,
-        reset_compose_dialogue: false,
-    };
-
-    const HANDLED: Self = Self {
-        handled: true,
-        reset_compose_dialogue: false,
-    };
-
-    const RESET_COMPOSE_DIALOGUE: Self = Self {
-        handled: true,
-        reset_compose_dialogue: true,
-    };
-}
-
-fn handle_voice_debug_menu_key(
-    key: KeyCode,
-    runtime: &mut SceneRuntime,
-    voice_debug: &mut SceneVoiceDebugState,
-    voice_running: bool,
-    compose_running: bool,
-    compose_debug_backend: &mut SceneComposeDebugBackend,
-) -> VoiceDebugMenuEffect {
-    match key {
-        KeyCode::Escape | KeyCode::Tab => {
-            runtime.mark_action_status(voice_debug.close_menu());
-            VoiceDebugMenuEffect::HANDLED
-        }
-        KeyCode::DownArrow | KeyCode::Char('j') | KeyCode::Char('J') => {
-            voice_debug.select_next();
-            VoiceDebugMenuEffect::HANDLED
-        }
-        KeyCode::UpArrow | KeyCode::Char('k') | KeyCode::Char('K') => {
-            voice_debug.select_previous();
-            VoiceDebugMenuEffect::HANDLED
-        }
-        KeyCode::Enter => {
-            if voice_running
-                && voice_debug.selected_item == SceneVoiceDebugState::MENU_ITEM_TEST_MODE
-            {
-                runtime
-                    .mark_action_status("Voice test mode toggle unavailable: voice is listening");
-            } else if compose_running
-                && voice_debug.selected_item == SceneVoiceDebugState::MENU_ITEM_FAKE_CODEX
-            {
-                runtime.mark_action_status(
-                    "Compose debug backend toggle unavailable: compose is running",
-                );
-            } else if voice_debug.selected_item == SceneVoiceDebugState::MENU_ITEM_FAKE_CODEX {
-                let status = compose_debug_backend.toggle();
-                voice_debug.fake_codex_backend = compose_debug_backend.is_fake();
-                runtime.clear_compose_history();
-                runtime.mark_action_status(status);
-                return VoiceDebugMenuEffect::RESET_COMPOSE_DIALOGUE;
-            } else {
-                runtime.mark_action_status(voice_debug.toggle_selected());
-            }
-            VoiceDebugMenuEffect::HANDLED
-        }
-        _ => VoiceDebugMenuEffect::IGNORED,
-    }
 }
 
 fn is_stt_hold_key(key: KeyCode, modifiers: Modifiers) -> bool {
