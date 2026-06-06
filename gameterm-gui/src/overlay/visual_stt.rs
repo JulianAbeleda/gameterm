@@ -15,6 +15,7 @@ const STT_AUTO_SUBMIT_ENV: &str = "GAMETERM_SCENE_STT_AUTO_SUBMIT";
 const STT_WHISPER_MODEL_ENV: &str = "GAMETERM_SCENE_STT_WHISPER_MODEL";
 const STT_WHISPER_LANGUAGE_ENV: &str = "GAMETERM_SCENE_STT_LANGUAGE";
 const STT_WHISPER_MAX_SECONDS_ENV: &str = "GAMETERM_SCENE_STT_MAX_SECONDS";
+const STT_WHISPER_DEVICE_ENV: &str = "GAMETERM_SCENE_STT_DEVICE";
 const STT_DEFAULT_TIMEOUT: Duration = Duration::from_secs(20);
 const STT_DEFAULT_MAX_SECONDS: Duration = Duration::from_secs(20);
 const STT_MAX_TRANSCRIPT_CHARS: usize = 800;
@@ -56,6 +57,7 @@ struct SceneWhisperConfig {
     model_path: PathBuf,
     language: String,
     max_recording: Duration,
+    input_device: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -98,6 +100,10 @@ impl SceneSttState {
         self.running = false;
         self.last_status = result.status.clone();
         self.last_status.clone()
+    }
+
+    pub(super) fn last_status(&self) -> &str {
+        &self.last_status
     }
 }
 
@@ -183,6 +189,39 @@ impl SceneSttConfig {
     pub(crate) fn is_whisper_backend(&self) -> bool {
         matches!(self.backend, SceneSttBackend::Whisper(_))
     }
+
+    pub(super) fn diagnostics_lines(&self) -> Vec<String> {
+        let mut lines = Vec::new();
+        lines.push(format!("Backend: {}", self.backend_label()));
+        lines.push(format!(
+            "Auto submit: {}",
+            if self.auto_submit { "on" } else { "off" }
+        ));
+        match &self.backend {
+            SceneSttBackend::Whisper(whisper) => {
+                lines.push(format!("Mic: {}", whisper.input_device_label()));
+                lines.push(format!("Model: {}", whisper.model_path.display()));
+                lines.push(format!("Language: {}", whisper.language));
+                lines.push(format!(
+                    "Max recording: {}s",
+                    whisper.max_recording.as_secs()
+                ));
+            }
+            SceneSttBackend::Command(argv) => {
+                lines.push(format!("Command: {}", argv.join(" ")));
+            }
+            SceneSttBackend::Disabled => {}
+        }
+        lines
+    }
+
+    fn backend_label(&self) -> &'static str {
+        match self.backend {
+            SceneSttBackend::Disabled => "disabled",
+            SceneSttBackend::Command(_) => "command",
+            SceneSttBackend::Whisper(_) => "whisper",
+        }
+    }
 }
 
 impl SceneWhisperConfig {
@@ -202,7 +241,19 @@ impl SceneWhisperConfig {
                 .and_then(|value| value.parse::<u64>().ok())
                 .map(Duration::from_secs)
                 .unwrap_or(STT_DEFAULT_MAX_SECONDS),
+            input_device: std::env::var(STT_WHISPER_DEVICE_ENV)
+                .ok()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty()),
         }
+    }
+
+    fn input_device_label(&self) -> String {
+        self.input_device
+            .as_deref()
+            .filter(|device| !device.trim().is_empty())
+            .unwrap_or("system default")
+            .to_string()
     }
 }
 
@@ -354,7 +405,11 @@ fn run_whisper_stt_backend(
         };
     }
 
-    let recording = match record_until_stop(whisper.max_recording, control_rx) {
+    let recording = match record_until_stop(
+        whisper.max_recording,
+        whisper.input_device.as_deref(),
+        control_rx,
+    ) {
         Ok(Some(recording)) => recording,
         Ok(None) => {
             return SceneSttResult {
@@ -424,12 +479,11 @@ struct RecordedAudio {
 
 fn record_until_stop(
     max_recording: Duration,
+    configured_device: Option<&str>,
     control_rx: mpsc::Receiver<SceneSttControl>,
 ) -> Result<Option<RecordedAudio>, String> {
     let host = cpal::default_host();
-    let device = host
-        .default_input_device()
-        .ok_or_else(|| "no default microphone input device".to_string())?;
+    let device = select_input_device(&host, configured_device)?;
     let supported = device
         .default_input_config()
         .map_err(|err| format!("failed to read default microphone config: {err}"))?;
@@ -468,6 +522,45 @@ fn record_until_stop(
         samples,
         sample_rate,
     }))
+}
+
+fn select_input_device(
+    host: &cpal::Host,
+    configured_device: Option<&str>,
+) -> Result<cpal::Device, String> {
+    let Some(configured_device) = configured_device
+        .map(str::trim)
+        .filter(|device| !device.is_empty())
+    else {
+        return host
+            .default_input_device()
+            .ok_or_else(|| "no default microphone input device".to_string());
+    };
+
+    let devices = host
+        .input_devices()
+        .map_err(|err| format!("failed to list microphone input devices: {err}"))?;
+    let mut available = Vec::new();
+    for device in devices {
+        let name = device.name().unwrap_or_else(|_| "<unnamed>".to_string());
+        if microphone_device_name_matches(&name, configured_device) {
+            return Ok(device);
+        }
+        available.push(name);
+    }
+
+    let available = if available.is_empty() {
+        "none".to_string()
+    } else {
+        available.join(", ")
+    };
+    Err(format!(
+        "configured microphone `{configured_device}` was not found; available: {available}"
+    ))
+}
+
+fn microphone_device_name_matches(actual: &str, requested: &str) -> bool {
+    actual.trim() == requested.trim() || actual.trim().eq_ignore_ascii_case(requested.trim())
 }
 
 fn build_recording_stream(
@@ -745,6 +838,7 @@ mod tests {
                     model_path: missing_model.clone(),
                     language: "en".to_string(),
                     max_recording: Duration::from_secs(1),
+                    input_device: None,
                 }),
                 timeout: Duration::from_secs(2),
                 auto_submit: false,
@@ -767,5 +861,42 @@ mod tests {
         assert_eq!(resampled.len(), samples.len() * 2);
         assert_eq!(resampled[0], 0.0);
         assert!(resampled[1] > 0.0);
+    }
+
+    #[test]
+    fn visual_stt_microphone_name_matching_accepts_exact_and_case_insensitive() {
+        assert!(microphone_device_name_matches(
+            "MacBook Pro Microphone",
+            "MacBook Pro Microphone"
+        ));
+        assert!(microphone_device_name_matches(
+            "MacBook Pro Microphone",
+            "macbook pro microphone"
+        ));
+        assert!(!microphone_device_name_matches(
+            "External Microphone",
+            "MacBook Pro Microphone"
+        ));
+    }
+
+    #[test]
+    fn visual_stt_diagnostics_include_configured_microphone() {
+        let config = SceneSttConfig {
+            backend: SceneSttBackend::Whisper(SceneWhisperConfig {
+                model_path: PathBuf::from("/tmp/model.bin"),
+                language: "en".to_string(),
+                max_recording: Duration::from_secs(8),
+                input_device: Some("Studio Mic".to_string()),
+            }),
+            timeout: Duration::from_secs(2),
+            auto_submit: true,
+        };
+        let lines = config.diagnostics_lines().join("\n");
+
+        assert!(lines.contains("Backend: whisper"));
+        assert!(lines.contains("Auto submit: on"));
+        assert!(lines.contains("Mic: Studio Mic"));
+        assert!(lines.contains("Model: /tmp/model.bin"));
+        assert!(lines.contains("Max recording: 8s"));
     }
 }
