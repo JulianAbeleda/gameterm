@@ -25,6 +25,8 @@ mod visual_compose_dock;
 mod visual_compose_result;
 #[path = "visual_dialogue_scroll.rs"]
 mod visual_dialogue_scroll;
+#[path = "visual_input_keys.rs"]
+mod visual_input_keys;
 #[path = "visual_kiki_idle.rs"]
 mod visual_kiki_idle;
 #[path = "visual_scene_files.rs"]
@@ -60,6 +62,10 @@ use visual_compose_result::{
 use visual_dialogue_scroll::{
     SceneDialogueScrollback, apply_dialogue_scroll_key, apply_dialogue_scroll_wheel,
     handle_dialogue_scroll_key, handle_dialogue_scroll_wheel,
+};
+use visual_input_keys::{
+    is_stt_hold_key, is_stt_hold_release_key, is_tts_toggle_key, visual_input_from_key,
+    visual_input_resets_dialogue_scroll,
 };
 use visual_kiki_idle::*;
 pub(crate) use visual_scene_files::SceneOverlayLaunchOptions;
@@ -754,57 +760,6 @@ fn show_visual_scene_overlay_with_source(
     }
 
     Ok(())
-}
-
-fn visual_input_from_key(key: KeyCode) -> VisualInput {
-    match key {
-        KeyCode::Escape | KeyCode::Char('q') | KeyCode::Char('Q') => VisualInput::Close,
-        KeyCode::Char('r') | KeyCode::Char('R') => VisualInput::Reload,
-        KeyCode::Tab => VisualInput::ToggleDebug,
-        KeyCode::Enter => VisualInput::Activate,
-        KeyCode::DownArrow | KeyCode::Char('j') | KeyCode::Char('J') => VisualInput::Next,
-        KeyCode::UpArrow | KeyCode::Char('k') | KeyCode::Char('K') => VisualInput::Previous,
-        KeyCode::RightArrow | KeyCode::Char('l') | KeyCode::Char('L') => VisualInput::Right,
-        KeyCode::LeftArrow | KeyCode::Char('h') | KeyCode::Char('H') => VisualInput::Left,
-        KeyCode::PageUp => VisualInput::ScrollDialogueUp,
-        KeyCode::PageDown => VisualInput::ScrollDialogueDown,
-        KeyCode::Backspace => VisualInput::Backspace,
-        KeyCode::Char(c) => VisualInput::Char(c),
-        _ => VisualInput::Other,
-    }
-}
-
-fn visual_input_resets_dialogue_scroll(input: VisualInput) -> bool {
-    matches!(input, VisualInput::Activate)
-}
-
-fn is_tts_toggle_key(key: KeyCode, modifiers: Modifiers) -> bool {
-    matches!(key, KeyCode::Char('m') | KeyCode::Char('M')) && modifiers.contains(Modifiers::ALT)
-}
-
-fn is_stt_hold_key(key: KeyCode, modifiers: Modifiers) -> bool {
-    matches!(
-        key,
-        KeyCode::Shift
-            | KeyCode::LeftShift
-            | KeyCode::RightShift
-            | KeyCode::Super
-            | KeyCode::LeftWindows
-            | KeyCode::RightWindows
-    ) && modifiers.contains(Modifiers::SHIFT)
-        && modifiers.contains(Modifiers::SUPER)
-}
-
-fn is_stt_hold_release_key(key: KeyCode) -> bool {
-    matches!(
-        key,
-        KeyCode::Shift
-            | KeyCode::LeftShift
-            | KeyCode::RightShift
-            | KeyCode::Super
-            | KeyCode::LeftWindows
-            | KeyCode::RightWindows
-    )
 }
 
 fn apply_tts_result(
