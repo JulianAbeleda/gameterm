@@ -41,6 +41,8 @@ const KIKI_BLINK_FRAME_COUNT: usize = 6;
 const KIKI_BLINK_FRAME_MS: u128 = 90;
 const KIKI_BLINK_INTERVAL_MS: u128 = 4_200;
 
+#[path = "visual_compose_dock.rs"]
+mod visual_compose_dock;
 #[path = "visual_dialogue_scroll.rs"]
 mod visual_dialogue_scroll;
 #[path = "visual_voice_debug.rs"]
@@ -57,6 +59,7 @@ use super::visual_tts::{
     extract_speakable_segments, SceneTtsConfig, SceneTtsRequest, SceneTtsResult, SceneTtsState,
     SceneTtsWorker, SpeakableSegment, SpeakableSource,
 };
+use visual_compose_dock::{SceneComposeAction, SceneComposeDock};
 use visual_dialogue_scroll::{
     apply_dialogue_scroll_key, apply_dialogue_scroll_wheel, handle_dialogue_scroll_key,
     handle_dialogue_scroll_wheel, SceneDialogueScrollback,
@@ -2024,220 +2027,6 @@ fn sanitize_compose_output(output: &str) -> String {
         }
     }
     sanitized.trim().to_string()
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-struct SceneComposeDock {
-    buffer: String,
-    cursor: usize,
-    history: Vec<String>,
-    history_index: Option<usize>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum SceneComposeAction {
-    Consumed,
-    Submitted(String),
-    Fallthrough,
-}
-
-impl SceneComposeDock {
-    fn handle_key(&mut self, key: KeyCode) -> SceneComposeAction {
-        match key {
-            KeyCode::Backspace => {
-                self.remove_before_cursor();
-                SceneComposeAction::Consumed
-            }
-            KeyCode::Delete => {
-                if self.buffer.is_empty() {
-                    SceneComposeAction::Fallthrough
-                } else {
-                    self.clear_buffer();
-                    SceneComposeAction::Consumed
-                }
-            }
-            KeyCode::LeftArrow => {
-                self.cursor = self.cursor.saturating_sub(1);
-                SceneComposeAction::Consumed
-            }
-            KeyCode::RightArrow => {
-                self.cursor = (self.cursor + 1).min(self.buffer_char_len());
-                SceneComposeAction::Consumed
-            }
-            KeyCode::Home => {
-                self.cursor = 0;
-                SceneComposeAction::Consumed
-            }
-            KeyCode::End => {
-                self.cursor = self.buffer_char_len();
-                SceneComposeAction::Consumed
-            }
-            KeyCode::UpArrow => {
-                self.recall_previous_history();
-                SceneComposeAction::Consumed
-            }
-            KeyCode::DownArrow => {
-                self.recall_next_history();
-                SceneComposeAction::Consumed
-            }
-            KeyCode::Enter => {
-                let submitted = self.buffer.trim().to_string();
-                if submitted.is_empty() {
-                    SceneComposeAction::Fallthrough
-                } else {
-                    SceneComposeAction::Submitted(submitted)
-                }
-            }
-            KeyCode::Char(ch) if is_compose_char(ch) => {
-                self.insert_char(ch);
-                SceneComposeAction::Consumed
-            }
-            _ => SceneComposeAction::Fallthrough,
-        }
-    }
-
-    fn mark_submitted(&mut self, prompt: &str) {
-        self.history.push(prompt.to_string());
-        if self.history.len() > 20 {
-            self.history.remove(0);
-        }
-        self.clear_buffer();
-    }
-
-    fn insert_transcript(&mut self, transcript: &str) {
-        let transcript = transcript.trim();
-        if transcript.is_empty() {
-            return;
-        }
-        if !self.buffer.is_empty()
-            && self.cursor == self.buffer_char_len()
-            && !self.buffer.chars().last().is_some_and(char::is_whitespace)
-        {
-            self.insert_char(' ');
-        }
-        for ch in transcript.chars().filter(|ch| is_compose_char(*ch)) {
-            self.insert_char(ch);
-        }
-    }
-
-    fn render_line(&self, cols: usize) -> String {
-        let mut line = String::from(" Compose: ");
-        line.push_str(&self.buffer_with_cursor());
-        if self.buffer.is_empty() {
-            line.push_str("  type here; enter submits");
-        }
-        clip_text(&line, cols.max(1))
-    }
-
-    fn render_staged_dock_line(&self, cols: usize, rect: VnOverlayRect) -> String {
-        let mut line = String::from(" ");
-        line.push_str(&self.buffer_with_cursor());
-        if self.buffer.is_empty() {
-            line.push_str(" type here; enter submits");
-        }
-        let content_width = rect.width.min(cols.saturating_sub(rect.col)).max(1);
-        let indent = " ".repeat(rect.col.min(cols.saturating_sub(1)));
-        format!(
-            "{indent}{:<content_width$}",
-            clip_text(&line, content_width)
-        )
-    }
-
-    fn render_staged_nameplate_line(&self, cols: usize, rect: VnOverlayRect) -> String {
-        let content_width = rect.width.min(cols.saturating_sub(rect.col)).max(1);
-        let indent = " ".repeat(rect.col.min(cols.saturating_sub(1)));
-        let label = format!("{:<content_width$}", clip_text("Composer", content_width));
-        format!(
-            "{indent}{:<content_width$}",
-            clip_text(&label, content_width)
-        )
-    }
-
-    fn insert_char(&mut self, ch: char) {
-        let byte_idx = self.cursor_byte_idx();
-        self.buffer.insert(byte_idx, ch);
-        self.cursor += 1;
-        self.history_index = None;
-    }
-
-    fn remove_before_cursor(&mut self) {
-        if self.cursor == 0 {
-            return;
-        }
-        let start = self.cursor_to_byte_idx(self.cursor - 1);
-        let end = self.cursor_byte_idx();
-        self.buffer.replace_range(start..end, "");
-        self.cursor -= 1;
-        self.history_index = None;
-    }
-
-    fn clear_buffer(&mut self) {
-        self.buffer.clear();
-        self.cursor = 0;
-        self.history_index = None;
-    }
-
-    fn recall_previous_history(&mut self) {
-        if self.history.is_empty() {
-            return;
-        }
-        let next_index = match self.history_index {
-            Some(index) => index.saturating_sub(1),
-            None => self.history.len() - 1,
-        };
-        self.set_history_index(next_index);
-    }
-
-    fn recall_next_history(&mut self) {
-        let Some(index) = self.history_index else {
-            return;
-        };
-        if index + 1 >= self.history.len() {
-            self.clear_buffer();
-        } else {
-            self.set_history_index(index + 1);
-        }
-    }
-
-    fn set_history_index(&mut self, index: usize) {
-        self.history_index = Some(index);
-        self.buffer = self.history[index].clone();
-        self.cursor = self.buffer_char_len();
-    }
-
-    fn buffer_with_cursor(&self) -> String {
-        let mut out = String::new();
-        for (idx, ch) in self.buffer.chars().enumerate() {
-            if idx == self.cursor {
-                out.push('_');
-            }
-            out.push(ch);
-        }
-        if self.cursor >= self.buffer_char_len() {
-            out.push('_');
-        }
-        out
-    }
-
-    fn cursor_byte_idx(&self) -> usize {
-        self.cursor_to_byte_idx(self.cursor)
-    }
-
-    fn cursor_to_byte_idx(&self, cursor: usize) -> usize {
-        self.buffer
-            .char_indices()
-            .nth(cursor)
-            .map(|(idx, _)| idx)
-            .unwrap_or(self.buffer.len())
-    }
-
-    fn buffer_char_len(&self) -> usize {
-        self.buffer.chars().count()
-    }
-}
-
-fn is_compose_char(ch: char) -> bool {
-    !ch.is_control()
 }
 
 fn render_runtime(
