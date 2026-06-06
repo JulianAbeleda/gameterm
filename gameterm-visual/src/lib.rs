@@ -21,7 +21,9 @@ mod vn_text;
 mod workspace_scene;
 
 use actions::{action_kind_name, action_policy_summary, derived_action_policy};
-pub(crate) use compose_state::{VisualComposePhase, VisualComposeRole, VisualComposeRuntimeState};
+#[cfg(test)]
+pub(crate) use compose_state::VisualComposePhase;
+pub(crate) use compose_state::{VisualComposeRole, VisualComposeRuntimeState};
 use conditions::{condition_guard_detail, conditions_match};
 pub use debug::VisualSceneDebugReport;
 pub use patch::{
