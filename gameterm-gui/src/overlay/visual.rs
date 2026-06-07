@@ -783,6 +783,7 @@ mod tests {
         codex_compose_argv, codex_output_text, compose_backend_config, run_codex_compose_backend,
         CodexComposeConfig, ComposeBackendConfig,
     };
+    use super::super::visual_tts::SpeechBlockKind;
     use super::visual_voice_debug::SceneVoiceDebugState;
     use super::*;
     use gameterm_visual::{
@@ -1640,8 +1641,12 @@ mod tests {
     #[test]
     fn first_voice_reveal_delay_requires_first_unmuted_speakable_audio() {
         let segments = vec![SpeakableSegment {
+            turn_id: 0,
+            block_index: 0,
             speaker: Some("Codex".to_string()),
+            display_text: "Ready.".to_string(),
             text: "Ready.".to_string(),
+            kind: SpeechBlockKind::Prose,
             source: SpeakableSource::ComposeReply,
         }];
 

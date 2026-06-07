@@ -23,9 +23,18 @@ const TTS_MAX_SEGMENT_CHARS: usize = 800;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct SpeakableSegment {
+    pub(super) turn_id: u64,
+    pub(super) block_index: usize,
     pub(super) speaker: Option<String>,
+    pub(super) display_text: String,
     pub(super) text: String,
+    pub(super) kind: SpeechBlockKind,
     pub(super) source: SpeakableSource,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum SpeechBlockKind {
+    Prose,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -211,22 +220,53 @@ pub(super) fn extract_speakable_segments(
         .map(ToOwned::to_owned);
     let text = strip_fenced_code(text);
     let mut segments = Vec::new();
-    let mut current = Vec::new();
+    let mut current_display = Vec::new();
+    let mut current_speakable = Vec::new();
 
     for line in text.lines() {
         let trimmed = line.trim();
         if trimmed.is_empty() {
-            push_segment(&mut segments, &speaker, &mut current, source);
+            push_segment(
+                &mut segments,
+                &speaker,
+                &mut current_display,
+                &mut current_speakable,
+                source,
+            );
             continue;
         }
         if is_machine_oriented_line(trimmed) {
-            push_segment(&mut segments, &speaker, &mut current, source);
+            push_segment(
+                &mut segments,
+                &speaker,
+                &mut current_display,
+                &mut current_speakable,
+                source,
+            );
             continue;
         }
-        current.push(trimmed.to_string());
+        let speakable = clean_speakable_line(trimmed);
+        if speakable.is_empty() {
+            push_segment(
+                &mut segments,
+                &speaker,
+                &mut current_display,
+                &mut current_speakable,
+                source,
+            );
+            continue;
+        }
+        current_display.push(trimmed.to_string());
+        current_speakable.push(speakable);
     }
 
-    push_segment(&mut segments, &speaker, &mut current, source);
+    push_segment(
+        &mut segments,
+        &speaker,
+        &mut current_display,
+        &mut current_speakable,
+        source,
+    );
     segments
 }
 
@@ -270,21 +310,28 @@ impl Drop for SceneTtsWorker {
 fn push_segment(
     segments: &mut Vec<SpeakableSegment>,
     speaker: &Option<String>,
-    current: &mut Vec<String>,
+    current_display: &mut Vec<String>,
+    current_speakable: &mut Vec<String>,
     source: SpeakableSource,
 ) {
-    if current.is_empty() {
+    if current_speakable.is_empty() {
         return;
     }
-    let text = current.join(" ");
-    current.clear();
+    let display_text = current_display.join(" ");
+    let text = current_speakable.join(" ");
+    current_display.clear();
+    current_speakable.clear();
     let text = text.chars().take(TTS_MAX_SEGMENT_CHARS).collect::<String>();
     if text.trim().is_empty() {
         return;
     }
     segments.push(SpeakableSegment {
+        turn_id: 0,
+        block_index: segments.len(),
         speaker: speaker.clone(),
+        display_text,
         text,
+        kind: SpeechBlockKind::Prose,
         source,
     });
 }
@@ -322,7 +369,8 @@ fn is_machine_oriented_line(line: &str) -> bool {
         return true;
     }
 
-    let path_like = line.matches('/').count() >= 2 || line.matches('\\').count() >= 2;
+    let path_like = (line.matches('/').count() >= 2 || line.matches('\\').count() >= 2)
+        && line.split_whitespace().count() <= 4;
     let identifier_chars = line
         .chars()
         .filter(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '/' | '\\' | '.' | ':'))
@@ -335,6 +383,154 @@ fn is_machine_oriented_line(line: &str) -> bool {
         line.chars().filter(|ch| ch.is_ascii_punctuation()).count() * 100 / total_chars > 45;
 
     path_like || identifier_heavy || punctuation_heavy
+}
+
+fn clean_speakable_line(line: &str) -> String {
+    let without_inline_code = replace_inline_code(line);
+    let mut cleaned = Vec::new();
+    let mut last_replacement: Option<&'static str> = None;
+    for word in without_inline_code.split_whitespace() {
+        let replacement = speakable_word(word);
+        match replacement {
+            WordSpeech::Keep(value) => {
+                cleaned.push(value);
+                last_replacement = None;
+            }
+            WordSpeech::Replace(value) => {
+                if last_replacement != Some(value) {
+                    cleaned.push(value.to_string());
+                }
+                last_replacement = Some(value);
+            }
+            WordSpeech::Skip => {}
+        }
+    }
+    cleaned.join(" ").trim().to_string()
+}
+
+fn replace_inline_code(line: &str) -> String {
+    let mut output = String::new();
+    let mut rest = line;
+    while let Some(start) = rest.find('`') {
+        output.push_str(&rest[..start]);
+        let after_start = &rest[start + 1..];
+        let Some(end) = after_start.find('`') else {
+            output.push_str(after_start);
+            return output;
+        };
+        let code = &after_start[..end];
+        if inline_code_is_technical(code) {
+            output.push_str(" the command ");
+        } else {
+            output.push_str(code);
+        }
+        rest = &after_start[end + 1..];
+    }
+    output.push_str(rest);
+    output
+}
+
+fn inline_code_is_technical(code: &str) -> bool {
+    let trimmed = code.trim();
+    trimmed.contains('/')
+        || trimmed.contains('\\')
+        || trimmed.contains('=')
+        || trimmed.starts_with("--")
+        || trimmed.split_whitespace().count() > 1
+        || matches!(
+            trimmed.split_whitespace().next(),
+            Some("cargo" | "git" | "make" | "npm" | "pnpm" | "python" | "rustc")
+        )
+}
+
+enum WordSpeech {
+    Keep(String),
+    Replace(&'static str),
+    Skip,
+}
+
+fn speakable_word(word: &str) -> WordSpeech {
+    if word.chars().all(|ch| ch.is_ascii_punctuation()) {
+        return WordSpeech::Skip;
+    }
+    let raw = word.trim_matches(|ch: char| ch.is_ascii_punctuation() && ch != '-');
+    if is_flag_token(raw) {
+        return WordSpeech::Skip;
+    }
+    let trimmed = word.trim_matches(|ch: char| {
+        ch.is_ascii_punctuation() && ch != '/' && ch != '\\' && ch != ':' && ch != '.'
+    });
+    if trimmed.is_empty() {
+        return WordSpeech::Skip;
+    }
+    if is_url_token(trimmed) {
+        return WordSpeech::Replace("the link");
+    }
+    if is_unix_path_token(trimmed) {
+        return if path_token_looks_like_file(trimmed) {
+            WordSpeech::Replace("that file")
+        } else {
+            WordSpeech::Replace("the project folder")
+        };
+    }
+    if is_windows_path_token(trimmed) {
+        return WordSpeech::Replace("that folder");
+    }
+    if is_commit_hash_token(trimmed) || is_env_var_token(trimmed) {
+        return WordSpeech::Skip;
+    }
+    if file_name_token_looks_technical(trimmed) {
+        return WordSpeech::Replace("that file");
+    }
+    WordSpeech::Keep(word.replace(['`', '*'], ""))
+}
+
+fn is_url_token(token: &str) -> bool {
+    token.starts_with("http://") || token.starts_with("https://")
+}
+
+fn is_unix_path_token(token: &str) -> bool {
+    token.starts_with('/') && token.matches('/').count() >= 2
+}
+
+fn is_windows_path_token(token: &str) -> bool {
+    token.len() > 3
+        && token.as_bytes().get(1) == Some(&b':')
+        && token.as_bytes().get(2) == Some(&b'\\')
+}
+
+fn path_token_looks_like_file(token: &str) -> bool {
+    token
+        .rsplit(['/', '\\'])
+        .next()
+        .is_some_and(file_name_token_looks_technical)
+}
+
+fn is_commit_hash_token(token: &str) -> bool {
+    (7..=40).contains(&token.len()) && token.chars().all(|ch| ch.is_ascii_hexdigit())
+}
+
+fn is_env_var_token(token: &str) -> bool {
+    token.len() >= 4
+        && token.contains('_')
+        && token
+            .chars()
+            .all(|ch| ch.is_ascii_uppercase() || ch.is_ascii_digit() || ch == '_')
+}
+
+fn is_flag_token(token: &str) -> bool {
+    token.starts_with("--") && token.len() > 2
+}
+
+fn file_name_token_looks_technical(token: &str) -> bool {
+    const EXTENSIONS: [&str; 18] = [
+        ".rs", ".toml", ".json", ".yaml", ".yml", ".md", ".sh", ".py", ".js", ".ts", ".tsx",
+        ".jsx", ".lock", ".png", ".jpg", ".jpeg", ".wav", ".zip",
+    ];
+    let lower = token
+        .trim_end_matches(|ch: char| matches!(ch, '.' | ',' | ';' | ':' | '?' | '!'))
+        .to_ascii_lowercase();
+    EXTENSIONS.iter().any(|ext| lower.ends_with(ext))
 }
 
 fn scene_tts_config_from_env() -> SceneTtsConfig {
@@ -821,6 +1017,35 @@ We can continue after the smoke pass."#;
         assert_eq!(segments[0].text, "Here is the plan.");
         assert_eq!(segments[1].text, "We can continue after the smoke pass.");
         assert_eq!(segments[0].speaker.as_deref(), Some("Codex"));
+        assert_eq!(segments[0].block_index, 0);
+        assert_eq!(segments[1].block_index, 1);
+        assert_eq!(segments[0].kind, SpeechBlockKind::Prose);
+    }
+
+    #[test]
+    fn visual_tts_cleans_inline_technical_spans_without_changing_display_text() {
+        let text = "I updated /Users/julianabeleda/env/gameterm and ran `cargo test -p gameterm-gui`. See https://example.com/report.";
+
+        let segments =
+            extract_speakable_segments(Some("Codex"), text, SpeakableSource::ComposeReply);
+
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].display_text, text);
+        assert_eq!(
+            segments[0].text,
+            "I updated the project folder and ran the command See the link"
+        );
+    }
+
+    #[test]
+    fn visual_tts_skips_hashes_flags_env_vars_and_replaces_files() {
+        let text = "Commit 1234abcd updated GAMETERM_SCENE_TTS_BACKEND with --verbose in Cargo.toml.";
+
+        let segments =
+            extract_speakable_segments(Some("Codex"), text, SpeakableSource::ComposeReply);
+
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].text, "Commit updated with in that file");
     }
 
     #[test]
@@ -857,8 +1082,12 @@ We can continue after the smoke pass."#;
         let result = run_tts_backend(
             SceneTtsRequest {
                 segment: SpeakableSegment {
+                    turn_id: 0,
+                    block_index: 0,
                     speaker: Some("Codex".to_string()),
+                    display_text: "Speak this line.".to_string(),
                     text: "Speak this line.".to_string(),
+                    kind: SpeechBlockKind::Prose,
                     source: SpeakableSource::ComposeReply,
                 },
             },
@@ -1046,8 +1275,12 @@ We can continue after the smoke pass."#;
 
     fn test_segment(text: &str) -> SpeakableSegment {
         SpeakableSegment {
+            turn_id: 0,
+            block_index: 0,
             speaker: Some("Codex".to_string()),
+            display_text: text.to_string(),
             text: text.to_string(),
+            kind: SpeechBlockKind::Prose,
             source: SpeakableSource::ComposeReply,
         }
     }
