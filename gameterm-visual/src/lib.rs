@@ -4519,6 +4519,7 @@ mod tests {
         );
 
         let frame = runtime.render_text_frame(200, 60);
+        assert!(frame.contains("Debug 2"));
         assert!(frame.contains("> Sections [Scene Layout]"));
         assert!(frame.contains("dialogue_margin_ratio"));
         assert!(frame.contains("Voice"));
@@ -6726,6 +6727,12 @@ mod tests {
     fn truncate_to_screen_clips_rows_and_columns() {
         let frame = truncate_to_screen("abcdef\n123456\nxyz".to_string(), 3, 2);
         assert_eq!(frame, "abc\r\n123\r\n");
+    }
+
+    #[test]
+    fn truncate_to_screen_pads_to_full_screen_frame() {
+        let frame = truncate_to_screen("a\nbc".to_string(), 4, 3);
+        assert_eq!(frame, "a   \r\nbc  \r\n    \r\n");
     }
 
     #[test]

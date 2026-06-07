@@ -85,7 +85,7 @@ use visual_event_drain::{
     drain_tts_results,
 };
 #[cfg(test)]
-use visual_frame::replace_last_screen_line;
+use visual_frame::{replace_last_screen_line, replace_screen_line};
 use visual_input_keys::{
     is_stt_hold_key, is_stt_hold_release_key, is_tts_toggle_key, visual_input_from_key,
     visual_input_resets_dialogue_scroll,
@@ -1803,8 +1803,25 @@ mod tests {
         let rendered = apply_voice_debug_frame(frame, 48, 7, &runtime, &debug);
 
         let lines = rendered.lines().collect::<Vec<_>>();
-        assert_eq!(lines[5], "  Voice");
+        assert_eq!(lines[0], format!("{:<48}", "one"));
+        assert_eq!(lines[1], format!("{:<48}", "two"));
+        assert!(lines[5].starts_with("  Voice"));
+        assert_eq!(lines[5].chars().count(), 48);
         assert!(lines[6].contains("Scene voice diagnostics"));
+    }
+
+    #[test]
+    fn scene_row_replacement_keeps_fixed_width_frame() {
+        let frame = "alpha\r\nbeta\r\ngamma\r\n".to_string();
+
+        let rendered = replace_screen_line(frame, 12, 3, 1, "composer text");
+        let lines = rendered.lines().collect::<Vec<_>>();
+
+        assert_eq!(lines.len(), 3);
+        assert_eq!(lines[0], "alpha       ");
+        assert_eq!(lines[1], "composer tex");
+        assert_eq!(lines[2], "gamma       ");
+        assert!(lines.iter().all(|line| line.chars().count() == 12));
     }
 
     #[test]
@@ -2158,7 +2175,7 @@ mod tests {
 
         let lines = frame.lines().collect::<Vec<_>>();
         assert_eq!(lines.len(), 4);
-        assert_eq!(lines[0], "one");
+        assert_eq!(lines[0], "one     ");
         assert_eq!(lines[3], "Compose:");
     }
 }

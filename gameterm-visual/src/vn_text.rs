@@ -21,14 +21,19 @@ pub(crate) fn wrap_user_prompt_for_vn(prompt: &str, dialogue_width: usize) -> Ve
 
 pub fn truncate_to_screen(text: String, cols: usize, rows: usize) -> String {
     let max_cols = cols.max(1);
-    text.lines()
-        .take(rows.max(1))
+    let max_rows = rows.max(1);
+    let mut lines = text
+        .lines()
+        .take(max_rows)
         .map(|line| {
-            let mut clipped = line.chars().take(max_cols).collect::<String>();
-            clipped.push_str("\r\n");
-            clipped
+            let clipped = line.chars().take(max_cols).collect::<String>();
+            format!("{clipped:<max_cols$}\r\n")
         })
-        .collect()
+        .collect::<Vec<_>>();
+    while lines.len() < max_rows {
+        lines.push(format!("{:<max_cols$}\r\n", ""));
+    }
+    lines.into_iter().collect()
 }
 
 pub(crate) fn place_vn_overlay_text(
