@@ -33,7 +33,10 @@ pub(crate) enum VisualComposeVisibility {
 
 impl VisualComposeVisibility {
     pub(crate) fn is_visible(self) -> bool {
-        matches!(self, Self::Speaking | Self::Done)
+        // TTS is an enhancement layer, not the source of truth for dialogue.
+        // Keep queued blocks visible so a delayed/stalled voice worker cannot
+        // make a completed compose reply disappear from the transcript.
+        matches!(self, Self::Queued | Self::Speaking | Self::Done)
     }
 }
 

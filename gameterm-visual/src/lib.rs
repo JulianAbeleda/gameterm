@@ -5249,7 +5249,7 @@ mod tests {
     }
 
     #[test]
-    fn staged_scene_compose_blocks_wait_for_voice_reveal() {
+    fn staged_scene_compose_blocks_do_not_wait_for_voice_reveal() {
         let mut runtime = SceneRuntime::new(staged_compose_scene()).unwrap();
 
         runtime.mark_compose_running("Compose running", "plan");
@@ -5265,13 +5265,13 @@ mod tests {
 
         let frame = runtime.render_text_frame(100, 30);
         assert!(frame.contains("> plan"));
-        assert!(!frame.contains("First reply block."));
-        assert!(!frame.contains("Second reply block."));
+        assert!(frame.contains("First reply block."));
+        assert!(frame.contains("Second reply block."));
 
         runtime.mark_compose_block_speaking(block_ids[0].0, block_ids[0].1);
         let frame = runtime.render_text_frame(100, 30);
         assert!(frame.contains("First reply block."));
-        assert!(!frame.contains("Second reply block."));
+        assert!(frame.contains("Second reply block."));
 
         runtime.mark_compose_block_done(block_ids[0].0, block_ids[0].1);
         runtime.mark_compose_block_speaking(block_ids[1].0, block_ids[1].1);
