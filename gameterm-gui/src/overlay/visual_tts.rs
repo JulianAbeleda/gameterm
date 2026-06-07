@@ -666,13 +666,28 @@ fn run_voicevox_tts_backend(
         };
     }
 
-    if let Some(player) = &config.player {
-        let _ = run_player_command(player.clone(), &output_path);
-    }
+    let played_audio = if let Some(player) = &config.player {
+        if let Err(err) = run_player_command(player.clone(), &output_path, config.timeout) {
+            let _ = std::fs::remove_file(&output_path);
+            return SceneTtsResult {
+                status: "TTS failed".to_string(),
+                output_path: None,
+                error: Some(format!("TTS player failed: {err}")),
+            };
+        }
+        let _ = std::fs::remove_file(&output_path);
+        true
+    } else {
+        false
+    };
 
     SceneTtsResult {
-        status: format!("TTS ready: {}", output_path.display()),
-        output_path: Some(output_path),
+        status: if played_audio {
+            "TTS played".to_string()
+        } else {
+            format!("TTS ready: {}", output_path.display())
+        },
+        output_path: (!played_audio).then_some(output_path),
         error: None,
     }
 }
@@ -793,13 +808,28 @@ fn run_command_tts_backend(
         };
     }
 
-    if let Some(player) = &config.player {
-        let _ = run_player_command(player.clone(), &output_path);
-    }
+    let played_audio = if let Some(player) = &config.player {
+        if let Err(err) = run_player_command(player.clone(), &output_path, config.timeout) {
+            let _ = std::fs::remove_file(&output_path);
+            return SceneTtsResult {
+                status: "TTS failed".to_string(),
+                output_path: None,
+                error: Some(format!("TTS player failed: {err}")),
+            };
+        }
+        let _ = std::fs::remove_file(&output_path);
+        true
+    } else {
+        false
+    };
 
     SceneTtsResult {
-        status: format!("TTS ready: {}", output_path.display()),
-        output_path: Some(output_path),
+        status: if played_audio {
+            "TTS played".to_string()
+        } else {
+            format!("TTS ready: {}", output_path.display())
+        },
+        output_path: (!played_audio).then_some(output_path),
         error: None,
     }
 }
@@ -932,7 +962,11 @@ fn wait_for_tts_output(
     }
 }
 
-fn run_player_command(argv: Vec<String>, output_path: &PathBuf) -> Result<(), String> {
+fn run_player_command(
+    argv: Vec<String>,
+    output_path: &PathBuf,
+    timeout: Duration,
+) -> Result<(), String> {
     let argv = argv
         .into_iter()
         .map(|arg| arg.replace("{output}", &output_path.display().to_string()))
@@ -940,11 +974,23 @@ fn run_player_command(argv: Vec<String>, output_path: &PathBuf) -> Result<(), St
     let Some((program, args)) = argv.split_first() else {
         return Ok(());
     };
-    Command::new(program)
+    let child = Command::new(program)
         .args(args)
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()
-        .map(|_| ())
-        .map_err(|err| err.to_string())
+        .map_err(|err| err.to_string())?;
+    let output = wait_for_tts_output(child, timeout)?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        let error = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        Err(if error.is_empty() {
+            "player command failed".to_string()
+        } else {
+            error
+        })
+    }
 }
 
 fn tts_output_path(cache_dir: &PathBuf) -> PathBuf {
@@ -1152,6 +1198,68 @@ We can continue after the smoke pass."#;
         assert_eq!(
             std::fs::read_to_string(second.output_path.unwrap()).unwrap(),
             "second line"
+        );
+    }
+
+    #[test]
+    fn visual_tts_worker_waits_for_player_before_next_block() {
+        let dir = tempfile::tempdir().unwrap();
+        let helper = dir.path().join("tts-helper.sh");
+        let player = dir.path().join("player-helper.sh");
+        let log = dir.path().join("player.log");
+        std::fs::write(
+            &helper,
+            "#!/usr/bin/env sh\ncat > \"$GAMETERM_SCENE_TTS_OUTPUT\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            &player,
+            format!(
+                "#!/usr/bin/env sh\npayload=$(cat \"$1\")\nprintf 'start:%s\\n' \"$payload\" >> '{}'\nsleep 0.1\nprintf 'end:%s\\n' \"$payload\" >> '{}'\n",
+                log.display(),
+                log.display()
+            ),
+        )
+        .unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            for path in [&helper, &player] {
+                let mut permissions = std::fs::metadata(path).unwrap().permissions();
+                permissions.set_mode(0o755);
+                std::fs::set_permissions(path, permissions).unwrap();
+            }
+        }
+        let (tx, rx) = mpsc::channel();
+        let worker = SceneTtsWorker::new(
+            SceneTtsConfig {
+                backend: SceneTtsBackend::Command(vec![helper.display().to_string()]),
+                player: Some(vec![player.display().to_string(), "{output}".to_string()]),
+                cache_dir: dir.path().to_path_buf(),
+                timeout: Duration::from_secs(2),
+            },
+            tx,
+        );
+
+        worker.speak(SceneTtsRequest {
+            segment: test_segment("first line"),
+        });
+        worker.speak(SceneTtsRequest {
+            segment: test_segment("second line"),
+        });
+
+        let first = rx.recv_timeout(Duration::from_secs(3)).unwrap();
+        let second = rx.recv_timeout(Duration::from_secs(3)).unwrap();
+
+        assert!(first.succeeded());
+        assert!(second.succeeded());
+        assert_eq!(first.status, "TTS played");
+        assert_eq!(second.status, "TTS played");
+        assert!(first.output_path.is_none());
+        assert!(second.output_path.is_none());
+        assert_eq!(
+            std::fs::read_to_string(log).unwrap(),
+            "start:first line\nend:first line\nstart:second line\nend:second line\n"
         );
     }
 
