@@ -19,6 +19,7 @@ pub mod visual;
 mod visual_compose;
 mod visual_stt;
 mod visual_tts;
+pub(crate) mod visual_voice_hold;
 
 pub use boot_menu::boot_menu;
 pub use confirm_close_pane::{

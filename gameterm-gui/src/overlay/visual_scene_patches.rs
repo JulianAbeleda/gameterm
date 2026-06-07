@@ -1,5 +1,6 @@
 use super::render_runtime;
 use super::visual_scene_files::modified_time;
+use crate::overlay::visual_voice_hold::clear_scene_voice_hold;
 use gameterm_visual::{SceneRuntime, VisualScenePatch, VisualSpriteManifestStatus};
 use mux::termwiztermtab::TermWizTerminal;
 use mux::{Mux, MuxNotification};
@@ -71,6 +72,7 @@ pub(super) struct ActiveSceneOverlay {
 
 impl ActiveSceneOverlay {
     pub(super) fn new(pane_id: mux::pane::PaneId) -> Self {
+        clear_scene_voice_hold(pane_id);
         Mux::get().set_active_gameterm_scene_pane(pane_id);
         Self { pane_id }
     }
@@ -78,6 +80,7 @@ impl ActiveSceneOverlay {
 
 impl Drop for ActiveSceneOverlay {
     fn drop(&mut self) {
+        clear_scene_voice_hold(self.pane_id);
         Mux::get().clear_active_gameterm_scene_pane(self.pane_id);
     }
 }

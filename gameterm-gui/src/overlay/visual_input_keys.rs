@@ -26,28 +26,3 @@ pub(super) fn visual_input_resets_dialogue_scroll(input: VisualInput) -> bool {
 pub(super) fn is_tts_toggle_key(key: KeyCode, modifiers: Modifiers) -> bool {
     matches!(key, KeyCode::Char('m') | KeyCode::Char('M')) && modifiers.contains(Modifiers::ALT)
 }
-
-pub(super) fn is_stt_hold_key(key: KeyCode, modifiers: Modifiers) -> bool {
-    matches!(
-        key,
-        KeyCode::Shift
-            | KeyCode::LeftShift
-            | KeyCode::RightShift
-            | KeyCode::Super
-            | KeyCode::LeftWindows
-            | KeyCode::RightWindows
-    ) && modifiers.contains(Modifiers::SHIFT)
-        && modifiers.contains(Modifiers::SUPER)
-}
-
-pub(super) fn is_stt_hold_release_key(key: KeyCode) -> bool {
-    matches!(
-        key,
-        KeyCode::Shift
-            | KeyCode::LeftShift
-            | KeyCode::RightShift
-            | KeyCode::Super
-            | KeyCode::LeftWindows
-            | KeyCode::RightWindows
-    )
-}

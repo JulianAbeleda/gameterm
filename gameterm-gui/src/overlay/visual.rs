@@ -63,6 +63,7 @@ use super::visual_stt::{SceneMicDevice, SceneSttResult, SceneSttState};
 use super::visual_tts::{SceneTtsConfig, SceneTtsRequest};
 #[cfg(test)]
 use super::visual_tts::{SpeakableSegment, SpeakableSource};
+use super::visual_voice_hold::{scene_voice_hold_active, set_scene_voice_hold_active};
 #[cfg(test)]
 use visual_command_dispatch::write_story_state_file;
 use visual_command_dispatch::{dispatch_pending_action, RunCommandDispatch};
@@ -87,8 +88,7 @@ use visual_event_drain::{
 #[cfg(test)]
 use visual_frame::{replace_last_screen_line, replace_screen_line};
 use visual_input_keys::{
-    is_stt_hold_key, is_stt_hold_release_key, is_tts_toggle_key, visual_input_from_key,
-    visual_input_resets_dialogue_scroll,
+    is_tts_toggle_key, visual_input_from_key, visual_input_resets_dialogue_scroll,
 };
 use visual_kiki_idle::*;
 #[cfg(test)]
@@ -242,6 +242,8 @@ fn show_visual_scene_overlay_with_source(
             &mut session.dialogue_scroll,
             &mut session.mic_test_running,
         );
+        needs_render |=
+            reconcile_scene_voice_hold_state(pane_id, &mut runtime, &mut session, &stt_tx);
         if needs_render {
             if let Some(runtime) = runtime.as_ref() {
                 render_runtime_with_compose_and_scroll(
@@ -313,6 +315,7 @@ fn show_visual_scene_overlay_with_source(
                         if let Some(stt_session) = session.stt_session.take() {
                             stt_session.cancel();
                         }
+                        set_scene_voice_hold_active(pane_id, false);
                         session.dialogue_scroll.voice_hold_active = false;
                         runtime.mark_action_status(session.stt_state.mark_canceling());
                         session
@@ -332,31 +335,6 @@ fn show_visual_scene_overlay_with_source(
                         && is_tts_toggle_key(key, modifiers)
                     {
                         runtime.mark_action_status(session.tts_state.toggle_muted());
-                        render_runtime_with_compose_and_scroll(
-                            &mut term,
-                            runtime,
-                            &sprite_manifest,
-                            &session.compose_dock,
-                            &session.dialogue_scroll,
-                        )?;
-                        continue;
-                    }
-                    if is_stt_hold_key(key, modifiers) {
-                        if !session.stt_state.is_running() {
-                            runtime.mark_action_status(session.stt_state.mark_started());
-                            if session.dialogue_scroll.voice_debug.test_mode {
-                                runtime.mark_action_status("Voice test listening");
-                            }
-                            session
-                                .dialogue_scroll
-                                .voice_debug
-                                .sync_status(session.stt_state.last_status());
-                            session.stt_session = Some(spawn_stt_backend(
-                                session.selected_stt_config(),
-                                stt_tx.clone(),
-                            ));
-                            session.dialogue_scroll.voice_hold_active = true;
-                        }
                         render_runtime_with_compose_and_scroll(
                             &mut term,
                             runtime,
@@ -593,31 +571,7 @@ fn show_visual_scene_overlay_with_source(
                     )?;
                 }
             }
-            InputEvent::KeyUp(KeyEvent { key, modifiers: _ }) => {
-                if let Some(runtime) = runtime.as_mut() {
-                    if is_stt_hold_release_key(key) && session.stt_state.is_running() {
-                        if let Some(stt_session) = session.stt_session.take() {
-                            stt_session.stop();
-                        }
-                        session.dialogue_scroll.voice_hold_active = false;
-                        runtime.mark_action_status(session.stt_state.mark_processing());
-                        if session.dialogue_scroll.voice_debug.test_mode {
-                            runtime.mark_action_status("Voice test processing");
-                        }
-                        session
-                            .dialogue_scroll
-                            .voice_debug
-                            .sync_status(session.stt_state.last_status());
-                        render_runtime_with_compose_and_scroll(
-                            &mut term,
-                            runtime,
-                            &sprite_manifest,
-                            &session.compose_dock,
-                            &session.dialogue_scroll,
-                        )?;
-                    }
-                }
-            }
+            InputEvent::KeyUp(KeyEvent { .. }) => {}
             InputEvent::Mouse(MouseEvent {
                 x,
                 y,
@@ -679,6 +633,58 @@ fn show_visual_scene_overlay_with_source(
     }
 
     Ok(())
+}
+
+fn reconcile_scene_voice_hold_state(
+    pane_id: mux::pane::PaneId,
+    runtime: &mut Option<SceneRuntime>,
+    session: &mut VisualOverlaySession,
+    stt_tx: &mpsc::Sender<super::visual_stt::SceneSttResult>,
+) -> bool {
+    let hold_active = scene_voice_hold_active(pane_id);
+    if hold_active == session.dialogue_scroll.voice_hold_active {
+        return false;
+    }
+
+    let Some(runtime) = runtime.as_mut() else {
+        session.dialogue_scroll.voice_hold_active = hold_active;
+        return true;
+    };
+
+    if hold_active {
+        if !session.stt_state.is_running() {
+            runtime.mark_action_status(session.stt_state.mark_started());
+            if session.dialogue_scroll.voice_debug.test_mode {
+                runtime.mark_action_status("Voice test listening");
+            }
+            session
+                .dialogue_scroll
+                .voice_debug
+                .sync_status(session.stt_state.last_status());
+            session.stt_session = Some(spawn_stt_backend(
+                session.selected_stt_config(),
+                stt_tx.clone(),
+            ));
+        }
+        session.dialogue_scroll.voice_hold_active = true;
+    } else {
+        if session.stt_state.is_running() {
+            if let Some(stt_session) = session.stt_session.take() {
+                stt_session.stop();
+            }
+            runtime.mark_action_status(session.stt_state.mark_processing());
+            if session.dialogue_scroll.voice_debug.test_mode {
+                runtime.mark_action_status("Voice test processing");
+            }
+            session
+                .dialogue_scroll
+                .voice_debug
+                .sync_status(session.stt_state.last_status());
+        }
+        session.dialogue_scroll.voice_hold_active = false;
+    }
+
+    true
 }
 
 fn handle_scene_debug_session_input(
@@ -1948,19 +1954,6 @@ mod tests {
             .join("\n");
         assert!(lines.contains("Microphone"));
         assert!(lines.contains("usethisphone707 Microphone"));
-    }
-
-    #[test]
-    fn scene_stt_hold_to_talk_uses_shift_command_modifiers() {
-        let shift_command = Modifiers::SHIFT | Modifiers::SUPER;
-        assert!(is_stt_hold_key(KeyCode::LeftWindows, shift_command));
-        assert!(is_stt_hold_key(KeyCode::LeftShift, shift_command));
-        assert!(!is_stt_hold_key(KeyCode::LeftWindows, Modifiers::SUPER));
-        assert!(!is_stt_hold_key(KeyCode::LeftShift, Modifiers::SHIFT));
-        assert!(!is_stt_hold_key(KeyCode::Char(' '), shift_command));
-        assert!(is_stt_hold_release_key(KeyCode::LeftWindows));
-        assert!(is_stt_hold_release_key(KeyCode::LeftShift));
-        assert!(!is_stt_hold_release_key(KeyCode::Char(' ')));
     }
 
     #[test]

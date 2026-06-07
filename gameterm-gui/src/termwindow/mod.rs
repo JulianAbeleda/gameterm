@@ -42,9 +42,7 @@ use gameterm_dynamic::Value;
 use gameterm_font::FontConfiguration;
 use gameterm_term::color::ColorPalette;
 use gameterm_term::input::LastMouseClick;
-use gameterm_term::{
-    Alert, KeyCode as TermKeyCode, Progress, StableRowIndex, TerminalConfiguration, TerminalSize,
-};
+use gameterm_term::{Alert, Progress, StableRowIndex, TerminalConfiguration, TerminalSize};
 use gameterm_visual::{
     generate_workspace_context_error_scene, generate_workspace_scene, ScenePaneContext,
     SceneWorkspaceContext,
@@ -3644,14 +3642,7 @@ impl TermWindow {
             return;
         }
 
-        let result = if is_hold {
-            pane.key_down(TermKeyCode::Super, current_modifiers)
-        } else {
-            pane.key_up(TermKeyCode::Super, current_modifiers)
-        };
-        if let Err(err) = result {
-            log::warn!("failed to forward Scene Mode STT hold modifier change: {err:#}");
-        }
+        crate::overlay::visual_voice_hold::set_scene_voice_hold_active(scene_pane_id, is_hold);
     }
 
     fn get_splits(&mut self) -> Vec<PositionedSplit> {
