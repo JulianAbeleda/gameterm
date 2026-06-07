@@ -1228,3 +1228,48 @@ Notes:
   translator command.
 - The standalone `vs` shortcut and `voicevox-en-to-ja.sh` wrapper remain for
   regular terminal testing and command-backend fallback.
+
+## Scene Maintainability Refactor Verification
+
+Date: 2026-06-07.
+
+Scope:
+
+```text
+docs/gameterm-scene-maintainability-refactor-scope.md
+709729bad..017ddf309
+```
+
+Commands:
+
+```sh
+cargo test -p gameterm-gui visual_speech_blocks
+cargo test -p gameterm-gui visual_tts_
+cargo test -p gameterm-gui compose_backend
+cargo test -p gameterm-gui codex_
+cargo test -p gameterm-gui visual_stt_
+cargo test -p gameterm-gui scene_debug_menu
+cargo test -p gameterm-gui scene_voice_debug
+cargo test -p gameterm-gui scene_voice
+cargo test -p gameterm-gui visual_quad
+cargo test -p gameterm-gui vn_panel
+cargo test -p gameterm-gui stage_displayable
+cargo test -p gameterm-visual
+cargo test -p gameterm-gui --bin gameterm-gui
+cargo check -p gameterm-gui
+git diff --check
+```
+
+Result: PASS.
+
+Summary:
+
+- `gameterm-visual`: 186 passed, 0 failed.
+- `gameterm-gui --bin gameterm-gui`: 155 passed, 0 failed.
+- Focused GUI filters passed.
+- `cargo check -p gameterm-gui` passed with only known existing warnings.
+
+Known warning noise:
+
+- macOS `objc` macro `unexpected cfg` warnings
+- `screen_line.rs` unused assignment warning

@@ -1,8 +1,22 @@
 # GameTerm Scene Maintainability Refactor Scope
 
-Status: scoped, not implemented.
+Status: first implementation pass complete.
 
 Date: 2026-06-07
+
+Implementation pass:
+
+- `a3f9d2981 [docs] scope Scene maintainability refactor`
+- `709729bad [gui] NFC - split Scene TTS speech blocks`
+- `26cfacf5d [gui] NFC - split Scene compose backend`
+- `67b72c4e9 [gui] NFC - split Scene STT backend`
+- `96e1cbae7 [gui] NFC - split Scene overlay input helpers`
+- `b7ffb250d [gui] NFC - split Scene stage image helpers`
+- `017ddf309 [gui] NFC - move SceneRuntime test import`
+
+The implementation intentionally used smaller facade-first extractions instead
+of every ideal target module in this scope. That kept the pass behavior-neutral
+and avoided public API churn.
 
 This document scopes the next maintainability refactor pass for Scene Mode
 after the first product/dogfood pass and the first extraction pass.
@@ -108,7 +122,7 @@ The current refactor should therefore focus on second-order coupling:
 
 ## Current Hotspots
 
-Measured line counts for Scene-owned files:
+Measured line counts for Scene-owned files before this pass:
 
 ```text
 7612 gameterm-visual/src/lib.rs
@@ -135,6 +149,32 @@ Measured line counts for Scene-owned files:
 Raw LOC is not the only signal. Some of the line count is tests, schema, or
 fixtures. The refactor should prioritize coupling and operational risk over
 size alone.
+
+Post-pass line counts for touched hotspots:
+
+```text
+1983 gameterm-gui/src/overlay/visual.rs
+1156 gameterm-gui/src/overlay/visual_tts.rs
+1061 gameterm-gui/src/termwindow/render/visual_quad.rs
+1104 gameterm-gui/src/overlay/visual_compose_backend.rs
+1044 gameterm-gui/src/overlay/visual_stt_backend.rs
+ 554 gameterm-gui/src/overlay/visual_speech_blocks.rs
+ 138 gameterm-gui/src/termwindow/render/visual_stage_image.rs
+  97 gameterm-gui/src/overlay/visual_scene_debug_input.rs
+  58 gameterm-gui/src/overlay/visual_voice_hold_flow.rs
+  10 gameterm-gui/src/overlay/visual_compose.rs
+   6 gameterm-gui/src/overlay/visual_stt.rs
+```
+
+Remaining large modules are now more explicit:
+
+- `visual_compose_backend.rs` still owns the full compose backend internals.
+- `visual_stt_backend.rs` still owns the full STT backend internals.
+- `visual_tts.rs` still owns TTS worker/backend execution, while speech parsing
+  lives in `visual_speech_blocks.rs`.
+- `visual_quad.rs` still owns GPU quad allocation, while stage image placement
+  lives in `visual_stage_image.rs` and panel primitives live in
+  `visual_vn_panel.rs`.
 
 ## What Not To Refactor Yet
 
@@ -251,6 +291,23 @@ Pause criteria:
 
 ### Lane 2: Compose/TTS Speech Pipeline Boundary
 
+Implementation status: partially complete in `709729bad`.
+
+Completed:
+
+- extracted `visual_speech_blocks.rs`
+- moved `SpeakableSegment`, `SpeechBlockKind`, `SpeakableSource`, extraction,
+  technical cleanup, and chunk splitting into that module
+- kept `visual_tts.rs` as the worker/backend implementation
+
+Deferred:
+
+- separate `visual_tts_worker.rs`
+- separate `visual_tts_backends.rs`
+
+Reason: the first split removed the highest-risk parsing/backend coupling
+without changing TTS behavior or import paths broadly.
+
 Owner prefix: `[gui] NFC`, `[visual] NFC` only if runtime state moves
 
 Purpose: make speech-block ordering, text visibility, TTS playback, and
@@ -323,6 +380,21 @@ Definition of done:
 
 ### Lane 3: STT/Microphone Boundary
 
+Implementation status: facade-first split complete in `67b72c4e9`.
+
+Completed:
+
+- added `visual_stt_backend.rs`
+- kept `visual_stt.rs` as a thin facade/re-export module
+
+Deferred:
+
+- separate config, mic-device, mic-test, Whisper, and command modules
+
+Reason: the current split gives `visual.rs` a stable STT import surface while
+preserving behavior. The backend internals can be split later if STT becomes
+the active debugging bottleneck.
+
 Owner prefix: `[gui] NFC`
 
 Purpose: split voice input configuration, mic capture/test, Whisper execution,
@@ -367,6 +439,20 @@ Definition of done:
 - debug menu tests still cover voice diagnostics
 
 ### Lane 4: Compose Backend Boundary
+
+Implementation status: facade-first split complete in `26cfacf5d`.
+
+Completed:
+
+- added `visual_compose_backend.rs`
+- kept `visual_compose.rs` as a thin facade/re-export module
+
+Deferred:
+
+- separate config, Codex argv, process, and failure-classification modules
+
+Reason: this keeps existing tests and imports stable while making the compose
+backend separable from overlay orchestration.
 
 Owner prefix: `[gui] NFC`
 
@@ -422,6 +508,23 @@ Definition of done:
 
 ### Lane 5: Overlay Event Loop Orchestration
 
+Implementation status: first helper extraction complete in `96e1cbae7`.
+
+Completed:
+
+- moved centralized Scene debug-menu side effects to
+  `visual_scene_debug_input.rs`
+- moved voice hold reconciliation to `visual_voice_hold_flow.rs`
+- kept `visual.rs` as the event-loop owner
+
+Deferred:
+
+- full key/mouse dispatch module split
+- moving the broad `visual.rs` test module
+
+Reason: the extracted helpers remove feature-specific branches without changing
+input behavior or render cadence.
+
 Owner prefix: `[gui] NFC`
 
 Purpose: keep `visual.rs` as orchestration only.
@@ -475,6 +578,23 @@ Definition of done:
 - no behavior changes are included
 
 ### Lane 6: VN GPU Render Primitive Boundary
+
+Implementation status: first render primitive split complete in `b7ffb250d`.
+
+Completed:
+
+- added `visual_stage_image.rs`
+- moved image scale mode, aspect-fit/cover math, stage slot placement,
+  placeholder fit, and sprite lookup into that module
+- kept VN panel primitives in the existing `visual_vn_panel.rs`
+
+Deferred:
+
+- separate overlay quad population module
+- separate debug suppression module
+
+Reason: panel primitives were already extracted; the highest-value remaining
+mechanical split was stage image math out of `visual_quad.rs`.
 
 Owner prefix: `[render] NFC`
 
@@ -714,6 +834,42 @@ This refactor pass is complete when:
 - no upstream-wide code was reorganized
 - no behavior fixes were hidden inside NFC commits
 
+First-pass status:
+
+- Compose/TTS, compose backend, STT, overlay helper, and render primitive
+  boundaries are complete enough for current dogfood troubleshooting.
+- Runtime schema, CI helper table cleanup, and deeper backend sub-splits remain
+  explicit follow-ups.
+- No Scene JSON schema changes were made in this NFC pass.
+- No behavior fixes were included in the five NFC implementation commits.
+
+Verification completed for this pass:
+
+```sh
+cargo test -p gameterm-gui visual_speech_blocks
+cargo test -p gameterm-gui visual_tts_
+cargo test -p gameterm-gui compose_backend
+cargo test -p gameterm-gui codex_
+cargo test -p gameterm-gui visual_stt_
+cargo test -p gameterm-gui scene_debug_menu
+cargo test -p gameterm-gui scene_voice_debug
+cargo test -p gameterm-gui scene_voice
+cargo test -p gameterm-gui visual_quad
+cargo test -p gameterm-gui vn_panel
+cargo test -p gameterm-gui stage_displayable
+cargo test -p gameterm-visual
+cargo test -p gameterm-gui --bin gameterm-gui
+cargo check -p gameterm-gui
+git diff --check
+```
+
+Results:
+
+- `gameterm-visual`: 186 passed, 0 failed.
+- `gameterm-gui --bin gameterm-gui`: 155 passed, 0 failed.
+- `cargo check -p gameterm-gui`: passed with only known existing warnings.
+- Focused GUI filters listed above passed.
+
 ## Stop Conditions
 
 Pause and rescope if:
@@ -728,19 +884,19 @@ Pause and rescope if:
 
 ## Immediate Next Step
 
-Start with Lane 2:
+The first pass is complete. The next refactor should only continue if it is
+serving an active dogfood problem.
 
-```text
-[gui] NFC - split Scene TTS speech blocks
-```
+Recommended follow-ups:
 
-Smallest safe first commit:
+1. Product lane: persistent Codex sessions / `codex exec resume`.
+2. Refactor lane: split `visual_compose_backend.rs` into config, Codex argv,
+   process, and failure-classification modules if compose diagnostics become
+   hard to extend.
+3. Refactor lane: split `visual_stt_backend.rs` into config, mic device/test,
+   Whisper, and command modules if STT debugging becomes active again.
+4. Tooling lane: table-drive Scene shell helper scenario metadata if smoke
+   script maintenance becomes the bottleneck.
 
-- move `SpeakableSegment`, `SpeechBlockKind`, `SpeakableSource`,
-  `extract_speakable_segments`, and text cleaning/splitting helpers out of
-  `visual_tts.rs` into a speech-block module
-- keep `visual_tts.rs` as the worker/backend facade
-- run focused TTS extraction tests and the TTS worker tests
-
-This aligns with current dogfood pain and keeps behavior unchanged while making
-future TTS troubleshooting easier.
+Do not continue refactoring only to reduce LOC. The next pass should remove
+real coupling that is blocking product work or troubleshooting.

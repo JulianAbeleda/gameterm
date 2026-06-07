@@ -9,8 +9,10 @@ deeper product context.
 - Date: 2026-06-07
 - Branch: `main`
 - Latest behavior commit: `41fc33eec [visual] serialize Scene TTS playback`
+- Latest refactor commit: `017ddf309 [gui] NFC - move SceneRuntime test import`
 - Latest tooling commit: `ec1b29b8e [tools] add local CT2 Scene translation helper`
-- Remote state at handoff time: local Scene turn/TTS commits pending push
+- Remote state at handoff time: local branch is ahead of `origin/main` by the
+  Scene TTS/test/refactor commits listed below
 - Worktree state at handoff time: docs refresh in progress
 - Local app bundle refreshed: `/Users/julianabeleda/Applications/GameTerm.app`
 - Persistent Scene compose config:
@@ -26,6 +28,14 @@ normal macOS GameTerm app without shell-only setup.
 
 Recent committed work:
 
+- `017ddf309 [gui] NFC - move SceneRuntime test import`
+- `b7ffb250d [gui] NFC - split Scene stage image helpers`
+- `96e1cbae7 [gui] NFC - split Scene overlay input helpers`
+- `67b72c4e9 [gui] NFC - split Scene STT backend`
+- `26cfacf5d [gui] NFC - split Scene compose backend`
+- `709729bad [gui] NFC - split Scene TTS speech blocks`
+- `a3f9d2981 [docs] scope Scene maintainability refactor`
+- `bc7529a58 [test] harden Scene compose TTS visibility`
 - `41fc33eec [visual] serialize Scene TTS playback`
 - `d529eb9a7 [visual] add ordered Scene speech blocks`
 - `1c642e468 [visual] add Scene compose turn display blocks`
@@ -70,6 +80,21 @@ Latest behavior change:
 - Boot option `1. Scene Mode + VOICEVOX` now routes through a dedicated Scene
   launch action that passes a Rust VOICEVOX TTS config directly into the
   overlay.
+
+Latest refactor pass:
+
+- `visual_speech_blocks.rs` now owns speakable segment types, extraction,
+  technical cleanup, and chunk splitting. `visual_tts.rs` keeps TTS
+  worker/backend execution.
+- `visual_compose.rs` is now a facade over `visual_compose_backend.rs`.
+- `visual_stt.rs` is now a facade over `visual_stt_backend.rs`.
+- `visual_scene_debug_input.rs` owns Scene debug-menu side effects.
+- `visual_voice_hold_flow.rs` owns voice hold reconciliation.
+- `visual_stage_image.rs` owns Scene stage image scaling, placement,
+  placeholder fit, and sprite lookup. `visual_quad.rs` remains the GPU quad
+  allocation entrypoint.
+- The pass was behavior-neutral. No Scene JSON schema, keybinding, app config,
+  TTS/STT, compose, or render behavior changes were intentionally made.
 
 Real Codex dogfood pass:
 
@@ -174,6 +199,33 @@ git diff --check
 make dev-app-open
 ```
 
+Latest refactor verification:
+
+```sh
+cargo test -p gameterm-gui visual_speech_blocks
+cargo test -p gameterm-gui visual_tts_
+cargo test -p gameterm-gui compose_backend
+cargo test -p gameterm-gui codex_
+cargo test -p gameterm-gui visual_stt_
+cargo test -p gameterm-gui scene_debug_menu
+cargo test -p gameterm-gui scene_voice_debug
+cargo test -p gameterm-gui scene_voice
+cargo test -p gameterm-gui visual_quad
+cargo test -p gameterm-gui vn_panel
+cargo test -p gameterm-gui stage_displayable
+cargo test -p gameterm-visual
+cargo test -p gameterm-gui --bin gameterm-gui
+cargo check -p gameterm-gui
+git diff --check
+```
+
+Results:
+
+- `gameterm-visual`: 186 passed, 0 failed.
+- `gameterm-gui --bin gameterm-gui`: 155 passed, 0 failed.
+- `cargo check -p gameterm-gui`: passed with only known existing warnings.
+- Focused GUI filters passed.
+
 Smoke captures:
 
 ```text
@@ -232,13 +284,17 @@ session identity, stream progress into the dialogue panel, or support
      path
    - next bottleneck is translation helper process startup plus VOICEVOX
      synthesis; pure Rust in-process translation remains deferred
-2. Push local commits after the handoff refresh is committed.
-3. Scope persistent Codex sessions:
+2. Push local commits after the handoff/refactor docs refresh is committed.
+3. Decide the next work lane:
+   - product: persistent Codex sessions / `codex exec resume`
+   - refactor: deeper split of compose/STT backend internals
+   - tooling: table-driven cleanup for Scene shell helpers
+4. Scope persistent Codex sessions:
    - parse session/thread metadata from Codex JSONL if available
    - persist session identity per Scene overlay/session
    - add reset/new-session action
    - add `codex exec resume` support
-4. Decide whether progress/streaming events should render into Scene Mode or
+5. Decide whether progress/streaming events should render into Scene Mode or
    stay a follow-up.
 6. Keep app-launch config behavior explicit; do not silently enable network
    backends without user/app config.
