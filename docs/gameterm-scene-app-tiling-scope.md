@@ -93,6 +93,11 @@ GameTerm must tell Codex what it can do at runtime. That is not pretraining.
 It is a capability manifest injected into the compose prompt and enforced by
 GameTerm after Codex replies.
 
+The broader per-turn capability substrate is scoped in
+[Arkey Capability Routing Scope](gameterm-scene-arkey-capability-routing-scope.md).
+This app-tiling scope should consume that substrate rather than creating a
+one-off prompt path.
+
 Recommended first-pass shape:
 
 ```text
