@@ -124,6 +124,7 @@ implementation details.
 | Generated layout and assets | [Visual Layout And Assets Scope](gameterm-scene-visual-layout-assets-scope.md) | First-pass implemented |
 | Stabilization/refactor pass | [Stabilization Refactor Scope](gameterm-scene-stabilization-refactor-scope.md) | First pass complete |
 | Refactor backlog | [Refactor Plan](gameterm-scene-refactor-plan.md) | Active backlog, do only scoped lanes |
+| Current maintainability refactor | [Maintainability Refactor Scope](gameterm-scene-maintainability-refactor-scope.md) | Scoped |
 | Smoke checklist | [Product Smoke Checklist](gameterm-scene-product-smoke.md) | Current smoke procedure |
 | Smoke results | [Smoke Report](gameterm-scene-smoke-report.md) | Current live/deterministic evidence |
 | Onboarding | [Onboarding](gameterm-scene-onboarding.md) | Current user workflow |
@@ -460,11 +461,13 @@ it directly reduces risk for the next lane.
 
 Allowed next refactor lanes:
 
-- table-drive smoke scenario definitions if smoke edits become hard to review
-- extract small helper registries from author/workspace scripts when adding
-  new product actions
-- move narrow runtime helpers out of `lib.rs` only when a lane already touches
-  that area
+- use [Maintainability Refactor Scope](gameterm-scene-maintainability-refactor-scope.md)
+  as the current refactor plan
+- split compose/TTS speech-block responsibilities first, because dogfood found
+  future-turn text/voice timing risk
+- split compose backend config/process/failure handling next
+- split STT/microphone helpers after compose/TTS conventions settle
+- split render primitives only with smoke coverage
 
 Avoid:
 

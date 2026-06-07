@@ -14,6 +14,14 @@ Scene Mode is a GameTerm-specific surface in a WezTerm fork, so refactors must
 stay narrow, keep upstream behavior intact, and avoid broad rename or ownership
 sweeps.
 
+Current next-pass scope:
+
+- [Scene Maintainability Refactor Scope](gameterm-scene-maintainability-refactor-scope.md)
+
+The first maintainable refactor pass is closed out later in this document. Use
+the current maintainability scope for new refactor work unless a product defect
+requires a separate behavior fix first.
+
 ## Goals
 
 - Reduce `gameterm-visual/src/lib.rs` size and coupling.
