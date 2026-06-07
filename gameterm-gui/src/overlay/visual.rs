@@ -1,8 +1,8 @@
 use anyhow::Context;
 use gameterm_term::TerminalSize;
 use gameterm_visual::{
-    SceneRuntime, VisualInput, VisualInteractiveDebugMenu, VisualMode, VisualModeOutcome,
-    VisualScene, VisualSceneSource, VisualView,
+    SceneRuntime, VisualInput, VisualMode, VisualModeOutcome, VisualScene, VisualSceneSource,
+    VisualView,
 };
 use mux::termwiztermtab::TermWizTerminal;
 use std::path::PathBuf;
@@ -15,8 +15,8 @@ use window::Window;
 
 #[cfg(test)]
 use gameterm_visual::{
-    vn_overlay_layout, VisualRenderSnapshot, VisualResolvedSprite, VisualSpriteManifestStatus,
-    VnDialogueScrollMetrics, VnOverlayRect,
+    vn_overlay_layout, VisualInteractiveDebugMenu, VisualRenderSnapshot, VisualResolvedSprite,
+    VisualSpriteManifestStatus, VnDialogueScrollMetrics, VnOverlayRect,
 };
 #[cfg(test)]
 use std::path::Path;
@@ -47,21 +47,25 @@ mod visual_render;
 mod visual_scene_files;
 #[path = "visual_scene_patches.rs"]
 mod visual_scene_patches;
+#[path = "visual_scene_debug_input.rs"]
+mod visual_scene_debug_input;
 #[path = "visual_voice_debug.rs"]
 mod visual_voice_debug;
 #[path = "visual_voice_events.rs"]
 mod visual_voice_events;
+#[path = "visual_voice_hold_flow.rs"]
+mod visual_voice_hold_flow;
 
 #[cfg(test)]
 use super::visual_compose::ComposeBackendLabel;
 #[cfg(test)]
 use super::visual_compose::ComposeBackendResult;
 use super::visual_compose::{compose_running_status, spawn_compose_backend, ComposeBackendRequest};
-use super::visual_stt::{spawn_mic_test, spawn_stt_backend, SceneSttConfig};
+use super::visual_stt::SceneSttConfig;
 #[cfg(test)]
 use super::visual_stt::{SceneMicDevice, SceneSttResult, SceneSttState};
 use super::visual_tts::{SceneTtsConfig, SceneTtsRequest};
-use super::visual_voice_hold::{scene_voice_hold_active, set_scene_voice_hold_active};
+use super::visual_voice_hold::set_scene_voice_hold_active;
 #[cfg(test)]
 use visual_command_dispatch::write_story_state_file;
 use visual_command_dispatch::{dispatch_pending_action, RunCommandDispatch};
@@ -78,7 +82,7 @@ use visual_dialogue_scroll::{
     apply_dialogue_scroll_key, apply_dialogue_scroll_wheel, SceneDialogueScrollback,
 };
 use visual_dialogue_scroll::{
-    handle_dialogue_scroll_key, handle_dialogue_scroll_wheel, SceneVoiceHoldTransition,
+    handle_dialogue_scroll_key, handle_dialogue_scroll_wheel,
 };
 use visual_event_drain::{
     drain_command_results, drain_compose_results, drain_mic_test_results, drain_stt_results,
@@ -99,7 +103,8 @@ use visual_render::{render_error, render_runtime, render_runtime_with_compose_an
 pub(crate) use visual_scene_files::SceneOverlayLaunchOptions;
 use visual_scene_files::*;
 use visual_scene_patches::*;
-use visual_voice_debug::VoiceDebugMenuEffect;
+use visual_scene_debug_input::handle_scene_debug_session_input;
+use visual_voice_hold_flow::reconcile_scene_voice_hold_state;
 
 pub(crate) fn show_visual_scene_overlay_with_options(
     term: TermWizTerminal,
@@ -606,153 +611,13 @@ fn show_visual_scene_overlay_with_source(
     Ok(())
 }
 
-fn reconcile_scene_voice_hold_state(
-    pane_id: mux::pane::PaneId,
-    runtime: &mut Option<SceneRuntime>,
-    session: &mut VisualOverlaySession,
-    stt_tx: &mpsc::Sender<super::visual_stt::SceneSttResult>,
-) -> bool {
-    let hold_active = scene_voice_hold_active(pane_id);
-    let transition = session.dialogue_scroll.apply_voice_hold_level(hold_active);
-
-    let Some(runtime) = runtime.as_mut() else {
-        return !matches!(transition, SceneVoiceHoldTransition::None);
-    };
-
-    match transition {
-        SceneVoiceHoldTransition::None => false,
-        SceneVoiceHoldTransition::Start => {
-            if !session.stt_state.is_running() {
-                runtime.mark_action_status(session.stt_state.mark_started());
-                if session.dialogue_scroll.voice_debug.test_mode {
-                    runtime.mark_action_status("Voice test listening");
-                }
-                session
-                    .dialogue_scroll
-                    .voice_debug
-                    .sync_status(session.stt_state.last_status());
-                session.stt_session = Some(spawn_stt_backend(
-                    session.selected_stt_config(),
-                    stt_tx.clone(),
-                ));
-            }
-            true
-        }
-        SceneVoiceHoldTransition::Stop => {
-            if session.stt_state.is_running() {
-                if let Some(stt_session) = session.stt_session.take() {
-                    stt_session.stop();
-                }
-                runtime.mark_action_status(session.stt_state.mark_processing());
-                if session.dialogue_scroll.voice_debug.test_mode {
-                    runtime.mark_action_status("Voice test processing");
-                }
-                session
-                    .dialogue_scroll
-                    .voice_debug
-                    .sync_status(session.stt_state.last_status());
-            }
-            true
-        }
-    }
-}
-
-fn handle_scene_debug_session_input(
-    runtime: &mut SceneRuntime,
-    session: &mut VisualOverlaySession,
-    input: VisualInput,
-    mic_test_tx: &mpsc::Sender<super::visual_stt::SceneMicTestResult>,
-) -> VoiceDebugMenuEffect {
-    if runtime.view() != VisualView::VnLayoutDebugger {
-        return VoiceDebugMenuEffect::IGNORED;
-    }
-    let is_action = matches!(
-        input,
-        VisualInput::Activate | VisualInput::Left | VisualInput::Right
-    );
-    if !is_action || runtime.interactive_debug_row() == 0 {
-        return VoiceDebugMenuEffect::IGNORED;
-    }
-
-    match runtime.interactive_debug_menu() {
-        VisualInteractiveDebugMenu::Voice => match runtime.interactive_debug_row() {
-            1 => {
-                runtime
-                    .mark_action_status(session.dialogue_scroll.voice_debug.toggle_diagnostics());
-                VoiceDebugMenuEffect::HANDLED
-            }
-            2 => {
-                if session.stt_state.is_running() {
-                    runtime.mark_action_status(
-                        "Voice test mode toggle unavailable: voice is listening",
-                    );
-                } else {
-                    runtime.mark_action_status(
-                        session.dialogue_scroll.voice_debug.toggle_voice_test_mode(),
-                    );
-                }
-                VoiceDebugMenuEffect::HANDLED
-            }
-            3 => {
-                runtime.mark_action_status(session.tts_state.toggle_muted());
-                VoiceDebugMenuEffect::HANDLED
-            }
-            4 => {
-                let delta = if input == VisualInput::Left { -1 } else { 1 };
-                runtime.mark_action_status(session.cycle_selected_mic(delta));
-                VoiceDebugMenuEffect::HANDLED
-            }
-            5 => {
-                if session.mic_test_running {
-                    runtime.mark_action_status("Mic test already running");
-                } else {
-                    session.mic_test_running = true;
-                    let selected_label = session.selected_mic_label().to_string();
-                    session
-                        .dialogue_scroll
-                        .voice_debug
-                        .mark_mic_test_started(&selected_label);
-                    runtime.mark_action_status(format!("Mic test listening: {selected_label}"));
-                    spawn_mic_test(session.selected_mic_device(), mic_test_tx.clone());
-                }
-                VoiceDebugMenuEffect::HANDLED
-            }
-            _ => VoiceDebugMenuEffect::IGNORED,
-        },
-        VisualInteractiveDebugMenu::Compose => match runtime.interactive_debug_row() {
-            1 => {
-                if session.compose_backend_running {
-                    runtime.mark_action_status(
-                        "Compose debug backend toggle unavailable: compose is running",
-                    );
-                    VoiceDebugMenuEffect::HANDLED
-                } else {
-                    let status = session.compose_debug_backend.toggle();
-                    session.dialogue_scroll.voice_debug.fake_codex_backend =
-                        session.compose_debug_backend.is_fake();
-                    runtime.clear_compose_history();
-                    runtime.mark_action_status(status);
-                    VoiceDebugMenuEffect::RESET_COMPOSE_DIALOGUE
-                }
-            }
-            2 => {
-                runtime.clear_compose_history();
-                runtime.mark_action_status("Compose dialogue history cleared");
-                VoiceDebugMenuEffect::RESET_COMPOSE_DIALOGUE
-            }
-            _ => VoiceDebugMenuEffect::IGNORED,
-        },
-        _ => VoiceDebugMenuEffect::IGNORED,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::super::visual_compose::{
         codex_compose_argv, codex_output_text, compose_backend_config, run_codex_compose_backend,
         CodexComposeConfig, ComposeBackendConfig,
     };
-    use super::visual_voice_debug::SceneVoiceDebugState;
+    use super::visual_voice_debug::{SceneVoiceDebugState, VoiceDebugMenuEffect};
     use super::*;
     use gameterm_visual::{
         VisualSceneLoadStatus, VisualStage, VisualStageDisplayable, VisualStageLayer,
