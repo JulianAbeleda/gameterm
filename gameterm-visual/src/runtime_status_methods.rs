@@ -37,6 +37,54 @@ impl SceneRuntime {
         self.bump_generation();
     }
 
+    pub fn mark_compose_succeeded_blocks(
+        &mut self,
+        speaker: &str,
+        blocks: &[String],
+        reveal_all: bool,
+    ) -> Vec<(u64, usize)> {
+        let role = if speaker.trim().is_empty() {
+            VisualComposeRole::Assistant
+        } else if speaker.eq_ignore_ascii_case("scene") {
+            VisualComposeRole::System
+        } else if speaker.eq_ignore_ascii_case("error") {
+            VisualComposeRole::Error
+        } else {
+            VisualComposeRole::Assistant
+        };
+        let event_detail = if blocks.is_empty() {
+            format!("{:?}: {speaker}: <empty>", role)
+        } else {
+            format!("{:?}: {speaker}: {} block(s)", role, blocks.len())
+        };
+        let ids = self
+            .compose_state
+            .mark_succeeded_blocks(speaker, blocks, reveal_all);
+        self.record_runtime_event("compose", event_detail);
+        self.bump_generation();
+        ids
+    }
+
+    pub fn mark_compose_block_speaking(&mut self, turn_id: u64, block_index: usize) {
+        if self.compose_state.mark_block_speaking(turn_id, block_index) {
+            self.record_runtime_event(
+                "compose",
+                format!("speaking block: turn={turn_id} block={block_index}"),
+            );
+            self.bump_generation();
+        }
+    }
+
+    pub fn mark_compose_block_done(&mut self, turn_id: u64, block_index: usize) {
+        if self.compose_state.mark_block_done(turn_id, block_index) {
+            self.record_runtime_event(
+                "compose",
+                format!("done block: turn={turn_id} block={block_index}"),
+            );
+            self.bump_generation();
+        }
+    }
+
     pub fn clear_compose_history(&mut self) {
         self.compose_state.clear();
         self.record_runtime_event("compose", "cleared transcript");

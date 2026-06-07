@@ -11,6 +11,9 @@ pub(crate) fn wrap_compose_transcript_for_vn(
 
     let mut lines = Vec::new();
     for message in messages {
+        if !message.visibility.is_visible() {
+            continue;
+        }
         if !lines.is_empty() {
             lines.push(String::new());
         }
@@ -241,7 +244,9 @@ fn colon_heading(line: &str) -> Option<String> {
         || heading.contains('\\')
         || heading.contains('=')
         || heading.contains('@')
-        || heading.chars().any(|ch| matches!(ch, '{' | '}' | '[' | ']'))
+        || heading
+            .chars()
+            .any(|ch| matches!(ch, '{' | '}' | '[' | ']'))
         || heading.split_whitespace().count() > 6
     {
         return None;
@@ -264,8 +269,7 @@ fn looks_like_clock_label(text: &str) -> bool {
     let Some((hour, minute)) = text.split_once(':') else {
         return false;
     };
-    hour.chars().all(|ch| ch.is_ascii_digit())
-        && minute.chars().all(|ch| ch.is_ascii_digit())
+    hour.chars().all(|ch| ch.is_ascii_digit()) && minute.chars().all(|ch| ch.is_ascii_digit())
 }
 
 fn replace_display_urls(text: &str) -> String {
@@ -314,9 +318,8 @@ fn replace_markdown_display_urls(text: &str) -> String {
 }
 
 fn display_url_token(token: &str) -> String {
-    let trimmed = token.trim_matches(|ch: char| {
-        ch.is_ascii_punctuation() && ch != ':' && ch != '/' && ch != '.'
-    });
+    let trimmed = token
+        .trim_matches(|ch: char| ch.is_ascii_punctuation() && ch != ':' && ch != '/' && ch != '.');
     if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
         "[link]".to_string()
     } else {
@@ -462,6 +465,7 @@ mod tests {
             role: VisualComposeRole::Assistant,
             text: text.to_string(),
             speaker: Some("Codex".to_string()),
+            visibility: crate::compose_state::VisualComposeVisibility::Done,
         }
     }
 

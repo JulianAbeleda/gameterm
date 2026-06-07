@@ -21,6 +21,20 @@ pub(crate) struct VisualComposeMessage {
     pub(crate) role: VisualComposeRole,
     pub(crate) text: String,
     pub(crate) speaker: Option<String>,
+    pub(crate) visibility: VisualComposeVisibility,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum VisualComposeVisibility {
+    Queued,
+    Speaking,
+    Done,
+}
+
+impl VisualComposeVisibility {
+    pub(crate) fn is_visible(self) -> bool {
+        matches!(self, Self::Speaking | Self::Done)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -49,7 +63,13 @@ impl VisualComposeRuntimeState {
 
     fn push_message(&mut self, role: VisualComposeRole, text: String) {
         let turn_id = self.active_or_new_turn_id();
-        self.push_message_with_speaker(role, text, None, turn_id);
+        let _ = self.push_message_with_speaker(
+            role,
+            text,
+            None,
+            turn_id,
+            VisualComposeVisibility::Done,
+        );
     }
 
     fn push_message_with_speaker(
@@ -58,9 +78,10 @@ impl VisualComposeRuntimeState {
         text: String,
         speaker: Option<String>,
         turn_id: u64,
-    ) {
+        visibility: VisualComposeVisibility,
+    ) -> Option<(u64, usize)> {
         if text.trim().is_empty() {
-            return;
+            return None;
         }
         const MAX_COMPOSE_HISTORY: usize = 20;
         let block_index = self.next_block_index_for_turn(turn_id);
@@ -70,11 +91,13 @@ impl VisualComposeRuntimeState {
             role,
             text,
             speaker,
+            visibility,
         });
         if self.history.len() > MAX_COMPOSE_HISTORY {
             let excess = self.history.len() - MAX_COMPOSE_HISTORY;
             self.history.drain(0..excess);
         }
+        Some((turn_id, block_index))
     }
 
     pub(crate) fn clear(&mut self) {
@@ -110,7 +133,13 @@ impl VisualComposeRuntimeState {
         let turn_id = self.allocate_turn_id();
         self.active_turn_id = Some(turn_id);
         self.active_block_index = 0;
-        self.push_message_with_speaker(VisualComposeRole::User, prompt.to_string(), None, turn_id);
+        let _ = self.push_message_with_speaker(
+            VisualComposeRole::User,
+            prompt.to_string(),
+            None,
+            turn_id,
+            VisualComposeVisibility::Done,
+        );
     }
 
     pub(crate) fn mark_succeeded(&mut self, speaker: &str, reply: &str) {
@@ -122,12 +151,46 @@ impl VisualComposeRuntimeState {
             speaker.trim().to_string()
         };
         let turn_id = self.active_or_new_turn_id();
-        self.push_message_with_speaker(
+        let _ = self.push_message_with_speaker(
             VisualComposeRole::Assistant,
             reply.to_string(),
             Some(speaker),
             turn_id,
+            VisualComposeVisibility::Done,
         );
+    }
+
+    pub(crate) fn mark_succeeded_blocks(
+        &mut self,
+        speaker: &str,
+        blocks: &[String],
+        reveal_all: bool,
+    ) -> Vec<(u64, usize)> {
+        self.set_phase_and_history(VisualComposePhase::Succeeded);
+        self.last_reply = Some(blocks.join("\n\n"));
+        let speaker = if speaker.trim().is_empty() {
+            "Codex".to_string()
+        } else {
+            speaker.trim().to_string()
+        };
+        let turn_id = self.active_or_new_turn_id();
+        let visibility = if reveal_all {
+            VisualComposeVisibility::Done
+        } else {
+            VisualComposeVisibility::Queued
+        };
+        blocks
+            .iter()
+            .filter_map(|block| {
+                self.push_message_with_speaker(
+                    VisualComposeRole::Assistant,
+                    block.to_string(),
+                    Some(speaker.clone()),
+                    turn_id,
+                    visibility,
+                )
+            })
+            .collect()
     }
 
     pub(crate) fn mark_failed(&mut self, reason: &str) {
@@ -161,5 +224,33 @@ impl VisualComposeRuntimeState {
         let block_index = self.active_block_index;
         self.active_block_index = self.active_block_index.saturating_add(1);
         block_index
+    }
+
+    pub(crate) fn mark_block_speaking(&mut self, turn_id: u64, block_index: usize) -> bool {
+        self.set_block_visibility(turn_id, block_index, VisualComposeVisibility::Speaking)
+    }
+
+    pub(crate) fn mark_block_done(&mut self, turn_id: u64, block_index: usize) -> bool {
+        self.set_block_visibility(turn_id, block_index, VisualComposeVisibility::Done)
+    }
+
+    fn set_block_visibility(
+        &mut self,
+        turn_id: u64,
+        block_index: usize,
+        visibility: VisualComposeVisibility,
+    ) -> bool {
+        let Some(message) = self
+            .history
+            .iter_mut()
+            .find(|message| message.turn_id == turn_id && message.block_index == block_index)
+        else {
+            return false;
+        };
+        if matches!(message.role, VisualComposeRole::User) {
+            return false;
+        }
+        message.visibility = visibility;
+        true
     }
 }
