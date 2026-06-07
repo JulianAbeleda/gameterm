@@ -1,8 +1,7 @@
 use anyhow::Context;
 use gameterm_term::TerminalSize;
 use gameterm_visual::{
-    SceneRuntime, VisualInput, VisualMode, VisualModeOutcome, VisualScene, VisualSceneSource,
-    VisualView,
+    VisualInput, VisualMode, VisualModeOutcome, VisualScene, VisualSceneSource, VisualView,
 };
 use mux::termwiztermtab::TermWizTerminal;
 use std::path::PathBuf;
@@ -15,8 +14,8 @@ use window::Window;
 
 #[cfg(test)]
 use gameterm_visual::{
-    vn_overlay_layout, VisualInteractiveDebugMenu, VisualRenderSnapshot, VisualResolvedSprite,
-    VisualSpriteManifestStatus, VnDialogueScrollMetrics, VnOverlayRect,
+    vn_overlay_layout, SceneRuntime, VisualInteractiveDebugMenu, VisualRenderSnapshot,
+    VisualResolvedSprite, VisualSpriteManifestStatus, VnDialogueScrollMetrics, VnOverlayRect,
 };
 #[cfg(test)]
 use std::path::Path;
