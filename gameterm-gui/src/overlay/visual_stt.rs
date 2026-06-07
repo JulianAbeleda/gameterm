@@ -233,9 +233,21 @@ impl SceneSttConfig {
         }
     }
 
+    pub(crate) fn whisper_voice_compose_default() -> Self {
+        Self {
+            auto_submit: true,
+            ..Self::whisper_default()
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn is_whisper_backend(&self) -> bool {
         matches!(self.backend, SceneSttBackend::Whisper(_))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn auto_submits(&self) -> bool {
+        self.auto_submit
     }
 
     pub(super) fn diagnostics_lines(&self) -> Vec<String> {

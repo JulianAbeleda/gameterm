@@ -170,7 +170,7 @@ pub(crate) fn voicevox_scene_tts_config() -> Result<SceneTtsConfig, String> {
 }
 
 pub(crate) fn voice_scene_stt_config() -> Result<SceneSttConfig, String> {
-    Ok(SceneSttConfig::whisper_default())
+    Ok(SceneSttConfig::whisper_voice_compose_default())
 }
 
 pub fn boot_menu(mut term: TermWizTerminal, window: ::window::Window) -> anyhow::Result<()> {
@@ -238,5 +238,6 @@ mod tests {
         let config = super::voice_scene_stt_config().unwrap();
 
         assert!(config.is_whisper_backend());
+        assert!(config.auto_submits());
     }
 }
