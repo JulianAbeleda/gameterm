@@ -5281,6 +5281,65 @@ mod tests {
     }
 
     #[test]
+    fn staged_scene_ignores_stale_voice_events_without_hiding_text() {
+        let mut runtime = SceneRuntime::new(staged_compose_scene()).unwrap();
+
+        runtime.mark_compose_running("Compose running", "plan");
+        let block_ids = runtime.mark_compose_succeeded_blocks(
+            "Codex",
+            &[
+                "Visible reply block one.".to_string(),
+                "Visible reply block two.".to_string(),
+            ],
+            false,
+        );
+        assert_eq!(block_ids.len(), 2);
+
+        runtime.mark_compose_block_speaking(999, 0);
+        runtime.mark_compose_block_done(block_ids[0].0, 99);
+
+        let frame = runtime.render_text_frame(100, 30);
+        assert!(frame.contains("Visible reply block one."));
+        assert!(frame.contains("Visible reply block two."));
+
+        let report = runtime.debug_report();
+        assert!(!report
+            .transition_history
+            .iter()
+            .any(|event| event.kind == "compose" && event.detail.contains("turn=999")));
+        assert!(!report
+            .transition_history
+            .iter()
+            .any(|event| event.kind == "compose" && event.detail.contains("block=99")));
+    }
+
+    #[test]
+    fn staged_scene_later_turns_render_while_previous_voice_blocks_are_unfinished() {
+        let mut runtime = SceneRuntime::new(staged_compose_scene()).unwrap();
+
+        runtime.mark_compose_running("Compose running", "first");
+        let first_ids = runtime.mark_compose_succeeded_blocks(
+            "Codex",
+            &["First turn reply waiting on voice.".to_string()],
+            false,
+        );
+        assert_eq!(first_ids.len(), 1);
+
+        runtime.mark_compose_running("Compose running", "second");
+        let second_ids = runtime.mark_compose_succeeded_blocks(
+            "Codex",
+            &["Second turn reply should still render.".to_string()],
+            false,
+        );
+        assert_eq!(second_ids.len(), 1);
+        assert_ne!(first_ids[0].0, second_ids[0].0);
+
+        let frame = runtime.render_text_frame(100, 30);
+        assert!(frame.contains("> second"));
+        assert!(frame.contains("Second turn reply should still render."));
+    }
+
+    #[test]
     fn staged_scene_splits_flattened_numbered_reply_sections() {
         let mut runtime = SceneRuntime::new(staged_compose_scene()).unwrap();
 
