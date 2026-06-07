@@ -1,5 +1,7 @@
 use crate::overlay::visual_compose::{ComposeBackendLabel, ComposeBackendResult};
-use crate::overlay::visual_tts::{extract_speakable_segments, SpeakableSegment, SpeakableSource};
+use crate::overlay::visual_speech_blocks::{
+    extract_speakable_segments, SpeakableSegment, SpeakableSource,
+};
 use gameterm_visual::{SceneRuntime, VisualSceneDialoguePatch, VisualScenePatch};
 use serde::Deserialize;
 

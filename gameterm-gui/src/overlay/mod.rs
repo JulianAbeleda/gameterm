@@ -17,6 +17,7 @@ pub mod quickselect;
 pub mod selector;
 pub mod visual;
 mod visual_compose;
+mod visual_speech_blocks;
 mod visual_stt;
 mod visual_tts;
 pub(crate) mod visual_voice_hold;
