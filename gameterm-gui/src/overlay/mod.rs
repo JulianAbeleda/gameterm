@@ -20,6 +20,7 @@ mod visual_compose;
 mod visual_compose_backend;
 mod visual_speech_blocks;
 mod visual_stt;
+mod visual_stt_backend;
 mod visual_tts;
 pub(crate) mod visual_voice_hold;
 
