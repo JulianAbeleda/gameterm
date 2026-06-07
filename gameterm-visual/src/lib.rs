@@ -23,7 +23,9 @@ mod workspace_scene;
 use actions::{action_kind_name, action_policy_summary, derived_action_policy};
 #[cfg(test)]
 pub(crate) use compose_state::VisualComposePhase;
-pub(crate) use compose_state::{VisualComposeRole, VisualComposeRuntimeState};
+pub(crate) use compose_state::{
+    VisualComposeMessage, VisualComposeRole, VisualComposeRuntimeState,
+};
 use conditions::{condition_guard_detail, conditions_match};
 pub use debug::VisualSceneDebugReport;
 pub use patch::{
@@ -60,7 +62,7 @@ pub use vn_asset_intake::{
 };
 pub use vn_layout::*;
 pub use vn_text::truncate_to_screen;
-use vn_text::{place_vn_overlay_text, wrap_user_prompt_for_vn};
+use vn_text::{place_vn_overlay_text, wrap_compose_transcript_for_vn};
 pub use workspace_scene::{
     generate_workspace_context_error_scene, generate_workspace_scene, ScenePaneContext,
     SceneWorkspaceContext, WorkspaceSceneReport,
@@ -2676,32 +2678,7 @@ impl SceneRuntime {
         if self.compose_state.history.is_empty() {
             return Vec::new();
         }
-        let mut lines = Vec::new();
-        for message in &self.compose_state.history {
-            match message.role {
-                VisualComposeRole::User => {
-                    if !lines.is_empty() {
-                        lines.push(String::new());
-                    }
-                    lines.extend(wrap_user_prompt_for_vn(&message.text, dialogue_width));
-                }
-                VisualComposeRole::Assistant | VisualComposeRole::System => {
-                    if !lines.is_empty() {
-                        lines.push(String::new());
-                    }
-                    lines.extend(wrap_text(&message.text, dialogue_width));
-                }
-                VisualComposeRole::Error => {
-                    if !lines.is_empty() {
-                        lines.push(String::new());
-                    }
-                    for line in wrap_text(&message.text, dialogue_width.saturating_sub(7).max(1)) {
-                        lines.push(format!("Error: {line}"));
-                    }
-                }
-            }
-        }
-        lines
+        wrap_compose_transcript_for_vn(&self.compose_state.history, dialogue_width)
     }
 
     fn render_command_selection(&self, cols: usize, rows: usize) -> String {
@@ -5219,6 +5196,10 @@ mod tests {
             runtime.compose_state.history[1].role,
             VisualComposeRole::Assistant
         );
+        assert_eq!(runtime.compose_state.history[0].turn_id, 1);
+        assert_eq!(runtime.compose_state.history[1].turn_id, 1);
+        assert_eq!(runtime.compose_state.history[0].block_index, 0);
+        assert_eq!(runtime.compose_state.history[1].block_index, 1);
 
         runtime.mark_compose_failed("backend offline");
         assert_eq!(runtime.compose_state.phase, VisualComposePhase::Failed);
@@ -5249,6 +5230,41 @@ mod tests {
         let reply_idx = frame.find("Hello from Scene Mode.").unwrap();
 
         assert!(prompt_idx < reply_idx);
+    }
+
+    #[test]
+    fn staged_scene_formats_structured_compose_json_as_dialogue_text() {
+        let mut runtime = SceneRuntime::new(staged_compose_scene()).unwrap();
+
+        runtime.mark_compose_running("Compose running", "summarize");
+        runtime.mark_compose_succeeded(
+            "Codex",
+            r#"{"speaker":"Codex","text":"Here is the readable answer.","status":"ok"}"#,
+        );
+        let frame = runtime.render_text_frame(100, 30);
+
+        assert!(frame.contains("Here is the readable answer."));
+        assert!(!frame.contains("\"speaker\""));
+        assert!(!frame.contains("\"status\""));
+    }
+
+    #[test]
+    fn staged_scene_splits_flattened_numbered_reply_sections() {
+        let mut runtime = SceneRuntime::new(staged_compose_scene()).unwrap();
+
+        runtime.mark_compose_running("Compose running", "plan");
+        runtime.mark_compose_succeeded(
+            "Codex",
+            "The plan is simple. **1. First Step** Do the first thing carefully. **2. Second Step** Then verify the output.",
+        );
+        let frame = runtime.render_text_frame(100, 30);
+        let first_idx = frame.find("1. First Step").unwrap();
+        let body_idx = frame.find("Do the first thing carefully.").unwrap();
+        let second_idx = frame.find("2. Second Step").unwrap();
+
+        assert!(first_idx < body_idx);
+        assert!(body_idx < second_idx);
+        assert!(!frame.contains("**"));
     }
 
     #[test]
