@@ -73,6 +73,12 @@ fn wrap_dialogue_display_text(text: &str, dialogue_width: usize) -> Vec<String> 
             push_blank_once(&mut lines);
             continue;
         }
+        if let Some(heading) = colon_heading(line) {
+            push_blank_once(&mut lines);
+            lines.extend(wrap_text(&heading, dialogue_width));
+            lines.push(String::new());
+            continue;
+        }
         if let Some((marker, body)) = numbered_parts(line) {
             lines.extend(wrap_marked_line(marker, body, dialogue_width));
             continue;
@@ -84,6 +90,7 @@ fn wrap_dialogue_display_text(text: &str, dialogue_width: usize) -> Vec<String> 
         lines.extend(wrap_text(&strip_inline_markers(line), dialogue_width));
     }
 
+    lines = collapse_blanks_between_list_items(lines);
     while lines.last().is_some_and(|line| line.is_empty()) {
         lines.pop();
     }
@@ -109,7 +116,7 @@ fn structured_dialogue_text(text: &str) -> Option<String> {
 
 fn normalize_dialogue_blocks(text: &str) -> String {
     let text = text.replace("\r\n", "\n").replace('\r', "\n");
-    let text = insert_section_breaks(&text);
+    let text = insert_section_breaks(&replace_display_urls(&text));
     let mut output = Vec::new();
     for line in text.lines() {
         let stripped = line.trim();
@@ -126,7 +133,7 @@ fn normalize_dialogue_blocks(text: &str) -> String {
             output.push(strip_inline_markers(header));
             output.push(String::new());
         } else {
-            output.push(line.to_string());
+            output.extend(split_flattened_list_line(line));
         }
     }
     output.join("\n")
@@ -136,8 +143,7 @@ fn insert_section_breaks(text: &str) -> String {
     let mut output = String::new();
     let mut chars = text.char_indices().peekable();
     while let Some((idx, ch)) = chars.next() {
-        if idx > 0 && starts_numbered_marker(&text[idx..]) && should_break_before(text, idx) {
-            output.push('\n');
+        if idx > 0 && starts_structured_marker(&text[idx..]) && should_break_before(text, idx) {
             output.push('\n');
         }
         output.push(ch);
@@ -156,6 +162,10 @@ fn should_break_before(text: &str, idx: usize) -> bool {
         .is_some_and(|ch| matches!(ch, '.' | '!' | '?' | ':' | '|'))
 }
 
+fn starts_structured_marker(text: &str) -> bool {
+    starts_numbered_marker(text) || starts_bullet_marker(text)
+}
+
 fn starts_numbered_marker(text: &str) -> bool {
     let text = text
         .strip_prefix("**")
@@ -164,24 +174,32 @@ fn starts_numbered_marker(text: &str) -> bool {
     numbered_parts(text).is_some()
 }
 
+fn starts_bullet_marker(text: &str) -> bool {
+    bullet_body(text).is_some()
+}
+
 fn numbered_parts(line: &str) -> Option<(&str, &str)> {
-    let (marker, body) = line.trim().split_once(". ")?;
-    if marker.chars().all(|ch| ch.is_ascii_digit()) {
-        Some((marker, body))
-    } else if let Some(marker) = marker.strip_prefix("**") {
-        marker
-            .chars()
-            .all(|ch| ch.is_ascii_digit())
-            .then_some((marker, body))
-    } else {
-        None
+    let line = line.trim();
+    let line = line
+        .strip_prefix("**")
+        .or_else(|| line.strip_prefix("__"))
+        .unwrap_or(line);
+    for separator in [". ", ") "] {
+        let Some((marker, body)) = line.split_once(separator) else {
+            continue;
+        };
+        if marker.chars().all(|ch| ch.is_ascii_digit()) {
+            return Some((marker, body));
+        }
     }
+    None
 }
 
 fn bullet_body(line: &str) -> Option<&str> {
     line.strip_prefix("- ")
         .or_else(|| line.strip_prefix("* "))
         .or_else(|| line.strip_prefix("+ "))
+        .or_else(|| line.strip_prefix("• "))
 }
 
 fn wrap_marked_line(marker: &str, body: &str, dialogue_width: usize) -> Vec<String> {
@@ -213,10 +231,174 @@ fn strip_inline_markers(text: &str) -> String {
     text.replace("**", "").replace("__", "").replace('`', "")
 }
 
+fn colon_heading(line: &str) -> Option<String> {
+    let line = strip_inline_markers(line.trim()).trim().to_string();
+    let heading = line.strip_suffix(':')?.trim();
+    if heading.is_empty()
+        || heading.len() > 48
+        || heading.contains("://")
+        || heading.contains('/')
+        || heading.contains('\\')
+        || heading.contains('=')
+        || heading.contains('@')
+        || heading.chars().any(|ch| matches!(ch, '{' | '}' | '[' | ']'))
+        || heading.split_whitespace().count() > 6
+    {
+        return None;
+    }
+    let lower = heading.to_ascii_lowercase();
+    if matches!(
+        lower.as_str(),
+        "status" | "error" | "warning" | "thread" | "http" | "https"
+    ) || looks_like_clock_label(heading)
+    {
+        return None;
+    }
+    heading
+        .chars()
+        .all(|ch| ch.is_alphanumeric() || matches!(ch, ' ' | '-' | '_' | '\''))
+        .then(|| format!("{heading}:"))
+}
+
+fn looks_like_clock_label(text: &str) -> bool {
+    let Some((hour, minute)) = text.split_once(':') else {
+        return false;
+    };
+    hour.chars().all(|ch| ch.is_ascii_digit())
+        && minute.chars().all(|ch| ch.is_ascii_digit())
+}
+
+fn replace_display_urls(text: &str) -> String {
+    let text = replace_markdown_display_urls(text);
+    let mut output = String::new();
+    let mut token = String::new();
+    for ch in text.chars() {
+        if ch.is_whitespace() {
+            output.push_str(&display_url_token(&token));
+            token.clear();
+            output.push(ch);
+        } else {
+            token.push(ch);
+        }
+    }
+    output.push_str(&display_url_token(&token));
+    output
+}
+
+fn replace_markdown_display_urls(text: &str) -> String {
+    let mut output = String::new();
+    let mut rest = text;
+    while let Some(start) = rest.find('[') {
+        output.push_str(&rest[..start]);
+        let after_open = &rest[start + 1..];
+        let Some(label_end) = after_open.find("](") else {
+            output.push_str(&rest[start..]);
+            return output;
+        };
+        let url_start = start + 1 + label_end + 2;
+        let url_and_after = &rest[url_start..];
+        if !(url_and_after.starts_with("http://") || url_and_after.starts_with("https://")) {
+            output.push_str(&rest[start..url_start]);
+            rest = url_and_after;
+            continue;
+        }
+        let Some(url_end) = url_and_after.find(')') else {
+            output.push_str("[link]");
+            return output;
+        };
+        output.push_str("[link]");
+        rest = &url_and_after[url_end + 1..];
+    }
+    output.push_str(rest);
+    output
+}
+
+fn display_url_token(token: &str) -> String {
+    let trimmed = token.trim_matches(|ch: char| {
+        ch.is_ascii_punctuation() && ch != ':' && ch != '/' && ch != '.'
+    });
+    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+        "[link]".to_string()
+    } else {
+        token.to_string()
+    }
+}
+
+fn split_flattened_list_line(line: &str) -> Vec<String> {
+    let trimmed = line.trim();
+    if colon_heading(trimmed).is_some() {
+        return vec![trimmed.to_string()];
+    }
+    let segments = split_at_inline_markers(trimmed);
+    if segments.len() <= 1 {
+        vec![line.to_string()]
+    } else {
+        segments
+    }
+}
+
+fn split_at_inline_markers(line: &str) -> Vec<String> {
+    let mut starts = Vec::new();
+    let mut idx = 0;
+    while idx < line.len() {
+        let rest = &line[idx..];
+        let at_boundary = idx == 0
+            || line[..idx]
+                .chars()
+                .next_back()
+                .is_some_and(|ch| ch.is_whitespace() || matches!(ch, ':' | '|' | '.' | '!' | '?'));
+        if at_boundary && (starts_numbered_marker(rest) || starts_bullet_marker(rest)) {
+            starts.push(idx);
+        }
+        let Some((next_idx, ch)) = rest.char_indices().nth(1) else {
+            break;
+        };
+        idx += next_idx.max(ch.len_utf8());
+    }
+
+    if starts.len() <= 1 {
+        return vec![line.to_string()];
+    }
+
+    let mut segments = Vec::new();
+    let prefix = line[..starts[0]].trim();
+    if !prefix.is_empty() {
+        segments.push(prefix.to_string());
+    }
+    for (idx, start) in starts.iter().enumerate() {
+        let end = starts.get(idx + 1).copied().unwrap_or(line.len());
+        let segment = line[*start..end].trim();
+        if !segment.is_empty() {
+            segments.push(segment.to_string());
+        }
+    }
+    segments
+}
+
 fn push_blank_once(lines: &mut Vec<String>) {
     if lines.last().is_some_and(|line| !line.is_empty()) {
         lines.push(String::new());
     }
+}
+
+fn collapse_blanks_between_list_items(lines: Vec<String>) -> Vec<String> {
+    let mut collapsed = Vec::new();
+    for (idx, line) in lines.iter().enumerate() {
+        if line.is_empty()
+            && idx > 0
+            && idx + 1 < lines.len()
+            && line_starts_list_item(&lines[idx - 1])
+            && line_starts_list_item(&lines[idx + 1])
+        {
+            continue;
+        }
+        collapsed.push(line.clone());
+    }
+    collapsed
+}
+
+fn line_starts_list_item(line: &str) -> bool {
+    numbered_parts(line).is_some() || bullet_body(line).is_some()
 }
 
 pub fn truncate_to_screen(text: String, cols: usize, rows: usize) -> String {
@@ -266,4 +448,70 @@ pub(crate) fn place_vn_overlay_text(
     }
     chars.truncate(cols);
     *line = chars.into_iter().collect();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::compose_state::VisualComposeMessage;
+
+    fn assistant_message(text: &str) -> VisualComposeMessage {
+        VisualComposeMessage {
+            turn_id: 1,
+            block_index: 0,
+            role: VisualComposeRole::Assistant,
+            text: text.to_string(),
+            speaker: Some("Codex".to_string()),
+        }
+    }
+
+    #[test]
+    fn colon_headings_get_breathing_room() {
+        let lines = wrap_compose_transcript_for_vn(
+            &[assistant_message("Intro line.\n\nList:\n- first\n- second")],
+            80,
+        );
+
+        assert_eq!(
+            lines,
+            vec!["Intro line.", "", "List:", "", "- first", "- second"]
+        );
+    }
+
+    #[test]
+    fn colon_heading_ignores_technical_labels() {
+        let lines = wrap_compose_transcript_for_vn(
+            &[assistant_message(
+                "Status: Ready\nError: command failed\nSee [the report](https://example.com/path).",
+            )],
+            80,
+        );
+
+        assert_eq!(
+            lines,
+            vec!["Status: Ready", "Error: command failed", "See [link]."]
+        );
+    }
+
+    #[test]
+    fn flattened_numbered_and_bullet_lists_are_split() {
+        let lines = wrap_compose_transcript_for_vn(
+            &[assistant_message(
+                "Next steps: 1. Run the smoke. 2) Check the voice. - Record notes. • Push commits.",
+            )],
+            80,
+        );
+
+        assert_eq!(
+            lines,
+            vec![
+                "Next steps:",
+                "",
+                "1. Run the smoke.",
+                "2. Check the voice.",
+                "- Record notes.",
+                "- Push commits."
+            ]
+        );
+    }
 }
