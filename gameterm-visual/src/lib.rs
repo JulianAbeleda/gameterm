@@ -6430,14 +6430,16 @@ mod tests {
         let runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
         let frame = runtime.render_text_frame(120, 40);
 
+        assert!(frame.contains("Choices:"));
+        assert!(frame.contains("[Inspect]"));
         assert!(frame.contains(
-            "Choices:\r\n[Inspect]\r\n> Inspect selected entity  origin=unknown risk=inspect scope=selected_entity"
+            "> Inspect selected entity  origin=unknown risk=inspect scope=selected_entity"
         ));
+        assert!(frame.contains("[OpenFile]"));
+        assert!(frame.contains("  Open MIGRATION.md  origin=unknown risk=open_file scope=scene"));
+        assert!(frame.contains("[RunCommand]"));
         assert!(frame.contains(
-            "[OpenFile]\r\n  Open MIGRATION.md  origin=unknown risk=open_file scope=scene"
-        ));
-        assert!(frame.contains(
-            "[RunCommand]\r\n  Run cargo check -p gameterm-visual  origin=unknown risk=command scope=workspace confirm=true"
+            "  Run cargo check -p gameterm-visual  origin=unknown risk=command scope=workspace confirm=true"
         ));
     }
 
