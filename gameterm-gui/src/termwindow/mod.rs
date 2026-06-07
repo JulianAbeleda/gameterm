@@ -42,7 +42,9 @@ use gameterm_dynamic::Value;
 use gameterm_font::FontConfiguration;
 use gameterm_term::color::ColorPalette;
 use gameterm_term::input::LastMouseClick;
-use gameterm_term::{Alert, Progress, StableRowIndex, TerminalConfiguration, TerminalSize};
+use gameterm_term::{
+    Alert, KeyCode as TermKeyCode, Progress, StableRowIndex, TerminalConfiguration, TerminalSize,
+};
 use gameterm_visual::{
     generate_workspace_context_error_scene, generate_workspace_scene, ScenePaneContext,
     SceneWorkspaceContext,
@@ -1016,7 +1018,9 @@ impl TermWindow {
                 Ok(true)
             }
             WindowEvent::AdviseModifiersLedStatus(modifiers, leds) => {
+                let previous_modifiers = self.current_modifier_and_leds.0;
                 self.current_modifier_and_leds = (modifiers, leds);
+                self.forward_scene_stt_hold_modifier_change(previous_modifiers, modifiers);
                 self.update_title();
                 window.invalidate();
                 Ok(true)
@@ -3619,6 +3623,37 @@ impl TermWindow {
         }
     }
 
+    fn forward_scene_stt_hold_modifier_change(
+        &self,
+        previous_modifiers: Modifiers,
+        current_modifiers: Modifiers,
+    ) {
+        let was_hold = scene_stt_hold_modifiers_active(previous_modifiers);
+        let is_hold = scene_stt_hold_modifiers_active(current_modifiers);
+        if was_hold == is_hold {
+            return;
+        }
+
+        let Some(scene_pane_id) = Mux::get().active_gameterm_scene_pane() else {
+            return;
+        };
+        let Some(pane) = self.get_active_pane_or_overlay() else {
+            return;
+        };
+        if pane.pane_id() != scene_pane_id {
+            return;
+        }
+
+        let result = if is_hold {
+            pane.key_down(TermKeyCode::Super, current_modifiers)
+        } else {
+            pane.key_up(TermKeyCode::Super, current_modifiers)
+        };
+        if let Err(err) = result {
+            log::warn!("failed to forward Scene Mode STT hold modifier change: {err:#}");
+        }
+    }
+
     fn get_splits(&mut self) -> Vec<PositionedSplit> {
         let mux = Mux::get();
         let tab = match mux.get_active_tab_for_window(self.mux_window_id) {
@@ -3825,6 +3860,10 @@ impl TermWindow {
     }
 }
 
+fn scene_stt_hold_modifiers_active(modifiers: Modifiers) -> bool {
+    modifiers.contains(Modifiers::SHIFT) && modifiers.contains(Modifiers::SUPER)
+}
+
 impl Drop for TermWindow {
     fn drop(&mut self) {
         self.clear_all_overlays();
@@ -3833,5 +3872,20 @@ impl Drop for TermWindow {
                 fe.forget_known_window(&window);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scene_stt_hold_modifiers_require_shift_command() {
+        assert!(scene_stt_hold_modifiers_active(
+            Modifiers::SHIFT | Modifiers::SUPER
+        ));
+        assert!(!scene_stt_hold_modifiers_active(Modifiers::SHIFT));
+        assert!(!scene_stt_hold_modifiers_active(Modifiers::SUPER));
+        assert!(!scene_stt_hold_modifiers_active(Modifiers::NONE));
     }
 }
