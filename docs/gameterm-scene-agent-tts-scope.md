@@ -1,6 +1,6 @@
 # GameTerm Scene Agent TTS Scope
 
-Status: SCOPED.
+Status: IMPLEMENTED FIRST PASS.
 
 This document scopes a first-pass text-to-speech layer for Scene Mode agent
 messages.
@@ -19,10 +19,11 @@ Example flow:
 
 ```text
 Codex backend reply
--> speakable segment extractor
+-> structured turn/display projection
+-> ordered speech block extractor
 -> TTS backend
 -> cached audio file
--> playback queue
+-> serialized playback queue
 ```
 
 The first pass should make this local, explicit, and auditable:
@@ -147,9 +148,15 @@ The default should be silent or deterministic:
 
 This keeps verification stable without requiring VOICEVOX to be installed.
 
-## Speakable Segment Extraction
+## Turn And Speech Blocks
 
-Add a conservative extractor before any backend work.
+Scene Mode separates visible dialogue formatting from TTS input. Compose
+history is stored with turn/block metadata and rendered through a VN transcript
+formatter. User prompts keep the `>` prompt shape, assistant replies get
+readable paragraph/section spacing, and valid structured compose JSON is
+unwrapped to its dialogue text instead of displayed as a raw blob.
+
+TTS receives ordered speech blocks rather than raw dialogue text.
 
 Input:
 
@@ -161,8 +168,12 @@ Output:
 
 ```rust
 pub struct SpeakableSegment {
+    pub turn_id: u64,
+    pub block_index: usize,
     pub speaker: Option<String>,
+    pub display_text: String,
     pub text: String,
+    pub kind: SpeechBlockKind,
     pub source: SpeakableSource,
 }
 ```
@@ -173,6 +184,9 @@ Rules:
 - remove diff hunks and patch markers
 - drop lines that look like stack frames, logs, JSON, or shell output
 - drop lines dominated by paths, punctuation, or identifiers
+- clean inline Unix paths, Windows paths, URLs, flags, env vars, commit hashes,
+  command snippets, and technical filenames from the spoken text
+- preserve original display text separately from cleaned spoken text
 - preserve normal prose paragraphs and short bullet findings
 - cap segment length before synthesis
 
@@ -215,6 +229,9 @@ GAMETERM_SCENE_TTS_PLAYER=afplay
 Requirements:
 
 - queue synthesized files in order
+- wait for the configured player to finish before starting the next speech block
+- delete temporary WAV files after successful playback when a player is
+  configured
 - stop current playback on user command
 - update Scene status when synthesis/playback fails
 - never block Scene input while audio is playing

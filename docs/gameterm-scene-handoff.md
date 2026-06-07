@@ -6,12 +6,12 @@ deeper product context.
 
 ## Current Snapshot
 
-- Date: 2026-06-04
+- Date: 2026-06-07
 - Branch: `main`
-- Latest behavior commit: current pass `[gui] add Rust Scene VOICEVOX backend`
+- Latest behavior commit: `41fc33eec [visual] serialize Scene TTS playback`
 - Latest tooling commit: `ec1b29b8e [tools] add local CT2 Scene translation helper`
-- Remote state at handoff time: local commits pending push
-- Worktree state at handoff time: Rust TTS backend/docs changes being committed
+- Remote state at handoff time: local Scene turn/TTS commits pending push
+- Worktree state at handoff time: docs refresh in progress
 - Local app bundle refreshed: `/Users/julianabeleda/Applications/GameTerm.app`
 - Persistent Scene compose config:
   `/Users/julianabeleda/.config/gameterm/scene-compose.json`
@@ -26,7 +26,13 @@ normal macOS GameTerm app without shell-only setup.
 
 Recent committed work:
 
-- current pass `[gui] add Rust Scene VOICEVOX backend`
+- `41fc33eec [visual] serialize Scene TTS playback`
+- `d529eb9a7 [visual] add ordered Scene speech blocks`
+- `1c642e468 [visual] add Scene compose turn display blocks`
+- `3f14ed146 [visual] auto-submit Scene voice prompts`
+- `d48711e09 [visual] latch Scene voice hold captures`
+- `0d33471b4 [visual] stabilize Scene voice hold state`
+- `123d7eb7f [visual] forward Scene voice hold modifiers`
 - `60920fd3d [docs] record CT2 Scene voice benchmark`
 - `ec1b29b8e [tools] add local CT2 Scene translation helper`
 - `09edb63fe [tools] keep VOICEVOX speaking without implicit translation`
@@ -42,6 +48,17 @@ Recent committed work:
 
 Latest behavior change:
 
+- Scene compose history now carries turn/block metadata. The VN dialogue panel
+  renders through a transcript formatter instead of directly wrapping raw
+  message strings, so user prompts, structured compose JSON, and flattened
+  numbered replies display with more readable turn spacing.
+- Scene TTS now extracts ordered speech blocks with separate display text and
+  cleaned speakable text. Inline paths, URLs, command snippets, flags, env
+  vars, commit hashes, and technical filenames are cleaned or skipped before
+  VOICEVOX sees the text.
+- Scene TTS playback now waits for the configured player command to finish
+  before starting the next speech block. Temporary WAV files are deleted after
+  successful playback, and Scene status reports `TTS played` for played audio.
 - Scene Mode now has `Debug -> Voice -> Fake Codex backend` for toggling
   between the configured compose backend and deterministic `Fake Codex`.
 - Toggling clears the dialogue transcript, changes the compose backend state,
@@ -68,7 +85,7 @@ VOICEVOX/TTS status:
 
 - `vs hello` works from the regular terminal path, but has roughly 5-6 seconds
   of latency before audio playback.
-- The clicked GameTerm app Scene Mode VOICEVOX path now reaches `TTS ready`
+- The clicked GameTerm app Scene Mode VOICEVOX path now reaches `TTS played`
   after boot option `1. Scene Mode + VOICEVOX`,
   `Debug -> Voice -> Fake Codex backend`, and a short `hi` prompt.
 - Before the explicit launch-config fix, option 1 reached Scene Mode but Scene
@@ -76,7 +93,7 @@ VOICEVOX/TTS status:
 - The expected Scene voice path is:
   Composer reply -> speakable prose segment -> Rust Scene TTS worker ->
   optional CT2/helper translation command -> Rust VOICEVOX HTTP
-  `audio_query`/`synthesis` -> temporary WAV -> `afplay`.
+  `audio_query`/`synthesis` -> temporary WAV -> waited `afplay` -> cleanup.
 - VOICEVOX does not receive raw Codex JSON. GameTerm parses/extracts the reply
   first and sends only speakable prose to the TTS command.
 - Important primitive: Scene TTS config belongs to the Scene overlay launch.
