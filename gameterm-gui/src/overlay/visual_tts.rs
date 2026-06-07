@@ -321,19 +321,20 @@ fn push_segment(
     let text = current_speakable.join(" ");
     current_display.clear();
     current_speakable.clear();
-    let text = text.chars().take(TTS_MAX_SEGMENT_CHARS).collect::<String>();
-    if text.trim().is_empty() {
-        return;
+    for text in split_speakable_chunks(&text, TTS_MAX_SEGMENT_CHARS) {
+        if text.trim().is_empty() {
+            continue;
+        }
+        segments.push(SpeakableSegment {
+            turn_id: 0,
+            block_index: segments.len(),
+            speaker: speaker.clone(),
+            display_text: display_text.clone(),
+            text,
+            kind: SpeechBlockKind::Prose,
+            source,
+        });
     }
-    segments.push(SpeakableSegment {
-        turn_id: 0,
-        block_index: segments.len(),
-        speaker: speaker.clone(),
-        display_text,
-        text,
-        kind: SpeechBlockKind::Prose,
-        source,
-    });
 }
 
 fn strip_fenced_code(text: &str) -> String {
@@ -387,9 +388,10 @@ fn is_machine_oriented_line(line: &str) -> bool {
 
 fn clean_speakable_line(line: &str) -> String {
     let without_inline_code = replace_inline_code(line);
+    let without_urls = replace_url_spans(&without_inline_code);
     let mut cleaned = Vec::new();
     let mut last_replacement: Option<&'static str> = None;
-    for word in without_inline_code.split_whitespace() {
+    for word in without_urls.split_whitespace() {
         let replacement = speakable_word(word);
         match replacement {
             WordSpeech::Keep(value) => {
@@ -428,6 +430,59 @@ fn replace_inline_code(line: &str) -> String {
     }
     output.push_str(rest);
     output
+}
+
+fn replace_url_spans(line: &str) -> String {
+    let line = replace_markdown_url_spans(line);
+    let mut output = String::new();
+    let mut token = String::new();
+    for ch in line.chars() {
+        if ch.is_whitespace() {
+            output.push_str(&speakable_url_token(&token));
+            token.clear();
+            output.push(ch);
+        } else {
+            token.push(ch);
+        }
+    }
+    output.push_str(&speakable_url_token(&token));
+    output
+}
+
+fn replace_markdown_url_spans(line: &str) -> String {
+    let mut output = String::new();
+    let mut rest = line;
+    while let Some(start) = rest.find('[') {
+        output.push_str(&rest[..start]);
+        let after_open = &rest[start + 1..];
+        let Some(label_end) = after_open.find("](") else {
+            output.push_str(&rest[start..]);
+            return output;
+        };
+        let url_start = start + 1 + label_end + 2;
+        let url_and_after = &rest[url_start..];
+        if !(url_and_after.starts_with("http://") || url_and_after.starts_with("https://")) {
+            output.push_str(&rest[start..url_start]);
+            rest = url_and_after;
+            continue;
+        }
+        let Some(url_end) = url_and_after.find(')') else {
+            output.push_str(" the link ");
+            return output;
+        };
+        output.push_str(" the link ");
+        rest = &url_and_after[url_end + 1..];
+    }
+    output.push_str(rest);
+    output
+}
+
+fn speakable_url_token(token: &str) -> String {
+    if token.contains("http://") || token.contains("https://") {
+        " the link ".to_string()
+    } else {
+        token.to_string()
+    }
 }
 
 fn inline_code_is_technical(code: &str) -> bool {
@@ -531,6 +586,113 @@ fn file_name_token_looks_technical(token: &str) -> bool {
         .trim_end_matches(|ch: char| matches!(ch, '.' | ',' | ';' | ':' | '?' | '!'))
         .to_ascii_lowercase();
     EXTENSIONS.iter().any(|ext| lower.ends_with(ext))
+}
+
+fn split_speakable_chunks(text: &str, max_chars: usize) -> Vec<String> {
+    let max_chars = max_chars.max(1);
+    let mut chunks = Vec::new();
+    let mut current = String::new();
+    for sentence in split_sentences(text) {
+        push_chunk_part(&mut chunks, &mut current, sentence.trim(), max_chars);
+    }
+    push_current_chunk(&mut chunks, &mut current);
+    chunks
+}
+
+fn split_sentences(text: &str) -> Vec<String> {
+    let mut sentences = Vec::new();
+    let mut current = String::new();
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        current.push(ch);
+        let ends_sentence = matches!(ch, '.' | '!' | '?')
+            && match chars.peek() {
+                Some(next) => next.is_whitespace() || matches!(next, '"' | '\''),
+                None => true,
+            };
+        if ends_sentence {
+            sentences.push(current.trim().to_string());
+            current.clear();
+            while chars.peek().is_some_and(|next| next.is_whitespace()) {
+                chars.next();
+            }
+        }
+    }
+    if !current.trim().is_empty() {
+        sentences.push(current.trim().to_string());
+    }
+    sentences
+}
+
+fn push_chunk_part(
+    chunks: &mut Vec<String>,
+    current: &mut String,
+    part: &str,
+    max_chars: usize,
+) {
+    if part.is_empty() {
+        return;
+    }
+    if part.chars().count() > max_chars {
+        push_current_chunk(chunks, current);
+        for split in split_long_part_by_words(part, max_chars) {
+            push_chunk_part(chunks, current, &split, max_chars);
+        }
+        return;
+    }
+    let separator = usize::from(!current.is_empty());
+    if current.chars().count() + separator + part.chars().count() > max_chars {
+        push_current_chunk(chunks, current);
+    }
+    if !current.is_empty() {
+        current.push(' ');
+    }
+    current.push_str(part);
+}
+
+fn split_long_part_by_words(part: &str, max_chars: usize) -> Vec<String> {
+    let mut chunks = Vec::new();
+    let mut current = String::new();
+    for word in part.split_whitespace() {
+        if word.chars().count() > max_chars {
+            push_current_chunk(&mut chunks, &mut current);
+            chunks.extend(split_long_word(word, max_chars));
+            continue;
+        }
+        let separator = usize::from(!current.is_empty());
+        if current.chars().count() + separator + word.chars().count() > max_chars {
+            push_current_chunk(&mut chunks, &mut current);
+        }
+        if !current.is_empty() {
+            current.push(' ');
+        }
+        current.push_str(word);
+    }
+    push_current_chunk(&mut chunks, &mut current);
+    chunks
+}
+
+fn split_long_word(word: &str, max_chars: usize) -> Vec<String> {
+    let mut chunks = Vec::new();
+    let mut current = String::new();
+    for ch in word.chars() {
+        if current.chars().count() >= max_chars {
+            chunks.push(std::mem::take(&mut current));
+        }
+        current.push(ch);
+    }
+    if !current.is_empty() {
+        chunks.push(current);
+    }
+    chunks
+}
+
+fn push_current_chunk(chunks: &mut Vec<String>, current: &mut String) {
+    let chunk = current.trim();
+    if !chunk.is_empty() {
+        chunks.push(chunk.to_string());
+    }
+    current.clear();
 }
 
 fn scene_tts_config_from_env() -> SceneTtsConfig {
@@ -1070,7 +1232,7 @@ We can continue after the smoke pass."#;
 
     #[test]
     fn visual_tts_cleans_inline_technical_spans_without_changing_display_text() {
-        let text = "I updated /Users/julianabeleda/env/gameterm and ran `cargo test -p gameterm-gui`. See https://example.com/report.";
+        let text = "I updated /Users/julianabeleda/env/gameterm and ran `cargo test -p gameterm-gui`. See [the report](https://example.com/report).";
 
         let segments =
             extract_speakable_segments(Some("Codex"), text, SpeakableSource::ComposeReply);
@@ -1081,6 +1243,33 @@ We can continue after the smoke pass."#;
             segments[0].text,
             "I updated the project folder and ran the command See the link"
         );
+    }
+
+    #[test]
+    fn visual_tts_splits_long_segments_without_dropping_text() {
+        let sentence = "This sentence keeps enough natural words to exceed the speech chunk limit when repeated.";
+        let text = (0..24)
+            .map(|_| sentence)
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        let segments =
+            extract_speakable_segments(Some("Codex"), &text, SpeakableSource::ComposeReply);
+
+        assert!(segments.len() > 1);
+        assert!(segments
+            .iter()
+            .all(|segment| segment.text.chars().count() <= TTS_MAX_SEGMENT_CHARS));
+        assert_eq!(
+            segments
+                .iter()
+                .map(|segment| segment.text.as_str())
+                .collect::<Vec<_>>()
+                .join(" "),
+            text
+        );
+        assert_eq!(segments[0].block_index, 0);
+        assert_eq!(segments[1].block_index, 1);
     }
 
     #[test]
