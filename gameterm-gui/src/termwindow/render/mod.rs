@@ -47,6 +47,7 @@ pub mod screen_line;
 pub mod split;
 pub mod tab_bar;
 pub mod visual_quad;
+mod visual_stage_image;
 mod visual_vn_panel;
 pub mod window_buttons;
 
