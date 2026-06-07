@@ -57,9 +57,9 @@ use super::visual_compose::ComposeBackendLabel;
 #[cfg(test)]
 use super::visual_compose::ComposeBackendResult;
 use super::visual_compose::{compose_running_status, spawn_compose_backend, ComposeBackendRequest};
-use super::visual_stt::{spawn_stt_backend, SceneSttConfig};
+use super::visual_stt::{spawn_mic_test, spawn_stt_backend, SceneSttConfig};
 #[cfg(test)]
-use super::visual_stt::{SceneSttResult, SceneSttState};
+use super::visual_stt::{SceneMicDevice, SceneSttResult, SceneSttState};
 use super::visual_tts::{SceneTtsConfig, SceneTtsRequest};
 #[cfg(test)]
 use super::visual_tts::{SpeakableSegment, SpeakableSource};
@@ -81,7 +81,8 @@ use visual_dialogue_scroll::{
 };
 use visual_dialogue_scroll::{handle_dialogue_scroll_key, handle_dialogue_scroll_wheel};
 use visual_event_drain::{
-    drain_command_results, drain_compose_results, drain_stt_results, drain_tts_results,
+    drain_command_results, drain_compose_results, drain_mic_test_results, drain_stt_results,
+    drain_tts_results,
 };
 #[cfg(test)]
 use visual_frame::replace_last_screen_line;
@@ -199,6 +200,7 @@ fn show_visual_scene_overlay_with_source(
     let stt_config = launch_options
         .stt_config
         .unwrap_or_else(SceneSttConfig::from_env);
+    let (mic_test_tx, mic_test_rx) = mpsc::channel();
     let mut session = VisualOverlaySession::new(tts_config, tts_tx.clone(), stt_config);
 
     loop {
@@ -233,6 +235,12 @@ fn show_visual_scene_overlay_with_source(
             &compose_tx,
             &scene_path,
             pane_id,
+        );
+        needs_render |= drain_mic_test_results(
+            &mic_test_rx,
+            &mut runtime,
+            &mut session.dialogue_scroll,
+            &mut session.mic_test_running,
         );
         if needs_render {
             if let Some(runtime) = runtime.as_ref() {
@@ -344,7 +352,7 @@ fn show_visual_scene_overlay_with_source(
                                 .voice_debug
                                 .sync_status(session.stt_state.last_status());
                             session.stt_session = Some(spawn_stt_backend(
-                                session.stt_config.clone(),
+                                session.selected_stt_config(),
                                 stt_tx.clone(),
                             ));
                             session.dialogue_scroll.voice_hold_active = true;
@@ -521,8 +529,12 @@ fn show_visual_scene_overlay_with_source(
                 }
                 if let Some(runtime) = runtime.as_mut() {
                     if in_layout_debug {
-                        let debug_effect =
-                            handle_scene_debug_session_input(runtime, &mut session, visual_input);
+                        let debug_effect = handle_scene_debug_session_input(
+                            runtime,
+                            &mut session,
+                            visual_input,
+                            &mic_test_tx,
+                        );
                         if debug_effect.handled {
                             if debug_effect.reset_compose_dialogue {
                                 session.first_voice_reveal_done = false;
@@ -673,6 +685,7 @@ fn handle_scene_debug_session_input(
     runtime: &mut SceneRuntime,
     session: &mut VisualOverlaySession,
     input: VisualInput,
+    mic_test_tx: &mpsc::Sender<super::visual_stt::SceneMicTestResult>,
 ) -> VoiceDebugMenuEffect {
     if runtime.view() != VisualView::VnLayoutDebugger {
         return VoiceDebugMenuEffect::IGNORED;
@@ -706,6 +719,26 @@ fn handle_scene_debug_session_input(
             }
             3 => {
                 runtime.mark_action_status(session.tts_state.toggle_muted());
+                VoiceDebugMenuEffect::HANDLED
+            }
+            4 => {
+                let delta = if input == VisualInput::Left { -1 } else { 1 };
+                runtime.mark_action_status(session.cycle_selected_mic(delta));
+                VoiceDebugMenuEffect::HANDLED
+            }
+            5 => {
+                if session.mic_test_running {
+                    runtime.mark_action_status("Mic test already running");
+                } else {
+                    session.mic_test_running = true;
+                    let selected_label = session.selected_mic_label().to_string();
+                    session
+                        .dialogue_scroll
+                        .voice_debug
+                        .mark_mic_test_started(&selected_label);
+                    runtime.mark_action_status(format!("Mic test listening: {selected_label}"));
+                    spawn_mic_test(session.selected_mic_device(), mic_test_tx.clone());
+                }
                 VoiceDebugMenuEffect::HANDLED
             }
             _ => VoiceDebugMenuEffect::IGNORED,
@@ -1797,6 +1830,7 @@ mod tests {
     #[test]
     fn scene_debug_menu_toggles_voice_items_from_central_menu() {
         let (tts_tx, _tts_rx) = mpsc::channel();
+        let (mic_test_tx, _mic_test_rx) = mpsc::channel();
         let mut session = VisualOverlaySession::new(
             SceneTtsConfig::voicevox_default(),
             tts_tx,
@@ -1813,17 +1847,90 @@ mod tests {
         runtime.handle_input(VisualInput::Next);
 
         assert_eq!(
-            handle_scene_debug_session_input(&mut runtime, &mut session, VisualInput::Activate),
+            handle_scene_debug_session_input(
+                &mut runtime,
+                &mut session,
+                VisualInput::Activate,
+                &mic_test_tx
+            ),
             VoiceDebugMenuEffect::HANDLED
         );
         assert!(session.dialogue_scroll.voice_debug.visible);
 
         runtime.handle_input(VisualInput::Next);
         assert_eq!(
-            handle_scene_debug_session_input(&mut runtime, &mut session, VisualInput::Right),
+            handle_scene_debug_session_input(
+                &mut runtime,
+                &mut session,
+                VisualInput::Right,
+                &mic_test_tx
+            ),
             VoiceDebugMenuEffect::HANDLED
         );
         assert!(session.dialogue_scroll.voice_debug.test_mode);
+    }
+
+    #[test]
+    fn scene_debug_menu_cycles_microphone_from_voice_section() {
+        let (tts_tx, _tts_rx) = mpsc::channel();
+        let (mic_test_tx, _mic_test_rx) = mpsc::channel();
+        let mut session = VisualOverlaySession::new_with_mic_devices(
+            SceneTtsConfig::voicevox_default(),
+            tts_tx,
+            SceneSttConfig::whisper_default(),
+            vec![
+                SceneMicDevice {
+                    name: "HD Pro Webcam C920".to_string(),
+                    is_default: true,
+                },
+                SceneMicDevice {
+                    name: "usethisphone707 Microphone".to_string(),
+                    is_default: false,
+                },
+            ],
+        );
+        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        runtime.toggle_debugger();
+        runtime.handle_input(VisualInput::Right);
+        runtime.handle_input(VisualInput::Right);
+        for _ in 0..4 {
+            runtime.handle_input(VisualInput::Next);
+        }
+
+        assert_eq!(
+            handle_scene_debug_session_input(
+                &mut runtime,
+                &mut session,
+                VisualInput::Right,
+                &mic_test_tx
+            ),
+            VoiceDebugMenuEffect::HANDLED
+        );
+        assert_eq!(session.selected_mic_label(), "HD Pro Webcam C920");
+        assert!(session
+            .selected_stt_config()
+            .diagnostics_lines()
+            .iter()
+            .any(|line| line == "Mic: HD Pro Webcam C920"));
+
+        assert_eq!(
+            handle_scene_debug_session_input(
+                &mut runtime,
+                &mut session,
+                VisualInput::Right,
+                &mic_test_tx
+            ),
+            VoiceDebugMenuEffect::HANDLED
+        );
+        assert_eq!(session.selected_mic_label(), "usethisphone707 Microphone");
+
+        let lines = session
+            .dialogue_scroll
+            .voice_debug
+            .render_voice_lines(4)
+            .join("\n");
+        assert!(lines.contains("Microphone"));
+        assert!(lines.contains("usethisphone707 Microphone"));
     }
 
     #[test]
@@ -1842,6 +1949,7 @@ mod tests {
     #[test]
     fn scene_voice_debug_fake_codex_toggle_blocks_while_compose_runs() {
         let (tts_tx, _tts_rx) = mpsc::channel();
+        let (mic_test_tx, _mic_test_rx) = mpsc::channel();
         let mut session = VisualOverlaySession::new(
             SceneTtsConfig::voicevox_default(),
             tts_tx,
@@ -1856,7 +1964,12 @@ mod tests {
         session.compose_backend_running = true;
 
         assert_eq!(
-            handle_scene_debug_session_input(&mut runtime, &mut session, VisualInput::Activate),
+            handle_scene_debug_session_input(
+                &mut runtime,
+                &mut session,
+                VisualInput::Activate,
+                &mic_test_tx
+            ),
             VoiceDebugMenuEffect::HANDLED
         );
         assert_eq!(
@@ -1873,6 +1986,7 @@ mod tests {
     #[test]
     fn scene_voice_debug_fake_codex_toggle_clears_dialogue_history() {
         let (tts_tx, _tts_rx) = mpsc::channel();
+        let (mic_test_tx, _mic_test_rx) = mpsc::channel();
         let mut session = VisualOverlaySession::new(
             SceneTtsConfig::voicevox_default(),
             tts_tx,
@@ -1888,7 +2002,12 @@ mod tests {
         runtime.handle_input(VisualInput::Next);
 
         assert_eq!(
-            handle_scene_debug_session_input(&mut runtime, &mut session, VisualInput::Activate),
+            handle_scene_debug_session_input(
+                &mut runtime,
+                &mut session,
+                VisualInput::Activate,
+                &mic_test_tx
+            ),
             VoiceDebugMenuEffect::RESET_COMPOSE_DIALOGUE
         );
         assert!(session.compose_debug_backend.is_fake());

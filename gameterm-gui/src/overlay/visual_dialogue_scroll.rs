@@ -3,7 +3,7 @@ use gameterm_visual::{SceneRuntime, VisualInput, VnDialogueScrollMetrics};
 use termwiz::input::MouseButtons;
 use termwiz::terminal::ScreenSize;
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub(super) struct SceneDialogueScrollback {
     pub(super) offset: usize,
     pub(super) voice_hold_active: bool,

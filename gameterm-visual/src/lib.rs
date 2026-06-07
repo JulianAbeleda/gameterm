@@ -1865,7 +1865,7 @@ impl SceneRuntime {
         match section {
             VisualInteractiveDebugMenu::SceneLayout => VnOverlayDebugOverrides::PARAM_COUNT,
             VisualInteractiveDebugMenu::Text => 6,
-            VisualInteractiveDebugMenu::Voice => 5,
+            VisualInteractiveDebugMenu::Voice => 7,
             VisualInteractiveDebugMenu::Compose => 4,
             VisualInteractiveDebugMenu::Runtime => 6,
             VisualInteractiveDebugMenu::TileDebugMenu => 0,
@@ -1994,6 +1994,8 @@ impl SceneRuntime {
                 ),
                 ("Voice test mode".to_string(), "overlay session".to_string()),
                 ("TTS mute".to_string(), "overlay session".to_string()),
+                ("Microphone".to_string(), "overlay session".to_string()),
+                ("Mic test".to_string(), "enter".to_string()),
                 (
                     "Microphone status".to_string(),
                     "overlay session".to_string(),

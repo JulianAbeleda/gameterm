@@ -3,13 +3,15 @@ use std::path::Path;
 use std::sync::mpsc;
 
 use super::super::visual_compose::ComposeBackendResult;
-use super::super::visual_stt::{SceneSttResult, SceneSttSession, SceneSttState};
+use super::super::visual_stt::{
+    SceneMicTestResult, SceneSttResult, SceneSttSession, SceneSttState,
+};
 use super::super::visual_tts::{SceneTtsRequest, SceneTtsResult, SceneTtsState, SceneTtsWorker};
 use super::visual_command_dispatch::RunCommandResult;
 use super::visual_compose_dock::SceneComposeDock;
 use super::visual_compose_result::{
-    PendingFirstVoiceReveal, apply_compose_backend_result, compose_result_speakable_segments,
-    should_delay_first_voice_reveal,
+    apply_compose_backend_result, compose_result_speakable_segments,
+    should_delay_first_voice_reveal, PendingFirstVoiceReveal,
 };
 use super::visual_dialogue_scroll::SceneDialogueScrollback;
 use super::visual_voice_events::{apply_stt_result, apply_tts_result};
@@ -158,6 +160,29 @@ pub(super) fn drain_stt_results(
                     .sync_status(stt_state.last_status());
             }
             dialogue_scroll.reset_to_bottom();
+            needs_render = true;
+        }
+    }
+    needs_render
+}
+
+pub(super) fn drain_mic_test_results(
+    mic_test_rx: &mpsc::Receiver<SceneMicTestResult>,
+    runtime: &mut Option<SceneRuntime>,
+    dialogue_scroll: &mut SceneDialogueScrollback,
+    mic_test_running: &mut bool,
+) -> bool {
+    let mut needs_render = false;
+    while let Ok(result) = mic_test_rx.try_recv() {
+        *mic_test_running = false;
+        if let Some(runtime) = runtime.as_mut() {
+            let status = if let Some(error) = result.error.as_deref() {
+                format!("{}: {error}", result.status)
+            } else {
+                result.status.clone()
+            };
+            dialogue_scroll.voice_debug.apply_mic_test_result(result);
+            runtime.mark_action_status(status);
             needs_render = true;
         }
     }

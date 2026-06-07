@@ -18,6 +18,7 @@ const STT_WHISPER_MAX_SECONDS_ENV: &str = "GAMETERM_SCENE_STT_MAX_SECONDS";
 const STT_WHISPER_DEVICE_ENV: &str = "GAMETERM_SCENE_STT_DEVICE";
 const STT_DEFAULT_TIMEOUT: Duration = Duration::from_secs(20);
 const STT_DEFAULT_MAX_SECONDS: Duration = Duration::from_secs(20);
+const MIC_TEST_DURATION: Duration = Duration::from_millis(900);
 const STT_MAX_TRANSCRIPT_CHARS: usize = 800;
 const WHISPER_SAMPLE_RATE: u32 = 16_000;
 
@@ -64,6 +65,21 @@ struct SceneWhisperConfig {
 pub(super) struct SceneSttState {
     running: bool,
     last_status: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct SceneMicDevice {
+    pub(super) name: String,
+    pub(super) is_default: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct SceneMicTestResult {
+    pub(super) status: String,
+    pub(super) device_label: String,
+    pub(super) peak: Option<f32>,
+    pub(super) rms: Option<f32>,
+    pub(super) error: Option<String>,
 }
 
 impl Default for SceneSttState {
@@ -138,6 +154,38 @@ pub(super) fn spawn_stt_backend(
         let _ = tx.send(result);
     });
     SceneSttSession { tx: control_tx }
+}
+
+pub(super) fn spawn_mic_test(input_device: Option<String>, tx: mpsc::Sender<SceneMicTestResult>) {
+    thread::spawn(move || {
+        let result = run_mic_test(input_device.as_deref());
+        let _ = tx.send(result);
+    });
+}
+
+pub(super) fn scene_microphone_devices() -> Result<Vec<SceneMicDevice>, String> {
+    let host = cpal::default_host();
+    let default_name = host
+        .default_input_device()
+        .and_then(|device| device.name().ok());
+    let devices = host
+        .input_devices()
+        .map_err(|err| format!("failed to list microphone input devices: {err}"))?;
+    let mut out = Vec::new();
+    for device in devices {
+        let name = device.name().unwrap_or_else(|_| "<unnamed>".to_string());
+        if out
+            .iter()
+            .any(|existing: &SceneMicDevice| existing.name == name)
+        {
+            continue;
+        }
+        let is_default = default_name
+            .as_deref()
+            .is_some_and(|default_name| default_name == name);
+        out.push(SceneMicDevice { name, is_default });
+    }
+    Ok(out)
 }
 
 pub(crate) fn scene_stt_config_from_env() -> SceneSttConfig {
@@ -215,12 +263,64 @@ impl SceneSttConfig {
         lines
     }
 
+    pub(super) fn with_input_device(&self, input_device: Option<String>) -> Self {
+        let mut config = self.clone();
+        if let SceneSttBackend::Whisper(whisper) = &mut config.backend {
+            whisper.input_device = input_device;
+        }
+        config
+    }
+
     fn backend_label(&self) -> &'static str {
         match self.backend {
             SceneSttBackend::Disabled => "disabled",
             SceneSttBackend::Command(_) => "command",
             SceneSttBackend::Whisper(_) => "whisper",
         }
+    }
+}
+
+fn run_mic_test(configured_device: Option<&str>) -> SceneMicTestResult {
+    let device_label = configured_device
+        .map(str::trim)
+        .filter(|device| !device.is_empty())
+        .unwrap_or("system default")
+        .to_string();
+    match record_for_duration(MIC_TEST_DURATION, configured_device) {
+        Ok(recording) => {
+            let peak = recording
+                .samples
+                .iter()
+                .copied()
+                .fold(0.0_f32, |max, sample| max.max(sample.abs()));
+            let rms = if recording.samples.is_empty() {
+                0.0
+            } else {
+                let sum: f32 = recording.samples.iter().map(|sample| sample * sample).sum();
+                (sum / recording.samples.len() as f32).sqrt()
+            };
+            let status = if recording.samples.is_empty() {
+                "Mic test heard no samples".to_string()
+            } else if peak >= 0.02 {
+                format!("Mic signal detected: peak {peak:.3}")
+            } else {
+                format!("Mic silence: peak {peak:.3}")
+            };
+            SceneMicTestResult {
+                status,
+                device_label,
+                peak: Some(peak),
+                rms: Some(rms),
+                error: None,
+            }
+        }
+        Err(err) => SceneMicTestResult {
+            status: "Mic test failed".to_string(),
+            device_label,
+            peak: None,
+            rms: None,
+            error: Some(err),
+        },
     }
 }
 
@@ -477,11 +577,57 @@ struct RecordedAudio {
     sample_rate: u32,
 }
 
+struct ActiveRecording {
+    stream: cpal::Stream,
+    samples: Arc<Mutex<Vec<f32>>>,
+    sample_rate: u32,
+}
+
+impl ActiveRecording {
+    fn finish(self) -> Result<RecordedAudio, String> {
+        drop(self.stream);
+        let samples = self
+            .samples
+            .lock()
+            .map_err(|_| "failed to read recorded microphone samples".to_string())?
+            .clone();
+        Ok(RecordedAudio {
+            samples,
+            sample_rate: self.sample_rate,
+        })
+    }
+}
+
 fn record_until_stop(
     max_recording: Duration,
     configured_device: Option<&str>,
     control_rx: mpsc::Receiver<SceneSttControl>,
 ) -> Result<Option<RecordedAudio>, String> {
+    let recording = start_recording(configured_device)?;
+
+    let started = Instant::now();
+    loop {
+        match control_rx.recv_timeout(Duration::from_millis(25)) {
+            Ok(SceneSttControl::Stop) => break,
+            Ok(SceneSttControl::Cancel) => return Ok(None),
+            Err(mpsc::RecvTimeoutError::Timeout) if started.elapsed() >= max_recording => break,
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::RecvTimeoutError::Disconnected) => return Ok(None),
+        }
+    }
+    recording.finish().map(Some)
+}
+
+fn record_for_duration(
+    duration: Duration,
+    configured_device: Option<&str>,
+) -> Result<RecordedAudio, String> {
+    let recording = start_recording(configured_device)?;
+    thread::sleep(duration);
+    recording.finish()
+}
+
+fn start_recording(configured_device: Option<&str>) -> Result<ActiveRecording, String> {
     let host = cpal::default_host();
     let device = select_input_device(&host, configured_device)?;
     let supported = device
@@ -501,27 +647,11 @@ fn record_until_stop(
     stream
         .play()
         .map_err(|err| format!("failed to start microphone stream: {err}"))?;
-
-    let started = Instant::now();
-    loop {
-        match control_rx.recv_timeout(Duration::from_millis(25)) {
-            Ok(SceneSttControl::Stop) => break,
-            Ok(SceneSttControl::Cancel) => return Ok(None),
-            Err(mpsc::RecvTimeoutError::Timeout) if started.elapsed() >= max_recording => break,
-            Err(mpsc::RecvTimeoutError::Timeout) => {}
-            Err(mpsc::RecvTimeoutError::Disconnected) => return Ok(None),
-        }
-    }
-    drop(stream);
-
-    let samples = samples
-        .lock()
-        .map_err(|_| "failed to read recorded microphone samples".to_string())?
-        .clone();
-    Ok(Some(RecordedAudio {
+    Ok(ActiveRecording {
+        stream,
         samples,
         sample_rate,
-    }))
+    })
 }
 
 fn select_input_device(
