@@ -5,7 +5,6 @@ use super::super::visual_stt::{
 };
 use super::super::visual_tts::{SceneTtsConfig, SceneTtsResult, SceneTtsState, SceneTtsWorker};
 use super::visual_compose_dock::SceneComposeDock;
-use super::visual_compose_result::PendingFirstVoiceReveal;
 use super::visual_dialogue_scroll::SceneDialogueScrollback;
 use super::visual_voice_debug::SceneVoiceDebugState;
 
@@ -43,9 +42,6 @@ pub(super) struct VisualOverlaySession {
     pub(super) compose_backend_running: bool,
     pub(super) tts_worker: SceneTtsWorker,
     pub(super) tts_state: SceneTtsState,
-    pub(super) sync_first_voice_reveal: bool,
-    pub(super) first_voice_reveal_done: bool,
-    pub(super) pending_first_voice_reveal: Option<PendingFirstVoiceReveal>,
     pub(super) stt_config: SceneSttConfig,
     pub(super) stt_state: SceneSttState,
     pub(super) stt_session: Option<SceneSttSession>,
@@ -61,7 +57,6 @@ impl VisualOverlaySession {
         tts_tx: mpsc::Sender<SceneTtsResult>,
         stt_config: SceneSttConfig,
     ) -> Self {
-        let sync_first_voice_reveal = tts_config.can_play_audio();
         let tts_worker = SceneTtsWorker::new(tts_config, tts_tx);
         let mic_devices = scene_microphone_devices().unwrap_or_default();
         let stt_state = SceneSttState::default();
@@ -80,9 +75,6 @@ impl VisualOverlaySession {
             compose_backend_running: false,
             tts_worker,
             tts_state: SceneTtsState::default(),
-            sync_first_voice_reveal,
-            first_voice_reveal_done: false,
-            pending_first_voice_reveal: None,
             stt_config,
             stt_state,
             stt_session: None,

@@ -5,11 +5,6 @@ use serde::Deserialize;
 
 pub(super) const COMPOSE_OUTPUT_LIMIT: usize = 1200;
 
-#[derive(Debug, Clone)]
-pub(super) struct PendingFirstVoiceReveal {
-    pub(super) result: ComposeBackendResult,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum StructuredComposeOutcome {
     NoReply,
@@ -19,20 +14,7 @@ enum StructuredComposeOutcome {
     },
 }
 
-pub(super) fn should_delay_first_voice_reveal(
-    sync_first_voice_reveal: bool,
-    first_voice_reveal_done: bool,
-    reveal_already_pending: bool,
-    tts_muted: bool,
-    speakable_segments: &[SpeakableSegment],
-) -> bool {
-    sync_first_voice_reveal
-        && !first_voice_reveal_done
-        && !reveal_already_pending
-        && !tts_muted
-        && !speakable_segments.is_empty()
-}
-
+#[cfg(test)]
 pub(super) fn compose_result_speakable_segments(
     result: &ComposeBackendResult,
 ) -> Vec<SpeakableSegment> {
@@ -46,6 +28,7 @@ pub(super) fn compose_result_speakable_segments(
     )
 }
 
+#[cfg(test)]
 fn compose_result_reply_preview(result: &ComposeBackendResult) -> Option<(String, String)> {
     if !result.succeeded() {
         return None;
@@ -85,6 +68,7 @@ fn compose_result_reply_preview(result: &ComposeBackendResult) -> Option<(String
 pub(super) fn apply_compose_backend_result(
     runtime: &mut SceneRuntime,
     result: ComposeBackendResult,
+    voice_block_sync: bool,
 ) -> Vec<SpeakableSegment> {
     if result.succeeded() {
         match apply_structured_compose_backend_result(runtime, &result) {
@@ -92,12 +76,13 @@ pub(super) fn apply_compose_backend_result(
                 speaker,
                 dialogue_text,
             }) => {
-                runtime.mark_compose_succeeded(&speaker, &dialogue_text);
-                return extract_speakable_segments(
+                let mut segments = extract_speakable_segments(
                     Some(&speaker),
                     &dialogue_text,
                     SpeakableSource::ComposeReply,
                 );
+                stamp_runtime_blocks(runtime, &speaker, &mut segments, voice_block_sync);
+                return segments;
             }
             Some(StructuredComposeOutcome::NoReply) => {
                 runtime.mark_compose_succeeded("Scene", "");
@@ -128,18 +113,47 @@ pub(super) fn apply_compose_backend_result(
         if let Err(err) = runtime.apply_scene_patch(patch) {
             runtime.mark_action_status(format!("Compose reply failed: {err}"));
         } else {
-            runtime.mark_compose_succeeded("Codex", &reply);
-            return extract_speakable_segments(
-                Some("Codex"),
-                &reply,
-                SpeakableSource::ComposeReply,
-            );
+            let mut segments =
+                extract_speakable_segments(Some("Codex"), &reply, SpeakableSource::ComposeReply);
+            stamp_runtime_blocks(runtime, "Codex", &mut segments, voice_block_sync);
+            return segments;
         }
         return Vec::new();
     }
 
     apply_compose_backend_failure_result(runtime, &result);
     Vec::new()
+}
+
+fn stamp_runtime_blocks(
+    runtime: &mut SceneRuntime,
+    speaker: &str,
+    segments: &mut [SpeakableSegment],
+    voice_block_sync: bool,
+) {
+    if segments.is_empty() {
+        runtime.mark_compose_succeeded(speaker, "");
+        return;
+    }
+    let mut blocks = Vec::new();
+    let mut segment_block_ordinals = Vec::new();
+    for segment in segments.iter() {
+        let starts_new_block = match blocks.last() {
+            Some(block) => block != &segment.display_text,
+            None => true,
+        };
+        if starts_new_block {
+            blocks.push(segment.display_text.clone());
+        }
+        segment_block_ordinals.push(blocks.len().saturating_sub(1));
+    }
+    let ids = runtime.mark_compose_succeeded_blocks(speaker, &blocks, !voice_block_sync);
+    for (segment, block_ordinal) in segments.iter_mut().zip(segment_block_ordinals) {
+        if let Some((turn_id, block_index)) = ids.get(block_ordinal).copied() {
+            segment.turn_id = turn_id;
+            segment.block_index = block_index;
+        }
+    }
 }
 
 pub(super) fn fake_codex_compose_result(prompt: String) -> ComposeBackendResult {

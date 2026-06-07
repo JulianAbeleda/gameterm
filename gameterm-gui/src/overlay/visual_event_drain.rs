@@ -9,10 +9,7 @@ use super::super::visual_stt::{
 use super::super::visual_tts::{SceneTtsRequest, SceneTtsResult, SceneTtsState, SceneTtsWorker};
 use super::visual_command_dispatch::RunCommandResult;
 use super::visual_compose_dock::SceneComposeDock;
-use super::visual_compose_result::{
-    apply_compose_backend_result, compose_result_speakable_segments,
-    should_delay_first_voice_reveal, PendingFirstVoiceReveal,
-};
+use super::visual_compose_result::apply_compose_backend_result;
 use super::visual_dialogue_scroll::SceneDialogueScrollback;
 use super::visual_voice_events::{apply_stt_result, apply_tts_result};
 
@@ -50,9 +47,6 @@ pub(super) fn drain_compose_results(
     runtime: &mut Option<SceneRuntime>,
     compose_backend_running: &mut bool,
     dialogue_scroll: &mut SceneDialogueScrollback,
-    sync_first_voice_reveal: bool,
-    first_voice_reveal_done: &mut bool,
-    pending_first_voice_reveal: &mut Option<PendingFirstVoiceReveal>,
     tts_state: &SceneTtsState,
     tts_worker: &SceneTtsWorker,
 ) -> bool {
@@ -61,28 +55,12 @@ pub(super) fn drain_compose_results(
         *compose_backend_running = false;
         if let Some(runtime) = runtime.as_mut() {
             dialogue_scroll.reset_to_bottom();
-            let speakable_segments = compose_result_speakable_segments(&result);
-            if should_delay_first_voice_reveal(
-                sync_first_voice_reveal,
-                *first_voice_reveal_done,
-                pending_first_voice_reveal.is_some(),
-                tts_state.is_muted(),
-                &speakable_segments,
-            ) {
+            let voice_block_sync = !tts_state.is_muted();
+            let speakable_segments =
+                apply_compose_backend_result(runtime, result, voice_block_sync);
+            if !tts_state.is_muted() {
                 for segment in speakable_segments {
                     tts_worker.speak(SceneTtsRequest { segment });
-                }
-                *pending_first_voice_reveal = Some(PendingFirstVoiceReveal { result });
-                runtime.mark_action_status("Voice preparing first reply");
-            } else {
-                let speakable_segments = apply_compose_backend_result(runtime, result);
-                if !*first_voice_reveal_done && !speakable_segments.is_empty() {
-                    *first_voice_reveal_done = true;
-                }
-                if !tts_state.is_muted() {
-                    for segment in speakable_segments {
-                        tts_worker.speak(SceneTtsRequest { segment });
-                    }
                 }
             }
             needs_render = true;
@@ -95,18 +73,11 @@ pub(super) fn drain_tts_results(
     tts_rx: &mpsc::Receiver<SceneTtsResult>,
     runtime: &mut Option<SceneRuntime>,
     tts_state: &mut SceneTtsState,
-    dialogue_scroll: &mut SceneDialogueScrollback,
-    pending_first_voice_reveal: &mut Option<PendingFirstVoiceReveal>,
-    first_voice_reveal_done: &mut bool,
+    _dialogue_scroll: &mut SceneDialogueScrollback,
 ) -> bool {
     let mut needs_render = false;
     while let Ok(result) = tts_rx.try_recv() {
         if let Some(runtime) = runtime.as_mut() {
-            if let Some(pending) = pending_first_voice_reveal.take() {
-                apply_compose_backend_result(runtime, pending.result);
-                *first_voice_reveal_done = true;
-                dialogue_scroll.reset_to_bottom();
-            }
             apply_tts_result(runtime, tts_state, result);
             needs_render = true;
         }

@@ -3,10 +3,10 @@ use std::path::Path;
 use std::sync::mpsc;
 
 use super::super::visual_compose::{
-    ComposeBackendRequest, ComposeBackendResult, compose_running_status, spawn_compose_backend,
+    compose_running_status, spawn_compose_backend, ComposeBackendRequest, ComposeBackendResult,
 };
 use super::super::visual_stt::{SceneSttResult, SceneSttState};
-use super::super::visual_tts::{SceneTtsResult, SceneTtsState};
+use super::super::visual_tts::{SceneTtsEvent, SceneTtsResult, SceneTtsState};
 use super::visual_compose_dock::SceneComposeDock;
 
 pub(super) fn apply_tts_result(
@@ -14,6 +14,14 @@ pub(super) fn apply_tts_result(
     tts_state: &mut SceneTtsState,
     result: SceneTtsResult,
 ) {
+    match result.event {
+        SceneTtsEvent::Started => {
+            runtime.mark_compose_block_speaking(result.segment.turn_id, result.segment.block_index);
+        }
+        SceneTtsEvent::Finished => {
+            runtime.mark_compose_block_done(result.segment.turn_id, result.segment.block_index);
+        }
+    }
     let status = tts_state.apply_result(&result);
     if result.succeeded() {
         runtime.mark_action_status(status);

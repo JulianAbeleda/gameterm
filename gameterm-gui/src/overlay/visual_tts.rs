@@ -57,14 +57,37 @@ pub(super) struct SceneTtsRequest {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct SceneTtsResult {
+    pub(super) event: SceneTtsEvent,
+    pub(super) segment: SpeakableSegment,
     pub(super) status: String,
     pub(super) output_path: Option<PathBuf>,
     pub(super) error: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum SceneTtsEvent {
+    Started,
+    Finished,
+}
+
 impl SceneTtsResult {
     pub(super) fn succeeded(&self) -> bool {
         self.error.is_none()
+    }
+}
+
+fn finished_tts_result(
+    segment: SpeakableSegment,
+    status: impl Into<String>,
+    output_path: Option<PathBuf>,
+    error: Option<String>,
+) -> SceneTtsResult {
+    SceneTtsResult {
+        event: SceneTtsEvent::Finished,
+        segment,
+        status: status.into(),
+        output_path,
+        error,
     }
 }
 
@@ -112,6 +135,7 @@ impl SceneTtsConfig {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn can_play_audio(&self) -> bool {
         matches!(
             self.backend,
@@ -286,6 +310,13 @@ impl SceneTtsWorker {
             while let Ok(message) = rx.recv() {
                 match message {
                     SceneTtsWorkerMessage::Speak(request) => {
+                        let _ = result_tx.send(SceneTtsResult {
+                            event: SceneTtsEvent::Started,
+                            segment: request.segment.clone(),
+                            status: "TTS speaking".to_string(),
+                            output_path: None,
+                            error: None,
+                        });
                         let result = run_tts_backend(request, config.clone());
                         let _ = result_tx.send(result);
                     }
@@ -624,12 +655,7 @@ fn split_sentences(text: &str) -> Vec<String> {
     sentences
 }
 
-fn push_chunk_part(
-    chunks: &mut Vec<String>,
-    current: &mut String,
-    part: &str,
-    max_chars: usize,
-) {
+fn push_chunk_part(chunks: &mut Vec<String>, current: &mut String, part: &str, max_chars: usize) {
     if part.is_empty() {
         return;
     }
@@ -735,16 +761,15 @@ fn scene_tts_config_from_env() -> SceneTtsConfig {
 
 fn run_tts_backend(request: SceneTtsRequest, config: SceneTtsConfig) -> SceneTtsResult {
     match &config.backend {
-        SceneTtsBackend::Disabled => SceneTtsResult {
-            status: "TTS disabled".to_string(),
-            output_path: None,
-            error: None,
-        },
-        SceneTtsBackend::BuiltInSilent => SceneTtsResult {
-            status: format!("TTS silent: {}", request.segment.text),
-            output_path: None,
-            error: None,
-        },
+        SceneTtsBackend::Disabled => {
+            finished_tts_result(request.segment, "TTS disabled", None, None)
+        }
+        SceneTtsBackend::BuiltInSilent => finished_tts_result(
+            request.segment.clone(),
+            format!("TTS silent: {}", request.segment.text),
+            None,
+            None,
+        ),
         SceneTtsBackend::Command(argv) => run_command_tts_backend(request, &config, argv.clone()),
         SceneTtsBackend::Voicevox(voicevox) => run_voicevox_tts_backend(request, &config, voicevox),
     }
@@ -755,15 +780,12 @@ fn run_voicevox_tts_backend(
     config: &SceneTtsConfig,
     voicevox: &SceneVoicevoxConfig,
 ) -> SceneTtsResult {
+    let segment = request.segment.clone();
     let output_path = tts_output_path(&config.cache_dir);
     let text = match translate_text(&request.segment.text, &voicevox.translation, config.timeout) {
         Ok(text) => text,
         Err(err) => {
-            return SceneTtsResult {
-                status: "TTS failed".to_string(),
-                output_path: None,
-                error: Some(err),
-            };
+            return finished_tts_result(segment, "TTS failed", None, Some(err));
         }
     };
     let query_path = format!(
@@ -780,19 +802,21 @@ fn run_voicevox_tts_backend(
     ) {
         Ok(body) => body,
         Err(err) => {
-            return SceneTtsResult {
-                status: "TTS failed".to_string(),
-                output_path: None,
-                error: Some(format!("VOICEVOX audio_query failed: {err}")),
-            };
+            return finished_tts_result(
+                segment,
+                "TTS failed",
+                None,
+                Some(format!("VOICEVOX audio_query failed: {err}")),
+            );
         }
     };
     if serde_json::from_slice::<serde_json::Value>(&query_json).is_err() {
-        return SceneTtsResult {
-            status: "TTS failed".to_string(),
-            output_path: None,
-            error: Some("VOICEVOX audio_query returned invalid JSON".to_string()),
-        };
+        return finished_tts_result(
+            segment,
+            "TTS failed",
+            None,
+            Some("VOICEVOX audio_query returned invalid JSON".to_string()),
+        );
     }
 
     let synthesis_path = format!("/synthesis?speaker={}", voicevox.speaker);
@@ -805,37 +829,41 @@ fn run_voicevox_tts_backend(
     ) {
         Ok(body) => body,
         Err(err) => {
-            return SceneTtsResult {
-                status: "TTS failed".to_string(),
-                output_path: None,
-                error: Some(format!("VOICEVOX synthesis failed: {err}")),
-            };
+            return finished_tts_result(
+                segment,
+                "TTS failed",
+                None,
+                Some(format!("VOICEVOX synthesis failed: {err}")),
+            );
         }
     };
     if wav.is_empty() {
-        return SceneTtsResult {
-            status: "TTS failed".to_string(),
-            output_path: None,
-            error: Some("VOICEVOX synthesis produced empty audio".to_string()),
-        };
+        return finished_tts_result(
+            segment,
+            "TTS failed",
+            None,
+            Some("VOICEVOX synthesis produced empty audio".to_string()),
+        );
     }
 
     if let Err(err) = std::fs::write(&output_path, wav) {
-        return SceneTtsResult {
-            status: "TTS failed".to_string(),
-            output_path: None,
-            error: Some(format!("failed to write TTS output: {err}")),
-        };
+        return finished_tts_result(
+            segment,
+            "TTS failed",
+            None,
+            Some(format!("failed to write TTS output: {err}")),
+        );
     }
 
     let played_audio = if let Some(player) = &config.player {
         if let Err(err) = run_player_command(player.clone(), &output_path, config.timeout) {
             let _ = std::fs::remove_file(&output_path);
-            return SceneTtsResult {
-                status: "TTS failed".to_string(),
-                output_path: None,
-                error: Some(format!("TTS player failed: {err}")),
-            };
+            return finished_tts_result(
+                segment,
+                "TTS failed",
+                None,
+                Some(format!("TTS player failed: {err}")),
+            );
         }
         let _ = std::fs::remove_file(&output_path);
         true
@@ -843,15 +871,16 @@ fn run_voicevox_tts_backend(
         false
     };
 
-    SceneTtsResult {
-        status: if played_audio {
+    finished_tts_result(
+        segment,
+        if played_audio {
             "TTS played".to_string()
         } else {
             format!("TTS ready: {}", output_path.display())
         },
-        output_path: (!played_audio).then_some(output_path),
-        error: None,
-    }
+        (!played_audio).then_some(output_path),
+        None,
+    )
 }
 
 fn translate_text(
@@ -910,17 +939,19 @@ fn run_command_tts_backend(
     config: &SceneTtsConfig,
     argv: Vec<String>,
 ) -> SceneTtsResult {
+    let segment = request.segment.clone();
     let output_path = tts_output_path(&config.cache_dir);
     let argv = argv
         .into_iter()
         .map(|arg| arg.replace("{output}", &output_path.display().to_string()))
         .collect::<Vec<_>>();
     let Some((program, args)) = argv.split_first() else {
-        return SceneTtsResult {
-            status: "TTS failed".to_string(),
-            output_path: None,
-            error: Some("empty TTS command".to_string()),
-        };
+        return finished_tts_result(
+            segment,
+            "TTS failed",
+            None,
+            Some("empty TTS command".to_string()),
+        );
     };
 
     let mut child = match Command::new(program)
@@ -938,11 +969,12 @@ fn run_command_tts_backend(
     {
         Ok(child) => child,
         Err(err) => {
-            return SceneTtsResult {
-                status: "TTS failed".to_string(),
-                output_path: None,
-                error: Some(format!("failed to spawn TTS command `{program}`: {err}")),
-            };
+            return finished_tts_result(
+                segment,
+                "TTS failed",
+                None,
+                Some(format!("failed to spawn TTS command `{program}`: {err}")),
+            );
         }
     };
 
@@ -954,30 +986,28 @@ fn run_command_tts_backend(
     let output = match wait_for_tts_output(child, config.timeout) {
         Ok(output) => output,
         Err(err) => {
-            return SceneTtsResult {
-                status: "TTS failed".to_string(),
-                output_path: None,
-                error: Some(err),
-            };
+            return finished_tts_result(segment, "TTS failed", None, Some(err));
         }
     };
 
     if !output.status.success() {
-        return SceneTtsResult {
-            status: "TTS failed".to_string(),
-            output_path: None,
-            error: Some(String::from_utf8_lossy(&output.stderr).trim().to_string()),
-        };
+        return finished_tts_result(
+            segment,
+            "TTS failed",
+            None,
+            Some(String::from_utf8_lossy(&output.stderr).trim().to_string()),
+        );
     }
 
     let played_audio = if let Some(player) = &config.player {
         if let Err(err) = run_player_command(player.clone(), &output_path, config.timeout) {
             let _ = std::fs::remove_file(&output_path);
-            return SceneTtsResult {
-                status: "TTS failed".to_string(),
-                output_path: None,
-                error: Some(format!("TTS player failed: {err}")),
-            };
+            return finished_tts_result(
+                segment,
+                "TTS failed",
+                None,
+                Some(format!("TTS player failed: {err}")),
+            );
         }
         let _ = std::fs::remove_file(&output_path);
         true
@@ -985,15 +1015,16 @@ fn run_command_tts_backend(
         false
     };
 
-    SceneTtsResult {
-        status: if played_audio {
+    finished_tts_result(
+        segment,
+        if played_audio {
             "TTS played".to_string()
         } else {
             format!("TTS ready: {}", output_path.display())
         },
-        output_path: (!played_audio).then_some(output_path),
-        error: None,
-    }
+        (!played_audio).then_some(output_path),
+        None,
+    )
 }
 
 fn voicevox_http_request(
@@ -1248,10 +1279,7 @@ We can continue after the smoke pass."#;
     #[test]
     fn visual_tts_splits_long_segments_without_dropping_text() {
         let sentence = "This sentence keeps enough natural words to exceed the speech chunk limit when repeated.";
-        let text = (0..24)
-            .map(|_| sentence)
-            .collect::<Vec<_>>()
-            .join(" ");
+        let text = (0..24).map(|_| sentence).collect::<Vec<_>>().join(" ");
 
         let segments =
             extract_speakable_segments(Some("Codex"), &text, SpeakableSource::ComposeReply);
@@ -1274,7 +1302,8 @@ We can continue after the smoke pass."#;
 
     #[test]
     fn visual_tts_skips_hashes_flags_env_vars_and_replaces_files() {
-        let text = "Commit 1234abcd updated GAMETERM_SCENE_TTS_BACKEND with --verbose in Cargo.toml.";
+        let text =
+            "Commit 1234abcd updated GAMETERM_SCENE_TTS_BACKEND with --verbose in Cargo.toml.";
 
         let segments =
             extract_speakable_segments(Some("Codex"), text, SpeakableSource::ComposeReply);
@@ -1376,8 +1405,16 @@ We can continue after the smoke pass."#;
             segment: test_segment("second line"),
         });
 
+        let first_started = rx.recv_timeout(Duration::from_secs(2)).unwrap();
         let first = rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        let second_started = rx.recv_timeout(Duration::from_secs(2)).unwrap();
         let second = rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert_eq!(first_started.event, SceneTtsEvent::Started);
+        assert_eq!(first_started.segment.text, "first line");
+        assert_eq!(first.event, SceneTtsEvent::Finished);
+        assert_eq!(second_started.event, SceneTtsEvent::Started);
+        assert_eq!(second_started.segment.text, "second line");
+        assert_eq!(second.event, SceneTtsEvent::Finished);
         assert!(first.succeeded());
         assert!(second.succeeded());
         assert_eq!(
@@ -1437,9 +1474,17 @@ We can continue after the smoke pass."#;
             segment: test_segment("second line"),
         });
 
+        let first_started = rx.recv_timeout(Duration::from_secs(3)).unwrap();
         let first = rx.recv_timeout(Duration::from_secs(3)).unwrap();
+        let second_started = rx.recv_timeout(Duration::from_secs(3)).unwrap();
         let second = rx.recv_timeout(Duration::from_secs(3)).unwrap();
 
+        assert_eq!(first_started.event, SceneTtsEvent::Started);
+        assert_eq!(first_started.segment.text, "first line");
+        assert_eq!(first.event, SceneTtsEvent::Finished);
+        assert_eq!(second_started.event, SceneTtsEvent::Started);
+        assert_eq!(second_started.segment.text, "second line");
+        assert_eq!(second.event, SceneTtsEvent::Finished);
         assert!(first.succeeded());
         assert!(second.succeeded());
         assert_eq!(first.status, "TTS played");

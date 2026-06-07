@@ -61,8 +61,6 @@ use super::visual_stt::{spawn_mic_test, spawn_stt_backend, SceneSttConfig};
 #[cfg(test)]
 use super::visual_stt::{SceneMicDevice, SceneSttResult, SceneSttState};
 use super::visual_tts::{SceneTtsConfig, SceneTtsRequest};
-#[cfg(test)]
-use super::visual_tts::{SpeakableSegment, SpeakableSource};
 use super::visual_voice_hold::{scene_voice_hold_active, set_scene_voice_hold_active};
 #[cfg(test)]
 use visual_command_dispatch::write_story_state_file;
@@ -70,10 +68,9 @@ use visual_command_dispatch::{dispatch_pending_action, RunCommandDispatch};
 use visual_compose_dock::SceneComposeAction;
 #[cfg(test)]
 use visual_compose_dock::SceneComposeDock;
-use visual_compose_result::{
-    apply_compose_backend_result, compose_result_speakable_segments, fake_codex_compose_result,
-    should_delay_first_voice_reveal, PendingFirstVoiceReveal,
-};
+#[cfg(test)]
+use visual_compose_result::compose_result_speakable_segments;
+use visual_compose_result::{apply_compose_backend_result, fake_codex_compose_result};
 #[cfg(test)]
 use visual_compose_result::{sanitize_compose_output, COMPOSE_OUTPUT_LIMIT};
 #[cfg(test)]
@@ -212,9 +209,6 @@ fn show_visual_scene_overlay_with_source(
             &mut runtime,
             &mut session.compose_backend_running,
             &mut session.dialogue_scroll,
-            session.sync_first_voice_reveal,
-            &mut session.first_voice_reveal_done,
-            &mut session.pending_first_voice_reveal,
             &session.tts_state,
             &session.tts_worker,
         );
@@ -223,8 +217,6 @@ fn show_visual_scene_overlay_with_source(
             &mut runtime,
             &mut session.tts_state,
             &mut session.dialogue_scroll,
-            &mut session.pending_first_voice_reveal,
-            &mut session.first_voice_reveal_done,
         );
         needs_render |= drain_stt_results(
             &stt_rx,
@@ -388,35 +380,14 @@ fn show_visual_scene_overlay_with_source(
                                 session.dialogue_scroll.reset_to_bottom();
                                 if session.compose_debug_backend.is_fake() {
                                     let result = fake_codex_compose_result(prompt);
-                                    let speakable_segments =
-                                        compose_result_speakable_segments(&result);
-                                    if should_delay_first_voice_reveal(
-                                        session.sync_first_voice_reveal,
-                                        session.first_voice_reveal_done,
-                                        session.pending_first_voice_reveal.is_some(),
-                                        session.tts_state.is_muted(),
-                                        &speakable_segments,
-                                    ) {
+                                    let speakable_segments = apply_compose_backend_result(
+                                        runtime,
+                                        result,
+                                        !session.tts_state.is_muted(),
+                                    );
+                                    if !session.tts_state.is_muted() {
                                         for segment in speakable_segments {
                                             session.tts_worker.speak(SceneTtsRequest { segment });
-                                        }
-                                        session.pending_first_voice_reveal =
-                                            Some(PendingFirstVoiceReveal { result });
-                                        runtime.mark_action_status("Voice preparing first reply");
-                                    } else {
-                                        let speakable_segments =
-                                            apply_compose_backend_result(runtime, result);
-                                        if !session.first_voice_reveal_done
-                                            && !speakable_segments.is_empty()
-                                        {
-                                            session.first_voice_reveal_done = true;
-                                        }
-                                        if !session.tts_state.is_muted() {
-                                            for segment in speakable_segments {
-                                                session
-                                                    .tts_worker
-                                                    .speak(SceneTtsRequest { segment });
-                                            }
                                         }
                                     }
                                     render_runtime_with_compose_and_scroll(
@@ -517,8 +488,6 @@ fn show_visual_scene_overlay_with_source(
                         );
                         if debug_effect.handled {
                             if debug_effect.reset_compose_dialogue {
-                                session.first_voice_reveal_done = false;
-                                session.pending_first_voice_reveal = None;
                                 session.dialogue_scroll.reset_to_bottom();
                             }
                             render_runtime_with_compose_and_scroll(
@@ -783,7 +752,6 @@ mod tests {
         codex_compose_argv, codex_output_text, compose_backend_config, run_codex_compose_backend,
         CodexComposeConfig, ComposeBackendConfig,
     };
-    use super::super::visual_tts::SpeechBlockKind;
     use super::visual_voice_debug::SceneVoiceDebugState;
     use super::*;
     use gameterm_visual::{
@@ -1627,6 +1595,7 @@ mod tests {
                 exit_code: Some(0),
                 label: ComposeBackendLabel::Compose,
             },
+            false,
         );
 
         let snapshot = runtime.render_snapshot();
@@ -1636,42 +1605,6 @@ mod tests {
         assert_eq!(segments.len(), 1);
         assert_eq!(segments[0].text, "Workspace is ready.");
         assert_eq!(segments[0].speaker.as_deref(), Some("Codex"));
-    }
-
-    #[test]
-    fn first_voice_reveal_delay_requires_first_unmuted_speakable_audio() {
-        let segments = vec![SpeakableSegment {
-            turn_id: 0,
-            block_index: 0,
-            speaker: Some("Codex".to_string()),
-            display_text: "Ready.".to_string(),
-            text: "Ready.".to_string(),
-            kind: SpeechBlockKind::Prose,
-            source: SpeakableSource::ComposeReply,
-        }];
-
-        assert!(should_delay_first_voice_reveal(
-            true, false, false, false, &segments
-        ));
-        assert!(!should_delay_first_voice_reveal(
-            false, false, false, false, &segments
-        ));
-        assert!(!should_delay_first_voice_reveal(
-            true, true, false, false, &segments
-        ));
-        assert!(!should_delay_first_voice_reveal(
-            true, false, true, false, &segments
-        ));
-        assert!(!should_delay_first_voice_reveal(
-            true, false, false, true, &segments
-        ));
-        assert!(!should_delay_first_voice_reveal(
-            true,
-            false,
-            false,
-            false,
-            &[]
-        ));
     }
 
     #[test]
@@ -1704,6 +1637,7 @@ mod tests {
                 exit_code: Some(0),
                 label: ComposeBackendLabel::Codex,
             },
+            false,
         );
 
         let snapshot = runtime.render_snapshot();
@@ -1740,8 +1674,11 @@ mod tests {
     #[test]
     fn fake_codex_compose_result_renders_fake_speaker() {
         let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
-        let segments =
-            apply_compose_backend_result(&mut runtime, fake_codex_compose_result("hi".to_string()));
+        let segments = apply_compose_backend_result(
+            &mut runtime,
+            fake_codex_compose_result("hi".to_string()),
+            false,
+        );
 
         let snapshot = runtime.render_snapshot();
         assert_eq!(snapshot.dialogue_speaker, "Fake Codex");
@@ -1765,6 +1702,7 @@ mod tests {
                 exit_code: Some(0),
                 label: ComposeBackendLabel::Codex,
             },
+            false,
         );
 
         let snapshot = runtime.render_snapshot();
@@ -1783,6 +1721,7 @@ mod tests {
                 exit_code: Some(2),
                 label: ComposeBackendLabel::Compose,
             },
+            false,
         );
 
         let snapshot = runtime.render_snapshot();
@@ -2160,7 +2099,7 @@ mod tests {
         );
 
         let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
-        apply_compose_backend_result(&mut runtime, result);
+        apply_compose_backend_result(&mut runtime, result, false);
         let snapshot = runtime.render_snapshot();
 
         assert_eq!(snapshot.dialogue_speaker, "Codex");
