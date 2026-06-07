@@ -129,7 +129,7 @@ pub(super) fn drain_stt_results(
     let mut needs_render = false;
     while let Ok(result) = stt_rx.try_recv() {
         *stt_session = None;
-        dialogue_scroll.voice_hold_active = false;
+        dialogue_scroll.mark_voice_hold_result_finished();
         if let Some(runtime) = runtime.as_mut() {
             dialogue_scroll.voice_debug.apply_result(&result);
             if dialogue_scroll.voice_debug.test_mode {

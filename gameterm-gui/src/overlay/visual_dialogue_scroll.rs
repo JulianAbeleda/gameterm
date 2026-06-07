@@ -7,12 +7,47 @@ use termwiz::terminal::ScreenSize;
 pub(super) struct SceneDialogueScrollback {
     pub(super) offset: usize,
     pub(super) voice_hold_active: bool,
+    pub(super) voice_hold_disarmed: bool,
     pub(super) voice_debug: SceneVoiceDebugState,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum SceneVoiceHoldTransition {
+    None,
+    Start,
+    Stop,
 }
 
 impl SceneDialogueScrollback {
     pub(super) fn reset_to_bottom(&mut self) {
         self.offset = 0;
+    }
+
+    pub(super) fn apply_voice_hold_level(&mut self, hold_active: bool) -> SceneVoiceHoldTransition {
+        if hold_active {
+            if self.voice_hold_active || self.voice_hold_disarmed {
+                return SceneVoiceHoldTransition::None;
+            }
+            self.voice_hold_active = true;
+            self.voice_hold_disarmed = true;
+            return SceneVoiceHoldTransition::Start;
+        }
+
+        self.voice_hold_disarmed = false;
+        if self.voice_hold_active {
+            self.voice_hold_active = false;
+            return SceneVoiceHoldTransition::Stop;
+        }
+        SceneVoiceHoldTransition::None
+    }
+
+    pub(super) fn mark_voice_hold_result_finished(&mut self) {
+        self.voice_hold_active = false;
+    }
+
+    pub(super) fn cancel_voice_hold(&mut self) {
+        self.voice_hold_active = false;
+        self.voice_hold_disarmed = false;
     }
 
     fn scroll_up(&mut self, max_offset: usize) {
@@ -104,4 +139,90 @@ pub(super) fn apply_dialogue_scroll_wheel(
         scroll.scroll_down();
     }
     scroll.clamp(metrics.max_scroll_offset);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SceneDialogueScrollback, SceneVoiceHoldTransition};
+
+    #[test]
+    fn voice_hold_starts_once_per_physical_hold() {
+        let mut scroll = SceneDialogueScrollback::default();
+
+        assert_eq!(
+            scroll.apply_voice_hold_level(true),
+            SceneVoiceHoldTransition::Start
+        );
+        assert!(scroll.voice_hold_active);
+
+        assert_eq!(
+            scroll.apply_voice_hold_level(true),
+            SceneVoiceHoldTransition::None
+        );
+        assert!(scroll.voice_hold_active);
+    }
+
+    #[test]
+    fn voice_hold_result_does_not_restart_until_release() {
+        let mut scroll = SceneDialogueScrollback::default();
+
+        assert_eq!(
+            scroll.apply_voice_hold_level(true),
+            SceneVoiceHoldTransition::Start
+        );
+        scroll.mark_voice_hold_result_finished();
+        assert!(!scroll.voice_hold_active);
+
+        assert_eq!(
+            scroll.apply_voice_hold_level(true),
+            SceneVoiceHoldTransition::None
+        );
+        assert!(!scroll.voice_hold_active);
+
+        assert_eq!(
+            scroll.apply_voice_hold_level(false),
+            SceneVoiceHoldTransition::None
+        );
+        assert_eq!(
+            scroll.apply_voice_hold_level(true),
+            SceneVoiceHoldTransition::Start
+        );
+        assert!(scroll.voice_hold_active);
+    }
+
+    #[test]
+    fn voice_hold_release_stops_and_rearms() {
+        let mut scroll = SceneDialogueScrollback::default();
+
+        assert_eq!(
+            scroll.apply_voice_hold_level(true),
+            SceneVoiceHoldTransition::Start
+        );
+        assert_eq!(
+            scroll.apply_voice_hold_level(false),
+            SceneVoiceHoldTransition::Stop
+        );
+        assert!(!scroll.voice_hold_active);
+
+        assert_eq!(
+            scroll.apply_voice_hold_level(true),
+            SceneVoiceHoldTransition::Start
+        );
+    }
+
+    #[test]
+    fn voice_hold_cancel_clears_active_and_disarmed_state() {
+        let mut scroll = SceneDialogueScrollback::default();
+
+        assert_eq!(
+            scroll.apply_voice_hold_level(true),
+            SceneVoiceHoldTransition::Start
+        );
+        scroll.cancel_voice_hold();
+        assert!(!scroll.voice_hold_active);
+        assert_eq!(
+            scroll.apply_voice_hold_level(true),
+            SceneVoiceHoldTransition::Start
+        );
+    }
 }

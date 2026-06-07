@@ -80,7 +80,9 @@ use visual_compose_result::{sanitize_compose_output, COMPOSE_OUTPUT_LIMIT};
 use visual_dialogue_scroll::{
     apply_dialogue_scroll_key, apply_dialogue_scroll_wheel, SceneDialogueScrollback,
 };
-use visual_dialogue_scroll::{handle_dialogue_scroll_key, handle_dialogue_scroll_wheel};
+use visual_dialogue_scroll::{
+    handle_dialogue_scroll_key, handle_dialogue_scroll_wheel, SceneVoiceHoldTransition,
+};
 use visual_event_drain::{
     drain_command_results, drain_compose_results, drain_mic_test_results, drain_stt_results,
     drain_tts_results,
@@ -316,7 +318,7 @@ fn show_visual_scene_overlay_with_source(
                             stt_session.cancel();
                         }
                         set_scene_voice_hold_active(pane_id, false);
-                        session.dialogue_scroll.voice_hold_active = false;
+                        session.dialogue_scroll.cancel_voice_hold();
                         runtime.mark_action_status(session.stt_state.mark_canceling());
                         session
                             .dialogue_scroll
@@ -642,49 +644,48 @@ fn reconcile_scene_voice_hold_state(
     stt_tx: &mpsc::Sender<super::visual_stt::SceneSttResult>,
 ) -> bool {
     let hold_active = scene_voice_hold_active(pane_id);
-    if hold_active == session.dialogue_scroll.voice_hold_active {
-        return false;
-    }
+    let transition = session.dialogue_scroll.apply_voice_hold_level(hold_active);
 
     let Some(runtime) = runtime.as_mut() else {
-        session.dialogue_scroll.voice_hold_active = hold_active;
-        return true;
+        return !matches!(transition, SceneVoiceHoldTransition::None);
     };
 
-    if hold_active {
-        if !session.stt_state.is_running() {
-            runtime.mark_action_status(session.stt_state.mark_started());
-            if session.dialogue_scroll.voice_debug.test_mode {
-                runtime.mark_action_status("Voice test listening");
+    match transition {
+        SceneVoiceHoldTransition::None => false,
+        SceneVoiceHoldTransition::Start => {
+            if !session.stt_state.is_running() {
+                runtime.mark_action_status(session.stt_state.mark_started());
+                if session.dialogue_scroll.voice_debug.test_mode {
+                    runtime.mark_action_status("Voice test listening");
+                }
+                session
+                    .dialogue_scroll
+                    .voice_debug
+                    .sync_status(session.stt_state.last_status());
+                session.stt_session = Some(spawn_stt_backend(
+                    session.selected_stt_config(),
+                    stt_tx.clone(),
+                ));
             }
-            session
-                .dialogue_scroll
-                .voice_debug
-                .sync_status(session.stt_state.last_status());
-            session.stt_session = Some(spawn_stt_backend(
-                session.selected_stt_config(),
-                stt_tx.clone(),
-            ));
+            true
         }
-        session.dialogue_scroll.voice_hold_active = true;
-    } else {
-        if session.stt_state.is_running() {
-            if let Some(stt_session) = session.stt_session.take() {
-                stt_session.stop();
+        SceneVoiceHoldTransition::Stop => {
+            if session.stt_state.is_running() {
+                if let Some(stt_session) = session.stt_session.take() {
+                    stt_session.stop();
+                }
+                runtime.mark_action_status(session.stt_state.mark_processing());
+                if session.dialogue_scroll.voice_debug.test_mode {
+                    runtime.mark_action_status("Voice test processing");
+                }
+                session
+                    .dialogue_scroll
+                    .voice_debug
+                    .sync_status(session.stt_state.last_status());
             }
-            runtime.mark_action_status(session.stt_state.mark_processing());
-            if session.dialogue_scroll.voice_debug.test_mode {
-                runtime.mark_action_status("Voice test processing");
-            }
-            session
-                .dialogue_scroll
-                .voice_debug
-                .sync_status(session.stt_state.last_status());
+            true
         }
-        session.dialogue_scroll.voice_hold_active = false;
     }
-
-    true
 }
 
 fn handle_scene_debug_session_input(
