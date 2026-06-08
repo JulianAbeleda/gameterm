@@ -13,6 +13,8 @@ it does not yet model two common paint-app selection workflows:
   each interior white pocket by clicking additional seeds.
 - Hair edge cleanup: decontaminate leftover white matte color and provide a
   channel-matte style selector for high-contrast white hair gaps.
+- Restore from source: copy intentionally traced base-image pixels back into a
+  damaged transparent cutout.
 
 Both workflows are needed for Kiki-style anime sprite cleanup because hair
 strands create disconnected white pockets that are not reachable from the outer
@@ -38,6 +40,8 @@ Missing behavior:
 - no standalone hair cleanup command for decontaminating white halos after a
   mask is already applied
 - no channel-matte selection primitive for bright, low-saturation pockets
+- no restore-from-source command for painting back details that Color Range
+  erased too aggressively
 - no tests proving disconnected interior white pockets are removed without
   erasing protected foreground
 
@@ -64,6 +68,16 @@ Magic Wand Add
 -> protect foreground regions
 -> polish mask
 -> write transparent PNG
+```
+
+```text
+Restore From Source
+-> load original base image
+-> load damaged transparent cutout
+-> trace region/polygon to restore
+-> optionally skip source pixels matching background white
+-> copy source pixels into cutout
+-> write repaired transparent PNG
 ```
 
 ## Primitive 1: Color Range
@@ -219,6 +233,48 @@ Expected behavior:
   thresholding
 - reuse mask polish and defringe
 
+## Primitive 4: Restore From Source
+
+Color Range can be useful and still too aggressive. When it erases eye
+highlights, shirt details, hair highlights, or ponytail strands, the right
+deterministic fix is to copy selected pixels back from the original base image.
+
+Proposed CLI:
+
+```sh
+cargo run -q -p gameterm-visual --example scene_asset_edit -- restore-from-source \
+  --base neutral_base.png \
+  --cutout /tmp/neutral_base-transparent-color-range-hair-cleanup.png \
+  --output /tmp/neutral_base-transparent-restored.png \
+  --polygon '0.32,0.18;0.68,0.18;0.68,0.50;0.32,0.50' \
+  --restore-filter all \
+  --force \
+  --pretty
+```
+
+For loose hair masks:
+
+```sh
+cargo run -q -p gameterm-visual --example scene_asset_edit -- restore-from-source \
+  --base neutral_base.png \
+  --cutout /tmp/neutral_base-transparent-color-range-hair-cleanup.png \
+  --output /tmp/neutral_base-transparent-restored-hair.png \
+  --polygon '0.64,0.20;0.90,0.20;0.90,0.86;0.62,0.86' \
+  --restore-filter non-background \
+  --tolerance 10 \
+  --force \
+  --pretty
+```
+
+Expected behavior:
+
+- feature-map restore regions copy exact source pixels into the cutout
+- polygon restore masks support traced manual regions without a GUI
+- `all` restores source pixels exactly, including white highlights
+- `non-background` skips pixels matching sampled background white, useful for
+  loose hair polygons
+- generated preview remains transparent; dark previews are only for inspection
+
 ## Shared Data Model
 
 Add reusable selection inputs rather than separate ad hoc flags everywhere:
@@ -245,6 +301,7 @@ Useful internal helpers:
 - `multi_seed_contiguous_mask(image, seeds, tolerance)`
 - `channel_matte_mask(image, threshold, neutrality)`
 - `decontaminate_hair_edges(image, radius, strength, region)`
+- `restore_pixels_from_source_image(base, cutout, mask, filter)`
 - `union_masks(a, b)`
 - `apply_mask_polish(mask, options, feature_map)`
 
@@ -289,6 +346,32 @@ selection primitives:
 
 ```json
 {
+  "op": "restore_from_source",
+  "path": "neutral_base.png",
+  "regions": ["eyes", "shirt"],
+  "filter": "all"
+}
+```
+
+```json
+{
+  "op": "restore_from_source",
+  "path": "neutral_base.png",
+  "polygons": [
+    [
+      { "x": 0.64, "y": 0.20 },
+      { "x": 0.90, "y": 0.20 },
+      { "x": 0.90, "y": 0.86 },
+      { "x": 0.62, "y": 0.86 }
+    ]
+  ],
+  "filter": "non_background",
+  "tolerance": 10
+}
+```
+
+```json
+{
   "op": "magic_erase_add",
   "seeds": [
     { "x": 0.01, "y": 0.01 },
@@ -324,6 +407,10 @@ Required unit cases:
 - Hair cleanup recolors light edge pixels without changing alpha.
 - Channel matte selects bright neutral pockets but does not select saturated
   colored hair.
+- Restore from source copies feature-map regions back into a cutout.
+- Restore from source copies polygon regions back into a cutout.
+- Restore non-background filter skips source pixels matching sampled background
+  white.
 
 Manual dogfood:
 
@@ -389,16 +476,18 @@ Implemented on June 8, 2026:
 - `magic-erase-add`
 - `channel-matte-erase`
 - `hair-cleanup`
+- `restore-from-source`
 - recipe operations for Color Range, Magic Wand add-selection, channel matte,
-  and hair cleanup
+  hair cleanup, and source restore
 - shared Rust mask-polish reuse for selection operations
 - configurable hair decontamination radius and strength
+- polygon and feature-region restore masks
 
 Verification:
 
-- `cargo test -p gameterm-visual asset_edit`: PASS, 19 tests
+- `cargo test -p gameterm-visual asset_edit`: PASS, 23 tests
 - `cargo check -p gameterm-visual --examples`: PASS
-- `cargo test -p gameterm-visual`: PASS, 206 tests
+- `cargo test -p gameterm-visual`: PASS, 210 tests
 
 Real Kiki smoke outputs:
 
@@ -416,6 +505,14 @@ Real Kiki smoke outputs:
   `/tmp/neutral_base-transparent-magic-add-preview.png`
 - Magic Wand add-selection plus hair cleanup:
   `/tmp/neutral_base-transparent-magic-add-hair-cleanup.png`
+- Restore polygon smoke:
+  `/tmp/neutral_base-transparent-restored-polygon.png`
+- Restore polygon preview:
+  `/tmp/neutral_base-transparent-restored-polygon-preview.png`
+- Restore hair non-background smoke:
+  `/tmp/neutral_base-transparent-restored-hair-nonbackground.png`
+- Restore hair non-background preview:
+  `/tmp/neutral_base-transparent-restored-hair-nonbackground-preview.png`
 
 Smoke notes:
 
@@ -427,6 +524,9 @@ Smoke notes:
   for proving the primitive, not a final art pass.
 - Hair cleanup/decontamination recolors remaining light edge pixels and reports
   changed-pixel counts, but it does not reconstruct missing hair strands.
+- Restore-from-source can recover details Color Range erased, but the restore
+  mask needs to be traced precisely. Loose polygons work better with
+  `non-background`, but they still cannot infer missing hair structure.
 
 Residual work:
 

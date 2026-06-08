@@ -63,7 +63,7 @@ Scene Mode currently has:
   through mask morphology, protected regions, feathering, white-edge defringe,
   and cutout quality metrics
 - a first-pass selection-tools lane for Color Range, Magic Wand add-selection,
-  channel-matte erasing, and hair-edge decontamination
+  channel-matte erasing, hair-edge decontamination, and traced source restore
 
 Latest verification baseline:
 
