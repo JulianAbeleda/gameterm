@@ -1,9 +1,12 @@
 use std::sync::mpsc;
 
+use super::super::visual_speech_blocks::{SpeakableSegment, SpeakableSource, SpeechBlockKind};
 use super::super::visual_stt::{
-    scene_microphone_devices, SceneMicDevice, SceneSttConfig, SceneSttSession, SceneSttState,
+    SceneMicDevice, SceneSttConfig, SceneSttSession, SceneSttState, scene_microphone_devices,
 };
-use super::super::visual_tts::{SceneTtsConfig, SceneTtsResult, SceneTtsState, SceneTtsWorker};
+use super::super::visual_tts::{
+    SceneTtsConfig, SceneTtsRequest, SceneTtsResult, SceneTtsState, SceneTtsWorker,
+};
 use super::visual_compose_dock::SceneComposeDock;
 use super::visual_dialogue_scroll::SceneDialogueScrollback;
 use super::visual_voice_debug::SceneVoiceDebugState;
@@ -58,10 +61,12 @@ impl VisualOverlaySession {
         stt_config: SceneSttConfig,
     ) -> Self {
         let tts_worker = SceneTtsWorker::new(tts_config, tts_tx);
+        let tts_state = SceneTtsState::default();
         let mic_devices = scene_microphone_devices().unwrap_or_default();
         let stt_state = SceneSttState::default();
         let mut dialogue_scroll = SceneDialogueScrollback::default();
         dialogue_scroll.voice_debug = SceneVoiceDebugState::new(&stt_config, &stt_state);
+        dialogue_scroll.voice_debug.sync_tts(&tts_state);
         dialogue_scroll.voice_debug.sync_microphones(
             &stt_config,
             &mic_devices,
@@ -74,7 +79,7 @@ impl VisualOverlaySession {
             compose_debug_backend: SceneComposeDebugBackend::RealCodex,
             compose_backend_running: false,
             tts_worker,
-            tts_state: SceneTtsState::default(),
+            tts_state,
             stt_config,
             stt_state,
             stt_session: None,
@@ -138,6 +143,49 @@ impl VisualOverlaySession {
         self.dialogue_scroll
             .voice_debug
             .sync_microphones(&config, &self.mic_devices, &label);
+    }
+
+    pub(super) fn interrupt_tts_queue(&mut self) -> String {
+        let status = self.tts_state.begin_new_generation();
+        self.tts_worker.set_generation(self.tts_state.generation());
+        self.sync_tts_debug();
+        status
+    }
+
+    pub(super) fn enqueue_tts_segments(&mut self, segments: Vec<SpeakableSegment>) -> String {
+        if self.tts_state.is_muted() {
+            self.sync_tts_debug();
+            return "TTS muted".to_string();
+        }
+        let count = segments.len();
+        let status = self.tts_state.mark_queued(count);
+        let generation = self.tts_state.generation();
+        self.tts_worker.set_generation(generation);
+        for segment in segments {
+            self.tts_worker.speak(SceneTtsRequest {
+                segment,
+                generation,
+            });
+        }
+        self.sync_tts_debug();
+        status
+    }
+
+    pub(super) fn enqueue_tts_test(&mut self) -> String {
+        let segment = SpeakableSegment {
+            turn_id: 0,
+            block_index: 0,
+            speaker: Some("Scene".to_string()),
+            display_text: "Scene TTS test playback.".to_string(),
+            text: "Scene TTS test playback.".to_string(),
+            kind: SpeechBlockKind::Prose,
+            source: SpeakableSource::ComposeReply,
+        };
+        self.enqueue_tts_segments(vec![segment])
+    }
+
+    pub(super) fn sync_tts_debug(&mut self) {
+        self.dialogue_scroll.voice_debug.sync_tts(&self.tts_state);
     }
 }
 

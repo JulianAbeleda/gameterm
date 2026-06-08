@@ -6,9 +6,10 @@ use std::io::Write;
 use std::net::{TcpStream, ToSocketAddrs};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::sync::mpsc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{mpsc, Arc};
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const TTS_BACKEND_ENV: &str = "GAMETERM_SCENE_TTS_BACKEND";
 const TTS_COMMAND_ENV: &str = "GAMETERM_SCENE_TTS_COMMAND";
@@ -26,15 +27,18 @@ const TTS_DEFAULT_TIMEOUT: Duration = Duration::from_secs(20);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct SceneTtsRequest {
     pub(super) segment: SpeakableSegment,
+    pub(super) generation: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct SceneTtsResult {
     pub(super) event: SceneTtsEvent,
     pub(super) segment: SpeakableSegment,
+    pub(super) generation: u64,
     pub(super) status: String,
     pub(super) output_path: Option<PathBuf>,
     pub(super) error: Option<String>,
+    pub(super) timing: SceneTtsTiming,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,17 +54,55 @@ impl SceneTtsResult {
 }
 
 fn finished_tts_result(
-    segment: SpeakableSegment,
+    request: &SceneTtsRequest,
     status: impl Into<String>,
     output_path: Option<PathBuf>,
     error: Option<String>,
+    timing: SceneTtsTiming,
 ) -> SceneTtsResult {
     SceneTtsResult {
         event: SceneTtsEvent::Finished,
-        segment,
+        segment: request.segment.clone(),
+        generation: request.generation,
         status: status.into(),
         output_path,
         error,
+        timing,
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(super) struct SceneTtsTiming {
+    pub(super) translation_ms: Option<u128>,
+    pub(super) query_ms: Option<u128>,
+    pub(super) synthesis_ms: Option<u128>,
+    pub(super) player_ms: Option<u128>,
+    pub(super) total_ms: Option<u128>,
+}
+
+impl SceneTtsTiming {
+    pub(super) fn summary(&self) -> String {
+        let mut parts = Vec::new();
+        if let Some(ms) = self.translation_ms {
+            parts.push(format!("translate={ms}ms"));
+        }
+        if let Some(ms) = self.query_ms {
+            parts.push(format!("query={ms}ms"));
+        }
+        if let Some(ms) = self.synthesis_ms {
+            parts.push(format!("synth={ms}ms"));
+        }
+        if let Some(ms) = self.player_ms {
+            parts.push(format!("play={ms}ms"));
+        }
+        if let Some(ms) = self.total_ms {
+            parts.push(format!("total={ms}ms"));
+        }
+        if parts.is_empty() {
+            "timing unavailable".to_string()
+        } else {
+            parts.join(", ")
+        }
     }
 }
 
@@ -114,6 +156,16 @@ impl SceneTtsConfig {
             self.backend,
             SceneTtsBackend::Command(_) | SceneTtsBackend::Voicevox(_)
         )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn built_in_silent_for_test() -> Self {
+        Self {
+            backend: SceneTtsBackend::BuiltInSilent,
+            player: None,
+            cache_dir: std::env::temp_dir(),
+            timeout: Duration::from_secs(2),
+        }
     }
 
     #[cfg(test)]
@@ -173,19 +225,52 @@ impl SceneTranslationConfig {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct SceneTtsState {
     muted: bool,
+    generation: u64,
+    queued_blocks: usize,
+    current: Option<SceneTtsCurrentBlock>,
     last_status: String,
+    last_timing: Option<String>,
+    last_error: Option<String>,
+    last_skipped: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SceneTtsCurrentBlock {
+    turn_id: u64,
+    block_index: usize,
+    phase: &'static str,
+    preview: String,
 }
 
 impl Default for SceneTtsState {
     fn default() -> Self {
         Self {
             muted: false,
+            generation: 1,
+            queued_blocks: 0,
+            current: None,
             last_status: "TTS idle".to_string(),
+            last_timing: None,
+            last_error: None,
+            last_skipped: None,
         }
     }
 }
 
 impl SceneTtsState {
+    pub(super) fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    pub(super) fn begin_new_generation(&mut self) -> String {
+        self.generation = self.generation.saturating_add(1);
+        self.queued_blocks = 0;
+        self.current = None;
+        self.last_skipped = Some("previous speech queue invalidated".to_string());
+        self.last_status = "TTS queue reset".to_string();
+        self.last_status.clone()
+    }
+
     pub(super) fn toggle_muted(&mut self) -> String {
         self.muted = !self.muted;
         self.last_status = if self.muted {
@@ -200,9 +285,77 @@ impl SceneTtsState {
         self.muted
     }
 
+    pub(super) fn mark_queued(&mut self, count: usize) -> String {
+        if count == 0 {
+            self.last_status = "TTS no speakable blocks".to_string();
+        } else {
+            self.queued_blocks = self.queued_blocks.saturating_add(count);
+            self.last_status = format!("TTS queued: {count} block(s)");
+        }
+        self.last_status.clone()
+    }
+
+    pub(super) fn accepts_result(&self, result: &SceneTtsResult) -> bool {
+        result.generation == self.generation
+    }
+
     pub(super) fn apply_result(&mut self, result: &SceneTtsResult) -> String {
+        if !self.accepts_result(result) {
+            self.last_skipped = Some(format!(
+                "stale TTS event ignored: result={} current={}",
+                result.generation, self.generation
+            ));
+            self.last_status = "TTS stale event ignored".to_string();
+            return self.last_status.clone();
+        }
+
+        match result.event {
+            SceneTtsEvent::Started => {
+                self.queued_blocks = self.queued_blocks.saturating_sub(1);
+                self.current = Some(SceneTtsCurrentBlock {
+                    turn_id: result.segment.turn_id,
+                    block_index: result.segment.block_index,
+                    phase: "synthesizing",
+                    preview: result.segment.text.chars().take(60).collect(),
+                });
+            }
+            SceneTtsEvent::Finished => {
+                self.current = None;
+                self.last_timing = result.timing.total_ms.map(|_| result.timing.summary());
+                self.last_error = result.error.clone();
+            }
+        }
         self.last_status = result.status.clone();
         self.last_status.clone()
+    }
+
+    pub(super) fn diagnostics_lines(&self) -> Vec<String> {
+        let mut lines = Vec::new();
+        lines.push(format!(
+            "TTS: {}",
+            if self.muted { "muted" } else { "unmuted" }
+        ));
+        lines.push(format!("TTS queue generation: {}", self.generation));
+        lines.push(format!("TTS queued blocks: {}", self.queued_blocks));
+        if let Some(current) = self.current.as_ref() {
+            lines.push(format!(
+                "TTS current: turn {} block {} {}",
+                current.turn_id, current.block_index, current.phase
+            ));
+            lines.push(format!("TTS current text: {}", current.preview));
+        } else {
+            lines.push("TTS current: idle".to_string());
+        }
+        if let Some(timing) = self.last_timing.as_deref() {
+            lines.push(format!("TTS last timing: {timing}"));
+        }
+        if let Some(skipped) = self.last_skipped.as_deref() {
+            lines.push(format!("TTS last skipped: {skipped}"));
+        }
+        if let Some(error) = self.last_error.as_deref() {
+            lines.push(format!("TTS last error: {error}"));
+        }
+        lines
     }
 }
 
@@ -213,34 +366,58 @@ enum SceneTtsWorkerMessage {
 
 pub(super) struct SceneTtsWorker {
     tx: mpsc::Sender<SceneTtsWorkerMessage>,
+    active_generation: Arc<AtomicU64>,
 }
 
 impl SceneTtsWorker {
     pub(super) fn new(config: SceneTtsConfig, result_tx: mpsc::Sender<SceneTtsResult>) -> Self {
         let (tx, rx) = mpsc::channel();
+        let active_generation = Arc::new(AtomicU64::new(1));
+        let worker_generation = active_generation.clone();
         thread::spawn(move || {
             while let Ok(message) = rx.recv() {
                 match message {
                     SceneTtsWorkerMessage::Speak(request) => {
+                        if request_is_stale(&request, &worker_generation) {
+                            let result = finished_tts_result(
+                                &request,
+                                "TTS skipped stale block",
+                                None,
+                                Some("speech queue generation changed".to_string()),
+                                SceneTtsTiming::default(),
+                            );
+                            let _ = result_tx.send(result);
+                            continue;
+                        }
                         let _ = result_tx.send(SceneTtsResult {
                             event: SceneTtsEvent::Started,
                             segment: request.segment.clone(),
+                            generation: request.generation,
                             status: "TTS speaking".to_string(),
                             output_path: None,
                             error: None,
+                            timing: SceneTtsTiming::default(),
                         });
-                        let result = run_tts_backend(request, config.clone());
+                        let result =
+                            run_tts_backend(request, config.clone(), worker_generation.clone());
                         let _ = result_tx.send(result);
                     }
                     SceneTtsWorkerMessage::Shutdown => break,
                 }
             }
         });
-        Self { tx }
+        Self {
+            tx,
+            active_generation,
+        }
     }
 
     pub(super) fn speak(&self, request: SceneTtsRequest) {
         let _ = self.tx.send(SceneTtsWorkerMessage::Speak(request));
+    }
+
+    pub(super) fn set_generation(&self, generation: u64) {
+        self.active_generation.store(generation, Ordering::SeqCst);
     }
 }
 
@@ -288,19 +465,37 @@ fn scene_tts_config_from_env() -> SceneTtsConfig {
     }
 }
 
-fn run_tts_backend(request: SceneTtsRequest, config: SceneTtsConfig) -> SceneTtsResult {
+fn run_tts_backend(
+    request: SceneTtsRequest,
+    config: SceneTtsConfig,
+    active_generation: Arc<AtomicU64>,
+) -> SceneTtsResult {
+    let total_started = Instant::now();
     match &config.backend {
-        SceneTtsBackend::Disabled => {
-            finished_tts_result(request.segment, "TTS disabled", None, None)
-        }
+        SceneTtsBackend::Disabled => finished_tts_result(
+            &request,
+            "TTS disabled",
+            None,
+            None,
+            timing_with_total(SceneTtsTiming::default(), total_started),
+        ),
         SceneTtsBackend::BuiltInSilent => finished_tts_result(
-            request.segment.clone(),
+            &request,
             format!("TTS silent: {}", request.segment.text),
             None,
             None,
+            timing_with_total(SceneTtsTiming::default(), total_started),
         ),
-        SceneTtsBackend::Command(argv) => run_command_tts_backend(request, &config, argv.clone()),
-        SceneTtsBackend::Voicevox(voicevox) => run_voicevox_tts_backend(request, &config, voicevox),
+        SceneTtsBackend::Command(argv) => run_command_tts_backend(
+            request,
+            &config,
+            argv.clone(),
+            active_generation,
+            total_started,
+        ),
+        SceneTtsBackend::Voicevox(voicevox) => {
+            run_voicevox_tts_backend(request, &config, voicevox, active_generation, total_started)
+        }
     }
 }
 
@@ -308,20 +503,38 @@ fn run_voicevox_tts_backend(
     request: SceneTtsRequest,
     config: &SceneTtsConfig,
     voicevox: &SceneVoicevoxConfig,
+    active_generation: Arc<AtomicU64>,
+    total_started: Instant,
 ) -> SceneTtsResult {
-    let segment = request.segment.clone();
+    let mut timing = SceneTtsTiming::default();
     let output_path = tts_output_path(&config.cache_dir);
-    let text = match translate_text(&request.segment.text, &voicevox.translation, config.timeout) {
+    let translation_started = Instant::now();
+    let text = match translate_text(
+        &request.segment.text,
+        &voicevox.translation,
+        config.timeout,
+        &active_generation,
+        request.generation,
+    ) {
         Ok(text) => text,
         Err(err) => {
-            return finished_tts_result(segment, "TTS failed", None, Some(err));
+            timing.translation_ms = Some(translation_started.elapsed().as_millis());
+            return finished_tts_result(
+                &request,
+                "TTS failed",
+                None,
+                Some(err),
+                timing_with_total(timing, total_started),
+            );
         }
     };
+    timing.translation_ms = Some(translation_started.elapsed().as_millis());
     let query_path = format!(
         "/audio_query?speaker={}&text={}",
         voicevox.speaker,
         percent_encode_query_value(&text)
     );
+    let query_started = Instant::now();
     let query_json = match voicevox_http_request(
         voicevox,
         &query_path,
@@ -329,26 +542,32 @@ fn run_voicevox_tts_backend(
         "application/json",
         config.timeout,
     ) {
-        Ok(body) => body,
+        Ok(body) => {
+            timing.query_ms = Some(query_started.elapsed().as_millis());
+            body
+        }
         Err(err) => {
             return finished_tts_result(
-                segment,
+                &request,
                 "TTS failed",
                 None,
                 Some(format!("VOICEVOX audio_query failed: {err}")),
+                timing_with_total(timing, total_started),
             );
         }
     };
     if serde_json::from_slice::<serde_json::Value>(&query_json).is_err() {
         return finished_tts_result(
-            segment,
+            &request,
             "TTS failed",
             None,
             Some("VOICEVOX audio_query returned invalid JSON".to_string()),
+            timing_with_total(timing, total_started),
         );
     }
 
     let synthesis_path = format!("/synthesis?speaker={}", voicevox.speaker);
+    let synthesis_started = Instant::now();
     let wav = match voicevox_http_request(
         voicevox,
         &synthesis_path,
@@ -356,44 +575,59 @@ fn run_voicevox_tts_backend(
         "application/json",
         config.timeout,
     ) {
-        Ok(body) => body,
+        Ok(body) => {
+            timing.synthesis_ms = Some(synthesis_started.elapsed().as_millis());
+            body
+        }
         Err(err) => {
             return finished_tts_result(
-                segment,
+                &request,
                 "TTS failed",
                 None,
                 Some(format!("VOICEVOX synthesis failed: {err}")),
+                timing_with_total(timing, total_started),
             );
         }
     };
     if wav.is_empty() {
         return finished_tts_result(
-            segment,
+            &request,
             "TTS failed",
             None,
             Some("VOICEVOX synthesis produced empty audio".to_string()),
+            timing_with_total(timing, total_started),
         );
     }
 
     if let Err(err) = std::fs::write(&output_path, wav) {
         return finished_tts_result(
-            segment,
+            &request,
             "TTS failed",
             None,
             Some(format!("failed to write TTS output: {err}")),
+            timing_with_total(timing, total_started),
         );
     }
 
     let played_audio = if let Some(player) = &config.player {
-        if let Err(err) = run_player_command(player.clone(), &output_path, config.timeout) {
+        let player_started = Instant::now();
+        if let Err(err) = run_player_command(
+            player.clone(),
+            &output_path,
+            config.timeout,
+            &active_generation,
+            request.generation,
+        ) {
             let _ = std::fs::remove_file(&output_path);
             return finished_tts_result(
-                segment,
+                &request,
                 "TTS failed",
                 None,
                 Some(format!("TTS player failed: {err}")),
+                timing_with_total(timing, total_started),
             );
         }
+        timing.player_ms = Some(player_started.elapsed().as_millis());
         let _ = std::fs::remove_file(&output_path);
         true
     } else {
@@ -401,7 +635,7 @@ fn run_voicevox_tts_backend(
     };
 
     finished_tts_result(
-        segment,
+        &request,
         if played_audio {
             "TTS played".to_string()
         } else {
@@ -409,6 +643,7 @@ fn run_voicevox_tts_backend(
         },
         (!played_audio).then_some(output_path),
         None,
+        timing_with_total(timing, total_started),
     )
 }
 
@@ -416,11 +651,13 @@ fn translate_text(
     text: &str,
     translation: &SceneTranslationConfig,
     timeout: Duration,
+    active_generation: &Arc<AtomicU64>,
+    generation: u64,
 ) -> Result<String, String> {
     match translation {
         SceneTranslationConfig::Off => Ok(text.to_string()),
         SceneTranslationConfig::Command(argv) => {
-            run_translation_command(text, argv.clone(), timeout)
+            run_translation_command(text, argv.clone(), timeout, active_generation, generation)
         }
     }
 }
@@ -429,6 +666,8 @@ fn run_translation_command(
     text: &str,
     argv: Vec<String>,
     timeout: Duration,
+    active_generation: &Arc<AtomicU64>,
+    generation: u64,
 ) -> Result<String, String> {
     let Some((program, args)) = argv.split_first() else {
         return Err("empty translation command".to_string());
@@ -446,7 +685,7 @@ fn run_translation_command(
     }
     drop(child.stdin.take());
 
-    let output = wait_for_tts_output(child, timeout)?;
+    let output = wait_for_tts_output(child, timeout, active_generation, generation)?;
     if !output.status.success() {
         let error = String::from_utf8_lossy(&output.stderr).trim().to_string();
         return Err(if error.is_empty() {
@@ -467,8 +706,10 @@ fn run_command_tts_backend(
     request: SceneTtsRequest,
     config: &SceneTtsConfig,
     argv: Vec<String>,
+    active_generation: Arc<AtomicU64>,
+    total_started: Instant,
 ) -> SceneTtsResult {
-    let segment = request.segment.clone();
+    let mut timing = SceneTtsTiming::default();
     let output_path = tts_output_path(&config.cache_dir);
     let argv = argv
         .into_iter()
@@ -476,10 +717,11 @@ fn run_command_tts_backend(
         .collect::<Vec<_>>();
     let Some((program, args)) = argv.split_first() else {
         return finished_tts_result(
-            segment,
+            &request,
             "TTS failed",
             None,
             Some("empty TTS command".to_string()),
+            timing_with_total(timing, total_started),
         );
     };
 
@@ -499,10 +741,11 @@ fn run_command_tts_backend(
         Ok(child) => child,
         Err(err) => {
             return finished_tts_result(
-                segment,
+                &request,
                 "TTS failed",
                 None,
                 Some(format!("failed to spawn TTS command `{program}`: {err}")),
+                timing_with_total(timing, total_started),
             );
         }
     };
@@ -512,32 +755,57 @@ fn run_command_tts_backend(
     }
     drop(child.stdin.take());
 
-    let output = match wait_for_tts_output(child, config.timeout) {
-        Ok(output) => output,
+    let synthesis_started = Instant::now();
+    let output = match wait_for_tts_output(
+        child,
+        config.timeout,
+        &active_generation,
+        request.generation,
+    ) {
+        Ok(output) => {
+            timing.synthesis_ms = Some(synthesis_started.elapsed().as_millis());
+            output
+        }
         Err(err) => {
-            return finished_tts_result(segment, "TTS failed", None, Some(err));
+            return finished_tts_result(
+                &request,
+                "TTS failed",
+                None,
+                Some(err),
+                timing_with_total(timing, total_started),
+            );
         }
     };
 
     if !output.status.success() {
         return finished_tts_result(
-            segment,
+            &request,
             "TTS failed",
             None,
             Some(String::from_utf8_lossy(&output.stderr).trim().to_string()),
+            timing_with_total(timing, total_started),
         );
     }
 
     let played_audio = if let Some(player) = &config.player {
-        if let Err(err) = run_player_command(player.clone(), &output_path, config.timeout) {
+        let player_started = Instant::now();
+        if let Err(err) = run_player_command(
+            player.clone(),
+            &output_path,
+            config.timeout,
+            &active_generation,
+            request.generation,
+        ) {
             let _ = std::fs::remove_file(&output_path);
             return finished_tts_result(
-                segment,
+                &request,
                 "TTS failed",
                 None,
                 Some(format!("TTS player failed: {err}")),
+                timing_with_total(timing, total_started),
             );
         }
+        timing.player_ms = Some(player_started.elapsed().as_millis());
         let _ = std::fs::remove_file(&output_path);
         true
     } else {
@@ -545,7 +813,7 @@ fn run_command_tts_backend(
     };
 
     finished_tts_result(
-        segment,
+        &request,
         if played_audio {
             "TTS played".to_string()
         } else {
@@ -553,6 +821,7 @@ fn run_command_tts_backend(
         },
         (!played_audio).then_some(output_path),
         None,
+        timing_with_total(timing, total_started),
     )
 }
 
@@ -630,6 +899,19 @@ fn env_first_non_empty(keys: &[&str]) -> Option<String> {
     })
 }
 
+fn request_is_stale(request: &SceneTtsRequest, active_generation: &Arc<AtomicU64>) -> bool {
+    !generation_is_current(active_generation, request.generation)
+}
+
+fn generation_is_current(active_generation: &Arc<AtomicU64>, generation: u64) -> bool {
+    active_generation.load(Ordering::SeqCst) == generation
+}
+
+fn timing_with_total(mut timing: SceneTtsTiming, started: Instant) -> SceneTtsTiming {
+    timing.total_ms = Some(started.elapsed().as_millis());
+    timing
+}
+
 fn ct2_translation_command() -> Option<Vec<String>> {
     if let Some(command) = env_first_non_empty(&[TTS_CT2_COMMAND_ENV]) {
         return parse_command_argv(&command)
@@ -665,9 +947,16 @@ fn ct2_translation_command() -> Option<Vec<String>> {
 fn wait_for_tts_output(
     mut child: std::process::Child,
     timeout: Duration,
+    active_generation: &Arc<AtomicU64>,
+    generation: u64,
 ) -> Result<std::process::Output, String> {
     let started = std::time::Instant::now();
     loop {
+        if !generation_is_current(active_generation, generation) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("TTS stopped".to_string());
+        }
         match child.try_wait() {
             Ok(Some(_)) => return child.wait_with_output().map_err(|err| err.to_string()),
             Ok(None) if started.elapsed() >= timeout => {
@@ -688,6 +977,8 @@ fn run_player_command(
     argv: Vec<String>,
     output_path: &PathBuf,
     timeout: Duration,
+    active_generation: &Arc<AtomicU64>,
+    generation: u64,
 ) -> Result<(), String> {
     let argv = argv
         .into_iter()
@@ -702,7 +993,7 @@ fn run_player_command(
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|err| err.to_string())?;
-    let output = wait_for_tts_output(child, timeout)?;
+    let output = wait_for_tts_output(child, timeout, active_generation, generation)?;
     if output.status.success() {
         Ok(())
     } else {
@@ -808,6 +1099,7 @@ mod tests {
                     kind: SpeechBlockKind::Prose,
                     source: SpeakableSource::ComposeReply,
                 },
+                generation: 1,
             },
             SceneTtsConfig {
                 backend: SceneTtsBackend::Command(vec![helper.display().to_string()]),
@@ -815,6 +1107,7 @@ mod tests {
                 cache_dir: dir.path().to_path_buf(),
                 timeout: Duration::from_secs(2),
             },
+            test_active_generation(),
         );
 
         assert!(result.succeeded());
@@ -852,12 +1145,8 @@ mod tests {
             tx,
         );
 
-        worker.speak(SceneTtsRequest {
-            segment: test_segment("first line"),
-        });
-        worker.speak(SceneTtsRequest {
-            segment: test_segment("second line"),
-        });
+        worker.speak(test_request("first line"));
+        worker.speak(test_request("second line"));
 
         let first_started = rx.recv_timeout(Duration::from_secs(2)).unwrap();
         let first = rx.recv_timeout(Duration::from_secs(2)).unwrap();
@@ -921,12 +1210,8 @@ mod tests {
             tx,
         );
 
-        worker.speak(SceneTtsRequest {
-            segment: test_segment("first line"),
-        });
-        worker.speak(SceneTtsRequest {
-            segment: test_segment("second line"),
-        });
+        worker.speak(test_request("first line"));
+        worker.speak(test_request("second line"));
 
         let first_started = rx.recv_timeout(Duration::from_secs(3)).unwrap();
         let first = rx.recv_timeout(Duration::from_secs(3)).unwrap();
@@ -952,13 +1237,52 @@ mod tests {
     }
 
     #[test]
+    fn visual_tts_worker_skips_requests_from_stale_generation() {
+        let dir = tempfile::tempdir().unwrap();
+        let helper = dir.path().join("tts-helper.sh");
+        std::fs::write(
+            &helper,
+            "#!/usr/bin/env sh\ncat > \"$GAMETERM_SCENE_TTS_OUTPUT\"\n",
+        )
+        .unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut permissions = std::fs::metadata(&helper).unwrap().permissions();
+            permissions.set_mode(0o755);
+            std::fs::set_permissions(&helper, permissions).unwrap();
+        }
+        let (tx, rx) = mpsc::channel();
+        let worker = SceneTtsWorker::new(
+            SceneTtsConfig {
+                backend: SceneTtsBackend::Command(vec![helper.display().to_string()]),
+                player: None,
+                cache_dir: dir.path().to_path_buf(),
+                timeout: Duration::from_secs(2),
+            },
+            tx,
+        );
+
+        worker.set_generation(2);
+        worker.speak(test_request("old line"));
+
+        let result = rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert_eq!(result.event, SceneTtsEvent::Finished);
+        assert_eq!(result.status, "TTS skipped stale block");
+        assert_eq!(result.generation, 1);
+        assert_eq!(
+            result.error.as_deref(),
+            Some("speech queue generation changed")
+        );
+        assert!(rx.recv_timeout(Duration::from_millis(100)).is_err());
+    }
+
+    #[test]
     fn visual_tts_voicevox_backend_writes_wav_from_http() {
         let server = FakeVoicevoxServer::start();
         let dir = tempfile::tempdir().unwrap();
         let result = run_tts_backend(
-            SceneTtsRequest {
-                segment: test_segment("hello"),
-            },
+            test_request("hello"),
             SceneTtsConfig {
                 backend: SceneTtsBackend::Voicevox(SceneVoicevoxConfig {
                     host: "127.0.0.1".to_string(),
@@ -970,6 +1294,7 @@ mod tests {
                 cache_dir: dir.path().to_path_buf(),
                 timeout: Duration::from_secs(2),
             },
+            test_active_generation(),
         );
 
         assert!(result.succeeded(), "{result:?}", result = result);
@@ -996,9 +1321,7 @@ mod tests {
         }
 
         let result = run_tts_backend(
-            SceneTtsRequest {
-                segment: test_segment("hello"),
-            },
+            test_request("hello"),
             SceneTtsConfig {
                 backend: SceneTtsBackend::Voicevox(SceneVoicevoxConfig {
                     host: "127.0.0.1".to_string(),
@@ -1012,6 +1335,7 @@ mod tests {
                 cache_dir: dir.path().to_path_buf(),
                 timeout: Duration::from_secs(2),
             },
+            test_active_generation(),
         );
 
         assert!(result.succeeded(), "{result:?}", result = result);
@@ -1028,6 +1352,28 @@ mod tests {
         assert!(!state.is_muted());
         assert_eq!(state.toggle_muted(), "TTS muted");
         assert!(state.is_muted());
+    }
+
+    #[test]
+    fn visual_tts_state_ignores_stale_results_without_current_block() {
+        let mut state = SceneTtsState::default();
+        state.begin_new_generation();
+        let result = finished_tts_result(
+            &test_request("old line"),
+            "TTS played",
+            None,
+            None,
+            SceneTtsTiming {
+                total_ms: Some(1),
+                ..SceneTtsTiming::default()
+            },
+        );
+
+        assert_eq!(state.apply_result(&result), "TTS stale event ignored");
+
+        let diagnostics = state.diagnostics_lines().join("\n");
+        assert!(diagnostics.contains("TTS current: idle"));
+        assert!(diagnostics.contains("stale TTS event ignored"));
     }
 
     #[test]
@@ -1079,6 +1425,17 @@ mod tests {
             kind: SpeechBlockKind::Prose,
             source: SpeakableSource::ComposeReply,
         }
+    }
+
+    fn test_request(text: &str) -> SceneTtsRequest {
+        SceneTtsRequest {
+            segment: test_segment(text),
+            generation: 1,
+        }
+    }
+
+    fn test_active_generation() -> Arc<AtomicU64> {
+        Arc::new(AtomicU64::new(1))
     }
 
     struct FakeVoicevoxServer {

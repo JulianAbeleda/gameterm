@@ -1870,7 +1870,7 @@ impl SceneRuntime {
         match section {
             VisualInteractiveDebugMenu::SceneLayout => VnOverlayDebugOverrides::PARAM_COUNT,
             VisualInteractiveDebugMenu::Text => 6,
-            VisualInteractiveDebugMenu::Voice => 7,
+            VisualInteractiveDebugMenu::Voice => 8,
             VisualInteractiveDebugMenu::Compose => 4,
             VisualInteractiveDebugMenu::Runtime => 6,
             VisualInteractiveDebugMenu::TileDebugMenu => 0,
@@ -2005,7 +2005,8 @@ impl SceneRuntime {
                     "Microphone status".to_string(),
                     "overlay session".to_string(),
                 ),
-                ("Test TTS playback".to_string(), "planned".to_string()),
+                ("Test TTS playback".to_string(), "enter".to_string()),
+                ("Stop TTS playback".to_string(), "enter".to_string()),
             ],
             &[String::from(
                 "Use enter or left/right on a voice row to toggle supported items.",

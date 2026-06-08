@@ -1,6 +1,7 @@
 use super::super::visual_stt::{
     SceneMicDevice, SceneMicTestResult, SceneSttConfig, SceneSttResult, SceneSttState,
 };
+use super::super::visual_tts::SceneTtsState;
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(super) struct SceneVoiceDebugState {
@@ -15,6 +16,8 @@ pub(super) struct SceneVoiceDebugState {
     microphone_devices: Vec<SceneMicDevice>,
     mic_test_running: bool,
     last_mic_test: Option<SceneMicTestResult>,
+    tts_summary: String,
+    tts_lines: Vec<String>,
 }
 
 impl SceneVoiceDebugState {
@@ -23,6 +26,7 @@ impl SceneVoiceDebugState {
             config_lines: config.diagnostics_lines(),
             last_status: state.last_status().to_string(),
             selected_microphone: "system default".to_string(),
+            tts_summary: "idle".to_string(),
             ..Self::default()
         }
     }
@@ -75,6 +79,16 @@ impl SceneVoiceDebugState {
         self.selected_microphone = selected_label.to_string();
     }
 
+    pub(super) fn sync_tts(&mut self, state: &SceneTtsState) {
+        self.tts_lines = state.diagnostics_lines();
+        self.tts_summary = self
+            .tts_lines
+            .first()
+            .and_then(|line| line.strip_prefix("TTS: "))
+            .unwrap_or("idle")
+            .to_string();
+    }
+
     pub(super) fn mark_mic_test_started(&mut self, selected_label: &str) {
         self.visible = true;
         self.mic_test_running = true;
@@ -105,7 +119,7 @@ impl SceneVoiceDebugState {
             "Voice test mode",
             if self.test_mode { "on" } else { "off" },
         ));
-        lines.push(self.menu_item_line_for_row(selected_row, 3, "TTS mute", "overlay state"));
+        lines.push(self.menu_item_line_for_row(selected_row, 3, "TTS mute", &self.tts_summary));
         lines.push(self.menu_item_line_for_row(
             selected_row,
             4,
@@ -128,7 +142,8 @@ impl SceneVoiceDebugState {
             "Microphone status",
             &self.last_status,
         ));
-        lines.push(self.menu_item_line_for_row(selected_row, 7, "Test TTS playback", "planned"));
+        lines.push(self.menu_item_line_for_row(selected_row, 7, "Test TTS playback", "enter"));
+        lines.push(self.menu_item_line_for_row(selected_row, 8, "Stop TTS playback", "enter"));
 
         if self.visible {
             lines.push(String::new());
@@ -148,6 +163,10 @@ impl SceneVoiceDebugState {
                     let marker = if device.is_default { " default" } else { "" };
                     lines.push(format!("  - {}{}", device.name, marker));
                 }
+            }
+            if !self.tts_lines.is_empty() {
+                lines.push("TTS diagnostics:".to_string());
+                lines.extend(self.tts_lines.iter().map(|line| format!("  {line}")));
             }
             lines.extend(self.config_lines.iter().cloned());
             if let Some(result) = self.last_mic_test.as_ref() {

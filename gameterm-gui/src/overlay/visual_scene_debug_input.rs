@@ -1,9 +1,7 @@
-use gameterm_visual::{
-    SceneRuntime, VisualInput, VisualInteractiveDebugMenu, VisualView,
-};
+use gameterm_visual::{SceneRuntime, VisualInput, VisualInteractiveDebugMenu, VisualView};
 use std::sync::mpsc;
 
-use super::super::visual_stt::{spawn_mic_test, SceneMicTestResult};
+use super::super::visual_stt::{SceneMicTestResult, spawn_mic_test};
 use super::visual_overlay_session::VisualOverlaySession;
 use super::visual_voice_debug::VoiceDebugMenuEffect;
 
@@ -45,6 +43,7 @@ pub(super) fn handle_scene_debug_session_input(
             }
             3 => {
                 runtime.mark_action_status(session.tts_state.toggle_muted());
+                session.sync_tts_debug();
                 VoiceDebugMenuEffect::HANDLED
             }
             4 => {
@@ -67,6 +66,14 @@ pub(super) fn handle_scene_debug_session_input(
                 }
                 VoiceDebugMenuEffect::HANDLED
             }
+            7 => {
+                runtime.mark_action_status(session.enqueue_tts_test());
+                VoiceDebugMenuEffect::HANDLED
+            }
+            8 => {
+                runtime.mark_action_status(session.interrupt_tts_queue());
+                VoiceDebugMenuEffect::HANDLED
+            }
             _ => VoiceDebugMenuEffect::IGNORED,
         },
         VisualInteractiveDebugMenu::Compose => match runtime.interactive_debug_row() {
@@ -81,12 +88,14 @@ pub(super) fn handle_scene_debug_session_input(
                     session.dialogue_scroll.voice_debug.fake_codex_backend =
                         session.compose_debug_backend.is_fake();
                     runtime.clear_compose_history();
+                    session.interrupt_tts_queue();
                     runtime.mark_action_status(status);
                     VoiceDebugMenuEffect::RESET_COMPOSE_DIALOGUE
                 }
             }
             2 => {
                 runtime.clear_compose_history();
+                session.interrupt_tts_queue();
                 runtime.mark_action_status("Compose dialogue history cleared");
                 VoiceDebugMenuEffect::RESET_COMPOSE_DIALOGUE
             }

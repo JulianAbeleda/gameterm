@@ -3,7 +3,7 @@ use std::path::Path;
 use std::sync::mpsc;
 
 use super::super::visual_compose::{
-    compose_running_status, spawn_compose_backend, ComposeBackendRequest, ComposeBackendResult,
+    ComposeBackendRequest, ComposeBackendResult, compose_running_status, spawn_compose_backend,
 };
 use super::super::visual_stt::{SceneSttResult, SceneSttState};
 use super::super::visual_tts::{SceneTtsEvent, SceneTtsResult, SceneTtsState};
@@ -14,16 +14,24 @@ pub(super) fn apply_tts_result(
     tts_state: &mut SceneTtsState,
     result: SceneTtsResult,
 ) {
-    match result.event {
-        SceneTtsEvent::Started => {
-            runtime.mark_compose_block_speaking(result.segment.turn_id, result.segment.block_index);
-        }
-        SceneTtsEvent::Finished => {
-            runtime.mark_compose_block_done(result.segment.turn_id, result.segment.block_index);
+    let accepted = tts_state.accepts_result(&result);
+    if accepted {
+        match result.event {
+            SceneTtsEvent::Started => {
+                runtime.mark_compose_block_speaking(
+                    result.segment.turn_id,
+                    result.segment.block_index,
+                );
+            }
+            SceneTtsEvent::Finished => {
+                runtime.mark_compose_block_done(result.segment.turn_id, result.segment.block_index);
+            }
         }
     }
     let status = tts_state.apply_result(&result);
-    if result.succeeded() {
+    if !accepted {
+        runtime.mark_action_status(status);
+    } else if result.succeeded() {
         runtime.mark_action_status(status);
     } else if let Some(error) = result.error {
         runtime.mark_action_status(format!("{status}: {error}"));

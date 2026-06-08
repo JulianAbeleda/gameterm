@@ -63,7 +63,7 @@ use super::visual_compose::{compose_running_status, spawn_compose_backend, Compo
 use super::visual_stt::SceneSttConfig;
 #[cfg(test)]
 use super::visual_stt::{SceneMicDevice, SceneSttResult, SceneSttState};
-use super::visual_tts::{SceneTtsConfig, SceneTtsRequest};
+use super::visual_tts::SceneTtsConfig;
 use super::visual_voice_hold::set_scene_voice_hold_active;
 #[cfg(test)]
 use visual_command_dispatch::write_story_state_file;
@@ -208,28 +208,12 @@ fn show_visual_scene_overlay_with_source(
 
     loop {
         let mut needs_render = drain_command_results(&command_rx, &mut runtime);
-        needs_render |= drain_compose_results(
-            &compose_rx,
-            &mut runtime,
-            &mut session.compose_backend_running,
-            &mut session.dialogue_scroll,
-            &session.tts_state,
-            &session.tts_worker,
-        );
-        needs_render |= drain_tts_results(
-            &tts_rx,
-            &mut runtime,
-            &mut session.tts_state,
-            &mut session.dialogue_scroll,
-        );
+        needs_render |= drain_compose_results(&compose_rx, &mut runtime, &mut session);
+        needs_render |= drain_tts_results(&tts_rx, &mut runtime, &mut session);
         needs_render |= drain_stt_results(
             &stt_rx,
             &mut runtime,
-            &mut session.stt_session,
-            &mut session.dialogue_scroll,
-            &mut session.compose_dock,
-            &mut session.stt_state,
-            &mut session.compose_backend_running,
+            &mut session,
             &compose_tx,
             &scene_path,
             pane_id,
@@ -333,6 +317,7 @@ fn show_visual_scene_overlay_with_source(
                         && is_tts_toggle_key(key, modifiers)
                     {
                         runtime.mark_action_status(session.tts_state.toggle_muted());
+                        session.sync_tts_debug();
                         render_runtime_with_compose_and_scroll(
                             &mut term,
                             runtime,
@@ -374,6 +359,7 @@ fn show_visual_scene_overlay_with_source(
                                     )?;
                                     continue;
                                 }
+                                session.interrupt_tts_queue();
                                 session.compose_dock.mark_submitted(&prompt);
                                 let running_status = if session.compose_debug_backend.is_fake() {
                                     format!("Fake Codex running: {prompt}")
@@ -390,9 +376,9 @@ fn show_visual_scene_overlay_with_source(
                                         !session.tts_state.is_muted(),
                                     );
                                     if !session.tts_state.is_muted() {
-                                        for segment in speakable_segments {
-                                            session.tts_worker.speak(SceneTtsRequest { segment });
-                                        }
+                                        session.enqueue_tts_segments(speakable_segments);
+                                    } else {
+                                        session.sync_tts_debug();
                                     }
                                     render_runtime_with_compose_and_scroll(
                                         &mut term,
@@ -616,6 +602,7 @@ mod tests {
         codex_compose_argv, codex_output_text, compose_backend_config, run_codex_compose_backend,
         CodexComposeConfig, ComposeBackendConfig,
     };
+    use super::super::visual_tts::SceneTtsEvent;
     use super::visual_voice_debug::{SceneVoiceDebugState, VoiceDebugMenuEffect};
     use super::*;
     use gameterm_visual::{
@@ -1763,6 +1750,61 @@ mod tests {
             .join("\n");
         assert!(lines.contains("Microphone"));
         assert!(lines.contains("usethisphone707 Microphone"));
+    }
+
+    #[test]
+    fn scene_debug_menu_tts_test_and_stop_are_voice_section_actions() {
+        let (tts_tx, tts_rx) = mpsc::channel();
+        let (mic_test_tx, _mic_test_rx) = mpsc::channel();
+        let mut session = VisualOverlaySession::new(
+            SceneTtsConfig::built_in_silent_for_test(),
+            tts_tx,
+            SceneSttConfig::whisper_default(),
+        );
+        let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
+        runtime.toggle_debugger();
+        runtime.handle_input(VisualInput::Right);
+        runtime.handle_input(VisualInput::Right);
+        for _ in 0..7 {
+            runtime.handle_input(VisualInput::Next);
+        }
+
+        assert_eq!(
+            handle_scene_debug_session_input(
+                &mut runtime,
+                &mut session,
+                VisualInput::Activate,
+                &mic_test_tx
+            ),
+            VoiceDebugMenuEffect::HANDLED
+        );
+        assert_eq!(runtime.render_snapshot().status, "TTS queued: 1 block(s)");
+        let started = tts_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert_eq!(started.event, SceneTtsEvent::Started);
+        assert_eq!(started.segment.text, "Scene TTS test playback.");
+        let finished = tts_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert_eq!(finished.event, SceneTtsEvent::Finished);
+        assert!(finished.succeeded());
+
+        runtime.handle_input(VisualInput::Next);
+        assert_eq!(
+            handle_scene_debug_session_input(
+                &mut runtime,
+                &mut session,
+                VisualInput::Activate,
+                &mic_test_tx
+            ),
+            VoiceDebugMenuEffect::HANDLED
+        );
+        assert_eq!(runtime.render_snapshot().status, "TTS queue reset");
+        session.dialogue_scroll.voice_debug.visible = true;
+        let lines = session
+            .dialogue_scroll
+            .voice_debug
+            .render_voice_lines(8)
+            .join("\n");
+        assert!(lines.contains("Stop TTS playback"));
+        assert!(lines.contains("TTS queue generation: 2"));
     }
 
     #[test]
