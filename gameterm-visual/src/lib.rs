@@ -5318,7 +5318,7 @@ mod tests {
     }
 
     #[test]
-    fn staged_scene_later_turns_render_while_previous_voice_blocks_are_unfinished() {
+    fn staged_scene_future_turns_render_while_previous_voice_blocks_are_unfinished() {
         let mut runtime = SceneRuntime::new(staged_compose_scene()).unwrap();
 
         runtime.mark_compose_running("Compose running", "first");
@@ -5329,18 +5329,22 @@ mod tests {
         );
         assert_eq!(first_ids.len(), 1);
 
-        runtime.mark_compose_running("Compose running", "second");
-        let second_ids = runtime.mark_compose_succeeded_blocks(
-            "Codex",
-            &["Second turn reply should still render.".to_string()],
-            false,
-        );
-        assert_eq!(second_ids.len(), 1);
-        assert_ne!(first_ids[0].0, second_ids[0].0);
+        let mut previous_turn_id = first_ids[0].0;
+        for idx in 2..=5 {
+            runtime.mark_compose_running("Compose running", &format!("future prompt {idx}"));
+            let ids = runtime.mark_compose_succeeded_blocks(
+                "Codex",
+                &[format!("Future turn {idx} reply should still render.")],
+                false,
+            );
+            assert_eq!(ids.len(), 1);
+            assert_ne!(previous_turn_id, ids[0].0);
+            previous_turn_id = ids[0].0;
+        }
 
         let frame = runtime.render_text_frame(100, 30);
-        assert!(frame.contains("> second"));
-        assert!(frame.contains("Second turn reply should still render."));
+        assert!(frame.contains("> future prompt 5"));
+        assert!(frame.contains("Future turn 5 reply should still render."));
     }
 
     #[test]
