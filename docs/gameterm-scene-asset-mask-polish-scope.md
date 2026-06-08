@@ -1,6 +1,6 @@
 # GameTerm Scene Asset Mask Polish Scope
 
-Status: scoped, not implemented.
+Status: first-pass implemented.
 
 This document scopes the precision pass for Scene character cutouts after the
 first `magic-erase` and `remove-background` helper landed.
@@ -72,12 +72,13 @@ Existing:
 - `global_magic_mask`
 - `background_magic_mask`
 
-Next additions:
+First-pass additions:
 
-- multi-seed background selection
-- normalized seed list from CLI/recipe
-- optional edge-only seed discovery
-- optional subject bounding box
+- named `SceneAssetMask` primitive around the existing edge/corner background
+  selection
+- CLI and recipe access through `remove-background-polished`
+- deterministic mask morphology for growth, shrink, open, close, small
+  component cleanup, and small-hole fill
 
 Output:
 
@@ -88,8 +89,9 @@ Mask
   alpha/coverage per pixel
 ```
 
-First pass can keep `Vec<bool>`. The polish pass should introduce a named mask
-type, eventually with `u8` coverage for soft alpha.
+The first pass keeps the mask as a named boolean primitive. Soft edges are
+applied during alpha masking through the existing feather radius. A future pass
+can move the mask itself to `u8` coverage if we need more precise matte ramps.
 
 ### 2. Protection
 
@@ -233,7 +235,7 @@ cargo run -p gameterm-visual --example scene_asset_edit -- remove-background-pol
   --sample corners \
   --tolerance 10 \
   --protect feature-map.json \
-  --erode 1 \
+  --dilate 1 \
   --close 1 \
   --feather 1 \
   --defringe white \
@@ -392,7 +394,7 @@ cargo run -q -p gameterm-visual --example scene_asset_edit -- remove-background-
   --source ~/Desktop/gameterm-vn-ai-emotion-sprites/neutral_base.png \
   --output ~/Desktop/gameterm-vn-ai-emotion-sprites/neutral_base-transparent-polished.png \
   --tolerance 10 \
-  --erode 1 \
+  --dilate 1 \
   --close 1 \
   --feather 1 \
   --defringe white \
@@ -424,3 +426,68 @@ This pass is complete when:
 - Kiki-style light-background cutouts look better than simple thresholding
 - tests cover mask morphology, protection, feathering, and defringe
 - docs explain how to tune precision from terminal
+
+## First-Pass Result
+
+Implemented on June 8, 2026:
+
+- `SceneAssetEditOperation::RemoveBackgroundPolished`
+- `SceneAssetMaskPolishOptions`
+- `SceneAssetDefringeMode`
+- mask primitives for erode, dilate, open, close, remove-small-components, and
+  fill-small-holes
+- feature-map region protection through `--protect` and `--protect-regions`
+- white-edge defringe and cutout quality counters
+- CLI command:
+
+```sh
+cargo run -q -p gameterm-visual --example scene_asset_edit -- remove-background-polished \
+  --source IMAGE \
+  --output OUT \
+  --sample corners \
+  --tolerance 10 \
+  --dilate 1 \
+  --close 1 \
+  --feather 1 \
+  --defringe white \
+  --force \
+  --pretty
+```
+
+Verification:
+
+- `cargo test -p gameterm-visual asset_edit`: PASS, 14 tests
+- `cargo check -p gameterm-visual --examples`: PASS
+- `cargo test -p gameterm-visual`: PASS, 201 tests
+- real Kiki cutout smoke:
+
+```sh
+cargo run -q -p gameterm-visual --example scene_asset_edit -- remove-background-polished \
+  --source /Users/julianabeleda/Desktop/gameterm-vn-ai-emotion-sprites/neutral_base.png \
+  --output /tmp/neutral_base-transparent-polished.png \
+  --sample corners \
+  --tolerance 10 \
+  --dilate 1 \
+  --close 1 \
+  --feather 1 \
+  --defringe white \
+  --force \
+  --pretty
+```
+
+Smoke result:
+
+- output: `/tmp/neutral_base-transparent-polished.png`
+- dark preview: `/tmp/neutral_base-transparent-polished-preview.png`
+- size: 768x768 RGBA
+- content bounds: x=141, y=37, w=525, h=731
+- transparent pixels: 326725 of 589824
+- partial-alpha pixels: 3670
+- remaining light-edge pixels: 526
+
+Residual issue:
+
+- The deterministic cutout preserves the character and removes the background,
+  but some white hair-edge halo remains. The new knobs make this tunable; a
+  later segmentation or hand-painted mask pass would be needed for perfect hair
+  extraction.
