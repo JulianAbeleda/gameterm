@@ -6,12 +6,13 @@ edition = "2018"
 publish = false
 
 [dependencies]
-serde = { workspace = true, features = ["derive"] }
+image.workspace = true
+serde = { workspace = true, features = ["alloc", "derive"] }
 serde_json.workspace = true
+sha2.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
 anyhow.workspace = true
-image.workspace = true
 k9.workspace = true
 tempfile.workspace = true

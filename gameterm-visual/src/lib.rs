@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 mod actions;
+mod asset_edit;
 mod compose_state;
 mod conditions;
 mod debug;
@@ -21,6 +22,17 @@ mod vn_text;
 mod workspace_scene;
 
 use actions::{action_kind_name, action_policy_summary, derived_action_policy};
+pub use asset_edit::{
+    continuity_report_for_scene_asset_frames, default_scene_asset_feature_map,
+    export_scene_asset_source_images, generate_scene_asset_animation,
+    generate_scene_asset_expression, inspect_scene_asset_image, load_scene_asset_feature_map,
+    load_scene_asset_recipe_book, validate_scene_asset_feature_map, write_scene_asset_json,
+    SceneAssetAnimationFrame, SceneAssetAnimationOutput, SceneAssetAnimationRecipe,
+    SceneAssetContinuityCheck, SceneAssetContinuityReport, SceneAssetContinuityStatus,
+    SceneAssetDimensions, SceneAssetEditError, SceneAssetEditOperation, SceneAssetExportReport,
+    SceneAssetExpressionOutput, SceneAssetFeatureMap, SceneAssetImageReport,
+    SceneAssetNormalizedPoint, SceneAssetNormalizedRect, SceneAssetPixelRect, SceneAssetRecipeBook,
+};
 #[cfg(test)]
 pub(crate) use compose_state::VisualComposePhase;
 pub(crate) use compose_state::{
