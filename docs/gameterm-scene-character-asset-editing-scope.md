@@ -1,6 +1,6 @@
 # GameTerm Scene Character Asset Editing Scope
 
-Status: scoped, not implemented.
+Status: first-pass implemented.
 
 This document scopes a Rust-first terminal asset helper for modifying existing
 Scene Mode character PNGs, generating expression variants, and keeping those
@@ -39,6 +39,19 @@ cargo run -p gameterm-visual --example scene_asset_edit -- \
 
 The helper should be dogfoodable from a normal terminal first. Scene Mode can
 surface it later as an action.
+
+First-pass implementation:
+
+- `gameterm-visual/src/asset_edit.rs` owns image inspection, feature-map
+  validation, deterministic PNG edit operations, animation-frame generation,
+  continuity checks, and source-root export.
+- `gameterm-visual/examples/scene_asset_edit.rs` exposes the terminal helper
+  commands.
+- `ci/fixtures/gameterm-scene/kiki-expression-recipes.json` provides a
+  deterministic Kiki recipe book for expression, blink, and breathing frame
+  smoke tests.
+- The Rust helper can generate output PNGs that feed the existing
+  `scene_vn_asset_intake` config-module path.
 
 ## Product End State
 
@@ -417,7 +430,7 @@ experimental. The first pass can stay an example CLI to match existing
 
 ### 1. Scope And Command Contract
 
-Status: this document.
+Status: complete.
 
 Commit prefix: `[docs]`.
 
@@ -429,6 +442,8 @@ Work:
 - define tests and non-goals
 
 ### 2. Rust Asset Document And Feature Map
+
+Status: complete.
 
 Commit prefix: `[visual]`.
 
@@ -448,6 +463,8 @@ Done when:
 
 ### 3. Deterministic Edit Operations
 
+Status: complete.
+
 Commit prefix: `[visual]`.
 
 Work:
@@ -466,6 +483,8 @@ Done when:
 
 ### 4. Expression And Animation Recipes
 
+Status: complete.
+
 Commit prefix: `[visual]`.
 
 Work:
@@ -482,6 +501,8 @@ Done when:
 - generated frames keep stable naming such as `kiki-blink-0.png`
 
 ### 5. Continuity And Install Integration
+
+Status: first-pass implemented.
 
 Commit prefix: `[visual]` or `[tools]`.
 
@@ -501,6 +522,8 @@ Done when:
 
 ### 6. Panel Codegen Coordination
 
+Status: complete.
+
 Commit prefix: `[visual]` or `[tools]`.
 
 Work:
@@ -517,6 +540,8 @@ Done when:
 - panel rendering remains covered by the existing rounded-panel tests
 
 ### 7. Dogfood And Docs
+
+Status: first-pass implemented.
 
 Commit prefix: `[test]`, `[docs]`.
 
@@ -605,6 +630,52 @@ Assertions:
   dogfooding.
 - A single "asset tool" can become too broad. Keep first-pass commands narrow
   and testable.
+
+## Latest Verification
+
+Commands run:
+
+```sh
+cargo test -p gameterm-visual asset_edit
+cargo run -q -p gameterm-visual --example scene_asset_edit -- map-template \
+  ci/fixtures/gameterm-scene/vn-asset-source/4cher_set4_vn_sprites/kiki-neutral.png \
+  --character kiki \
+  --output /tmp/gameterm-asset-edit.../kiki.features.json \
+  --force
+cargo run -q -p gameterm-visual --example scene_asset_edit -- validate-map \
+  --image ci/fixtures/gameterm-scene/vn-asset-source/4cher_set4_vn_sprites/kiki-neutral.png \
+  --feature-map /tmp/gameterm-asset-edit.../kiki.features.json
+cargo run -q -p gameterm-visual --example scene_asset_edit -- expression \
+  --base ci/fixtures/gameterm-scene/vn-asset-source/4cher_set4_vn_sprites/kiki-neutral.png \
+  --feature-map /tmp/gameterm-asset-edit.../kiki.features.json \
+  --recipe ci/fixtures/gameterm-scene/kiki-expression-recipes.json \
+  --expression surprised \
+  --output /tmp/gameterm-asset-edit.../kiki-surprised.png \
+  --force
+cargo run -q -p gameterm-visual --example scene_asset_edit -- animation \
+  --base ci/fixtures/gameterm-scene/vn-asset-source/4cher_set4_vn_sprites/kiki-neutral.png \
+  --feature-map /tmp/gameterm-asset-edit.../kiki.features.json \
+  --recipe ci/fixtures/gameterm-scene/kiki-expression-recipes.json \
+  --animation blink \
+  --output-dir /tmp/gameterm-asset-edit.../blink \
+  --character kiki \
+  --force
+cargo run -q -p gameterm-visual --example scene_asset_edit -- continuity \
+  /tmp/gameterm-asset-edit.../blink/kiki-blink-0.png \
+  /tmp/gameterm-asset-edit.../blink/kiki-blink-1.png \
+  /tmp/gameterm-asset-edit.../blink/kiki-blink-2.png \
+  --pretty
+cargo test -p gameterm-visual
+cargo check -p gameterm-visual --examples
+```
+
+Result:
+
+- focused asset-edit tests: 6 passed
+- full `gameterm-visual` suite: 193 passed
+- example targets: checked cleanly
+- CLI smoke generated feature-map JSON, one surprised expression PNG, and five
+  blink frame PNGs from the Kiki fixture
 
 ## Definition Of Done
 
