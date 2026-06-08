@@ -468,6 +468,89 @@ This pass is complete when:
 - a Kiki dark-preview smoke shows less white behind ponytail hair than the
   current edge-connected background remover
 
+## Second-Pass Scope: Bounds And Preview
+
+Status: scoped, then implemented in this pass.
+
+The next missing workflow features are:
+
+- region-scoped selection
+- polygon-scoped selection
+- mask preview before destructive erase/restore
+
+These features matter because Color Range and channel matte are powerful but
+too global for the current Kiki source. We need to be able to say "only search
+inside the ponytail" or "only inspect this traced polygon" before writing the
+transparent output.
+
+Proposed selection flags:
+
+```sh
+--within-regions hair,ponytail
+--within-polygon '0.64,0.20;0.90,0.20;0.90,0.86;0.62,0.86'
+```
+
+Expected behavior:
+
+- selection masks are clipped to the union of the requested feature-map regions
+  and polygons
+- morphology can still clean the mask, but the final mask cannot leak outside
+  the requested bounds
+- protection still subtracts from the bounded mask
+- existing commands without `--within-*` behave exactly as before
+
+Proposed preview command:
+
+```sh
+cargo run -q -p gameterm-visual --example scene_asset_edit -- mask-preview \
+  --source IMAGE \
+  --output /tmp/mask-preview.png \
+  --selection-mode color-range \
+  --sample corners \
+  --tolerance 10 \
+  --within-polygon '0.64,0.20;0.90,0.20;0.90,0.86;0.62,0.86' \
+  --pretty \
+  --force
+```
+
+Preview output should be a normal PNG, not a destructive cutout. First pass
+uses a darkened source with selected pixels tinted red. It should also return a
+JSON report with selected-pixel count and total pixels.
+
+Done when:
+
+- `color-range-erase`, `magic-erase-add`, and `channel-matte-erase` support
+  `--within-regions` and `--within-polygon`
+- `mask-preview` can preview background, color-range, magic-add, and
+  channel-matte masks
+- tests prove bounded selections cannot affect pixels outside the requested
+  region/polygon
+- a Kiki smoke can preview a ponytail-bounded color range mask
+
+## Second-Pass Result
+
+Implemented on June 8, 2026:
+
+- `--within-regions` and `--within-polygon` for polished background removal,
+  Color Range, Magic Wand add-selection, and channel matte erase
+- non-destructive `mask-preview` with `background`, `color-range`,
+  `magic-add`, and `channel-matte` selection modes
+- shared bounded-mask clipping after morphology and before protected-region
+  subtraction
+- recipe support for bounded polished erase, Color Range, Magic Wand
+  add-selection, and channel matte operations
+
+Verification:
+
+- `cargo test -p gameterm-visual asset_edit`: PASS, 25 tests
+- `cargo check -p gameterm-visual --examples`: PASS
+- `cargo test -p gameterm-visual`: PASS, 212 tests
+
+Real Kiki smoke output:
+
+- Ponytail-bounded Color Range mask preview:
+  `/tmp/neutral_base-mask-preview-ponytail.png`
+
 ## First-Pass Result
 
 Implemented on June 8, 2026:
@@ -532,6 +615,6 @@ Residual work:
 
 - Add a better Kiki feature map with hair/face/eye/torso regions before using
   Color Range as a normal workflow.
-- Add a small interactive seed-picking preview or mask-inspect command so manual
-  `magic-erase-add` seeds can be chosen precisely.
+- Add a small interactive seed-picking UI so manual `magic-erase-add` seeds and
+  `--within-polygon` regions can be chosen precisely instead of hand-entered.
 - Consider future GUI brush support for true Refine Edge Brush behavior.

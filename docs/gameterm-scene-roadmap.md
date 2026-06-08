@@ -63,7 +63,8 @@ Scene Mode currently has:
   through mask morphology, protected regions, feathering, white-edge defringe,
   and cutout quality metrics
 - a first-pass selection-tools lane for Color Range, Magic Wand add-selection,
-  channel-matte erasing, hair-edge decontamination, and traced source restore
+  channel-matte erasing, hair-edge decontamination, traced source restore,
+  region/polygon-bounded selection, and non-destructive mask preview
 
 Latest verification baseline:
 
@@ -118,7 +119,7 @@ implementation details.
 | Procedural VN panel codegen | [Panel Codegen Scope](gameterm-scene-panel-codegen-scope.md) | First-pass implemented |
 | Character asset editing pipeline | [Character Asset Editing Scope](gameterm-scene-character-asset-editing-scope.md) | First-pass implemented |
 | Character mask polish | [Asset Mask Polish Scope](gameterm-scene-asset-mask-polish-scope.md) | First-pass implemented |
-| Character selection tools | [Asset Selection Tools Scope](gameterm-scene-asset-selection-tools-scope.md) | First-pass implemented |
+| Character selection tools | [Asset Selection Tools Scope](gameterm-scene-asset-selection-tools-scope.md) | Second-pass implemented |
 | Rounded VN panel renderer | [Rounded Panel Renderer Scope](gameterm-scene-rounded-panel-renderer-scope.md) | Scoped |
 | Scene debug view separation | [Debug View Separation Scope](gameterm-scene-debug-view-separation-scope.md) | Scoped |
 | Codex compose bridge | [Codex Compose Bridge Scope](gameterm-scene-codex-compose-bridge-scope.md) | First-pass implemented |
