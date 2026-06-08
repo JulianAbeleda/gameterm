@@ -44,7 +44,7 @@ First-pass implementation:
 
 - `gameterm-visual/src/asset_edit.rs` owns image inspection, feature-map
   validation, deterministic PNG edit operations, animation-frame generation,
-  continuity checks, and source-root export.
+  continuity checks, magic/background selection, and source-root export.
 - `gameterm-visual/examples/scene_asset_edit.rs` exposes the terminal helper
   commands.
 - `ci/fixtures/gameterm-scene/kiki-expression-recipes.json` provides a
@@ -249,6 +249,8 @@ translate_region
 scale_region
 opacity
 color_tint
+magic_erase
+remove_background
 crop_to_content
 resize_contain
 ```
@@ -261,10 +263,13 @@ These cover expression edits such as:
 - composite a hand-authored eye or mouth patch
 - shift torso/head pixels subtly for breathing frames
 - tint or soften small regions
+- select a contiguous color region from a seed point and make it transparent
+- select background-like pixels from corners or edges and make them transparent
 
 Deferred operations:
 
 - semantic inpainting
+- freehand polygon lasso
 - AI generation
 - pressure-sensitive brush strokes
 - advanced layer blending modes
@@ -418,6 +423,8 @@ cargo run -p gameterm-visual --example scene_asset_edit -- map-template IMAGE --
 cargo run -p gameterm-visual --example scene_asset_edit -- validate-map --image IMAGE --feature-map kiki.features.json
 cargo run -p gameterm-visual --example scene_asset_edit -- expression --base IMAGE --feature-map MAP --recipe RECIPES --expression happy --output OUT
 cargo run -p gameterm-visual --example scene_asset_edit -- animation --base IMAGE --feature-map MAP --recipe RECIPES --animation blink --output-dir DIR
+cargo run -p gameterm-visual --example scene_asset_edit -- remove-background --source IMAGE --output OUT --tolerance 24 --feather 1
+cargo run -p gameterm-visual --example scene_asset_edit -- magic-erase --source IMAGE --output OUT --seed-x 0.0 --seed-y 0.0 --tolerance 24 --feather 1
 cargo run -p gameterm-visual --example scene_asset_edit -- continuity --frames 'DIR/kiki-blink-*.png' --feature-map MAP
 cargo run -p gameterm-visual --example scene_asset_edit -- export-source --source IMAGE --source-root DIR --character kiki --expressions neutral,happy,concerned,surprised
 ```
@@ -665,17 +672,33 @@ cargo run -q -p gameterm-visual --example scene_asset_edit -- continuity \
   /tmp/gameterm-asset-edit.../blink/kiki-blink-1.png \
   /tmp/gameterm-asset-edit.../blink/kiki-blink-2.png \
   --pretty
+cargo run -q -p gameterm-visual --example scene_asset_edit -- remove-background \
+  --source ci/fixtures/gameterm-scene/vn-asset-source/4cher_set4_vn_sprites/kiki-neutral.png \
+  --output /tmp/gameterm-magic-erase.../kiki-bg-transparent.png \
+  --tolerance 24 \
+  --feather 1 \
+  --force
+cargo run -q -p gameterm-visual --example scene_asset_edit -- magic-erase \
+  --source ci/fixtures/gameterm-scene/vn-asset-source/4cher_set4_vn_sprites/kiki-neutral.png \
+  --output /tmp/gameterm-magic-erase.../kiki-magic-erase.png \
+  --seed-x 0.0 \
+  --seed-y 0.0 \
+  --tolerance 24 \
+  --feather 1 \
+  --force
 cargo test -p gameterm-visual
 cargo check -p gameterm-visual --examples
 ```
 
 Result:
 
-- focused asset-edit tests: 6 passed
-- full `gameterm-visual` suite: 193 passed
+- focused asset-edit tests: 9 passed
+- full `gameterm-visual` suite: 196 passed
 - example targets: checked cleanly
 - CLI smoke generated feature-map JSON, one surprised expression PNG, and five
   blink frame PNGs from the Kiki fixture
+- CLI smoke generated background-transparent and magic-erased PNG outputs from
+  the Kiki fixture
 
 ## Definition Of Done
 

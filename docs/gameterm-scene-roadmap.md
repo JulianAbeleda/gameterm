@@ -56,8 +56,9 @@ Scene Mode currently has:
   extracted panel style, with PNG nine-slice retained as an opt-in
   compatibility path
 - a first-pass Rust-first character asset editing lane for mapping Kiki-style
-  feature regions, generating repeatable expression/animation PNGs, and feeding
-  those outputs through the existing VN config module
+  feature regions, generating repeatable expression/animation PNGs, removing
+  simple backgrounds through magic selection, and feeding those outputs through
+  the existing VN config module
 
 Latest verification baseline:
 
