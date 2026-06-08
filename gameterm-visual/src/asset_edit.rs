@@ -200,6 +200,30 @@ pub enum SceneAssetEditOperation {
         #[serde(default = "default_background_sample")]
         sample: SceneAssetBackgroundSample,
     },
+    RemoveBackgroundPolished {
+        #[serde(default = "default_magic_tolerance")]
+        tolerance: u8,
+        #[serde(default)]
+        feather: u32,
+        #[serde(default = "default_background_sample")]
+        sample: SceneAssetBackgroundSample,
+        #[serde(default)]
+        erode: u32,
+        #[serde(default)]
+        dilate: u32,
+        #[serde(default)]
+        open: u32,
+        #[serde(default)]
+        close: u32,
+        #[serde(default)]
+        remove_small: usize,
+        #[serde(default)]
+        fill_holes: usize,
+        #[serde(default = "default_defringe_mode")]
+        defringe: SceneAssetDefringeMode,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        protect_regions: Vec<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -252,6 +276,47 @@ pub enum SceneAssetBackgroundSample {
     Edges,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SceneAssetDefringeMode {
+    None,
+    White,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SceneAssetMaskPolishOptions {
+    pub tolerance: u8,
+    pub feather: u32,
+    pub sample: SceneAssetBackgroundSample,
+    pub erode: u32,
+    pub dilate: u32,
+    pub open: u32,
+    pub close: u32,
+    pub remove_small: usize,
+    pub fill_holes: usize,
+    pub defringe: SceneAssetDefringeMode,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub protect_regions: Vec<String>,
+}
+
+impl Default for SceneAssetMaskPolishOptions {
+    fn default() -> Self {
+        Self {
+            tolerance: default_magic_tolerance(),
+            feather: 0,
+            sample: default_background_sample(),
+            erode: 0,
+            dilate: 0,
+            open: 0,
+            close: 0,
+            remove_small: 0,
+            fill_holes: 0,
+            defringe: SceneAssetDefringeMode::None,
+            protect_regions: Vec::new(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SceneAssetExportReport {
     pub source: String,
@@ -269,7 +334,17 @@ pub struct SceneAssetSelectionReport {
     pub total_pixels: usize,
     pub tolerance: u8,
     pub feather: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quality: Option<SceneAssetCutoutQualityReport>,
     pub report: SceneAssetImageReport,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetCutoutQualityReport {
+    pub protected_regions: usize,
+    pub transparent_pixels: usize,
+    pub partial_alpha_pixels: usize,
+    pub light_edge_pixels: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -691,6 +766,40 @@ pub fn make_scene_asset_background_transparent(
     )?)
 }
 
+pub fn make_scene_asset_background_transparent_polished(
+    source_path: &Path,
+    output_path: &Path,
+    options: SceneAssetMaskPolishOptions,
+    feature_map: Option<&SceneAssetFeatureMap>,
+    force: bool,
+) -> Result<SceneAssetSelectionReport, SceneAssetEditError> {
+    if output_path.exists() && !force {
+        return Err(SceneAssetEditError::OutputExists(
+            output_path.display().to_string(),
+        ));
+    }
+    let mut image = load_rgba_image(source_path)?;
+    if let Some(feature_map) = feature_map {
+        validate_scene_asset_feature_map(feature_map, image.width(), image.height())?;
+    }
+    let mask = polished_background_mask(&image, &options, feature_map)?;
+    let selected_pixels = mask.selected_count();
+    apply_transparency_mask(&mut image, mask.pixels(), options.feather);
+    defringe_scene_asset_edges(&mut image, options.defringe);
+    save_rgba_image(&image, output_path, force)?;
+    let mut report = selection_report(
+        "remove_background_polished",
+        source_path,
+        output_path,
+        selected_pixels,
+        mask.len(),
+        options.tolerance,
+        options.feather,
+    )?;
+    report.quality = Some(cutout_quality_report(&image, options.protect_regions.len()));
+    Ok(report)
+}
+
 pub fn continuity_report_for_scene_asset_frames(
     frame_paths: &[PathBuf],
     drift_tolerance_px: u32,
@@ -873,6 +982,36 @@ fn apply_operation(
             let mask = background_magic_mask(image, *tolerance, *sample);
             apply_transparency_mask(image, &mask, *feather);
         }
+        SceneAssetEditOperation::RemoveBackgroundPolished {
+            tolerance,
+            feather,
+            sample,
+            erode,
+            dilate,
+            open,
+            close,
+            remove_small,
+            fill_holes,
+            defringe,
+            protect_regions,
+        } => {
+            let options = SceneAssetMaskPolishOptions {
+                tolerance: *tolerance,
+                feather: *feather,
+                sample: *sample,
+                erode: *erode,
+                dilate: *dilate,
+                open: *open,
+                close: *close,
+                remove_small: *remove_small,
+                fill_holes: *fill_holes,
+                defringe: *defringe,
+                protect_regions: protect_regions.clone(),
+            };
+            let mask = polished_background_mask(image, &options, Some(feature_map))?;
+            apply_transparency_mask(image, mask.pixels(), *feather);
+            defringe_scene_asset_edges(image, *defringe);
+        }
     }
     Ok(())
 }
@@ -1010,6 +1149,7 @@ fn selection_report(
         total_pixels,
         tolerance,
         feather,
+        quality: None,
         report: inspect_scene_asset_image(output_path)?,
     })
 }
@@ -1049,6 +1189,276 @@ fn background_magic_mask(
     let sample_colors = background_sample_colors(image, sample);
     let seeds = edge_seed_points_matching_samples(image, &sample_colors, tolerance);
     contiguous_magic_mask_with_samples(image, &seeds, &sample_colors, tolerance)
+}
+
+fn polished_background_mask(
+    image: &RgbaImage,
+    options: &SceneAssetMaskPolishOptions,
+    feature_map: Option<&SceneAssetFeatureMap>,
+) -> Result<SceneAssetMask, SceneAssetEditError> {
+    let mut mask = SceneAssetMask::from_pixels(
+        image.width(),
+        image.height(),
+        background_magic_mask(image, options.tolerance, options.sample),
+    );
+    if options.erode > 0 {
+        mask = mask.eroded(options.erode);
+    }
+    if options.dilate > 0 {
+        mask = mask.dilated(options.dilate);
+    }
+    if options.open > 0 {
+        mask = mask.opened(options.open);
+    }
+    if options.close > 0 {
+        mask = mask.closed(options.close);
+    }
+    if options.remove_small > 0 {
+        mask = mask.without_small_components(options.remove_small);
+    }
+    if options.fill_holes > 0 {
+        mask = mask.with_filled_small_holes(options.fill_holes);
+    }
+    if let Some(feature_map) = feature_map {
+        mask.protect_feature_regions(feature_map, &options.protect_regions)?;
+    }
+    Ok(mask)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SceneAssetMask {
+    width: u32,
+    height: u32,
+    pixels: Vec<bool>,
+}
+
+impl SceneAssetMask {
+    fn from_pixels(width: u32, height: u32, pixels: Vec<bool>) -> Self {
+        debug_assert_eq!(pixels.len(), width as usize * height as usize);
+        Self {
+            width,
+            height,
+            pixels,
+        }
+    }
+
+    fn pixels(&self) -> &[bool] {
+        &self.pixels
+    }
+
+    fn len(&self) -> usize {
+        self.pixels.len()
+    }
+
+    fn selected_count(&self) -> usize {
+        selected_pixel_count(&self.pixels)
+    }
+
+    fn eroded(&self, radius: u32) -> Self {
+        if radius == 0 {
+            return self.clone();
+        }
+        let radius = radius as i32;
+        let mut pixels = vec![false; self.pixels.len()];
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let index = mask_index(self.width, x, y);
+                if !self.pixels[index] {
+                    continue;
+                }
+                let mut keep = true;
+                'neighbors: for dy in -radius..=radius {
+                    for dx in -radius..=radius {
+                        let nx = x as i32 + dx;
+                        let ny = y as i32 + dy;
+                        if nx < 0 || ny < 0 || nx >= self.width as i32 || ny >= self.height as i32 {
+                            continue;
+                        }
+                        if !self.pixels[mask_index(self.width, nx as u32, ny as u32)] {
+                            keep = false;
+                            break 'neighbors;
+                        }
+                    }
+                }
+                pixels[index] = keep;
+            }
+        }
+        Self::from_pixels(self.width, self.height, pixels)
+    }
+
+    fn dilated(&self, radius: u32) -> Self {
+        if radius == 0 {
+            return self.clone();
+        }
+        let radius = radius as i32;
+        let mut pixels = vec![false; self.pixels.len()];
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let mut selected = false;
+                'neighbors: for dy in -radius..=radius {
+                    for dx in -radius..=radius {
+                        let nx = x as i32 + dx;
+                        let ny = y as i32 + dy;
+                        if nx < 0 || ny < 0 || nx >= self.width as i32 || ny >= self.height as i32 {
+                            continue;
+                        }
+                        if self.pixels[mask_index(self.width, nx as u32, ny as u32)] {
+                            selected = true;
+                            break 'neighbors;
+                        }
+                    }
+                }
+                pixels[mask_index(self.width, x, y)] = selected;
+            }
+        }
+        Self::from_pixels(self.width, self.height, pixels)
+    }
+
+    fn opened(&self, radius: u32) -> Self {
+        self.eroded(radius).dilated(radius)
+    }
+
+    fn closed(&self, radius: u32) -> Self {
+        self.dilated(radius).eroded(radius)
+    }
+
+    fn without_small_components(&self, min_size: usize) -> Self {
+        if min_size == 0 {
+            return self.clone();
+        }
+        let mut pixels = self.pixels.clone();
+        for component in self.selected_components() {
+            if component.len() < min_size {
+                for index in component {
+                    pixels[index] = false;
+                }
+            }
+        }
+        Self::from_pixels(self.width, self.height, pixels)
+    }
+
+    fn with_filled_small_holes(&self, max_size: usize) -> Self {
+        if max_size == 0 {
+            return self.clone();
+        }
+        let mut visited = vec![false; self.pixels.len()];
+        let mut pixels = self.pixels.clone();
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let start = mask_index(self.width, x, y);
+                if self.pixels[start] || visited[start] {
+                    continue;
+                }
+                let (component, touches_edge) = self.unselected_component(start, &mut visited);
+                if !touches_edge && component.len() <= max_size {
+                    for index in component {
+                        pixels[index] = true;
+                    }
+                }
+            }
+        }
+        Self::from_pixels(self.width, self.height, pixels)
+    }
+
+    fn protect_feature_regions(
+        &mut self,
+        feature_map: &SceneAssetFeatureMap,
+        region_names: &[String],
+    ) -> Result<(), SceneAssetEditError> {
+        for region in region_names {
+            let trimmed = region.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            self.protect_rect(feature_map.pixel_region(trimmed, self.width, self.height)?);
+        }
+        Ok(())
+    }
+
+    fn protect_rect(&mut self, rect: SceneAssetPixelRect) {
+        for y in rect.y..rect.bottom().min(self.height) {
+            for x in rect.x..rect.right().min(self.width) {
+                self.pixels[mask_index(self.width, x, y)] = false;
+            }
+        }
+    }
+
+    fn selected_components(&self) -> Vec<Vec<usize>> {
+        let mut visited = vec![false; self.pixels.len()];
+        let mut components = Vec::new();
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let start = mask_index(self.width, x, y);
+                if !self.pixels[start] || visited[start] {
+                    continue;
+                }
+                let mut component = Vec::new();
+                let mut queue = VecDeque::from([start]);
+                visited[start] = true;
+                while let Some(index) = queue.pop_front() {
+                    component.push(index);
+                    let (cx, cy) = mask_xy(self.width, index);
+                    for (nx, ny) in mask_neighbors(self.width, self.height, cx, cy) {
+                        let neighbor_index = mask_index(self.width, nx, ny);
+                        if self.pixels[neighbor_index] && !visited[neighbor_index] {
+                            visited[neighbor_index] = true;
+                            queue.push_back(neighbor_index);
+                        }
+                    }
+                }
+                components.push(component);
+            }
+        }
+        components
+    }
+
+    fn unselected_component(&self, start: usize, visited: &mut [bool]) -> (Vec<usize>, bool) {
+        let mut component = Vec::new();
+        let mut touches_edge = false;
+        let mut queue = VecDeque::from([start]);
+        visited[start] = true;
+        while let Some(index) = queue.pop_front() {
+            component.push(index);
+            let (x, y) = mask_xy(self.width, index);
+            touches_edge |= x == 0 || y == 0 || x + 1 == self.width || y + 1 == self.height;
+            for (nx, ny) in mask_neighbors(self.width, self.height, x, y) {
+                let neighbor_index = mask_index(self.width, nx, ny);
+                if !self.pixels[neighbor_index] && !visited[neighbor_index] {
+                    visited[neighbor_index] = true;
+                    queue.push_back(neighbor_index);
+                }
+            }
+        }
+        (component, touches_edge)
+    }
+}
+
+fn mask_index(width: u32, x: u32, y: u32) -> usize {
+    y as usize * width as usize + x as usize
+}
+
+fn mask_xy(width: u32, index: usize) -> (u32, u32) {
+    (
+        (index % width as usize) as u32,
+        (index / width as usize) as u32,
+    )
+}
+
+fn mask_neighbors(width: u32, height: u32, x: u32, y: u32) -> Vec<(u32, u32)> {
+    let mut neighbors = Vec::with_capacity(4);
+    if x > 0 {
+        neighbors.push((x - 1, y));
+    }
+    if y > 0 {
+        neighbors.push((x, y - 1));
+    }
+    if x + 1 < width {
+        neighbors.push((x + 1, y));
+    }
+    if y + 1 < height {
+        neighbors.push((x, y + 1));
+    }
+    neighbors
 }
 
 fn background_sample_colors(
@@ -1217,6 +1627,126 @@ fn apply_transparency_mask(image: &mut RgbaImage, mask: &[bool], feather: u32) {
                 pixel[3] = (pixel[3] as f32 * factor).round().clamp(0.0, 255.0) as u8;
             }
         }
+    }
+}
+
+fn defringe_scene_asset_edges(image: &mut RgbaImage, mode: SceneAssetDefringeMode) {
+    if mode == SceneAssetDefringeMode::None {
+        return;
+    }
+    let source = image.clone();
+    for y in 0..source.height() {
+        for x in 0..source.width() {
+            let pixel = *source.get_pixel(x, y);
+            if pixel[3] == 0
+                || !is_light_fringe_pixel(pixel)
+                || !has_low_alpha_neighbor(&source, x, y, 2)
+            {
+                continue;
+            }
+            let Some(replacement) = nearby_foreground_median(&source, x, y, 4) else {
+                continue;
+            };
+            let output = image.get_pixel_mut(x, y);
+            for channel in 0..3 {
+                output[channel] = lerp(output[channel] as f32, replacement[channel] as f32, 0.75)
+                    .round()
+                    .clamp(0.0, 255.0) as u8;
+            }
+        }
+    }
+}
+
+fn nearby_foreground_median(image: &RgbaImage, x: u32, y: u32, radius: u32) -> Option<[u8; 3]> {
+    let radius = radius as i32;
+    let mut colors = Vec::new();
+    for dy in -radius..=radius {
+        for dx in -radius..=radius {
+            let nx = x as i32 + dx;
+            let ny = y as i32 + dy;
+            if nx < 0 || ny < 0 || nx >= image.width() as i32 || ny >= image.height() as i32 {
+                continue;
+            }
+            let pixel = *image.get_pixel(nx as u32, ny as u32);
+            if pixel[3] >= 220 && !is_light_fringe_pixel(pixel) {
+                colors.push([pixel[0], pixel[1], pixel[2]]);
+            }
+        }
+    }
+    if colors.is_empty() {
+        return None;
+    }
+    Some([
+        median_channel(&colors, 0),
+        median_channel(&colors, 1),
+        median_channel(&colors, 2),
+    ])
+}
+
+fn median_channel(colors: &[[u8; 3]], channel: usize) -> u8 {
+    let mut values = colors
+        .iter()
+        .map(|color| color[channel])
+        .collect::<Vec<_>>();
+    values.sort_unstable();
+    values[values.len() / 2]
+}
+
+fn has_low_alpha_neighbor(image: &RgbaImage, x: u32, y: u32, radius: u32) -> bool {
+    let radius = radius as i32;
+    for dy in -radius..=radius {
+        for dx in -radius..=radius {
+            if dx == 0 && dy == 0 {
+                continue;
+            }
+            let nx = x as i32 + dx;
+            let ny = y as i32 + dy;
+            if nx < 0 || ny < 0 || nx >= image.width() as i32 || ny >= image.height() as i32 {
+                continue;
+            }
+            if image.get_pixel(nx as u32, ny as u32)[3] < 32 {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn is_light_fringe_pixel(pixel: Rgba<u8>) -> bool {
+    let min = pixel[0].min(pixel[1]).min(pixel[2]);
+    let max = pixel[0].max(pixel[1]).max(pixel[2]);
+    let average = (pixel[0] as u16 + pixel[1] as u16 + pixel[2] as u16) / 3;
+    min >= 200 && average >= 220 && max.saturating_sub(min) <= 60
+}
+
+fn cutout_quality_report(
+    image: &RgbaImage,
+    protected_regions: usize,
+) -> SceneAssetCutoutQualityReport {
+    let mut transparent_pixels = 0;
+    let mut partial_alpha_pixels = 0;
+    let mut light_edge_pixels = 0;
+    for y in 0..image.height() {
+        for x in 0..image.width() {
+            let pixel = *image.get_pixel(x, y);
+            if pixel[3] == 0 {
+                transparent_pixels += 1;
+            } else if pixel[3] < 255 {
+                partial_alpha_pixels += 1;
+            }
+            if pixel[3] > 0
+                && has_low_alpha_neighbor(image, x, y, 2)
+                && is_light_fringe_pixel(pixel)
+            {
+                light_edge_pixels += 1;
+            }
+        }
+    }
+    SceneAssetCutoutQualityReport {
+        protected_regions,
+        transparent_pixels,
+        partial_alpha_pixels,
+        light_edge_pixels,
     }
 }
 
@@ -1637,6 +2167,10 @@ fn default_background_sample() -> SceneAssetBackgroundSample {
     SceneAssetBackgroundSample::Corners
 }
 
+fn default_defringe_mode() -> SceneAssetDefringeMode {
+    SceneAssetDefringeMode::None
+}
+
 fn default_true() -> bool {
     true
 }
@@ -1975,5 +2509,128 @@ mod tests {
         assert_equal!(report.selected_pixels, 24);
         assert_equal!(edited.get_pixel(3, 3)[3], 0);
         assert_equal!(edited.get_pixel(12, 3)[3], 0);
+    }
+
+    #[test]
+    fn mask_morphology_grows_shrinks_opens_and_closes_selection() {
+        let mut pixels = vec![false; 25];
+        pixels[mask_index(5, 2, 2)] = true;
+        let mask = SceneAssetMask::from_pixels(5, 5, pixels);
+
+        let dilated = mask.dilated(1);
+        assert_equal!(dilated.selected_count(), 9);
+        assert!(dilated.pixels()[mask_index(5, 1, 1)]);
+        assert!(dilated.pixels()[mask_index(5, 3, 3)]);
+
+        let eroded = dilated.eroded(1);
+        assert_equal!(eroded.selected_count(), 1);
+        assert!(eroded.pixels()[mask_index(5, 2, 2)]);
+
+        let mut noisy = dilated.clone();
+        noisy.pixels[mask_index(5, 0, 0)] = true;
+        let opened = noisy.opened(1);
+        assert!(!opened.pixels()[mask_index(5, 0, 0)]);
+        assert!(opened.pixels()[mask_index(5, 2, 2)]);
+
+        let mut holed = vec![true; 25];
+        holed[mask_index(5, 2, 2)] = false;
+        let closed = SceneAssetMask::from_pixels(5, 5, holed).closed(1);
+        assert!(closed.pixels()[mask_index(5, 2, 2)]);
+    }
+
+    #[test]
+    fn mask_component_cleanup_removes_noise_and_fills_holes() {
+        let mut pixels = vec![false; 49];
+        for y in 1..6 {
+            for x in 1..6 {
+                pixels[mask_index(7, x, y)] = true;
+            }
+        }
+        pixels[mask_index(7, 3, 3)] = false;
+        pixels[mask_index(7, 0, 0)] = true;
+        let mask = SceneAssetMask::from_pixels(7, 7, pixels)
+            .without_small_components(2)
+            .with_filled_small_holes(1);
+
+        assert!(!mask.pixels()[mask_index(7, 0, 0)]);
+        assert!(mask.pixels()[mask_index(7, 3, 3)]);
+    }
+
+    #[test]
+    fn feathered_mask_creates_partial_alpha_at_selection_edge() {
+        let mut image = ImageBuffer::from_pixel(3, 3, Rgba([80u8, 40, 120, 255]));
+        let mut mask = vec![false; 9];
+        mask[pixel_index(&image, 1, 1)] = true;
+
+        apply_transparency_mask(&mut image, &mask, 1);
+
+        assert_equal!(image.get_pixel(1, 1)[3], 0);
+        assert!(image.get_pixel(0, 1)[3] > 0);
+        assert!(image.get_pixel(0, 1)[3] < 255);
+    }
+
+    #[test]
+    fn polished_background_protects_feature_map_regions() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join("source.png");
+        let output = dir.path().join("transparent.png");
+        let mut image = ImageBuffer::from_pixel(8, 8, Rgba([255u8, 255, 255, 255]));
+        for y in 3..5 {
+            for x in 3..5 {
+                image.put_pixel(x, y, Rgba([250u8, 250, 250, 255]));
+            }
+        }
+        image.save(&source).unwrap();
+        let mut regions = BTreeMap::new();
+        regions.insert(
+            "face".to_string(),
+            SceneAssetNormalizedRect {
+                x: 0.375,
+                y: 0.375,
+                w: 0.25,
+                h: 0.25,
+            },
+        );
+        let feature_map = SceneAssetFeatureMap {
+            feature_map_version: 1,
+            character: "kiki".to_string(),
+            base: "source.png".to_string(),
+            regions,
+            anchors: BTreeMap::new(),
+        };
+
+        let report = make_scene_asset_background_transparent_polished(
+            &source,
+            &output,
+            SceneAssetMaskPolishOptions {
+                tolerance: 10,
+                protect_regions: vec!["face".to_string()],
+                ..SceneAssetMaskPolishOptions::default()
+            },
+            Some(&feature_map),
+            false,
+        )
+        .unwrap();
+
+        let edited = load_rgba_image(&output).unwrap();
+        assert_equal!(edited.get_pixel(0, 0)[3], 0);
+        assert_equal!(edited.get_pixel(3, 3)[3], 255);
+        assert_equal!(report.quality.unwrap().protected_regions, 1);
+    }
+
+    #[test]
+    fn defringe_recolors_light_edge_without_changing_alpha() {
+        let mut image = ImageBuffer::from_pixel(5, 5, Rgba([0u8, 0, 0, 0]));
+        image.put_pixel(2, 2, Rgba([170u8, 40, 60, 255]));
+        image.put_pixel(1, 2, Rgba([245u8, 245, 245, 200]));
+        let alpha_before = image.get_pixel(1, 2)[3];
+
+        defringe_scene_asset_edges(&mut image, SceneAssetDefringeMode::White);
+
+        let edited = image.get_pixel(1, 2);
+        assert_equal!(edited[3], alpha_before);
+        assert!(edited[0] < 245);
+        assert!(edited[1] < 245);
+        assert!(edited[2] < 245);
     }
 }

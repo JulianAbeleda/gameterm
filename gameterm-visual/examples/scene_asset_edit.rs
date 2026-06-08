@@ -3,8 +3,9 @@ use gameterm_visual::{
     export_scene_asset_source_images, generate_scene_asset_animation,
     generate_scene_asset_expression, inspect_scene_asset_image, load_scene_asset_feature_map,
     load_scene_asset_recipe_book, magic_erase_scene_asset_image,
-    make_scene_asset_background_transparent, validate_scene_asset_feature_map,
-    write_scene_asset_json, SceneAssetBackgroundSample, SceneAssetNormalizedPoint,
+    make_scene_asset_background_transparent, make_scene_asset_background_transparent_polished,
+    validate_scene_asset_feature_map, write_scene_asset_json, SceneAssetBackgroundSample,
+    SceneAssetDefringeMode, SceneAssetMaskPolishOptions, SceneAssetNormalizedPoint,
 };
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -23,10 +24,19 @@ struct CliArgs {
     output_source_root: Option<PathBuf>,
     source: Option<PathBuf>,
     source_id: Option<String>,
+    protect: Option<PathBuf>,
+    protect_regions: Option<String>,
     character: Option<String>,
     expressions: Option<String>,
     tolerance: Option<u8>,
     feather: Option<u32>,
+    erode: Option<u32>,
+    dilate: Option<u32>,
+    open: Option<u32>,
+    close: Option<u32>,
+    remove_small: Option<usize>,
+    fill_holes: Option<usize>,
+    defringe: Option<SceneAssetDefringeMode>,
     seed_x: Option<f32>,
     seed_y: Option<f32>,
     sample: Option<SceneAssetBackgroundSample>,
@@ -45,6 +55,7 @@ fn usage() {
   cargo run -p gameterm-visual --example scene_asset_edit -- expression --base IMAGE --feature-map PATH --recipe PATH --expression NAME --output PATH [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- animation --base IMAGE --feature-map PATH --recipe PATH --animation NAME --output-dir DIR [--character NAME] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- remove-background --source IMAGE --output PATH [--tolerance N] [--feather N] [--sample corners|edges] [--force]
+  cargo run -p gameterm-visual --example scene_asset_edit -- remove-background-polished --source IMAGE --output PATH [--tolerance N] [--sample corners|edges] [--erode N] [--dilate N] [--open N] [--close N] [--remove-small N] [--fill-holes N] [--feather N] [--defringe none|white] [--protect FEATURE_MAP] [--protect-regions CSV] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- magic-erase --source IMAGE --output PATH --seed-x N --seed-y N [--tolerance N] [--feather N] [--global] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- continuity FRAME... [--pretty]
   cargo run -p gameterm-visual --example scene_asset_edit -- export-source --source IMAGE --output-source-root DIR --source-id ID --character NAME --expressions CSV [--force]
@@ -61,10 +72,19 @@ Options:
   --output-source-root PATH  Source-root layout used by scene_vn_asset_intake.
   --source PATH              Source image for export-source.
   --source-id ID             Catalog source directory.
+  --protect PATH             Feature-map JSON used to protect foreground regions.
+  --protect-regions CSV      Feature region names to subtract from the erase mask.
   --character NAME           Character id. Default: kiki.
   --expressions CSV          Expression names for export-source.
   --tolerance N              RGB channel tolerance for magic selection. Default: 24.
   --feather N                Pixel feather radius after selection. Default: 0.
+  --erode N                  Shrink selected background mask by N pixels.
+  --dilate N                 Grow selected background mask by N pixels.
+  --open N                   Remove isolated selected mask noise.
+  --close N                  Fill small unselected gaps in the selected mask.
+  --remove-small N           Drop selected components smaller than N pixels.
+  --fill-holes N             Fill unselected holes up to N pixels.
+  --defringe none|white      Recolor light edge pixels after alpha masking.
   --seed-x N                 Normalized magic-erase seed x, 0..1.
   --seed-y N                 Normalized magic-erase seed y, 0..1.
   --sample corners|edges     Background samples. Default: corners.
@@ -92,6 +112,7 @@ fn main() {
         Some("expression") => run_expression(args),
         Some("animation") => run_animation(args),
         Some("remove-background") => run_remove_background(args),
+        Some("remove-background-polished") => run_remove_background_polished(args),
         Some("magic-erase") => run_magic_erase(args),
         Some("continuity") => run_continuity(args),
         Some("export-source") => run_export_source(args),
@@ -202,6 +223,39 @@ fn run_remove_background(args: CliArgs) -> Result<(), String> {
     write_json(None, &report, args.pretty, true)
 }
 
+fn run_remove_background_polished(args: CliArgs) -> Result<(), String> {
+    let source = required_path(args.source, "--source")?;
+    let output = required_path(args.output, "--output")?;
+    let protect_map_path = args.protect.or(args.feature_map);
+    let feature_map = protect_map_path
+        .as_deref()
+        .map(load_scene_asset_feature_map)
+        .transpose()
+        .map_err(|err| err.to_string())?;
+    let options = SceneAssetMaskPolishOptions {
+        tolerance: args.tolerance.unwrap_or(24),
+        feather: args.feather.unwrap_or(0),
+        sample: args.sample.unwrap_or(SceneAssetBackgroundSample::Corners),
+        erode: args.erode.unwrap_or(0),
+        dilate: args.dilate.unwrap_or(0),
+        open: args.open.unwrap_or(0),
+        close: args.close.unwrap_or(0),
+        remove_small: args.remove_small.unwrap_or(0),
+        fill_holes: args.fill_holes.unwrap_or(0),
+        defringe: args.defringe.unwrap_or(SceneAssetDefringeMode::None),
+        protect_regions: csv_values(args.protect_regions.as_deref()),
+    };
+    let report = make_scene_asset_background_transparent_polished(
+        &source,
+        &output,
+        options,
+        feature_map.as_ref(),
+        args.force,
+    )
+    .map_err(|err| err.to_string())?;
+    write_json(None, &report, args.pretty, true)
+}
+
 fn run_magic_erase(args: CliArgs) -> Result<(), String> {
     let source = required_path(args.source, "--source")?;
     let output = required_path(args.output, "--output")?;
@@ -284,10 +338,25 @@ fn parse_args() -> Result<CliArgs, String> {
             }
             "--source" => parsed.source = Some(next_path(&mut args, "--source")?),
             "--source-id" => parsed.source_id = Some(next_text(&mut args, "--source-id")?),
+            "--protect" => parsed.protect = Some(next_path(&mut args, "--protect")?),
+            "--protect-regions" => {
+                parsed.protect_regions = Some(next_text(&mut args, "--protect-regions")?)
+            }
             "--character" => parsed.character = Some(next_text(&mut args, "--character")?),
             "--expressions" => parsed.expressions = Some(next_text(&mut args, "--expressions")?),
             "--tolerance" => parsed.tolerance = Some(next_parse(&mut args, "--tolerance")?),
             "--feather" => parsed.feather = Some(next_parse(&mut args, "--feather")?),
+            "--erode" => parsed.erode = Some(next_parse(&mut args, "--erode")?),
+            "--dilate" => parsed.dilate = Some(next_parse(&mut args, "--dilate")?),
+            "--open" => parsed.open = Some(next_parse(&mut args, "--open")?),
+            "--close" => parsed.close = Some(next_parse(&mut args, "--close")?),
+            "--remove-small" => {
+                parsed.remove_small = Some(next_parse(&mut args, "--remove-small")?)
+            }
+            "--fill-holes" => parsed.fill_holes = Some(next_parse(&mut args, "--fill-holes")?),
+            "--defringe" => {
+                parsed.defringe = Some(parse_defringe(&next_text(&mut args, "--defringe")?)?)
+            }
             "--seed-x" => parsed.seed_x = Some(next_parse(&mut args, "--seed-x")?),
             "--seed-y" => parsed.seed_y = Some(next_parse(&mut args, "--seed-y")?),
             "--sample" => parsed.sample = Some(parse_sample(&next_text(&mut args, "--sample")?)?),
@@ -355,6 +424,26 @@ fn parse_sample(value: &str) -> Result<SceneAssetBackgroundSample, String> {
             "--sample value `{value}` is invalid; expected corners or edges"
         )),
     }
+}
+
+fn parse_defringe(value: &str) -> Result<SceneAssetDefringeMode, String> {
+    match value {
+        "none" => Ok(SceneAssetDefringeMode::None),
+        "white" => Ok(SceneAssetDefringeMode::White),
+        _ => Err(format!(
+            "--defringe value `{value}` is invalid; expected none or white"
+        )),
+    }
+}
+
+fn csv_values(value: Option<&str>) -> Vec<String> {
+    value
+        .unwrap_or("")
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+        .collect()
 }
 
 fn required_path(value: Option<PathBuf>, label: &str) -> Result<PathBuf, String> {

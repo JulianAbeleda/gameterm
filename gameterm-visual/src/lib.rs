@@ -27,14 +27,15 @@ pub use asset_edit::{
     export_scene_asset_source_images, generate_scene_asset_animation,
     generate_scene_asset_expression, inspect_scene_asset_image, load_scene_asset_feature_map,
     load_scene_asset_recipe_book, magic_erase_scene_asset_image,
-    make_scene_asset_background_transparent, validate_scene_asset_feature_map,
-    write_scene_asset_json, SceneAssetAnimationFrame, SceneAssetAnimationOutput,
-    SceneAssetAnimationRecipe, SceneAssetBackgroundSample, SceneAssetContinuityCheck,
-    SceneAssetContinuityReport, SceneAssetContinuityStatus, SceneAssetDimensions,
+    make_scene_asset_background_transparent, make_scene_asset_background_transparent_polished,
+    validate_scene_asset_feature_map, write_scene_asset_json, SceneAssetAnimationFrame,
+    SceneAssetAnimationOutput, SceneAssetAnimationRecipe, SceneAssetBackgroundSample,
+    SceneAssetContinuityCheck, SceneAssetContinuityReport, SceneAssetContinuityStatus,
+    SceneAssetCutoutQualityReport, SceneAssetDefringeMode, SceneAssetDimensions,
     SceneAssetEditError, SceneAssetEditOperation, SceneAssetExportReport,
     SceneAssetExpressionOutput, SceneAssetFeatureMap, SceneAssetImageReport,
-    SceneAssetNormalizedPoint, SceneAssetNormalizedRect, SceneAssetPixelRect, SceneAssetRecipeBook,
-    SceneAssetSelectionReport,
+    SceneAssetMaskPolishOptions, SceneAssetNormalizedPoint, SceneAssetNormalizedRect,
+    SceneAssetPixelRect, SceneAssetRecipeBook, SceneAssetSelectionReport,
 };
 #[cfg(test)]
 pub(crate) use compose_state::VisualComposePhase;
