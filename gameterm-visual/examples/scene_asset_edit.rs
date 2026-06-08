@@ -5,9 +5,10 @@ use gameterm_visual::{
     generate_scene_asset_animation, generate_scene_asset_expression, inspect_scene_asset_image,
     load_scene_asset_feature_map, load_scene_asset_recipe_book, magic_erase_add_scene_asset_image,
     magic_erase_scene_asset_image, make_scene_asset_background_transparent,
-    make_scene_asset_background_transparent_polished, validate_scene_asset_feature_map,
-    write_scene_asset_json, SceneAssetBackgroundSample, SceneAssetDefringeMode,
-    SceneAssetHairCleanupMode, SceneAssetMaskPolishOptions, SceneAssetNormalizedPoint,
+    make_scene_asset_background_transparent_polished, restore_scene_asset_from_source,
+    validate_scene_asset_feature_map, write_scene_asset_json, SceneAssetBackgroundSample,
+    SceneAssetDefringeMode, SceneAssetHairCleanupMode, SceneAssetMaskPolishOptions,
+    SceneAssetNormalizedPoint, SceneAssetRestoreFilter, SceneAssetRestoreOptions,
 };
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -22,12 +23,15 @@ struct CliArgs {
     expression: Option<String>,
     animation: Option<String>,
     output: Option<PathBuf>,
+    cutout: Option<PathBuf>,
     output_dir: Option<PathBuf>,
     output_source_root: Option<PathBuf>,
     source: Option<PathBuf>,
     source_id: Option<String>,
     protect: Option<PathBuf>,
     protect_regions: Option<String>,
+    restore_regions: Option<String>,
+    restore_filter: Option<SceneAssetRestoreFilter>,
     character: Option<String>,
     expressions: Option<String>,
     tolerance: Option<u8>,
@@ -48,6 +52,7 @@ struct CliArgs {
     seed_x: Option<f32>,
     seed_y: Option<f32>,
     seeds: Vec<SceneAssetNormalizedPoint>,
+    polygons: Vec<Vec<SceneAssetNormalizedPoint>>,
     sample: Option<SceneAssetBackgroundSample>,
     global: bool,
     frames: Vec<PathBuf>,
@@ -70,6 +75,7 @@ fn usage() {
   cargo run -p gameterm-visual --example scene_asset_edit -- magic-erase-add --source IMAGE --output PATH --seed X,Y [--seed X,Y ...] [--tolerance N] [--erode N] [--dilate N] [--open N] [--close N] [--remove-small N] [--fill-holes N] [--feather N] [--defringe none|white] [--protect FEATURE_MAP] [--protect-regions CSV] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- channel-matte-erase --source IMAGE --output PATH [--threshold N] [--neutrality N] [--erode N] [--dilate N] [--open N] [--close N] [--remove-small N] [--fill-holes N] [--feather N] [--defringe none|white] [--protect FEATURE_MAP] [--protect-regions CSV] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- hair-cleanup --source IMAGE --output PATH [--mode decontaminate] [--radius N] [--strength N] [--protect FEATURE_MAP] [--hair-region NAME] [--force]
+  cargo run -p gameterm-visual --example scene_asset_edit -- restore-from-source --base IMAGE --cutout IMAGE --output PATH [--feature-map PATH] [--restore-regions CSV] [--polygon X,Y;X,Y;X,Y] [--restore-filter all|non-background] [--tolerance N] [--sample corners|edges] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- continuity FRAME... [--pretty]
   cargo run -p gameterm-visual --example scene_asset_edit -- export-source --source IMAGE --output-source-root DIR --source-id ID --character NAME --expressions CSV [--force]
 
@@ -81,12 +87,16 @@ Options:
   --expression NAME          Expression to generate.
   --animation NAME           Animation to generate.
   --output PATH              Output JSON or PNG path.
+  --cutout PATH              Damaged transparent cutout for restore-from-source.
   --output-dir PATH          Output directory for generated animation frames.
   --output-source-root PATH  Source-root layout used by scene_vn_asset_intake.
   --source PATH              Source image for export-source.
   --source-id ID             Catalog source directory.
   --protect PATH             Feature-map JSON used to protect foreground regions.
   --protect-regions CSV      Feature region names to subtract from the erase mask.
+  --restore-regions CSV      Feature region names to copy from base into cutout.
+  --restore-filter all|non-background
+                              Filter copied source pixels. Default: all.
   --character NAME           Character id. Default: kiki.
   --expressions CSV          Expression names for export-source.
   --tolerance N              RGB channel tolerance for magic selection. Default: 24.
@@ -107,6 +117,7 @@ Options:
   --seed-x N                 Normalized magic-erase seed x, 0..1.
   --seed-y N                 Normalized magic-erase seed y, 0..1.
   --seed X,Y                 Repeated normalized seed for magic-erase-add.
+  --polygon X,Y;X,Y;X,Y      Repeated normalized polygon for restore-from-source.
   --sample corners|edges     Background samples. Default: corners.
   --global                   Select all matching pixels instead of contiguous seed fill.
   --pretty                   Pretty-print JSON.
@@ -138,6 +149,7 @@ fn main() {
         Some("magic-erase-add") => run_magic_erase_add(args),
         Some("channel-matte-erase") => run_channel_matte_erase(args),
         Some("hair-cleanup") => run_hair_cleanup(args),
+        Some("restore-from-source") => run_restore_from_source(args),
         Some("continuity") => run_continuity(args),
         Some("export-source") => run_export_source(args),
         Some(command) => Err(format!("unknown command: {command}")),
@@ -357,6 +369,29 @@ fn run_hair_cleanup(args: CliArgs) -> Result<(), String> {
     write_json(None, &report, args.pretty, true)
 }
 
+fn run_restore_from_source(args: CliArgs) -> Result<(), String> {
+    let base = required_path(args.base.clone(), "--base")?;
+    let cutout = required_path(args.cutout.clone(), "--cutout")?;
+    let output = required_path(args.output.clone(), "--output")?;
+    let feature_map = load_optional_protect_map(&args)?;
+    let report = restore_scene_asset_from_source(
+        &base,
+        &cutout,
+        &output,
+        SceneAssetRestoreOptions {
+            regions: csv_values(args.restore_regions.as_deref()),
+            polygons: args.polygons.clone(),
+            filter: args.restore_filter.unwrap_or(SceneAssetRestoreFilter::All),
+            tolerance: args.tolerance.unwrap_or(24),
+            sample: args.sample.unwrap_or(SceneAssetBackgroundSample::Corners),
+        },
+        feature_map.as_ref(),
+        args.force,
+    )
+    .map_err(|err| err.to_string())?;
+    write_json(None, &report, args.pretty, true)
+}
+
 fn load_optional_protect_map(
     args: &CliArgs,
 ) -> Result<Option<gameterm_visual::SceneAssetFeatureMap>, String> {
@@ -435,6 +470,7 @@ fn parse_args() -> Result<CliArgs, String> {
             "--expression" => parsed.expression = Some(next_text(&mut args, "--expression")?),
             "--animation" => parsed.animation = Some(next_text(&mut args, "--animation")?),
             "--output" | "-o" => parsed.output = Some(next_path(&mut args, "--output")?),
+            "--cutout" => parsed.cutout = Some(next_path(&mut args, "--cutout")?),
             "--output-dir" => parsed.output_dir = Some(next_path(&mut args, "--output-dir")?),
             "--output-source-root" => {
                 parsed.output_source_root = Some(next_path(&mut args, "--output-source-root")?)
@@ -444,6 +480,15 @@ fn parse_args() -> Result<CliArgs, String> {
             "--protect" => parsed.protect = Some(next_path(&mut args, "--protect")?),
             "--protect-regions" => {
                 parsed.protect_regions = Some(next_text(&mut args, "--protect-regions")?)
+            }
+            "--restore-regions" => {
+                parsed.restore_regions = Some(next_text(&mut args, "--restore-regions")?)
+            }
+            "--restore-filter" => {
+                parsed.restore_filter = Some(parse_restore_filter(&next_text(
+                    &mut args,
+                    "--restore-filter",
+                )?)?)
             }
             "--character" => parsed.character = Some(next_text(&mut args, "--character")?),
             "--expressions" => parsed.expressions = Some(next_text(&mut args, "--expressions")?),
@@ -471,6 +516,9 @@ fn parse_args() -> Result<CliArgs, String> {
             "--seed" => parsed
                 .seeds
                 .push(parse_seed(&next_text(&mut args, "--seed")?)?),
+            "--polygon" => parsed
+                .polygons
+                .push(parse_polygon(&next_text(&mut args, "--polygon")?)?),
             "--sample" => parsed.sample = Some(parse_sample(&next_text(&mut args, "--sample")?)?),
             "--global" => parsed.global = true,
             "--pretty" => parsed.pretty = true,
@@ -557,6 +605,16 @@ fn parse_hair_mode(value: &str) -> Result<SceneAssetHairCleanupMode, String> {
     }
 }
 
+fn parse_restore_filter(value: &str) -> Result<SceneAssetRestoreFilter, String> {
+    match value {
+        "all" => Ok(SceneAssetRestoreFilter::All),
+        "non-background" => Ok(SceneAssetRestoreFilter::NonBackground),
+        _ => Err(format!(
+            "--restore-filter value `{value}` is invalid; expected all or non-background"
+        )),
+    }
+}
+
 fn parse_seed(value: &str) -> Result<SceneAssetNormalizedPoint, String> {
     let (x, y) = value
         .split_once(',')
@@ -570,6 +628,19 @@ fn parse_seed(value: &str) -> Result<SceneAssetNormalizedPoint, String> {
         .parse::<f32>()
         .map_err(|err| format!("--seed y value `{y}` is invalid: {err}"))?;
     Ok(SceneAssetNormalizedPoint { x, y })
+}
+
+fn parse_polygon(value: &str) -> Result<Vec<SceneAssetNormalizedPoint>, String> {
+    let points = value
+        .split(';')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(parse_seed)
+        .collect::<Result<Vec<_>, _>>()?;
+    if points.len() < 3 {
+        return Err("--polygon requires at least three X,Y points".to_string());
+    }
+    Ok(points)
 }
 
 fn csv_values(value: Option<&str>) -> Vec<String> {

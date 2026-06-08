@@ -305,6 +305,19 @@ pub enum SceneAssetEditOperation {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         region: Option<String>,
     },
+    RestoreFromSource {
+        path: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        regions: Vec<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        polygons: Vec<Vec<SceneAssetNormalizedPoint>>,
+        #[serde(default = "default_restore_filter")]
+        filter: SceneAssetRestoreFilter,
+        #[serde(default = "default_magic_tolerance")]
+        tolerance: u8,
+        #[serde(default = "default_background_sample")]
+        sample: SceneAssetBackgroundSample,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -368,6 +381,13 @@ pub enum SceneAssetDefringeMode {
 #[serde(rename_all = "snake_case")]
 pub enum SceneAssetHairCleanupMode {
     Decontaminate,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SceneAssetRestoreFilter {
+    All,
+    NonBackground,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -444,6 +464,40 @@ pub struct SceneAssetHairCleanupReport {
     pub strength: f32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub region: Option<String>,
+    pub report: SceneAssetImageReport,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetRestoreOptions {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub regions: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub polygons: Vec<Vec<SceneAssetNormalizedPoint>>,
+    pub filter: SceneAssetRestoreFilter,
+    pub tolerance: u8,
+    pub sample: SceneAssetBackgroundSample,
+}
+
+impl Default for SceneAssetRestoreOptions {
+    fn default() -> Self {
+        Self {
+            regions: Vec::new(),
+            polygons: Vec::new(),
+            filter: SceneAssetRestoreFilter::All,
+            tolerance: default_magic_tolerance(),
+            sample: default_background_sample(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetRestoreReport {
+    pub operation: String,
+    pub base: String,
+    pub cutout: String,
+    pub output_path: String,
+    pub restored_pixels: usize,
+    pub filter: SceneAssetRestoreFilter,
     pub report: SceneAssetImageReport,
 }
 
@@ -1016,6 +1070,38 @@ pub fn cleanup_scene_asset_hair_edges(
     })
 }
 
+pub fn restore_scene_asset_from_source(
+    base_path: &Path,
+    cutout_path: &Path,
+    output_path: &Path,
+    options: SceneAssetRestoreOptions,
+    feature_map: Option<&SceneAssetFeatureMap>,
+    force: bool,
+) -> Result<SceneAssetRestoreReport, SceneAssetEditError> {
+    if output_path.exists() && !force {
+        return Err(SceneAssetEditError::OutputExists(
+            output_path.display().to_string(),
+        ));
+    }
+    let source = load_rgba_image(base_path)?;
+    let mut cutout = load_rgba_image(cutout_path)?;
+    if let Some(feature_map) = feature_map {
+        validate_scene_asset_feature_map(feature_map, cutout.width(), cutout.height())?;
+    }
+    let restored_pixels =
+        restore_pixels_from_source_image(&source, &mut cutout, &options, feature_map)?;
+    save_rgba_image(&cutout, output_path, force)?;
+    Ok(SceneAssetRestoreReport {
+        operation: "restore_from_source".to_string(),
+        base: base_path.display().to_string(),
+        cutout: cutout_path.display().to_string(),
+        output_path: output_path.display().to_string(),
+        restored_pixels,
+        filter: options.filter,
+        report: inspect_scene_asset_image(output_path)?,
+    })
+}
+
 fn write_polished_selection_output(
     operation: &str,
     source_path: &Path,
@@ -1393,6 +1479,29 @@ fn apply_operation(
                 }
             }
         }
+        SceneAssetEditOperation::RestoreFromSource {
+            path,
+            regions,
+            polygons,
+            filter,
+            tolerance,
+            sample,
+        } => {
+            let source_path = resolve_recipe_path(path, recipe_base_dir);
+            let source = load_rgba_image(&source_path)?;
+            restore_pixels_from_source_image(
+                &source,
+                image,
+                &SceneAssetRestoreOptions {
+                    regions: regions.clone(),
+                    polygons: polygons.clone(),
+                    filter: *filter,
+                    tolerance: *tolerance,
+                    sample: *sample,
+                },
+                Some(feature_map),
+            )?;
+        }
     }
     Ok(())
 }
@@ -1586,6 +1695,78 @@ fn polished_background_mask(
         options,
         feature_map,
     )
+}
+
+fn restore_pixels_from_source_image(
+    source: &RgbaImage,
+    target: &mut RgbaImage,
+    options: &SceneAssetRestoreOptions,
+    feature_map: Option<&SceneAssetFeatureMap>,
+) -> Result<usize, SceneAssetEditError> {
+    if source.dimensions() != target.dimensions() {
+        return Err(SceneAssetEditError::InvalidOperation(format!(
+            "restore source dimensions {}x{} must match cutout dimensions {}x{}",
+            source.width(),
+            source.height(),
+            target.width(),
+            target.height()
+        )));
+    }
+    let mask = restore_mask(source.width(), source.height(), options, feature_map)?;
+    let background_samples = match options.filter {
+        SceneAssetRestoreFilter::All => Vec::new(),
+        SceneAssetRestoreFilter::NonBackground => background_sample_colors(source, options.sample),
+    };
+    let mut restored_pixels = 0;
+    for y in 0..source.height() {
+        for x in 0..source.width() {
+            if !mask.pixels()[mask_index(source.width(), x, y)] {
+                continue;
+            }
+            let source_pixel = *source.get_pixel(x, y);
+            if options.filter == SceneAssetRestoreFilter::NonBackground
+                && pixel_matches_any(source_pixel, &background_samples, options.tolerance)
+            {
+                continue;
+            }
+            target.put_pixel(x, y, source_pixel);
+            restored_pixels += 1;
+        }
+    }
+    Ok(restored_pixels)
+}
+
+fn restore_mask(
+    width: u32,
+    height: u32,
+    options: &SceneAssetRestoreOptions,
+    feature_map: Option<&SceneAssetFeatureMap>,
+) -> Result<SceneAssetMask, SceneAssetEditError> {
+    if options.regions.is_empty() && options.polygons.is_empty() {
+        return Err(SceneAssetEditError::InvalidOperation(
+            "restore-from-source requires --restore-regions or --polygon".to_string(),
+        ));
+    }
+    let mut mask =
+        SceneAssetMask::from_pixels(width, height, vec![false; width as usize * height as usize]);
+    if !options.regions.is_empty() {
+        let Some(feature_map) = feature_map else {
+            return Err(SceneAssetEditError::InvalidOperation(
+                "--restore-regions requires --feature-map or --protect".to_string(),
+            ));
+        };
+        for region in &options.regions {
+            let region = region.trim();
+            if region.is_empty() {
+                continue;
+            }
+            mask.select_rect(feature_map.pixel_region(region, width, height)?);
+        }
+    }
+    for polygon in &options.polygons {
+        mask.select_polygon(polygon)?;
+    }
+    Ok(mask)
 }
 
 fn apply_mask_polish(
@@ -1827,6 +2008,33 @@ impl SceneAssetMask {
         }
     }
 
+    fn select_rect(&mut self, rect: SceneAssetPixelRect) {
+        for y in rect.y..rect.bottom().min(self.height) {
+            for x in rect.x..rect.right().min(self.width) {
+                self.pixels[mask_index(self.width, x, y)] = true;
+            }
+        }
+    }
+
+    fn select_polygon(
+        &mut self,
+        polygon: &[SceneAssetNormalizedPoint],
+    ) -> Result<(), SceneAssetEditError> {
+        validate_polygon(polygon)?;
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let point = SceneAssetNormalizedPoint {
+                    x: (x as f32 + 0.5) / self.width.max(1) as f32,
+                    y: (y as f32 + 0.5) / self.height.max(1) as f32,
+                };
+                if point_in_polygon(point, polygon) {
+                    self.pixels[mask_index(self.width, x, y)] = true;
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn selected_components(&self) -> Vec<Vec<usize>> {
         let mut visited = vec![false; self.pixels.len()];
         let mut components = Vec::new();
@@ -1903,6 +2111,48 @@ fn mask_neighbors(width: u32, height: u32, x: u32, y: u32) -> Vec<(u32, u32)> {
         neighbors.push((x, y + 1));
     }
     neighbors
+}
+
+fn validate_polygon(polygon: &[SceneAssetNormalizedPoint]) -> Result<(), SceneAssetEditError> {
+    if polygon.len() < 3 {
+        return Err(SceneAssetEditError::InvalidOperation(
+            "restore polygon requires at least three points".to_string(),
+        ));
+    }
+    for point in polygon {
+        if !point.x.is_finite()
+            || !point.y.is_finite()
+            || point.x < 0.0
+            || point.y < 0.0
+            || point.x > 1.0
+            || point.y > 1.0
+        {
+            return Err(SceneAssetEditError::InvalidOperation(
+                "restore polygon points must be finite and inside 0..1".to_string(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn point_in_polygon(
+    point: SceneAssetNormalizedPoint,
+    polygon: &[SceneAssetNormalizedPoint],
+) -> bool {
+    let mut inside = false;
+    let mut previous = polygon[polygon.len() - 1];
+    for &current in polygon {
+        let crosses_y = (current.y > point.y) != (previous.y > point.y);
+        if crosses_y {
+            let slope = (previous.x - current.x) / (previous.y - current.y);
+            let intersect_x = slope * (point.y - current.y) + current.x;
+            if point.x < intersect_x {
+                inside = !inside;
+            }
+        }
+        previous = current;
+    }
+    inside
 }
 
 fn background_sample_colors(
@@ -2653,6 +2903,10 @@ fn default_hair_cleanup_strength() -> f32 {
     0.85
 }
 
+fn default_restore_filter() -> SceneAssetRestoreFilter {
+    SceneAssetRestoreFilter::All
+}
+
 fn default_channel_matte_threshold() -> u8 {
     238
 }
@@ -3305,5 +3559,199 @@ mod tests {
         assert_equal!(edited.get_pixel(0, 0)[3], 0);
         assert_equal!(edited.get_pixel(4, 4)[3], 0);
         assert_equal!(edited.get_pixel(3, 3)[3], 255);
+    }
+
+    #[test]
+    fn restore_from_source_region_copies_base_pixels_into_cutout() {
+        let dir = tempdir().unwrap();
+        let base = dir.path().join("base.png");
+        let cutout = dir.path().join("cutout.png");
+        let output = dir.path().join("restored.png");
+        let mut base_image = ImageBuffer::from_pixel(8, 8, Rgba([255u8, 255, 255, 255]));
+        for y in 2..4 {
+            for x in 2..4 {
+                base_image.put_pixel(x, y, Rgba([30u8, 80, 220, 255]));
+            }
+        }
+        base_image.save(&base).unwrap();
+        ImageBuffer::from_pixel(8, 8, Rgba([0u8, 0, 0, 0]))
+            .save(&cutout)
+            .unwrap();
+        let mut regions = BTreeMap::new();
+        regions.insert(
+            "detail".to_string(),
+            SceneAssetNormalizedRect {
+                x: 0.25,
+                y: 0.25,
+                w: 0.25,
+                h: 0.25,
+            },
+        );
+        let feature_map = SceneAssetFeatureMap {
+            feature_map_version: 1,
+            character: "kiki".to_string(),
+            base: "base.png".to_string(),
+            regions,
+            anchors: BTreeMap::new(),
+        };
+
+        let report = restore_scene_asset_from_source(
+            &base,
+            &cutout,
+            &output,
+            SceneAssetRestoreOptions {
+                regions: vec!["detail".to_string()],
+                ..SceneAssetRestoreOptions::default()
+            },
+            Some(&feature_map),
+            false,
+        )
+        .unwrap();
+
+        let edited = load_rgba_image(&output).unwrap();
+        assert_equal!(report.restored_pixels, 4);
+        assert_equal!(*edited.get_pixel(2, 2), Rgba([30u8, 80, 220, 255]));
+        assert_equal!(edited.get_pixel(0, 0)[3], 0);
+    }
+
+    #[test]
+    fn restore_from_source_polygon_copies_traced_shape() {
+        let dir = tempdir().unwrap();
+        let base = dir.path().join("base.png");
+        let cutout = dir.path().join("cutout.png");
+        let output = dir.path().join("restored.png");
+        ImageBuffer::from_pixel(8, 8, Rgba([180u8, 60, 80, 255]))
+            .save(&base)
+            .unwrap();
+        ImageBuffer::from_pixel(8, 8, Rgba([0u8, 0, 0, 0]))
+            .save(&cutout)
+            .unwrap();
+
+        restore_scene_asset_from_source(
+            &base,
+            &cutout,
+            &output,
+            SceneAssetRestoreOptions {
+                polygons: vec![vec![
+                    SceneAssetNormalizedPoint { x: 0.0, y: 0.0 },
+                    SceneAssetNormalizedPoint { x: 0.5, y: 0.0 },
+                    SceneAssetNormalizedPoint { x: 0.5, y: 0.5 },
+                    SceneAssetNormalizedPoint { x: 0.0, y: 0.5 },
+                ]],
+                ..SceneAssetRestoreOptions::default()
+            },
+            None,
+            false,
+        )
+        .unwrap();
+
+        let edited = load_rgba_image(&output).unwrap();
+        assert_equal!(edited.get_pixel(1, 1)[3], 255);
+        assert_equal!(edited.get_pixel(6, 6)[3], 0);
+    }
+
+    #[test]
+    fn restore_from_source_non_background_filter_skips_white_pixels() {
+        let dir = tempdir().unwrap();
+        let base = dir.path().join("base.png");
+        let cutout = dir.path().join("cutout.png");
+        let output = dir.path().join("restored.png");
+        let mut base_image = ImageBuffer::from_pixel(8, 8, Rgba([255u8, 255, 255, 255]));
+        base_image.put_pixel(3, 3, Rgba([180u8, 60, 80, 255]));
+        base_image.save(&base).unwrap();
+        ImageBuffer::from_pixel(8, 8, Rgba([0u8, 0, 0, 0]))
+            .save(&cutout)
+            .unwrap();
+
+        let report = restore_scene_asset_from_source(
+            &base,
+            &cutout,
+            &output,
+            SceneAssetRestoreOptions {
+                polygons: vec![vec![
+                    SceneAssetNormalizedPoint { x: 0.0, y: 0.0 },
+                    SceneAssetNormalizedPoint { x: 1.0, y: 0.0 },
+                    SceneAssetNormalizedPoint { x: 1.0, y: 1.0 },
+                    SceneAssetNormalizedPoint { x: 0.0, y: 1.0 },
+                ]],
+                filter: SceneAssetRestoreFilter::NonBackground,
+                tolerance: 4,
+                ..SceneAssetRestoreOptions::default()
+            },
+            None,
+            false,
+        )
+        .unwrap();
+
+        let edited = load_rgba_image(&output).unwrap();
+        assert_equal!(report.restored_pixels, 1);
+        assert_equal!(edited.get_pixel(0, 0)[3], 0);
+        assert_equal!(*edited.get_pixel(3, 3), Rgba([180u8, 60, 80, 255]));
+    }
+
+    #[test]
+    fn recipe_restore_from_source_rehydrates_region() {
+        let dir = tempdir().unwrap();
+        let base = dir.path().join("base.png");
+        let cutout = dir.path().join("cutout.png");
+        let output = dir.path().join("recipe-restored.png");
+        let mut base_image = ImageBuffer::from_pixel(8, 8, Rgba([255u8, 255, 255, 255]));
+        for y in 2..4 {
+            for x in 2..4 {
+                base_image.put_pixel(x, y, Rgba([40u8, 120, 220, 255]));
+            }
+        }
+        base_image.save(&base).unwrap();
+        ImageBuffer::from_pixel(8, 8, Rgba([0u8, 0, 0, 0]))
+            .save(&cutout)
+            .unwrap();
+        let mut regions = BTreeMap::new();
+        regions.insert(
+            "detail".to_string(),
+            SceneAssetNormalizedRect {
+                x: 0.25,
+                y: 0.25,
+                w: 0.25,
+                h: 0.25,
+            },
+        );
+        let feature_map = SceneAssetFeatureMap {
+            feature_map_version: 1,
+            character: "kiki".to_string(),
+            base: "cutout.png".to_string(),
+            regions,
+            anchors: BTreeMap::new(),
+        };
+        let recipe_book = SceneAssetRecipeBook {
+            recipe_book_version: 1,
+            character: "kiki".to_string(),
+            expressions: BTreeMap::from([(
+                "restored".to_string(),
+                vec![SceneAssetEditOperation::RestoreFromSource {
+                    path: base.display().to_string(),
+                    regions: vec!["detail".to_string()],
+                    polygons: Vec::new(),
+                    filter: SceneAssetRestoreFilter::All,
+                    tolerance: 24,
+                    sample: SceneAssetBackgroundSample::Corners,
+                }],
+            )]),
+            animations: BTreeMap::new(),
+        };
+
+        generate_scene_asset_expression(
+            &cutout,
+            &feature_map,
+            &recipe_book,
+            "restored",
+            None,
+            &output,
+            false,
+        )
+        .unwrap();
+
+        let edited = load_rgba_image(&output).unwrap();
+        assert_equal!(*edited.get_pixel(2, 2), Rgba([40u8, 120, 220, 255]));
+        assert_equal!(edited.get_pixel(0, 0)[3], 0);
     }
 }
