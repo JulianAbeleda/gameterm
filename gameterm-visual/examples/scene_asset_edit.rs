@@ -5,9 +5,10 @@ use gameterm_visual::{
     generate_scene_asset_animation, generate_scene_asset_expression, inspect_scene_asset_image,
     load_scene_asset_feature_map, load_scene_asset_recipe_book, magic_erase_add_scene_asset_image,
     magic_erase_scene_asset_image, make_scene_asset_background_transparent,
-    make_scene_asset_background_transparent_polished, restore_scene_asset_from_source,
-    validate_scene_asset_feature_map, write_scene_asset_json, SceneAssetBackgroundSample,
-    SceneAssetDefringeMode, SceneAssetHairCleanupMode, SceneAssetMaskPolishOptions,
+    make_scene_asset_background_transparent_polished, preview_scene_asset_selection_mask,
+    restore_scene_asset_from_source, validate_scene_asset_feature_map, write_scene_asset_json,
+    SceneAssetBackgroundSample, SceneAssetDefringeMode, SceneAssetHairCleanupMode,
+    SceneAssetMaskPolishOptions, SceneAssetMaskPreviewMode, SceneAssetMaskPreviewOptions,
     SceneAssetNormalizedPoint, SceneAssetRestoreFilter, SceneAssetRestoreOptions,
 };
 use serde::Serialize;
@@ -30,8 +31,10 @@ struct CliArgs {
     source_id: Option<String>,
     protect: Option<PathBuf>,
     protect_regions: Option<String>,
+    within_regions: Option<String>,
     restore_regions: Option<String>,
     restore_filter: Option<SceneAssetRestoreFilter>,
+    selection_mode: Option<SceneAssetMaskPreviewMode>,
     character: Option<String>,
     expressions: Option<String>,
     tolerance: Option<u8>,
@@ -53,6 +56,7 @@ struct CliArgs {
     seed_y: Option<f32>,
     seeds: Vec<SceneAssetNormalizedPoint>,
     polygons: Vec<Vec<SceneAssetNormalizedPoint>>,
+    within_polygons: Vec<Vec<SceneAssetNormalizedPoint>>,
     sample: Option<SceneAssetBackgroundSample>,
     global: bool,
     frames: Vec<PathBuf>,
@@ -69,11 +73,12 @@ fn usage() {
   cargo run -p gameterm-visual --example scene_asset_edit -- expression --base IMAGE --feature-map PATH --recipe PATH --expression NAME --output PATH [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- animation --base IMAGE --feature-map PATH --recipe PATH --animation NAME --output-dir DIR [--character NAME] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- remove-background --source IMAGE --output PATH [--tolerance N] [--feather N] [--sample corners|edges] [--force]
-  cargo run -p gameterm-visual --example scene_asset_edit -- remove-background-polished --source IMAGE --output PATH [--tolerance N] [--sample corners|edges] [--erode N] [--dilate N] [--open N] [--close N] [--remove-small N] [--fill-holes N] [--feather N] [--defringe none|white] [--protect FEATURE_MAP] [--protect-regions CSV] [--force]
-  cargo run -p gameterm-visual --example scene_asset_edit -- color-range-erase --source IMAGE --output PATH [--tolerance N] [--sample corners|edges] [--erode N] [--dilate N] [--open N] [--close N] [--remove-small N] [--fill-holes N] [--feather N] [--defringe none|white] [--protect FEATURE_MAP] [--protect-regions CSV] [--force]
+  cargo run -p gameterm-visual --example scene_asset_edit -- remove-background-polished --source IMAGE --output PATH [--tolerance N] [--sample corners|edges] [--erode N] [--dilate N] [--open N] [--close N] [--remove-small N] [--fill-holes N] [--feather N] [--defringe none|white] [--protect FEATURE_MAP] [--protect-regions CSV] [--within-regions CSV] [--within-polygon X,Y;X,Y;X,Y] [--force]
+  cargo run -p gameterm-visual --example scene_asset_edit -- color-range-erase --source IMAGE --output PATH [--tolerance N] [--sample corners|edges] [--erode N] [--dilate N] [--open N] [--close N] [--remove-small N] [--fill-holes N] [--feather N] [--defringe none|white] [--protect FEATURE_MAP] [--protect-regions CSV] [--within-regions CSV] [--within-polygon X,Y;X,Y;X,Y] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- magic-erase --source IMAGE --output PATH --seed-x N --seed-y N [--tolerance N] [--feather N] [--global] [--force]
-  cargo run -p gameterm-visual --example scene_asset_edit -- magic-erase-add --source IMAGE --output PATH --seed X,Y [--seed X,Y ...] [--tolerance N] [--erode N] [--dilate N] [--open N] [--close N] [--remove-small N] [--fill-holes N] [--feather N] [--defringe none|white] [--protect FEATURE_MAP] [--protect-regions CSV] [--force]
-  cargo run -p gameterm-visual --example scene_asset_edit -- channel-matte-erase --source IMAGE --output PATH [--threshold N] [--neutrality N] [--erode N] [--dilate N] [--open N] [--close N] [--remove-small N] [--fill-holes N] [--feather N] [--defringe none|white] [--protect FEATURE_MAP] [--protect-regions CSV] [--force]
+  cargo run -p gameterm-visual --example scene_asset_edit -- magic-erase-add --source IMAGE --output PATH --seed X,Y [--seed X,Y ...] [--tolerance N] [--erode N] [--dilate N] [--open N] [--close N] [--remove-small N] [--fill-holes N] [--feather N] [--defringe none|white] [--protect FEATURE_MAP] [--protect-regions CSV] [--within-regions CSV] [--within-polygon X,Y;X,Y;X,Y] [--force]
+  cargo run -p gameterm-visual --example scene_asset_edit -- channel-matte-erase --source IMAGE --output PATH [--threshold N] [--neutrality N] [--erode N] [--dilate N] [--open N] [--close N] [--remove-small N] [--fill-holes N] [--feather N] [--defringe none|white] [--protect FEATURE_MAP] [--protect-regions CSV] [--within-regions CSV] [--within-polygon X,Y;X,Y;X,Y] [--force]
+  cargo run -p gameterm-visual --example scene_asset_edit -- mask-preview --source IMAGE --output PATH --selection-mode background|color-range|magic-add|channel-matte [--seed X,Y ...] [--threshold N] [--neutrality N] [--tolerance N] [--sample corners|edges] [--within-regions CSV] [--within-polygon X,Y;X,Y;X,Y] [--protect FEATURE_MAP] [--protect-regions CSV] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- hair-cleanup --source IMAGE --output PATH [--mode decontaminate] [--radius N] [--strength N] [--protect FEATURE_MAP] [--hair-region NAME] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- restore-from-source --base IMAGE --cutout IMAGE --output PATH [--feature-map PATH] [--restore-regions CSV] [--polygon X,Y;X,Y;X,Y] [--restore-filter all|non-background] [--tolerance N] [--sample corners|edges] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- continuity FRAME... [--pretty]
@@ -94,6 +99,7 @@ Options:
   --source-id ID             Catalog source directory.
   --protect PATH             Feature-map JSON used to protect foreground regions.
   --protect-regions CSV      Feature region names to subtract from the erase mask.
+  --within-regions CSV       Feature region names to bound selection masks.
   --restore-regions CSV      Feature region names to copy from base into cutout.
   --restore-filter all|non-background
                               Filter copied source pixels. Default: all.
@@ -118,6 +124,9 @@ Options:
   --seed-y N                 Normalized magic-erase seed y, 0..1.
   --seed X,Y                 Repeated normalized seed for magic-erase-add.
   --polygon X,Y;X,Y;X,Y      Repeated normalized polygon for restore-from-source.
+  --within-polygon X,Y;X,Y;X,Y
+                              Repeated normalized polygon to bound selection masks.
+  --selection-mode MODE      Mask preview mode: background, color-range, magic-add, channel-matte.
   --sample corners|edges     Background samples. Default: corners.
   --global                   Select all matching pixels instead of contiguous seed fill.
   --pretty                   Pretty-print JSON.
@@ -148,6 +157,7 @@ fn main() {
         Some("magic-erase") => run_magic_erase(args),
         Some("magic-erase-add") => run_magic_erase_add(args),
         Some("channel-matte-erase") => run_channel_matte_erase(args),
+        Some("mask-preview") => run_mask_preview(args),
         Some("hair-cleanup") => run_hair_cleanup(args),
         Some("restore-from-source") => run_restore_from_source(args),
         Some("continuity") => run_continuity(args),
@@ -350,6 +360,29 @@ fn run_channel_matte_erase(args: CliArgs) -> Result<(), String> {
     write_json(None, &report, args.pretty, true)
 }
 
+fn run_mask_preview(args: CliArgs) -> Result<(), String> {
+    let source = required_path(args.source.clone(), "--source")?;
+    let output = required_path(args.output.clone(), "--output")?;
+    let feature_map = load_optional_protect_map(&args)?;
+    let report = preview_scene_asset_selection_mask(
+        &source,
+        &output,
+        SceneAssetMaskPreviewOptions {
+            mode: args
+                .selection_mode
+                .ok_or_else(|| "--selection-mode is required".to_string())?,
+            seeds: args.seeds.clone(),
+            threshold: args.threshold.unwrap_or(238),
+            neutrality: args.neutrality.unwrap_or(28),
+            polish: mask_polish_options(&args),
+        },
+        feature_map.as_ref(),
+        args.force,
+    )
+    .map_err(|err| err.to_string())?;
+    write_json(None, &report, args.pretty, true)
+}
+
 fn run_hair_cleanup(args: CliArgs) -> Result<(), String> {
     let source = required_path(args.source.clone(), "--source")?;
     let output = required_path(args.output.clone(), "--output")?;
@@ -415,6 +448,8 @@ fn mask_polish_options(args: &CliArgs) -> SceneAssetMaskPolishOptions {
         fill_holes: args.fill_holes.unwrap_or(0),
         defringe: args.defringe.unwrap_or(SceneAssetDefringeMode::None),
         protect_regions: csv_values(args.protect_regions.as_deref()),
+        within_regions: csv_values(args.within_regions.as_deref()),
+        within_polygons: args.within_polygons.clone(),
     }
 }
 
@@ -481,6 +516,9 @@ fn parse_args() -> Result<CliArgs, String> {
             "--protect-regions" => {
                 parsed.protect_regions = Some(next_text(&mut args, "--protect-regions")?)
             }
+            "--within-regions" => {
+                parsed.within_regions = Some(next_text(&mut args, "--within-regions")?)
+            }
             "--restore-regions" => {
                 parsed.restore_regions = Some(next_text(&mut args, "--restore-regions")?)
             }
@@ -510,6 +548,12 @@ fn parse_args() -> Result<CliArgs, String> {
             "--radius" => parsed.radius = Some(next_parse(&mut args, "--radius")?),
             "--strength" => parsed.strength = Some(next_parse(&mut args, "--strength")?),
             "--mode" => parsed.mode = Some(parse_hair_mode(&next_text(&mut args, "--mode")?)?),
+            "--selection-mode" => {
+                parsed.selection_mode = Some(parse_selection_mode(&next_text(
+                    &mut args,
+                    "--selection-mode",
+                )?)?)
+            }
             "--hair-region" => parsed.hair_region = Some(next_text(&mut args, "--hair-region")?),
             "--seed-x" => parsed.seed_x = Some(next_parse(&mut args, "--seed-x")?),
             "--seed-y" => parsed.seed_y = Some(next_parse(&mut args, "--seed-y")?),
@@ -519,6 +563,9 @@ fn parse_args() -> Result<CliArgs, String> {
             "--polygon" => parsed
                 .polygons
                 .push(parse_polygon(&next_text(&mut args, "--polygon")?)?),
+            "--within-polygon" => parsed
+                .within_polygons
+                .push(parse_polygon(&next_text(&mut args, "--within-polygon")?)?),
             "--sample" => parsed.sample = Some(parse_sample(&next_text(&mut args, "--sample")?)?),
             "--global" => parsed.global = true,
             "--pretty" => parsed.pretty = true,
@@ -611,6 +658,18 @@ fn parse_restore_filter(value: &str) -> Result<SceneAssetRestoreFilter, String> 
         "non-background" => Ok(SceneAssetRestoreFilter::NonBackground),
         _ => Err(format!(
             "--restore-filter value `{value}` is invalid; expected all or non-background"
+        )),
+    }
+}
+
+fn parse_selection_mode(value: &str) -> Result<SceneAssetMaskPreviewMode, String> {
+    match value {
+        "background" => Ok(SceneAssetMaskPreviewMode::Background),
+        "color-range" => Ok(SceneAssetMaskPreviewMode::ColorRange),
+        "magic-add" => Ok(SceneAssetMaskPreviewMode::MagicAdd),
+        "channel-matte" => Ok(SceneAssetMaskPreviewMode::ChannelMatte),
+        _ => Err(format!(
+            "--selection-mode value `{value}` is invalid; expected background, color-range, magic-add, or channel-matte"
         )),
     }
 }

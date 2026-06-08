@@ -223,6 +223,10 @@ pub enum SceneAssetEditOperation {
         defringe: SceneAssetDefringeMode,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         protect_regions: Vec<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        within_regions: Vec<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        within_polygons: Vec<Vec<SceneAssetNormalizedPoint>>,
     },
     ColorRangeErase {
         #[serde(default = "default_magic_tolerance")]
@@ -247,6 +251,10 @@ pub enum SceneAssetEditOperation {
         defringe: SceneAssetDefringeMode,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         protect_regions: Vec<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        within_regions: Vec<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        within_polygons: Vec<Vec<SceneAssetNormalizedPoint>>,
     },
     MagicEraseAdd {
         seeds: Vec<SceneAssetNormalizedPoint>,
@@ -270,6 +278,10 @@ pub enum SceneAssetEditOperation {
         defringe: SceneAssetDefringeMode,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         protect_regions: Vec<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        within_regions: Vec<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        within_polygons: Vec<Vec<SceneAssetNormalizedPoint>>,
     },
     ChannelMatteErase {
         #[serde(default = "default_channel_matte_threshold")]
@@ -294,6 +306,10 @@ pub enum SceneAssetEditOperation {
         defringe: SceneAssetDefringeMode,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         protect_regions: Vec<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        within_regions: Vec<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        within_polygons: Vec<Vec<SceneAssetNormalizedPoint>>,
     },
     HairCleanup {
         #[serde(default = "default_hair_cleanup_mode")]
@@ -390,7 +406,16 @@ pub enum SceneAssetRestoreFilter {
     NonBackground,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SceneAssetMaskPreviewMode {
+    Background,
+    ColorRange,
+    MagicAdd,
+    ChannelMatte,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SceneAssetMaskPolishOptions {
     pub tolerance: u8,
     pub feather: u32,
@@ -404,6 +429,10 @@ pub struct SceneAssetMaskPolishOptions {
     pub defringe: SceneAssetDefringeMode,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub protect_regions: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub within_regions: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub within_polygons: Vec<Vec<SceneAssetNormalizedPoint>>,
 }
 
 impl Default for SceneAssetMaskPolishOptions {
@@ -420,6 +449,8 @@ impl Default for SceneAssetMaskPolishOptions {
             fill_holes: 0,
             defringe: SceneAssetDefringeMode::None,
             protect_regions: Vec::new(),
+            within_regions: Vec::new(),
+            within_polygons: Vec::new(),
         }
     }
 }
@@ -498,6 +529,29 @@ pub struct SceneAssetRestoreReport {
     pub output_path: String,
     pub restored_pixels: usize,
     pub filter: SceneAssetRestoreFilter,
+    pub report: SceneAssetImageReport,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetMaskPreviewOptions {
+    pub mode: SceneAssetMaskPreviewMode,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub seeds: Vec<SceneAssetNormalizedPoint>,
+    #[serde(default = "default_channel_matte_threshold")]
+    pub threshold: u8,
+    #[serde(default = "default_channel_matte_neutrality")]
+    pub neutrality: u8,
+    pub polish: SceneAssetMaskPolishOptions,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetMaskPreviewReport {
+    pub operation: String,
+    pub source: String,
+    pub output_path: String,
+    pub mode: SceneAssetMaskPreviewMode,
+    pub selected_pixels: usize,
+    pub total_pixels: usize,
     pub report: SceneAssetImageReport,
 }
 
@@ -1102,6 +1156,37 @@ pub fn restore_scene_asset_from_source(
     })
 }
 
+pub fn preview_scene_asset_selection_mask(
+    source_path: &Path,
+    output_path: &Path,
+    options: SceneAssetMaskPreviewOptions,
+    feature_map: Option<&SceneAssetFeatureMap>,
+    force: bool,
+) -> Result<SceneAssetMaskPreviewReport, SceneAssetEditError> {
+    if output_path.exists() && !force {
+        return Err(SceneAssetEditError::OutputExists(
+            output_path.display().to_string(),
+        ));
+    }
+    let image = load_rgba_image(source_path)?;
+    if let Some(feature_map) = feature_map {
+        validate_scene_asset_feature_map(feature_map, image.width(), image.height())?;
+    }
+    let mask = preview_selection_mask(&image, &options, feature_map)?;
+    let selected_pixels = mask.selected_count();
+    let preview = selection_mask_preview_image(&image, &mask);
+    save_rgba_image(&preview, output_path, force)?;
+    Ok(SceneAssetMaskPreviewReport {
+        operation: "mask_preview".to_string(),
+        source: source_path.display().to_string(),
+        output_path: output_path.display().to_string(),
+        mode: options.mode,
+        selected_pixels,
+        total_pixels: mask.len(),
+        report: inspect_scene_asset_image(output_path)?,
+    })
+}
+
 fn write_polished_selection_output(
     operation: &str,
     source_path: &Path,
@@ -1335,6 +1420,8 @@ fn apply_operation(
             fill_holes,
             defringe,
             protect_regions,
+            within_regions,
+            within_polygons,
         } => {
             let options = SceneAssetMaskPolishOptions {
                 tolerance: *tolerance,
@@ -1348,6 +1435,8 @@ fn apply_operation(
                 fill_holes: *fill_holes,
                 defringe: *defringe,
                 protect_regions: protect_regions.clone(),
+                within_regions: within_regions.clone(),
+                within_polygons: within_polygons.clone(),
             };
             let mask = polished_background_mask(image, &options, Some(feature_map))?;
             apply_transparency_mask(image, mask.pixels(), *feather);
@@ -1365,6 +1454,8 @@ fn apply_operation(
             fill_holes,
             defringe,
             protect_regions,
+            within_regions,
+            within_polygons,
         } => {
             let options = SceneAssetMaskPolishOptions {
                 tolerance: *tolerance,
@@ -1378,6 +1469,8 @@ fn apply_operation(
                 fill_holes: *fill_holes,
                 defringe: *defringe,
                 protect_regions: protect_regions.clone(),
+                within_regions: within_regions.clone(),
+                within_polygons: within_polygons.clone(),
             };
             let mask = apply_mask_polish(
                 SceneAssetMask::from_pixels(
@@ -1403,6 +1496,8 @@ fn apply_operation(
             fill_holes,
             defringe,
             protect_regions,
+            within_regions,
+            within_polygons,
         } => {
             let options = SceneAssetMaskPolishOptions {
                 tolerance: *tolerance,
@@ -1416,6 +1511,8 @@ fn apply_operation(
                 fill_holes: *fill_holes,
                 defringe: *defringe,
                 protect_regions: protect_regions.clone(),
+                within_regions: within_regions.clone(),
+                within_polygons: within_polygons.clone(),
             };
             let mask = apply_mask_polish(
                 multi_seed_contiguous_mask(image, seeds, *tolerance)?,
@@ -1437,6 +1534,8 @@ fn apply_operation(
             fill_holes,
             defringe,
             protect_regions,
+            within_regions,
+            within_polygons,
         } => {
             let options = SceneAssetMaskPolishOptions {
                 tolerance: default_magic_tolerance(),
@@ -1450,6 +1549,8 @@ fn apply_operation(
                 fill_holes: *fill_holes,
                 defringe: *defringe,
                 protect_regions: protect_regions.clone(),
+                within_regions: within_regions.clone(),
+                within_polygons: within_polygons.clone(),
             };
             let mask = apply_mask_polish(
                 SceneAssetMask::from_pixels(
@@ -1697,6 +1798,34 @@ fn polished_background_mask(
     )
 }
 
+fn preview_selection_mask(
+    image: &RgbaImage,
+    options: &SceneAssetMaskPreviewOptions,
+    feature_map: Option<&SceneAssetFeatureMap>,
+) -> Result<SceneAssetMask, SceneAssetEditError> {
+    let mask = match options.mode {
+        SceneAssetMaskPreviewMode::Background => SceneAssetMask::from_pixels(
+            image.width(),
+            image.height(),
+            background_magic_mask(image, options.polish.tolerance, options.polish.sample),
+        ),
+        SceneAssetMaskPreviewMode::ColorRange => SceneAssetMask::from_pixels(
+            image.width(),
+            image.height(),
+            color_range_mask(image, options.polish.tolerance, options.polish.sample),
+        ),
+        SceneAssetMaskPreviewMode::MagicAdd => {
+            multi_seed_contiguous_mask(image, &options.seeds, options.polish.tolerance)?
+        }
+        SceneAssetMaskPreviewMode::ChannelMatte => SceneAssetMask::from_pixels(
+            image.width(),
+            image.height(),
+            channel_matte_mask(image, options.threshold, options.neutrality),
+        ),
+    };
+    apply_mask_polish(mask, &options.polish, feature_map)
+}
+
 fn restore_pixels_from_source_image(
     source: &RgbaImage,
     target: &mut RgbaImage,
@@ -1792,10 +1921,69 @@ fn apply_mask_polish(
     if options.fill_holes > 0 {
         mask = mask.with_filled_small_holes(options.fill_holes);
     }
+    if !options.within_regions.is_empty() || !options.within_polygons.is_empty() {
+        let bounds = selection_bounds_mask(mask.width, mask.height, options, feature_map)?;
+        mask.intersect_pixels(bounds.pixels());
+    }
     if let Some(feature_map) = feature_map {
         mask.protect_feature_regions(feature_map, &options.protect_regions)?;
     }
     Ok(mask)
+}
+
+fn selection_bounds_mask(
+    width: u32,
+    height: u32,
+    options: &SceneAssetMaskPolishOptions,
+    feature_map: Option<&SceneAssetFeatureMap>,
+) -> Result<SceneAssetMask, SceneAssetEditError> {
+    let mut mask =
+        SceneAssetMask::from_pixels(width, height, vec![false; width as usize * height as usize]);
+    if !options.within_regions.is_empty() {
+        let Some(feature_map) = feature_map else {
+            return Err(SceneAssetEditError::InvalidOperation(
+                "--within-regions requires --feature-map or --protect".to_string(),
+            ));
+        };
+        for region in &options.within_regions {
+            let region = region.trim();
+            if region.is_empty() {
+                continue;
+            }
+            mask.select_rect(feature_map.pixel_region(region, width, height)?);
+        }
+    }
+    for polygon in &options.within_polygons {
+        mask.select_polygon(polygon)?;
+    }
+    Ok(mask)
+}
+
+fn selection_mask_preview_image(image: &RgbaImage, mask: &SceneAssetMask) -> RgbaImage {
+    let mut output = ImageBuffer::from_pixel(image.width(), image.height(), Rgba([0, 0, 0, 255]));
+    for y in 0..image.height() {
+        for x in 0..image.width() {
+            let source = *image.get_pixel(x, y);
+            let selected = mask.pixels()[mask_index(image.width(), x, y)];
+            let preview = if selected {
+                Rgba([
+                    lerp(source[0] as f32, 255.0, 0.72).round() as u8,
+                    lerp(source[1] as f32, 40.0, 0.72).round() as u8,
+                    lerp(source[2] as f32, 40.0, 0.72).round() as u8,
+                    255,
+                ])
+            } else {
+                Rgba([
+                    (source[0] as f32 * 0.35).round() as u8,
+                    (source[1] as f32 * 0.35).round() as u8,
+                    (source[2] as f32 * 0.35).round() as u8,
+                    255,
+                ])
+            };
+            output.put_pixel(x, y, preview);
+        }
+    }
+    output
 }
 
 fn color_range_mask(
@@ -1876,6 +2064,15 @@ impl SceneAssetMask {
         }
         for (target, selected) in self.pixels.iter_mut().zip(pixels.iter().copied()) {
             *target |= selected;
+        }
+    }
+
+    fn intersect_pixels(&mut self, pixels: &[bool]) {
+        if pixels.len() != self.pixels.len() {
+            return;
+        }
+        for (target, selected) in self.pixels.iter_mut().zip(pixels.iter().copied()) {
+            *target &= selected;
         }
     }
 
@@ -3411,6 +3608,89 @@ mod tests {
     }
 
     #[test]
+    fn color_range_erase_within_region_does_not_select_outside_pixels() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join("source.png");
+        let output = dir.path().join("bounded-color-range.png");
+        let image = ImageBuffer::from_pixel(8, 8, Rgba([255u8, 255, 255, 255]));
+        image.save(&source).unwrap();
+        let mut regions = BTreeMap::new();
+        regions.insert(
+            "left".to_string(),
+            SceneAssetNormalizedRect {
+                x: 0.0,
+                y: 0.0,
+                w: 0.5,
+                h: 1.0,
+            },
+        );
+        let feature_map = SceneAssetFeatureMap {
+            feature_map_version: 1,
+            character: "kiki".to_string(),
+            base: "source.png".to_string(),
+            regions,
+            anchors: BTreeMap::new(),
+        };
+
+        let report = color_range_erase_scene_asset_image(
+            &source,
+            &output,
+            SceneAssetMaskPolishOptions {
+                tolerance: 0,
+                within_regions: vec!["left".to_string()],
+                ..SceneAssetMaskPolishOptions::default()
+            },
+            Some(&feature_map),
+            false,
+        )
+        .unwrap();
+
+        let edited = load_rgba_image(&output).unwrap();
+        assert_equal!(report.selected_pixels, 32);
+        assert_equal!(edited.get_pixel(1, 1)[3], 0);
+        assert_equal!(edited.get_pixel(6, 1)[3], 255);
+    }
+
+    #[test]
+    fn mask_preview_renders_bounded_selection_without_erasing_source() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join("source.png");
+        let output = dir.path().join("preview.png");
+        let image = ImageBuffer::from_pixel(8, 8, Rgba([255u8, 255, 255, 255]));
+        image.save(&source).unwrap();
+
+        let report = preview_scene_asset_selection_mask(
+            &source,
+            &output,
+            SceneAssetMaskPreviewOptions {
+                mode: SceneAssetMaskPreviewMode::ColorRange,
+                seeds: Vec::new(),
+                threshold: 238,
+                neutrality: 28,
+                polish: SceneAssetMaskPolishOptions {
+                    tolerance: 0,
+                    within_polygons: vec![vec![
+                        SceneAssetNormalizedPoint { x: 0.0, y: 0.0 },
+                        SceneAssetNormalizedPoint { x: 0.5, y: 0.0 },
+                        SceneAssetNormalizedPoint { x: 0.5, y: 1.0 },
+                        SceneAssetNormalizedPoint { x: 0.0, y: 1.0 },
+                    ]],
+                    ..SceneAssetMaskPolishOptions::default()
+                },
+            },
+            None,
+            false,
+        )
+        .unwrap();
+
+        let preview = load_rgba_image(&output).unwrap();
+        let original = load_rgba_image(&source).unwrap();
+        assert_equal!(report.selected_pixels, 32);
+        assert!(preview.get_pixel(1, 1)[0] > preview.get_pixel(6, 1)[0]);
+        assert_equal!(*original.get_pixel(6, 1), Rgba([255u8, 255, 255, 255]));
+    }
+
+    #[test]
     fn magic_erase_add_unions_clicked_regions_without_selecting_unclicked_island() {
         let dir = tempdir().unwrap();
         let source = dir.path().join("source.png");
@@ -3539,6 +3819,8 @@ mod tests {
                     fill_holes: 0,
                     defringe: SceneAssetDefringeMode::None,
                     protect_regions: Vec::new(),
+                    within_regions: Vec::new(),
+                    within_polygons: Vec::new(),
                 }],
             )]),
             animations: BTreeMap::new(),
