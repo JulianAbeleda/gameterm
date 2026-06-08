@@ -59,6 +59,8 @@ Scene Mode currently has:
   feature regions, generating repeatable expression/animation PNGs, removing
   simple backgrounds through magic selection, and feeding those outputs through
   the existing VN config module
+- a scoped mask-polish lane for improving character cutout precision through
+  mask morphology, protected regions, feathering, defringe, and quality metrics
 
 Latest verification baseline:
 
@@ -112,6 +114,7 @@ implementation details.
 | Aspect-safe Scene images | [Aspect-Safe Image Scope](gameterm-scene-aspect-safe-image-scope.md) | Complete |
 | Procedural VN panel codegen | [Panel Codegen Scope](gameterm-scene-panel-codegen-scope.md) | First-pass implemented |
 | Character asset editing pipeline | [Character Asset Editing Scope](gameterm-scene-character-asset-editing-scope.md) | First-pass implemented |
+| Character mask polish | [Asset Mask Polish Scope](gameterm-scene-asset-mask-polish-scope.md) | Scoped |
 | Rounded VN panel renderer | [Rounded Panel Renderer Scope](gameterm-scene-rounded-panel-renderer-scope.md) | Scoped |
 | Scene debug view separation | [Debug View Separation Scope](gameterm-scene-debug-view-separation-scope.md) | Scoped |
 | Codex compose bridge | [Codex Compose Bridge Scope](gameterm-scene-codex-compose-bridge-scope.md) | First-pass implemented |
