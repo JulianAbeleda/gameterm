@@ -1,3 +1,5 @@
+use gameterm_visual::{dialogue_text_blocks, VisualDialogueTextBlock, VisualDialogueTextBlockKind};
+
 const TTS_MAX_SEGMENT_CHARS: usize = 800;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -14,6 +16,9 @@ pub(super) struct SpeakableSegment {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SpeechBlockKind {
     Prose,
+    Heading,
+    Bullet,
+    Numbered,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,71 +45,38 @@ pub(super) fn extract_speakable_segments(
         .map(ToOwned::to_owned);
     let text = strip_fenced_code(text);
     let mut segments = Vec::new();
-    let mut current_display = Vec::new();
-    let mut current_speakable = Vec::new();
 
-    for line in text.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            push_segment(
-                &mut segments,
-                &speaker,
-                &mut current_display,
-                &mut current_speakable,
-                source,
-            );
+    for block in dialogue_text_blocks(&text) {
+        if !block.speech_allowed() || block.display_text.trim().is_empty() {
             continue;
         }
-        if is_machine_oriented_line(trimmed) {
-            push_segment(
-                &mut segments,
-                &speaker,
-                &mut current_display,
-                &mut current_speakable,
-                source,
-            );
+        if block.kind == VisualDialogueTextBlockKind::Prose
+            && is_machine_oriented_line(&block.display_text)
+        {
             continue;
         }
-        let speakable = clean_speakable_line(trimmed);
+        let speakable = clean_speakable_line(&block.display_text);
         if speakable.is_empty() {
-            push_segment(
-                &mut segments,
-                &speaker,
-                &mut current_display,
-                &mut current_speakable,
-                source,
-            );
             continue;
         }
-        current_display.push(trimmed.to_string());
-        current_speakable.push(speakable);
+        push_segment(&mut segments, &speaker, &block, &speakable, source);
     }
 
-    push_segment(
-        &mut segments,
-        &speaker,
-        &mut current_display,
-        &mut current_speakable,
-        source,
-    );
     segments
 }
 
 fn push_segment(
     segments: &mut Vec<SpeakableSegment>,
     speaker: &Option<String>,
-    current_display: &mut Vec<String>,
-    current_speakable: &mut Vec<String>,
+    block: &VisualDialogueTextBlock,
+    speakable: &str,
     source: SpeakableSource,
 ) {
-    if current_speakable.is_empty() {
+    if speakable.trim().is_empty() {
         return;
     }
-    let display_text = current_display.join(" ");
-    let text = current_speakable.join(" ");
-    current_display.clear();
-    current_speakable.clear();
-    for text in split_speakable_chunks(&text, TTS_MAX_SEGMENT_CHARS) {
+    let display_text = display_text_for_block(block);
+    for text in split_speakable_chunks(speakable, TTS_MAX_SEGMENT_CHARS) {
         if text.trim().is_empty() {
             continue;
         }
@@ -114,9 +86,32 @@ fn push_segment(
             speaker: speaker.clone(),
             display_text: display_text.clone(),
             text,
-            kind: SpeechBlockKind::Prose,
+            kind: speech_kind_for_block(block.kind),
             source,
         });
+    }
+}
+
+fn display_text_for_block(block: &VisualDialogueTextBlock) -> String {
+    match block.kind {
+        VisualDialogueTextBlockKind::Numbered => {
+            format!(
+                "{}. {}",
+                block.marker.as_deref().unwrap_or("1"),
+                block.display_text
+            )
+        }
+        VisualDialogueTextBlockKind::Bullet => format!("- {}", block.display_text),
+        _ => block.display_text.clone(),
+    }
+}
+
+fn speech_kind_for_block(kind: VisualDialogueTextBlockKind) -> SpeechBlockKind {
+    match kind {
+        VisualDialogueTextBlockKind::Heading => SpeechBlockKind::Heading,
+        VisualDialogueTextBlockKind::Bullet => SpeechBlockKind::Bullet,
+        VisualDialogueTextBlockKind::Numbered => SpeechBlockKind::Numbered,
+        _ => SpeechBlockKind::Prose,
     }
 }
 
@@ -292,6 +287,9 @@ fn speakable_word(word: &str) -> WordSpeech {
         return WordSpeech::Skip;
     }
     let raw = word.trim_matches(|ch: char| ch.is_ascii_punctuation() && ch != '-');
+    if raw.eq_ignore_ascii_case("link") && word.contains('[') {
+        return WordSpeech::Replace("the link");
+    }
     if is_flag_token(raw) {
         return WordSpeech::Skip;
     }
@@ -314,7 +312,7 @@ fn speakable_word(word: &str) -> WordSpeech {
     if is_windows_path_token(trimmed) {
         return WordSpeech::Replace("that folder");
     }
-    if is_commit_hash_token(trimmed) || is_env_var_token(trimmed) {
+    if is_commit_hash_token(raw) || is_env_var_token(raw) {
         return WordSpeech::Skip;
     }
     if file_name_token_looks_technical(trimmed) {
@@ -509,11 +507,54 @@ We can continue after the smoke pass."#;
             extract_speakable_segments(Some("Codex"), text, SpeakableSource::ComposeReply);
 
         assert_eq!(segments.len(), 1);
-        assert_eq!(segments[0].display_text, text);
+        assert_eq!(
+            segments[0].display_text,
+            "I updated /Users/julianabeleda/env/gameterm and ran `cargo test -p gameterm-gui`. See [link]."
+        );
         assert_eq!(
             segments[0].text,
             "I updated the project folder and ran the command See the link"
         );
+    }
+
+    #[test]
+    fn visual_speech_blocks_follow_dialogue_block_boundaries() {
+        let text = "Plan: 1. Run the smoke. 2) Check the voice. - Record notes.";
+
+        let segments =
+            extract_speakable_segments(Some("Codex"), text, SpeakableSource::ComposeReply);
+
+        assert_eq!(segments.len(), 4);
+        assert_eq!(segments[0].kind, SpeechBlockKind::Heading);
+        assert_eq!(segments[0].display_text, "Plan:");
+        assert_eq!(segments[0].text, "Plan:");
+        assert_eq!(segments[1].kind, SpeechBlockKind::Numbered);
+        assert_eq!(segments[1].display_text, "1. Run the smoke.");
+        assert_eq!(segments[1].text, "Run the smoke.");
+        assert_eq!(segments[2].display_text, "2. Check the voice.");
+        assert_eq!(segments[3].kind, SpeechBlockKind::Bullet);
+        assert_eq!(segments[3].display_text, "- Record notes.");
+        assert_eq!(segments[3].text, "Record notes.");
+    }
+
+    #[test]
+    fn visual_speech_blocks_never_speak_raw_urls_paths_env_or_hashes() {
+        let text = "Details: see https://example.com/path, C:\\Users\\Julian\\Desktop\\note.txt, /Users/julianabeleda/env/gameterm/Cargo.toml, GAMETERM_SCENE_TTS_BACKEND, and 1234abcd.";
+
+        let segments =
+            extract_speakable_segments(Some("Codex"), text, SpeakableSource::ComposeReply);
+
+        let spoken = segments
+            .iter()
+            .map(|segment| segment.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(!spoken.contains("http://"));
+        assert!(!spoken.contains("https://"));
+        assert!(!spoken.contains("/Users/"));
+        assert!(!spoken.contains("C:\\"));
+        assert!(!spoken.contains("GAMETERM_"));
+        assert!(!spoken.contains("1234abcd"));
     }
 
     #[test]
