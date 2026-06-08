@@ -22,6 +22,7 @@ pub(crate) struct VisualComposeMessage {
     pub(crate) text: String,
     pub(crate) speaker: Option<String>,
     pub(crate) visibility: VisualComposeVisibility,
+    pub(crate) revealed_chars: Option<usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,6 +38,55 @@ impl VisualComposeVisibility {
         // Keep queued blocks visible so a delayed/stalled voice worker cannot
         // make a completed compose reply disappear from the transcript.
         matches!(self, Self::Queued | Self::Speaking | Self::Done)
+    }
+}
+
+impl VisualComposeMessage {
+    pub(crate) fn rendered_text(&self) -> String {
+        match self.revealed_chars {
+            Some(limit) => self.text.chars().take(limit).collect(),
+            None => self.text.clone(),
+        }
+    }
+
+    fn is_revealable(&self) -> bool {
+        matches!(
+            (&self.role, self.visibility),
+            (
+                VisualComposeRole::Assistant | VisualComposeRole::System,
+                VisualComposeVisibility::Speaking
+            )
+        )
+    }
+
+    fn reveal_len(&self) -> usize {
+        self.text.chars().count()
+    }
+
+    fn reveal_all(&mut self) -> bool {
+        if self.revealed_chars.is_none() {
+            return false;
+        }
+        self.revealed_chars = None;
+        true
+    }
+
+    fn reveal_next_chunk(&mut self, chunk_chars: usize) -> bool {
+        let Some(current) = self.revealed_chars else {
+            return false;
+        };
+        let total = self.reveal_len();
+        if current >= total {
+            self.revealed_chars = None;
+            return false;
+        }
+        let next = next_fake_stream_reveal_len(&self.text, current, chunk_chars);
+        if next >= total {
+            self.revealed_chars = None;
+        } else {
+            self.revealed_chars = Some(next);
+        }
+        next > current
     }
 }
 
@@ -72,6 +122,7 @@ impl VisualComposeRuntimeState {
             None,
             turn_id,
             VisualComposeVisibility::Done,
+            None,
         );
     }
 
@@ -82,6 +133,7 @@ impl VisualComposeRuntimeState {
         speaker: Option<String>,
         turn_id: u64,
         visibility: VisualComposeVisibility,
+        revealed_chars: Option<usize>,
     ) -> Option<(u64, usize)> {
         if text.trim().is_empty() {
             return None;
@@ -95,6 +147,7 @@ impl VisualComposeRuntimeState {
             text,
             speaker,
             visibility,
+            revealed_chars,
         });
         if self.history.len() > MAX_COMPOSE_HISTORY {
             let excess = self.history.len() - MAX_COMPOSE_HISTORY;
@@ -130,6 +183,7 @@ impl VisualComposeRuntimeState {
     }
 
     pub(crate) fn mark_running(&mut self, prompt: &str) {
+        self.reveal_all_pending();
         self.set_phase_and_history(VisualComposePhase::Running);
         self.last_prompt = Some(prompt.to_string());
         self.last_reply = None;
@@ -142,6 +196,7 @@ impl VisualComposeRuntimeState {
             None,
             turn_id,
             VisualComposeVisibility::Done,
+            None,
         );
     }
 
@@ -160,6 +215,7 @@ impl VisualComposeRuntimeState {
             Some(speaker),
             turn_id,
             VisualComposeVisibility::Done,
+            None,
         );
     }
 
@@ -191,6 +247,7 @@ impl VisualComposeRuntimeState {
                     Some(speaker.clone()),
                     turn_id,
                     visibility,
+                    if reveal_all { None } else { Some(0) },
                 )
             })
             .collect()
@@ -230,11 +287,62 @@ impl VisualComposeRuntimeState {
     }
 
     pub(crate) fn mark_block_speaking(&mut self, turn_id: u64, block_index: usize) -> bool {
-        self.set_block_visibility(turn_id, block_index, VisualComposeVisibility::Speaking)
+        let visibility_changed =
+            self.set_block_visibility(turn_id, block_index, VisualComposeVisibility::Speaking);
+        let reveal_changed = self.reveal_block_next_chunk(turn_id, block_index, 24);
+        visibility_changed || reveal_changed
     }
 
     pub(crate) fn mark_block_done(&mut self, turn_id: u64, block_index: usize) -> bool {
-        self.set_block_visibility(turn_id, block_index, VisualComposeVisibility::Done)
+        let visibility_changed =
+            self.set_block_visibility(turn_id, block_index, VisualComposeVisibility::Done);
+        let reveal_changed = self.reveal_block_all(turn_id, block_index);
+        visibility_changed || reveal_changed
+    }
+
+    pub(crate) fn advance_reveal(&mut self, chunk_chars: usize) -> bool {
+        for message in &mut self.history {
+            if !message.is_revealable() || message.revealed_chars.is_none() {
+                continue;
+            }
+            return message.reveal_next_chunk(chunk_chars.max(1));
+        }
+        false
+    }
+
+    fn reveal_all_pending(&mut self) -> bool {
+        let mut changed = false;
+        for message in &mut self.history {
+            changed |= message.reveal_all();
+        }
+        changed
+    }
+
+    fn reveal_block_next_chunk(
+        &mut self,
+        turn_id: u64,
+        block_index: usize,
+        chunk_chars: usize,
+    ) -> bool {
+        let Some(message) = self
+            .history
+            .iter_mut()
+            .find(|message| message.turn_id == turn_id && message.block_index == block_index)
+        else {
+            return false;
+        };
+        message.reveal_next_chunk(chunk_chars.max(1))
+    }
+
+    fn reveal_block_all(&mut self, turn_id: u64, block_index: usize) -> bool {
+        let Some(message) = self
+            .history
+            .iter_mut()
+            .find(|message| message.turn_id == turn_id && message.block_index == block_index)
+        else {
+            return false;
+        };
+        message.reveal_all()
     }
 
     fn set_block_visibility(
@@ -256,4 +364,40 @@ impl VisualComposeRuntimeState {
         message.visibility = visibility;
         true
     }
+}
+
+fn next_fake_stream_reveal_len(text: &str, current_chars: usize, target_chars: usize) -> usize {
+    let chars: Vec<char> = text.chars().collect();
+    let total = chars.len();
+    if current_chars >= total {
+        return total;
+    }
+
+    let target_chars = target_chars.max(1);
+    let min_boundary_width = (target_chars / 3).max(6);
+    let mut sentence_boundary = None;
+    let mut word_boundary = None;
+    let mut width = 0usize;
+
+    for index in current_chars..total {
+        width = width.saturating_add(1);
+        let next = index + 1;
+        if chars[index] == '\n' && chars.get(index + 1) == Some(&'\n') {
+            return (next + 1).min(total);
+        }
+        if width >= min_boundary_width && matches!(chars[index], '.' | '!' | '?' | ':') {
+            sentence_boundary = Some(next);
+        }
+        if width >= min_boundary_width && chars[index].is_whitespace() {
+            word_boundary = Some(next);
+        }
+        if width >= target_chars {
+            return sentence_boundary
+                .or(word_boundary)
+                .unwrap_or(next)
+                .min(total);
+        }
+    }
+
+    total
 }

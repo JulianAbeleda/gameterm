@@ -85,6 +85,14 @@ impl SceneRuntime {
         }
     }
 
+    pub fn advance_compose_reveal(&mut self, chunk_chars: usize) -> bool {
+        if !self.compose_state.advance_reveal(chunk_chars) {
+            return false;
+        }
+        self.bump_generation();
+        true
+    }
+
     pub fn clear_compose_history(&mut self) {
         self.compose_state.clear();
         self.record_runtime_event("compose", "cleared transcript");

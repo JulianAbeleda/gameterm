@@ -62,8 +62,7 @@ pub use vn_asset_intake::{
 };
 pub use vn_layout::*;
 pub use vn_text::{
-    dialogue_text_blocks, truncate_to_screen, VisualDialogueTextBlock,
-    VisualDialogueTextBlockKind,
+    dialogue_text_blocks, truncate_to_screen, VisualDialogueTextBlock, VisualDialogueTextBlockKind,
 };
 use vn_text::{place_vn_overlay_text, wrap_compose_transcript_for_vn};
 pub use workspace_scene::{
@@ -5253,15 +5252,15 @@ mod tests {
     }
 
     #[test]
-    fn staged_scene_compose_blocks_do_not_wait_for_voice_reveal() {
+    fn staged_scene_compose_blocks_fake_stream_until_voice_or_tick_reveals() {
         let mut runtime = SceneRuntime::new(staged_compose_scene()).unwrap();
 
         runtime.mark_compose_running("Compose running", "plan");
         let block_ids = runtime.mark_compose_succeeded_blocks(
             "Codex",
             &[
-                "First reply block.".to_string(),
-                "Second reply block.".to_string(),
+                "First reply block has enough words to reveal slowly.".to_string(),
+                "Second reply block waits for its own voice turn.".to_string(),
             ],
             false,
         );
@@ -5269,19 +5268,26 @@ mod tests {
 
         let frame = runtime.render_text_frame(100, 30);
         assert!(frame.contains("> plan"));
-        assert!(frame.contains("First reply block."));
-        assert!(frame.contains("Second reply block."));
+        assert!(!frame.contains("First reply block"));
+        assert!(!frame.contains("Second reply block"));
 
+        assert!(!runtime.advance_compose_reveal(12));
         runtime.mark_compose_block_speaking(block_ids[0].0, block_ids[0].1);
         let frame = runtime.render_text_frame(100, 30);
-        assert!(frame.contains("First reply block."));
-        assert!(frame.contains("Second reply block."));
+        assert!(frame.contains("First reply"));
+        assert!(!frame.contains("reveal slowly."));
+        assert!(!frame.contains("Second reply block"));
+
+        assert!(runtime.advance_compose_reveal(12));
+        let frame = runtime.render_text_frame(100, 30);
+        assert!(frame.contains("First reply block"));
+        assert!(!frame.contains("Second reply block"));
 
         runtime.mark_compose_block_done(block_ids[0].0, block_ids[0].1);
         runtime.mark_compose_block_speaking(block_ids[1].0, block_ids[1].1);
         let frame = runtime.render_text_frame(100, 30);
-        assert!(frame.contains("First reply block."));
-        assert!(frame.contains("Second reply block."));
+        assert!(frame.contains("First reply block has enough words to reveal slowly."));
+        assert!(frame.contains("Second reply block"));
     }
 
     #[test]
@@ -5303,8 +5309,15 @@ mod tests {
         runtime.mark_compose_block_done(block_ids[0].0, 99);
 
         let frame = runtime.render_text_frame(100, 30);
+        assert!(!frame.contains("Visible reply block one."));
+        assert!(!frame.contains("Visible reply block two."));
+        assert!(!runtime.advance_compose_reveal(usize::MAX));
+
+        runtime.mark_compose_running("Compose running", "next prompt");
+        let frame = runtime.render_text_frame(100, 30);
         assert!(frame.contains("Visible reply block one."));
         assert!(frame.contains("Visible reply block two."));
+        assert!(frame.contains("> next prompt"));
 
         let report = runtime.debug_report();
         assert!(!report
@@ -5330,6 +5343,7 @@ mod tests {
         assert_eq!(first_ids.len(), 1);
 
         let mut previous_turn_id = first_ids[0].0;
+        let mut latest_ids = first_ids;
         for idx in 2..=5 {
             runtime.mark_compose_running("Compose running", &format!("future prompt {idx}"));
             let ids = runtime.mark_compose_succeeded_blocks(
@@ -5340,10 +5354,16 @@ mod tests {
             assert_eq!(ids.len(), 1);
             assert_ne!(previous_turn_id, ids[0].0);
             previous_turn_id = ids[0].0;
+            latest_ids = ids;
         }
 
         let frame = runtime.render_text_frame(100, 30);
         assert!(frame.contains("> future prompt 5"));
+        assert!(!frame.contains("Future turn 5 reply should still render."));
+
+        runtime.mark_compose_block_speaking(latest_ids[0].0, latest_ids[0].1);
+        assert!(runtime.advance_compose_reveal(usize::MAX));
+        let frame = runtime.render_text_frame(100, 30);
         assert!(frame.contains("Future turn 5 reply should still render."));
     }
 

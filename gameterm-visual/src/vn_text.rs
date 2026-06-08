@@ -43,10 +43,14 @@ pub(crate) fn wrap_compose_transcript_for_vn(
         if !message.visibility.is_visible() {
             continue;
         }
+        let message_lines = wrap_compose_message_for_vn(message, dialogue_width);
+        if message_lines.is_empty() {
+            continue;
+        }
         if !lines.is_empty() {
             lines.push(String::new());
         }
-        lines.extend(wrap_compose_message_for_vn(message, dialogue_width));
+        lines.extend(message_lines);
     }
     lines
 }
@@ -55,12 +59,16 @@ fn wrap_compose_message_for_vn(
     message: &VisualComposeMessage,
     dialogue_width: usize,
 ) -> Vec<String> {
+    let text = message.rendered_text();
+    if text.trim().is_empty() {
+        return Vec::new();
+    }
     match message.role {
-        VisualComposeRole::User => wrap_user_prompt_for_vn(&message.text, dialogue_width),
+        VisualComposeRole::User => wrap_user_prompt_for_vn(&text, dialogue_width),
         VisualComposeRole::Assistant | VisualComposeRole::System => {
-            wrap_dialogue_display_text(&message.text, dialogue_width)
+            wrap_dialogue_display_text(&text, dialogue_width)
         }
-        VisualComposeRole::Error => wrap_error_for_vn(&message.text, dialogue_width),
+        VisualComposeRole::Error => wrap_error_for_vn(&text, dialogue_width),
     }
 }
 
@@ -375,9 +383,7 @@ fn line_is_path_or_identifier_heavy(line: &str) -> bool {
     let total_chars = line.chars().count().max(1);
     let identifier_chars = line
         .chars()
-        .filter(|ch| {
-            ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '/' | '\\' | '.' | ':')
-        })
+        .filter(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '/' | '\\' | '.' | ':'))
         .count();
     let identifier_heavy = identifier_chars * 100 / total_chars > 85
         && line.split_whitespace().count() <= 4
@@ -582,6 +588,7 @@ mod tests {
             text: text.to_string(),
             speaker: Some("Codex".to_string()),
             visibility: crate::compose_state::VisualComposeVisibility::Done,
+            revealed_chars: None,
         }
     }
 
@@ -651,7 +658,10 @@ mod tests {
         assert_eq!(blocks[1].display_text, "Run the smoke.");
         assert_eq!(blocks[2].kind, VisualDialogueTextBlockKind::Bullet);
         assert_eq!(blocks[2].display_text, "Record notes.");
-        assert_eq!(blocks[3].kind, VisualDialogueTextBlockKind::TechnicalSkipped);
+        assert_eq!(
+            blocks[3].kind,
+            VisualDialogueTextBlockKind::TechnicalSkipped
+        );
         assert!(!blocks[3].speech_allowed());
     }
 }

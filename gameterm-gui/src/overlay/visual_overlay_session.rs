@@ -1,8 +1,11 @@
 use std::sync::mpsc;
+use std::time::{Duration, Instant};
+
+use gameterm_visual::SceneRuntime;
 
 use super::super::visual_speech_blocks::{SpeakableSegment, SpeakableSource, SpeechBlockKind};
 use super::super::visual_stt::{
-    SceneMicDevice, SceneSttConfig, SceneSttSession, SceneSttState, scene_microphone_devices,
+    scene_microphone_devices, SceneMicDevice, SceneSttConfig, SceneSttSession, SceneSttState,
 };
 use super::super::visual_tts::{
     SceneTtsConfig, SceneTtsRequest, SceneTtsResult, SceneTtsState, SceneTtsWorker,
@@ -10,6 +13,9 @@ use super::super::visual_tts::{
 use super::visual_compose_dock::SceneComposeDock;
 use super::visual_dialogue_scroll::SceneDialogueScrollback;
 use super::visual_voice_debug::SceneVoiceDebugState;
+
+const DIALOGUE_REVEAL_INTERVAL: Duration = Duration::from_millis(90);
+const DIALOGUE_REVEAL_CHARS: usize = 18;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SceneComposeDebugBackend {
@@ -52,6 +58,7 @@ pub(super) struct VisualOverlaySession {
     pub(super) selected_mic_index: usize,
     pub(super) mic_test_running: bool,
     pub(super) last_idle_sprite: Option<String>,
+    last_dialogue_reveal: Instant,
 }
 
 impl VisualOverlaySession {
@@ -87,6 +94,7 @@ impl VisualOverlaySession {
             selected_mic_index: 0,
             mic_test_running: false,
             last_idle_sprite: None,
+            last_dialogue_reveal: Instant::now() - DIALOGUE_REVEAL_INTERVAL,
         }
     }
 
@@ -169,6 +177,18 @@ impl VisualOverlaySession {
         }
         self.sync_tts_debug();
         status
+    }
+
+    pub(super) fn advance_dialogue_reveal(&mut self, runtime: &mut SceneRuntime) -> bool {
+        if self.last_dialogue_reveal.elapsed() < DIALOGUE_REVEAL_INTERVAL {
+            return false;
+        }
+        if !runtime.advance_compose_reveal(DIALOGUE_REVEAL_CHARS) {
+            return false;
+        }
+        self.last_dialogue_reveal = Instant::now();
+        self.dialogue_scroll.reset_to_bottom();
+        true
     }
 
     pub(super) fn enqueue_tts_test(&mut self) -> String {

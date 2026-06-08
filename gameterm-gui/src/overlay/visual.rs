@@ -42,12 +42,12 @@ mod visual_kiki_idle;
 mod visual_overlay_session;
 #[path = "visual_render.rs"]
 mod visual_render;
+#[path = "visual_scene_debug_input.rs"]
+mod visual_scene_debug_input;
 #[path = "visual_scene_files.rs"]
 mod visual_scene_files;
 #[path = "visual_scene_patches.rs"]
 mod visual_scene_patches;
-#[path = "visual_scene_debug_input.rs"]
-mod visual_scene_debug_input;
 #[path = "visual_voice_debug.rs"]
 mod visual_voice_debug;
 #[path = "visual_voice_events.rs"]
@@ -80,9 +80,7 @@ use visual_compose_result::{sanitize_compose_output, COMPOSE_OUTPUT_LIMIT};
 use visual_dialogue_scroll::{
     apply_dialogue_scroll_key, apply_dialogue_scroll_wheel, SceneDialogueScrollback,
 };
-use visual_dialogue_scroll::{
-    handle_dialogue_scroll_key, handle_dialogue_scroll_wheel,
-};
+use visual_dialogue_scroll::{handle_dialogue_scroll_key, handle_dialogue_scroll_wheel};
 use visual_event_drain::{
     drain_command_results, drain_compose_results, drain_mic_test_results, drain_stt_results,
     drain_tts_results,
@@ -99,10 +97,10 @@ use visual_overlay_session::VisualOverlaySession;
 #[cfg(test)]
 use visual_render::apply_voice_debug_frame;
 use visual_render::{render_error, render_runtime, render_runtime_with_compose_and_scroll};
+use visual_scene_debug_input::handle_scene_debug_session_input;
 pub(crate) use visual_scene_files::SceneOverlayLaunchOptions;
 use visual_scene_files::*;
 use visual_scene_patches::*;
-use visual_scene_debug_input::handle_scene_debug_session_input;
 use visual_voice_hold_flow::reconcile_scene_voice_hold_state;
 
 pub(crate) fn show_visual_scene_overlay_with_options(
@@ -226,6 +224,9 @@ fn show_visual_scene_overlay_with_source(
         );
         needs_render |=
             reconcile_scene_voice_hold_state(pane_id, &mut runtime, &mut session, &stt_tx);
+        if let Some(runtime) = runtime.as_mut() {
+            needs_render |= session.advance_dialogue_reveal(runtime);
+        }
         if needs_render {
             if let Some(runtime) = runtime.as_ref() {
                 render_runtime_with_compose_and_scroll(
