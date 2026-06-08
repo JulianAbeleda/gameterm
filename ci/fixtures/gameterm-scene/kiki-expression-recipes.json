@@ -1,0 +1,223 @@
+{
+  "recipe_book_version": 1,
+  "character": "kiki",
+  "expressions": {
+    "neutral": [
+      {
+        "op": "opacity",
+        "region": "torso",
+        "alpha": 1.0
+      }
+    ],
+    "happy": [
+      {
+        "op": "erase_region",
+        "region": "mouth"
+      },
+      {
+        "op": "draw_ellipse",
+        "region": "mouth",
+        "stroke": "#3b2528ff",
+        "fill": "#f1a7acff",
+        "width": 2
+      },
+      {
+        "op": "draw_line",
+        "region": "left_eye",
+        "from": { "x": 0.12, "y": 0.55 },
+        "to": { "x": 0.88, "y": 0.55 },
+        "color": "#403448ff",
+        "width": 2
+      },
+      {
+        "op": "draw_line",
+        "region": "right_eye",
+        "from": { "x": 0.12, "y": 0.55 },
+        "to": { "x": 0.88, "y": 0.55 },
+        "color": "#403448ff",
+        "width": 2
+      }
+    ],
+    "concerned": [
+      {
+        "op": "erase_region",
+        "region": "mouth"
+      },
+      {
+        "op": "draw_line",
+        "region": "mouth",
+        "from": { "x": 0.20, "y": 0.55 },
+        "to": { "x": 0.80, "y": 0.35 },
+        "color": "#3b2528ff",
+        "width": 2
+      },
+      {
+        "op": "draw_line",
+        "region": "brows",
+        "from": { "x": 0.05, "y": 0.70 },
+        "to": { "x": 0.40, "y": 0.35 },
+        "color": "#7a5a66ff",
+        "width": 2
+      },
+      {
+        "op": "draw_line",
+        "region": "brows",
+        "from": { "x": 0.60, "y": 0.35 },
+        "to": { "x": 0.95, "y": 0.70 },
+        "color": "#7a5a66ff",
+        "width": 2
+      }
+    ],
+    "surprised": [
+      {
+        "op": "erase_region",
+        "region": "mouth"
+      },
+      {
+        "op": "draw_ellipse",
+        "region": "mouth",
+        "stroke": "#2b1f24ff",
+        "fill": "#f4b7bcff",
+        "width": 2
+      }
+    ],
+    "blink.0": [
+      {
+        "op": "opacity",
+        "region": "torso",
+        "alpha": 1.0
+      }
+    ],
+    "blink.1": [
+      {
+        "op": "draw_line",
+        "region": "left_eye",
+        "from": { "x": 0.12, "y": 0.55 },
+        "to": { "x": 0.88, "y": 0.55 },
+        "color": "#403448ff",
+        "width": 2
+      },
+      {
+        "op": "draw_line",
+        "region": "right_eye",
+        "from": { "x": 0.12, "y": 0.55 },
+        "to": { "x": 0.88, "y": 0.55 },
+        "color": "#403448ff",
+        "width": 2
+      }
+    ],
+    "blink.2": [
+      {
+        "op": "erase_region",
+        "region": "left_eye",
+        "soften": 1
+      },
+      {
+        "op": "erase_region",
+        "region": "right_eye",
+        "soften": 1
+      },
+      {
+        "op": "draw_line",
+        "region": "left_eye",
+        "from": { "x": 0.05, "y": 0.55 },
+        "to": { "x": 0.95, "y": 0.55 },
+        "color": "#403448ff",
+        "width": 2
+      },
+      {
+        "op": "draw_line",
+        "region": "right_eye",
+        "from": { "x": 0.05, "y": 0.55 },
+        "to": { "x": 0.95, "y": 0.55 },
+        "color": "#403448ff",
+        "width": 2
+      }
+    ],
+    "breath.0": [
+      {
+        "op": "opacity",
+        "region": "torso",
+        "alpha": 1.0
+      }
+    ],
+    "breath.1": [
+      {
+        "op": "scale_region",
+        "region": "torso",
+        "sx": 1.0,
+        "sy": 1.01
+      }
+    ],
+    "breath.2": [
+      {
+        "op": "scale_region",
+        "region": "torso",
+        "sx": 1.0,
+        "sy": 1.02
+      }
+    ]
+  },
+  "animations": {
+    "blink": {
+      "fps": 12,
+      "frames": [
+        {
+          "expression": "blink.0",
+          "output": "kiki-blink-0.png",
+          "duration_ms": 500
+        },
+        {
+          "expression": "blink.1",
+          "output": "kiki-blink-1.png",
+          "duration_ms": 60
+        },
+        {
+          "expression": "blink.2",
+          "output": "kiki-blink-2.png",
+          "duration_ms": 80
+        },
+        {
+          "expression": "blink.1",
+          "output": "kiki-blink-3.png",
+          "duration_ms": 60
+        },
+        {
+          "expression": "blink.0",
+          "output": "kiki-blink-4.png",
+          "duration_ms": 500
+        }
+      ]
+    },
+    "breath": {
+      "fps": 8,
+      "frames": [
+        {
+          "expression": "breath.0",
+          "output": "kiki-breath-0.png",
+          "duration_ms": 180
+        },
+        {
+          "expression": "breath.1",
+          "output": "kiki-breath-1.png",
+          "duration_ms": 180
+        },
+        {
+          "expression": "breath.2",
+          "output": "kiki-breath-2.png",
+          "duration_ms": 180
+        },
+        {
+          "expression": "breath.1",
+          "output": "kiki-breath-3.png",
+          "duration_ms": 180
+        },
+        {
+          "expression": "breath.0",
+          "output": "kiki-breath-4.png",
+          "duration_ms": 180
+        }
+      ]
+    }
+  }
+}
