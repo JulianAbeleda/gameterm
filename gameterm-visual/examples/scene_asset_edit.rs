@@ -2,7 +2,9 @@ use gameterm_visual::{
     continuity_report_for_scene_asset_frames, default_scene_asset_feature_map,
     export_scene_asset_source_images, generate_scene_asset_animation,
     generate_scene_asset_expression, inspect_scene_asset_image, load_scene_asset_feature_map,
-    load_scene_asset_recipe_book, validate_scene_asset_feature_map, write_scene_asset_json,
+    load_scene_asset_recipe_book, magic_erase_scene_asset_image,
+    make_scene_asset_background_transparent, validate_scene_asset_feature_map,
+    write_scene_asset_json, SceneAssetBackgroundSample, SceneAssetNormalizedPoint,
 };
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -23,6 +25,12 @@ struct CliArgs {
     source_id: Option<String>,
     character: Option<String>,
     expressions: Option<String>,
+    tolerance: Option<u8>,
+    feather: Option<u32>,
+    seed_x: Option<f32>,
+    seed_y: Option<f32>,
+    sample: Option<SceneAssetBackgroundSample>,
+    global: bool,
     frames: Vec<PathBuf>,
     pretty: bool,
     force: bool,
@@ -36,6 +44,8 @@ fn usage() {
   cargo run -p gameterm-visual --example scene_asset_edit -- validate-map --image IMAGE --feature-map PATH
   cargo run -p gameterm-visual --example scene_asset_edit -- expression --base IMAGE --feature-map PATH --recipe PATH --expression NAME --output PATH [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- animation --base IMAGE --feature-map PATH --recipe PATH --animation NAME --output-dir DIR [--character NAME] [--force]
+  cargo run -p gameterm-visual --example scene_asset_edit -- remove-background --source IMAGE --output PATH [--tolerance N] [--feather N] [--sample corners|edges] [--force]
+  cargo run -p gameterm-visual --example scene_asset_edit -- magic-erase --source IMAGE --output PATH --seed-x N --seed-y N [--tolerance N] [--feather N] [--global] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- continuity FRAME... [--pretty]
   cargo run -p gameterm-visual --example scene_asset_edit -- export-source --source IMAGE --output-source-root DIR --source-id ID --character NAME --expressions CSV [--force]
 
@@ -53,6 +63,12 @@ Options:
   --source-id ID             Catalog source directory.
   --character NAME           Character id. Default: kiki.
   --expressions CSV          Expression names for export-source.
+  --tolerance N              RGB channel tolerance for magic selection. Default: 24.
+  --feather N                Pixel feather radius after selection. Default: 0.
+  --seed-x N                 Normalized magic-erase seed x, 0..1.
+  --seed-y N                 Normalized magic-erase seed y, 0..1.
+  --sample corners|edges     Background samples. Default: corners.
+  --global                   Select all matching pixels instead of contiguous seed fill.
   --pretty                   Pretty-print JSON.
   --force                    Overwrite existing files.
   -h, --help                 Show this help."
@@ -75,6 +91,8 @@ fn main() {
         Some("validate-map") => run_validate_map(args),
         Some("expression") => run_expression(args),
         Some("animation") => run_animation(args),
+        Some("remove-background") => run_remove_background(args),
+        Some("magic-erase") => run_magic_erase(args),
         Some("continuity") => run_continuity(args),
         Some("export-source") => run_export_source(args),
         Some(command) => Err(format!("unknown command: {command}")),
@@ -169,6 +187,45 @@ fn run_animation(args: CliArgs) -> Result<(), String> {
     write_json(None, &report, args.pretty, true)
 }
 
+fn run_remove_background(args: CliArgs) -> Result<(), String> {
+    let source = required_path(args.source, "--source")?;
+    let output = required_path(args.output, "--output")?;
+    let report = make_scene_asset_background_transparent(
+        &source,
+        &output,
+        args.tolerance.unwrap_or(24),
+        args.feather.unwrap_or(0),
+        args.sample.unwrap_or(SceneAssetBackgroundSample::Corners),
+        args.force,
+    )
+    .map_err(|err| err.to_string())?;
+    write_json(None, &report, args.pretty, true)
+}
+
+fn run_magic_erase(args: CliArgs) -> Result<(), String> {
+    let source = required_path(args.source, "--source")?;
+    let output = required_path(args.output, "--output")?;
+    let seed = SceneAssetNormalizedPoint {
+        x: args
+            .seed_x
+            .ok_or_else(|| "--seed-x is required".to_string())?,
+        y: args
+            .seed_y
+            .ok_or_else(|| "--seed-y is required".to_string())?,
+    };
+    let report = magic_erase_scene_asset_image(
+        &source,
+        &output,
+        seed,
+        args.tolerance.unwrap_or(24),
+        !args.global,
+        args.feather.unwrap_or(0),
+        args.force,
+    )
+    .map_err(|err| err.to_string())?;
+    write_json(None, &report, args.pretty, true)
+}
+
 fn run_continuity(args: CliArgs) -> Result<(), String> {
     if args.frames.is_empty() {
         return Err("continuity requires at least one frame path".to_string());
@@ -229,6 +286,12 @@ fn parse_args() -> Result<CliArgs, String> {
             "--source-id" => parsed.source_id = Some(next_text(&mut args, "--source-id")?),
             "--character" => parsed.character = Some(next_text(&mut args, "--character")?),
             "--expressions" => parsed.expressions = Some(next_text(&mut args, "--expressions")?),
+            "--tolerance" => parsed.tolerance = Some(next_parse(&mut args, "--tolerance")?),
+            "--feather" => parsed.feather = Some(next_parse(&mut args, "--feather")?),
+            "--seed-x" => parsed.seed_x = Some(next_parse(&mut args, "--seed-x")?),
+            "--seed-y" => parsed.seed_y = Some(next_parse(&mut args, "--seed-y")?),
+            "--sample" => parsed.sample = Some(parse_sample(&next_text(&mut args, "--sample")?)?),
+            "--global" => parsed.global = true,
             "--pretty" => parsed.pretty = true,
             "--force" => parsed.force = true,
             "-h" | "--help" => {
@@ -268,6 +331,30 @@ fn next_text(
     args.next()
         .map(|value| value.to_string_lossy().to_string())
         .ok_or_else(|| format!("{flag} requires a value"))
+}
+
+fn next_parse<T>(
+    args: &mut impl Iterator<Item = std::ffi::OsString>,
+    flag: &str,
+) -> Result<T, String>
+where
+    T: std::str::FromStr,
+    T::Err: std::fmt::Display,
+{
+    let value = next_text(args, flag)?;
+    value
+        .parse()
+        .map_err(|err| format!("{flag} value `{value}` is invalid: {err}"))
+}
+
+fn parse_sample(value: &str) -> Result<SceneAssetBackgroundSample, String> {
+    match value {
+        "corners" => Ok(SceneAssetBackgroundSample::Corners),
+        "edges" => Ok(SceneAssetBackgroundSample::Edges),
+        _ => Err(format!(
+            "--sample value `{value}` is invalid; expected corners or edges"
+        )),
+    }
 }
 
 fn required_path(value: Option<PathBuf>, label: &str) -> Result<PathBuf, String> {

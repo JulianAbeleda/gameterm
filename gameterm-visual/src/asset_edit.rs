@@ -2,7 +2,7 @@ use image::imageops::FilterType;
 use image::{DynamicImage, ImageBuffer, Rgba, RgbaImage};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -183,6 +183,23 @@ pub enum SceneAssetEditOperation {
         #[serde(default = "default_tint_amount")]
         amount: f32,
     },
+    MagicErase {
+        seed: SceneAssetNormalizedPoint,
+        #[serde(default = "default_magic_tolerance")]
+        tolerance: u8,
+        #[serde(default = "default_true")]
+        contiguous: bool,
+        #[serde(default)]
+        feather: u32,
+    },
+    RemoveBackground {
+        #[serde(default = "default_magic_tolerance")]
+        tolerance: u8,
+        #[serde(default)]
+        feather: u32,
+        #[serde(default = "default_background_sample")]
+        sample: SceneAssetBackgroundSample,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -228,12 +245,31 @@ pub enum SceneAssetContinuityStatus {
     Fail,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SceneAssetBackgroundSample {
+    Corners,
+    Edges,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SceneAssetExportReport {
     pub source: String,
     pub source_id: String,
     pub character: String,
     pub outputs: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetSelectionReport {
+    pub operation: String,
+    pub source: String,
+    pub output_path: String,
+    pub selected_pixels: usize,
+    pub total_pixels: usize,
+    pub tolerance: u8,
+    pub feather: u32,
+    pub report: SceneAssetImageReport,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -591,6 +627,70 @@ pub fn export_scene_asset_source_images(
     })
 }
 
+pub fn magic_erase_scene_asset_image(
+    source_path: &Path,
+    output_path: &Path,
+    seed: SceneAssetNormalizedPoint,
+    tolerance: u8,
+    contiguous: bool,
+    feather: u32,
+    force: bool,
+) -> Result<SceneAssetSelectionReport, SceneAssetEditError> {
+    if output_path.exists() && !force {
+        return Err(SceneAssetEditError::OutputExists(
+            output_path.display().to_string(),
+        ));
+    }
+    let mut image = load_rgba_image(source_path)?;
+    let seed = normalized_point_to_pixel(seed, image.width(), image.height())?;
+    let mask = if contiguous {
+        contiguous_magic_mask(&image, &[seed], tolerance)
+    } else {
+        global_magic_mask(&image, *image.get_pixel(seed.0, seed.1), tolerance)
+    };
+    let selected_pixels = selected_pixel_count(&mask);
+    apply_transparency_mask(&mut image, &mask, feather);
+    save_rgba_image(&image, output_path, force)?;
+    Ok(selection_report(
+        "magic_erase",
+        source_path,
+        output_path,
+        selected_pixels,
+        mask.len(),
+        tolerance,
+        feather,
+    )?)
+}
+
+pub fn make_scene_asset_background_transparent(
+    source_path: &Path,
+    output_path: &Path,
+    tolerance: u8,
+    feather: u32,
+    sample: SceneAssetBackgroundSample,
+    force: bool,
+) -> Result<SceneAssetSelectionReport, SceneAssetEditError> {
+    if output_path.exists() && !force {
+        return Err(SceneAssetEditError::OutputExists(
+            output_path.display().to_string(),
+        ));
+    }
+    let mut image = load_rgba_image(source_path)?;
+    let mask = background_magic_mask(&image, tolerance, sample);
+    let selected_pixels = selected_pixel_count(&mask);
+    apply_transparency_mask(&mut image, &mask, feather);
+    save_rgba_image(&image, output_path, force)?;
+    Ok(selection_report(
+        "remove_background",
+        source_path,
+        output_path,
+        selected_pixels,
+        mask.len(),
+        tolerance,
+        feather,
+    )?)
+}
+
 pub fn continuity_report_for_scene_asset_frames(
     frame_paths: &[PathBuf],
     drift_tolerance_px: u32,
@@ -751,6 +851,28 @@ fn apply_operation(
             let rect = feature_map.pixel_region(region, image.width(), image.height())?;
             tint_region(image, rect, parse_rgba(color)?, *amount);
         }
+        SceneAssetEditOperation::MagicErase {
+            seed,
+            tolerance,
+            contiguous,
+            feather,
+        } => {
+            let seed = normalized_point_to_pixel(*seed, image.width(), image.height())?;
+            let mask = if *contiguous {
+                contiguous_magic_mask(image, &[seed], *tolerance)
+            } else {
+                global_magic_mask(image, *image.get_pixel(seed.0, seed.1), *tolerance)
+            };
+            apply_transparency_mask(image, &mask, *feather);
+        }
+        SceneAssetEditOperation::RemoveBackground {
+            tolerance,
+            feather,
+            sample,
+        } => {
+            let mask = background_magic_mask(image, *tolerance, *sample);
+            apply_transparency_mask(image, &mask, *feather);
+        }
     }
     Ok(())
 }
@@ -869,6 +991,276 @@ fn content_bounds(image: &RgbaImage) -> Option<SceneAssetPixelRect> {
         w: max_x.saturating_sub(min_x).saturating_add(1),
         h: max_y.saturating_sub(min_y).saturating_add(1),
     })
+}
+
+fn selection_report(
+    operation: &str,
+    source_path: &Path,
+    output_path: &Path,
+    selected_pixels: usize,
+    total_pixels: usize,
+    tolerance: u8,
+    feather: u32,
+) -> Result<SceneAssetSelectionReport, SceneAssetEditError> {
+    Ok(SceneAssetSelectionReport {
+        operation: operation.to_string(),
+        source: source_path.display().to_string(),
+        output_path: output_path.display().to_string(),
+        selected_pixels,
+        total_pixels,
+        tolerance,
+        feather,
+        report: inspect_scene_asset_image(output_path)?,
+    })
+}
+
+fn normalized_point_to_pixel(
+    point: SceneAssetNormalizedPoint,
+    width: u32,
+    height: u32,
+) -> Result<(u32, u32), SceneAssetEditError> {
+    if !point.x.is_finite()
+        || !point.y.is_finite()
+        || point.x < 0.0
+        || point.y < 0.0
+        || point.x > 1.0
+        || point.y > 1.0
+    {
+        return Err(SceneAssetEditError::InvalidOperation(
+            "seed point must be finite and inside 0..1".to_string(),
+        ));
+    }
+    if width == 0 || height == 0 {
+        return Err(SceneAssetEditError::InvalidOperation(
+            "image dimensions must be non-zero".to_string(),
+        ));
+    }
+    Ok((
+        (point.x * width.saturating_sub(1) as f32).round() as u32,
+        (point.y * height.saturating_sub(1) as f32).round() as u32,
+    ))
+}
+
+fn background_magic_mask(
+    image: &RgbaImage,
+    tolerance: u8,
+    sample: SceneAssetBackgroundSample,
+) -> Vec<bool> {
+    let sample_colors = background_sample_colors(image, sample);
+    let seeds = edge_seed_points_matching_samples(image, &sample_colors, tolerance);
+    contiguous_magic_mask_with_samples(image, &seeds, &sample_colors, tolerance)
+}
+
+fn background_sample_colors(
+    image: &RgbaImage,
+    sample: SceneAssetBackgroundSample,
+) -> Vec<Rgba<u8>> {
+    if image.width() == 0 || image.height() == 0 {
+        return Vec::new();
+    }
+    match sample {
+        SceneAssetBackgroundSample::Corners => {
+            let max_x = image.width() - 1;
+            let max_y = image.height() - 1;
+            vec![
+                *image.get_pixel(0, 0),
+                *image.get_pixel(max_x, 0),
+                *image.get_pixel(0, max_y),
+                *image.get_pixel(max_x, max_y),
+            ]
+        }
+        SceneAssetBackgroundSample::Edges => edge_points(image)
+            .into_iter()
+            .map(|(x, y)| *image.get_pixel(x, y))
+            .collect(),
+    }
+}
+
+fn edge_seed_points_matching_samples(
+    image: &RgbaImage,
+    sample_colors: &[Rgba<u8>],
+    tolerance: u8,
+) -> Vec<(u32, u32)> {
+    edge_points(image)
+        .into_iter()
+        .filter(|&(x, y)| pixel_matches_any(*image.get_pixel(x, y), sample_colors, tolerance))
+        .collect()
+}
+
+fn edge_points(image: &RgbaImage) -> Vec<(u32, u32)> {
+    let mut points = Vec::new();
+    if image.width() == 0 || image.height() == 0 {
+        return points;
+    }
+    let max_x = image.width() - 1;
+    let max_y = image.height() - 1;
+    for x in 0..image.width() {
+        points.push((x, 0));
+        if max_y > 0 {
+            points.push((x, max_y));
+        }
+    }
+    for y in 1..max_y {
+        points.push((0, y));
+        if max_x > 0 {
+            points.push((max_x, y));
+        }
+    }
+    points
+}
+
+fn contiguous_magic_mask(image: &RgbaImage, seeds: &[(u32, u32)], tolerance: u8) -> Vec<bool> {
+    let sample_colors = seeds
+        .iter()
+        .filter(|&&(x, y)| x < image.width() && y < image.height())
+        .map(|&(x, y)| *image.get_pixel(x, y))
+        .collect::<Vec<_>>();
+    contiguous_magic_mask_with_samples(image, seeds, &sample_colors, tolerance)
+}
+
+fn contiguous_magic_mask_with_samples(
+    image: &RgbaImage,
+    seeds: &[(u32, u32)],
+    sample_colors: &[Rgba<u8>],
+    tolerance: u8,
+) -> Vec<bool> {
+    let len = pixel_len(image);
+    let mut selected = vec![false; len];
+    if sample_colors.is_empty() {
+        return selected;
+    }
+    let mut queue = VecDeque::new();
+    for &(x, y) in seeds {
+        if x >= image.width() || y >= image.height() {
+            continue;
+        }
+        if !pixel_matches_any(*image.get_pixel(x, y), sample_colors, tolerance) {
+            continue;
+        }
+        let index = pixel_index(image, x, y);
+        if !selected[index] {
+            selected[index] = true;
+            queue.push_back((x, y));
+        }
+    }
+    while let Some((x, y)) = queue.pop_front() {
+        for (nx, ny) in neighbor_points(image, x, y) {
+            let index = pixel_index(image, nx, ny);
+            if selected[index] {
+                continue;
+            }
+            if pixel_matches_any(*image.get_pixel(nx, ny), sample_colors, tolerance) {
+                selected[index] = true;
+                queue.push_back((nx, ny));
+            }
+        }
+    }
+    selected
+}
+
+fn global_magic_mask(image: &RgbaImage, sample_color: Rgba<u8>, tolerance: u8) -> Vec<bool> {
+    image
+        .pixels()
+        .map(|pixel| pixel_matches(*pixel, sample_color, tolerance))
+        .collect()
+}
+
+fn apply_transparency_mask(image: &mut RgbaImage, mask: &[bool], feather: u32) {
+    if mask.len() != pixel_len(image) {
+        return;
+    }
+    let mut alpha_factors = vec![1.0f32; mask.len()];
+    for (index, selected) in mask.iter().copied().enumerate() {
+        if selected {
+            alpha_factors[index] = 0.0;
+        }
+    }
+    if feather > 0 {
+        let radius = feather as i32;
+        for y in 0..image.height() {
+            for x in 0..image.width() {
+                if !mask[pixel_index(image, x, y)] {
+                    continue;
+                }
+                for dy in -radius..=radius {
+                    for dx in -radius..=radius {
+                        if dx == 0 && dy == 0 {
+                            continue;
+                        }
+                        let nx = x as i32 + dx;
+                        let ny = y as i32 + dy;
+                        if nx < 0
+                            || ny < 0
+                            || nx >= image.width() as i32
+                            || ny >= image.height() as i32
+                        {
+                            continue;
+                        }
+                        let neighbor_index = pixel_index(image, nx as u32, ny as u32);
+                        if mask[neighbor_index] {
+                            continue;
+                        }
+                        let distance = dx.abs().max(dy.abs()) as f32;
+                        let factor = (distance / (feather as f32 + 1.0)).clamp(0.0, 1.0);
+                        alpha_factors[neighbor_index] = alpha_factors[neighbor_index].min(factor);
+                    }
+                }
+            }
+        }
+    }
+    for y in 0..image.height() {
+        for x in 0..image.width() {
+            let index = pixel_index(image, x, y);
+            let factor = alpha_factors[index];
+            if factor < 1.0 {
+                let pixel = image.get_pixel_mut(x, y);
+                pixel[3] = (pixel[3] as f32 * factor).round().clamp(0.0, 255.0) as u8;
+            }
+        }
+    }
+}
+
+fn neighbor_points(image: &RgbaImage, x: u32, y: u32) -> Vec<(u32, u32)> {
+    let mut neighbors = Vec::with_capacity(4);
+    if x > 0 {
+        neighbors.push((x - 1, y));
+    }
+    if y > 0 {
+        neighbors.push((x, y - 1));
+    }
+    if x + 1 < image.width() {
+        neighbors.push((x + 1, y));
+    }
+    if y + 1 < image.height() {
+        neighbors.push((x, y + 1));
+    }
+    neighbors
+}
+
+fn pixel_matches_any(pixel: Rgba<u8>, sample_colors: &[Rgba<u8>], tolerance: u8) -> bool {
+    sample_colors
+        .iter()
+        .copied()
+        .any(|sample| pixel_matches(pixel, sample, tolerance))
+}
+
+fn pixel_matches(pixel: Rgba<u8>, sample: Rgba<u8>, tolerance: u8) -> bool {
+    let tolerance = tolerance as i16;
+    (pixel[0] as i16 - sample[0] as i16).abs() <= tolerance
+        && (pixel[1] as i16 - sample[1] as i16).abs() <= tolerance
+        && (pixel[2] as i16 - sample[2] as i16).abs() <= tolerance
+}
+
+fn selected_pixel_count(mask: &[bool]) -> usize {
+    mask.iter().filter(|selected| **selected).count()
+}
+
+fn pixel_len(image: &RgbaImage) -> usize {
+    image.width() as usize * image.height() as usize
+}
+
+fn pixel_index(image: &RgbaImage, x: u32, y: u32) -> usize {
+    y as usize * image.width() as usize + x as usize
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -1237,6 +1629,18 @@ fn default_tint_amount() -> f32 {
     0.5
 }
 
+fn default_magic_tolerance() -> u8 {
+    24
+}
+
+fn default_background_sample() -> SceneAssetBackgroundSample {
+    SceneAssetBackgroundSample::Corners
+}
+
+fn default_true() -> bool {
+    true
+}
+
 fn lerp(a: f32, b: f32, t: f32) -> f32 {
     a + (b - a) * t
 }
@@ -1256,6 +1660,29 @@ mod tests {
         for y in 4..28 {
             for x in 8..24 {
                 image.put_pixel(x, y, Rgba([220u8, 180, 170, 255]));
+            }
+        }
+        image.save(path).unwrap();
+    }
+
+    fn write_subject_on_background(path: &Path) {
+        let mut image = ImageBuffer::from_pixel(16, 16, Rgba([245u8, 245, 240, 255]));
+        for y in 5..11 {
+            for x in 6..10 {
+                image.put_pixel(x, y, Rgba([180u8, 40, 70, 255]));
+            }
+        }
+        image.save(path).unwrap();
+    }
+
+    fn write_two_matching_islands(path: &Path) {
+        let mut image = ImageBuffer::from_pixel(16, 8, Rgba([240u8, 240, 240, 255]));
+        for y in 2..6 {
+            for x in 2..5 {
+                image.put_pixel(x, y, Rgba([30u8, 80, 220, 255]));
+            }
+            for x in 11..14 {
+                image.put_pixel(x, y, Rgba([30u8, 80, 220, 255]));
             }
         }
         image.save(path).unwrap();
@@ -1477,5 +1904,76 @@ mod tests {
             .path()
             .join("source-root/4cher_set4_vn_sprites/kiki-neutral.png")
             .is_file());
+    }
+
+    #[test]
+    fn remove_background_makes_edge_color_transparent_and_keeps_subject() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join("source.png");
+        let output = dir.path().join("transparent.png");
+        write_subject_on_background(&source);
+
+        let report = make_scene_asset_background_transparent(
+            &source,
+            &output,
+            8,
+            0,
+            SceneAssetBackgroundSample::Corners,
+            false,
+        )
+        .unwrap();
+
+        let edited = load_rgba_image(&output).unwrap();
+        assert!(report.selected_pixels > 0);
+        assert_equal!(edited.get_pixel(0, 0)[3], 0);
+        assert_equal!(edited.get_pixel(8, 8)[3], 255);
+    }
+
+    #[test]
+    fn magic_erase_contiguous_seed_does_not_remove_separate_matching_island() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join("source.png");
+        let output = dir.path().join("magic.png");
+        write_two_matching_islands(&source);
+
+        let report = magic_erase_scene_asset_image(
+            &source,
+            &output,
+            SceneAssetNormalizedPoint { x: 0.19, y: 0.50 },
+            4,
+            true,
+            0,
+            false,
+        )
+        .unwrap();
+
+        let edited = load_rgba_image(&output).unwrap();
+        assert_equal!(report.selected_pixels, 12);
+        assert_equal!(edited.get_pixel(3, 3)[3], 0);
+        assert_equal!(edited.get_pixel(12, 3)[3], 255);
+    }
+
+    #[test]
+    fn magic_erase_global_removes_all_matching_pixels() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join("source.png");
+        let output = dir.path().join("magic-global.png");
+        write_two_matching_islands(&source);
+
+        let report = magic_erase_scene_asset_image(
+            &source,
+            &output,
+            SceneAssetNormalizedPoint { x: 0.19, y: 0.50 },
+            4,
+            false,
+            0,
+            false,
+        )
+        .unwrap();
+
+        let edited = load_rgba_image(&output).unwrap();
+        assert_equal!(report.selected_pixels, 24);
+        assert_equal!(edited.get_pixel(3, 3)[3], 0);
+        assert_equal!(edited.get_pixel(12, 3)[3], 0);
     }
 }
