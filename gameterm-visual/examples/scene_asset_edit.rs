@@ -1,15 +1,18 @@
 use gameterm_visual::{
-    channel_matte_erase_scene_asset_image, cleanup_scene_asset_hair_edges,
-    color_range_erase_scene_asset_image, continuity_report_for_scene_asset_frames,
-    default_scene_asset_feature_map, export_scene_asset_source_images,
-    generate_scene_asset_animation, generate_scene_asset_expression, inspect_scene_asset_image,
-    load_scene_asset_feature_map, load_scene_asset_recipe_book, magic_erase_add_scene_asset_image,
-    magic_erase_scene_asset_image, make_scene_asset_background_transparent,
-    make_scene_asset_background_transparent_polished, preview_scene_asset_selection_mask,
-    restore_scene_asset_from_source, validate_scene_asset_feature_map, write_scene_asset_json,
-    SceneAssetBackgroundSample, SceneAssetDefringeMode, SceneAssetHairCleanupMode,
-    SceneAssetMaskPolishOptions, SceneAssetMaskPreviewMode, SceneAssetMaskPreviewOptions,
-    SceneAssetNormalizedPoint, SceneAssetRestoreFilter, SceneAssetRestoreOptions,
+    alpha_paint_scene_asset_region, channel_matte_erase_scene_asset_image,
+    cleanup_scene_asset_hair_edges, color_range_erase_scene_asset_image,
+    continuity_report_for_scene_asset_frames, default_scene_asset_feature_map,
+    export_scene_asset_source_images, fill_scene_asset_region, generate_scene_asset_animation,
+    generate_scene_asset_expression, inspect_scene_asset_image, load_scene_asset_feature_map,
+    load_scene_asset_recipe_book, magic_erase_add_scene_asset_image, magic_erase_scene_asset_image,
+    make_scene_asset_background_transparent, make_scene_asset_background_transparent_polished,
+    preview_scene_asset_grid, preview_scene_asset_selection_mask, report_scene_asset_points,
+    restore_scene_asset_from_source, sample_fill_scene_asset_region,
+    validate_scene_asset_feature_map, write_scene_asset_json, SceneAssetAlphaPaintOptions,
+    SceneAssetBackgroundSample, SceneAssetDefringeMode, SceneAssetFillOptions,
+    SceneAssetGridPreviewOptions, SceneAssetHairCleanupMode, SceneAssetMaskPolishOptions,
+    SceneAssetMaskPreviewMode, SceneAssetMaskPreviewOptions, SceneAssetNormalizedPoint,
+    SceneAssetRestoreFilter, SceneAssetRestoreOptions, SceneAssetSampleFillOptions,
 };
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -55,9 +58,16 @@ struct CliArgs {
     seed_x: Option<f32>,
     seed_y: Option<f32>,
     seeds: Vec<SceneAssetNormalizedPoint>,
+    points: Vec<SceneAssetNormalizedPoint>,
+    sample_point: Option<SceneAssetNormalizedPoint>,
     polygons: Vec<Vec<SceneAssetNormalizedPoint>>,
     within_polygons: Vec<Vec<SceneAssetNormalizedPoint>>,
     sample: Option<SceneAssetBackgroundSample>,
+    color: Option<[u8; 4]>,
+    alpha: Option<u8>,
+    sample_radius: Option<u32>,
+    step: Option<f32>,
+    whole_image: bool,
     global: bool,
     frames: Vec<PathBuf>,
     pretty: bool,
@@ -68,10 +78,15 @@ fn usage() {
     eprintln!(
         "Usage:
   cargo run -p gameterm-visual --example scene_asset_edit -- inspect IMAGE [--output PATH] [--pretty]
+  cargo run -p gameterm-visual --example scene_asset_edit -- point-report --source IMAGE --point X,Y [--point X,Y ...] [--pretty]
+  cargo run -p gameterm-visual --example scene_asset_edit -- grid-preview --source IMAGE --output PATH [--step N] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- map-template IMAGE --character NAME --output PATH [--base TEXT] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- validate-map --image IMAGE --feature-map PATH
   cargo run -p gameterm-visual --example scene_asset_edit -- expression --base IMAGE --feature-map PATH --recipe PATH --expression NAME --output PATH [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- animation --base IMAGE --feature-map PATH --recipe PATH --animation NAME --output-dir DIR [--character NAME] [--force]
+  cargo run -p gameterm-visual --example scene_asset_edit -- fill-region --source IMAGE --output PATH --color '#RRGGBB[AA]' (--within-polygon X,Y;X,Y;X,Y | --within-regions CSV | --whole-image) [--protect FEATURE_MAP] [--protect-regions CSV] [--force]
+  cargo run -p gameterm-visual --example scene_asset_edit -- sample-fill --source IMAGE --output PATH --sample-point X,Y (--within-polygon X,Y;X,Y;X,Y | --within-regions CSV) [--sample-radius N] [--protect FEATURE_MAP] [--protect-regions CSV] [--force]
+  cargo run -p gameterm-visual --example scene_asset_edit -- alpha-paint --source IMAGE --output PATH --alpha N (--within-polygon X,Y;X,Y;X,Y | --within-regions CSV | --whole-image) [--protect FEATURE_MAP] [--protect-regions CSV] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- remove-background --source IMAGE --output PATH [--tolerance N] [--feather N] [--sample corners|edges] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- remove-background-polished --source IMAGE --output PATH [--tolerance N] [--sample corners|edges] [--erode N] [--dilate N] [--open N] [--close N] [--remove-small N] [--fill-holes N] [--feather N] [--defringe none|white] [--protect FEATURE_MAP] [--protect-regions CSV] [--within-regions CSV] [--within-polygon X,Y;X,Y;X,Y] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- color-range-erase --source IMAGE --output PATH [--tolerance N] [--sample corners|edges] [--erode N] [--dilate N] [--open N] [--close N] [--remove-small N] [--fill-holes N] [--feather N] [--defringe none|white] [--protect FEATURE_MAP] [--protect-regions CSV] [--within-regions CSV] [--within-polygon X,Y;X,Y;X,Y] [--force]
@@ -123,10 +138,17 @@ Options:
   --seed-x N                 Normalized magic-erase seed x, 0..1.
   --seed-y N                 Normalized magic-erase seed y, 0..1.
   --seed X,Y                 Repeated normalized seed for magic-erase-add.
+  --point X,Y                Repeated normalized point for point-report.
+  --sample-point X,Y         Normalized source color sample point for sample-fill.
+  --sample-radius N          Pixel radius for sample-fill median color. Default: 1.
   --polygon X,Y;X,Y;X,Y      Repeated normalized polygon for restore-from-source.
   --within-polygon X,Y;X,Y;X,Y
                               Repeated normalized polygon to bound selection masks.
   --selection-mode MODE      Mask preview mode: background, color-range, magic-add, channel-matte.
+  --color '#RRGGBB[AA]'      Fill color for paint operations.
+  --alpha N                  Alpha value for paint operations, 0..255.
+  --step N                   Normalized grid spacing. Default: 0.1.
+  --whole-image              Allow a paint operation to affect the whole image.
   --sample corners|edges     Background samples. Default: corners.
   --global                   Select all matching pixels instead of contiguous seed fill.
   --pretty                   Pretty-print JSON.
@@ -147,10 +169,15 @@ fn main() {
 
     let result = match args.command.as_deref() {
         Some("inspect") => run_inspect(args),
+        Some("point-report") => run_point_report(args),
+        Some("grid-preview") => run_grid_preview(args),
         Some("map-template") => run_map_template(args),
         Some("validate-map") => run_validate_map(args),
         Some("expression") => run_expression(args),
         Some("animation") => run_animation(args),
+        Some("fill-region") => run_fill_region(args),
+        Some("sample-fill") => run_sample_fill(args),
+        Some("alpha-paint") => run_alpha_paint(args),
         Some("remove-background") => run_remove_background(args),
         Some("remove-background-polished") => run_remove_background_polished(args),
         Some("color-range-erase") => run_color_range_erase(args),
@@ -176,6 +203,27 @@ fn run_inspect(args: CliArgs) -> Result<(), String> {
     let image = required_path(args.image, "IMAGE")?;
     let report = inspect_scene_asset_image(&image).map_err(|err| err.to_string())?;
     write_json(args.output.as_deref(), &report, args.pretty, args.force)
+}
+
+fn run_point_report(args: CliArgs) -> Result<(), String> {
+    let source = required_path(args.source.clone(), "--source")?;
+    let report = report_scene_asset_points(&source, &args.points).map_err(|err| err.to_string())?;
+    write_json(args.output.as_deref(), &report, args.pretty, args.force)
+}
+
+fn run_grid_preview(args: CliArgs) -> Result<(), String> {
+    let source = required_path(args.source.clone(), "--source")?;
+    let output = required_path(args.output.clone(), "--output")?;
+    let report = preview_scene_asset_grid(
+        &source,
+        &output,
+        SceneAssetGridPreviewOptions {
+            step: args.step.unwrap_or(0.1),
+        },
+        args.force,
+    )
+    .map_err(|err| err.to_string())?;
+    write_json(None, &report, args.pretty, true)
 }
 
 fn run_map_template(args: CliArgs) -> Result<(), String> {
@@ -248,6 +296,75 @@ fn run_animation(args: CliArgs) -> Result<(), String> {
         recipe_path.parent(),
         &output_dir,
         &character,
+        args.force,
+    )
+    .map_err(|err| err.to_string())?;
+    write_json(None, &report, args.pretty, true)
+}
+
+fn run_fill_region(args: CliArgs) -> Result<(), String> {
+    let source = required_path(args.source.clone(), "--source")?;
+    let output = required_path(args.output.clone(), "--output")?;
+    let feature_map = load_optional_protect_map(&args)?;
+    let report = fill_scene_asset_region(
+        &source,
+        &output,
+        SceneAssetFillOptions {
+            color: args
+                .color
+                .ok_or_else(|| "--color is required".to_string())?,
+            whole_image: args.whole_image,
+            within_regions: csv_values(args.within_regions.as_deref()),
+            within_polygons: args.within_polygons.clone(),
+            protect_regions: csv_values(args.protect_regions.as_deref()),
+        },
+        feature_map.as_ref(),
+        args.force,
+    )
+    .map_err(|err| err.to_string())?;
+    write_json(None, &report, args.pretty, true)
+}
+
+fn run_sample_fill(args: CliArgs) -> Result<(), String> {
+    let source = required_path(args.source.clone(), "--source")?;
+    let output = required_path(args.output.clone(), "--output")?;
+    let feature_map = load_optional_protect_map(&args)?;
+    let report = sample_fill_scene_asset_region(
+        &source,
+        &output,
+        SceneAssetSampleFillOptions {
+            sample_point: args
+                .sample_point
+                .ok_or_else(|| "--sample-point is required".to_string())?,
+            sample_radius: args.sample_radius.unwrap_or(1),
+            within_regions: csv_values(args.within_regions.as_deref()),
+            within_polygons: args.within_polygons.clone(),
+            protect_regions: csv_values(args.protect_regions.as_deref()),
+        },
+        feature_map.as_ref(),
+        args.force,
+    )
+    .map_err(|err| err.to_string())?;
+    write_json(None, &report, args.pretty, true)
+}
+
+fn run_alpha_paint(args: CliArgs) -> Result<(), String> {
+    let source = required_path(args.source.clone(), "--source")?;
+    let output = required_path(args.output.clone(), "--output")?;
+    let feature_map = load_optional_protect_map(&args)?;
+    let report = alpha_paint_scene_asset_region(
+        &source,
+        &output,
+        SceneAssetAlphaPaintOptions {
+            alpha: args
+                .alpha
+                .ok_or_else(|| "--alpha is required".to_string())?,
+            whole_image: args.whole_image,
+            within_regions: csv_values(args.within_regions.as_deref()),
+            within_polygons: args.within_polygons.clone(),
+            protect_regions: csv_values(args.protect_regions.as_deref()),
+        },
+        feature_map.as_ref(),
         args.force,
     )
     .map_err(|err| err.to_string())?;
@@ -560,13 +677,30 @@ fn parse_args() -> Result<CliArgs, String> {
             "--seed" => parsed
                 .seeds
                 .push(parse_seed(&next_text(&mut args, "--seed")?)?),
+            "--point" => parsed.points.push(parse_point_value(
+                &next_text(&mut args, "--point")?,
+                "--point",
+            )?),
+            "--sample-point" => {
+                parsed.sample_point = Some(parse_point_value(
+                    &next_text(&mut args, "--sample-point")?,
+                    "--sample-point",
+                )?)
+            }
             "--polygon" => parsed
                 .polygons
                 .push(parse_polygon(&next_text(&mut args, "--polygon")?)?),
             "--within-polygon" => parsed
                 .within_polygons
                 .push(parse_polygon(&next_text(&mut args, "--within-polygon")?)?),
+            "--color" => parsed.color = Some(parse_color(&next_text(&mut args, "--color")?)?),
+            "--alpha" => parsed.alpha = Some(next_parse(&mut args, "--alpha")?),
+            "--sample-radius" => {
+                parsed.sample_radius = Some(next_parse(&mut args, "--sample-radius")?)
+            }
+            "--step" => parsed.step = Some(next_parse(&mut args, "--step")?),
             "--sample" => parsed.sample = Some(parse_sample(&next_text(&mut args, "--sample")?)?),
+            "--whole-image" => parsed.whole_image = true,
             "--global" => parsed.global = true,
             "--pretty" => parsed.pretty = true,
             "--force" => parsed.force = true,
@@ -675,18 +809,45 @@ fn parse_selection_mode(value: &str) -> Result<SceneAssetMaskPreviewMode, String
 }
 
 fn parse_seed(value: &str) -> Result<SceneAssetNormalizedPoint, String> {
+    parse_point_value(value, "--seed")
+}
+
+fn parse_point_value(value: &str, label: &str) -> Result<SceneAssetNormalizedPoint, String> {
     let (x, y) = value
         .split_once(',')
-        .ok_or_else(|| format!("--seed value `{value}` is invalid; expected X,Y"))?;
+        .ok_or_else(|| format!("{label} value `{value}` is invalid; expected X,Y"))?;
     let x = x
         .trim()
         .parse::<f32>()
-        .map_err(|err| format!("--seed x value `{x}` is invalid: {err}"))?;
+        .map_err(|err| format!("{label} x value `{x}` is invalid: {err}"))?;
     let y = y
         .trim()
         .parse::<f32>()
-        .map_err(|err| format!("--seed y value `{y}` is invalid: {err}"))?;
+        .map_err(|err| format!("{label} y value `{y}` is invalid: {err}"))?;
     Ok(SceneAssetNormalizedPoint { x, y })
+}
+
+fn parse_color(value: &str) -> Result<[u8; 4], String> {
+    let hex = value.trim().strip_prefix('#').unwrap_or(value.trim());
+    if hex.len() != 6 && hex.len() != 8 {
+        return Err(format!(
+            "--color value `{value}` is invalid; expected #RRGGBB or #RRGGBBAA"
+        ));
+    }
+    let parse_channel = |start: usize| {
+        u8::from_str_radix(&hex[start..start + 2], 16)
+            .map_err(|err| format!("--color value `{value}` is invalid: {err}"))
+    };
+    Ok([
+        parse_channel(0)?,
+        parse_channel(2)?,
+        parse_channel(4)?,
+        if hex.len() == 8 {
+            parse_channel(6)?
+        } else {
+            255
+        },
+    ])
 }
 
 fn parse_polygon(value: &str) -> Result<Vec<SceneAssetNormalizedPoint>, String> {

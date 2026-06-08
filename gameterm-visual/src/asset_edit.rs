@@ -555,6 +555,82 @@ pub struct SceneAssetMaskPreviewReport {
     pub report: SceneAssetImageReport,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetPointSample {
+    pub point: SceneAssetNormalizedPoint,
+    pub pixel_x: u32,
+    pub pixel_y: u32,
+    pub rgba: [u8; 4],
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetPointReport {
+    pub operation: String,
+    pub source: String,
+    pub samples: Vec<SceneAssetPointSample>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetGridPreviewOptions {
+    pub step: f32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetGridPreviewReport {
+    pub operation: String,
+    pub source: String,
+    pub output_path: String,
+    pub step: f32,
+    pub report: SceneAssetImageReport,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetPaintReport {
+    pub operation: String,
+    pub source: String,
+    pub output_path: String,
+    pub changed_pixels: usize,
+    pub report: SceneAssetImageReport,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetFillOptions {
+    pub color: [u8; 4],
+    #[serde(default)]
+    pub whole_image: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub within_regions: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub within_polygons: Vec<Vec<SceneAssetNormalizedPoint>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub protect_regions: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetSampleFillOptions {
+    pub sample_point: SceneAssetNormalizedPoint,
+    pub sample_radius: u32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub within_regions: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub within_polygons: Vec<Vec<SceneAssetNormalizedPoint>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub protect_regions: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetAlphaPaintOptions {
+    pub alpha: u8,
+    #[serde(default)]
+    pub whole_image: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub within_regions: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub within_polygons: Vec<Vec<SceneAssetNormalizedPoint>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub protect_regions: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SceneAssetEditError {
     #[error("image file error for `{path}`: {message}")]
@@ -1183,6 +1259,181 @@ pub fn preview_scene_asset_selection_mask(
         mode: options.mode,
         selected_pixels,
         total_pixels: mask.len(),
+        report: inspect_scene_asset_image(output_path)?,
+    })
+}
+
+pub fn report_scene_asset_points(
+    source_path: &Path,
+    points: &[SceneAssetNormalizedPoint],
+) -> Result<SceneAssetPointReport, SceneAssetEditError> {
+    if points.is_empty() {
+        return Err(SceneAssetEditError::InvalidOperation(
+            "point-report requires at least one --point".to_string(),
+        ));
+    }
+    let image = load_rgba_image(source_path)?;
+    let mut samples = Vec::with_capacity(points.len());
+    for &point in points {
+        let (pixel_x, pixel_y) = normalized_point_to_pixel(point, image.width(), image.height())?;
+        samples.push(SceneAssetPointSample {
+            point,
+            pixel_x,
+            pixel_y,
+            rgba: image.get_pixel(pixel_x, pixel_y).0,
+        });
+    }
+    Ok(SceneAssetPointReport {
+        operation: "point_report".to_string(),
+        source: source_path.display().to_string(),
+        samples,
+    })
+}
+
+pub fn preview_scene_asset_grid(
+    source_path: &Path,
+    output_path: &Path,
+    options: SceneAssetGridPreviewOptions,
+    force: bool,
+) -> Result<SceneAssetGridPreviewReport, SceneAssetEditError> {
+    if !options.step.is_finite() || options.step <= 0.0 || options.step > 1.0 {
+        return Err(SceneAssetEditError::InvalidOperation(
+            "grid step must be finite and inside 0..1".to_string(),
+        ));
+    }
+    let mut image = load_rgba_image(source_path)?;
+    let line = Rgba([255, 64, 64, 220]);
+    let bold_line = Rgba([255, 220, 64, 255]);
+    let mut value = 0.0;
+    let mut index = 0usize;
+    while value <= 1.0 + f32::EPSILON {
+        let x = (value.min(1.0) * image.width().saturating_sub(1) as f32).round() as u32;
+        let y = (value.min(1.0) * image.height().saturating_sub(1) as f32).round() as u32;
+        let color = if index == 0 || (value - 0.5).abs() < options.step / 2.0 {
+            bold_line
+        } else {
+            line
+        };
+        draw_vertical_line(&mut image, x, color);
+        draw_horizontal_line(&mut image, y, color);
+        value += options.step;
+        index += 1;
+    }
+    save_rgba_image(&image, output_path, force)?;
+    Ok(SceneAssetGridPreviewReport {
+        operation: "grid_preview".to_string(),
+        source: source_path.display().to_string(),
+        output_path: output_path.display().to_string(),
+        step: options.step,
+        report: inspect_scene_asset_image(output_path)?,
+    })
+}
+
+pub fn fill_scene_asset_region(
+    source_path: &Path,
+    output_path: &Path,
+    options: SceneAssetFillOptions,
+    feature_map: Option<&SceneAssetFeatureMap>,
+    force: bool,
+) -> Result<SceneAssetPaintReport, SceneAssetEditError> {
+    let mut image = load_rgba_image(source_path)?;
+    let mask = paint_bounds_mask(
+        image.width(),
+        image.height(),
+        options.whole_image,
+        &options.within_regions,
+        &options.within_polygons,
+        &options.protect_regions,
+        feature_map,
+    )?;
+    let color = Rgba(options.color);
+    let changed_pixels = paint_pixels(&mut image, mask.pixels(), |pixel| {
+        if *pixel == color {
+            false
+        } else {
+            *pixel = color;
+            true
+        }
+    });
+    save_rgba_image(&image, output_path, force)?;
+    Ok(SceneAssetPaintReport {
+        operation: "fill_region".to_string(),
+        source: source_path.display().to_string(),
+        output_path: output_path.display().to_string(),
+        changed_pixels,
+        report: inspect_scene_asset_image(output_path)?,
+    })
+}
+
+pub fn sample_fill_scene_asset_region(
+    source_path: &Path,
+    output_path: &Path,
+    options: SceneAssetSampleFillOptions,
+    feature_map: Option<&SceneAssetFeatureMap>,
+    force: bool,
+) -> Result<SceneAssetPaintReport, SceneAssetEditError> {
+    let mut image = load_rgba_image(source_path)?;
+    let (sample_x, sample_y) =
+        normalized_point_to_pixel(options.sample_point, image.width(), image.height())?;
+    let color = median_sample_color(&image, sample_x, sample_y, options.sample_radius);
+    let mask = paint_bounds_mask(
+        image.width(),
+        image.height(),
+        false,
+        &options.within_regions,
+        &options.within_polygons,
+        &options.protect_regions,
+        feature_map,
+    )?;
+    let changed_pixels = paint_pixels(&mut image, mask.pixels(), |pixel| {
+        if *pixel == color {
+            false
+        } else {
+            *pixel = color;
+            true
+        }
+    });
+    save_rgba_image(&image, output_path, force)?;
+    Ok(SceneAssetPaintReport {
+        operation: "sample_fill".to_string(),
+        source: source_path.display().to_string(),
+        output_path: output_path.display().to_string(),
+        changed_pixels,
+        report: inspect_scene_asset_image(output_path)?,
+    })
+}
+
+pub fn alpha_paint_scene_asset_region(
+    source_path: &Path,
+    output_path: &Path,
+    options: SceneAssetAlphaPaintOptions,
+    feature_map: Option<&SceneAssetFeatureMap>,
+    force: bool,
+) -> Result<SceneAssetPaintReport, SceneAssetEditError> {
+    let mut image = load_rgba_image(source_path)?;
+    let mask = paint_bounds_mask(
+        image.width(),
+        image.height(),
+        options.whole_image,
+        &options.within_regions,
+        &options.within_polygons,
+        &options.protect_regions,
+        feature_map,
+    )?;
+    let changed_pixels = paint_pixels(&mut image, mask.pixels(), |pixel| {
+        if pixel[3] == options.alpha {
+            false
+        } else {
+            pixel[3] = options.alpha;
+            true
+        }
+    });
+    save_rgba_image(&image, output_path, force)?;
+    Ok(SceneAssetPaintReport {
+        operation: "alpha_paint".to_string(),
+        source: source_path.display().to_string(),
+        output_path: output_path.display().to_string(),
+        changed_pixels,
         report: inspect_scene_asset_image(output_path)?,
     })
 }
@@ -1984,6 +2235,122 @@ fn selection_mask_preview_image(image: &RgbaImage, mask: &SceneAssetMask) -> Rgb
         }
     }
     output
+}
+
+fn paint_bounds_mask(
+    width: u32,
+    height: u32,
+    whole_image: bool,
+    within_regions: &[String],
+    within_polygons: &[Vec<SceneAssetNormalizedPoint>],
+    protect_regions: &[String],
+    feature_map: Option<&SceneAssetFeatureMap>,
+) -> Result<SceneAssetMask, SceneAssetEditError> {
+    if !whole_image && within_regions.is_empty() && within_polygons.is_empty() {
+        return Err(SceneAssetEditError::InvalidOperation(
+            "paint operations require --within-regions, --within-polygon, or --whole-image"
+                .to_string(),
+        ));
+    }
+    let mut mask =
+        SceneAssetMask::from_pixels(width, height, vec![false; width as usize * height as usize]);
+    if whole_image {
+        mask.select_rect(SceneAssetPixelRect {
+            x: 0,
+            y: 0,
+            w: width,
+            h: height,
+        });
+    }
+    if !within_regions.is_empty() {
+        let Some(feature_map) = feature_map else {
+            return Err(SceneAssetEditError::InvalidOperation(
+                "--within-regions requires --protect or --feature-map".to_string(),
+            ));
+        };
+        for region in within_regions {
+            let region = region.trim();
+            if region.is_empty() {
+                continue;
+            }
+            mask.select_rect(feature_map.pixel_region(region, width, height)?);
+        }
+    }
+    for polygon in within_polygons {
+        mask.select_polygon(polygon)?;
+    }
+    if !protect_regions.is_empty() {
+        let Some(feature_map) = feature_map else {
+            return Err(SceneAssetEditError::InvalidOperation(
+                "--protect-regions requires --protect or --feature-map".to_string(),
+            ));
+        };
+        mask.protect_feature_regions(feature_map, protect_regions)?;
+    }
+    Ok(mask)
+}
+
+fn paint_pixels(
+    image: &mut RgbaImage,
+    mask: &[bool],
+    mut paint: impl FnMut(&mut Rgba<u8>) -> bool,
+) -> usize {
+    let mut changed_pixels = 0;
+    for y in 0..image.height() {
+        for x in 0..image.width() {
+            if !mask[mask_index(image.width(), x, y)] {
+                continue;
+            }
+            if paint(image.get_pixel_mut(x, y)) {
+                changed_pixels += 1;
+            }
+        }
+    }
+    changed_pixels
+}
+
+fn median_sample_color(image: &RgbaImage, x: u32, y: u32, radius: u32) -> Rgba<u8> {
+    let min_x = x.saturating_sub(radius);
+    let min_y = y.saturating_sub(radius);
+    let max_x = x
+        .saturating_add(radius)
+        .min(image.width().saturating_sub(1));
+    let max_y = y
+        .saturating_add(radius)
+        .min(image.height().saturating_sub(1));
+    let mut channels = [Vec::<u8>::new(), Vec::new(), Vec::new(), Vec::new()];
+    for sample_y in min_y..=max_y {
+        for sample_x in min_x..=max_x {
+            let pixel = image.get_pixel(sample_x, sample_y);
+            for channel in 0..4 {
+                channels[channel].push(pixel[channel]);
+            }
+        }
+    }
+    let mut rgba = [0; 4];
+    for channel in 0..4 {
+        channels[channel].sort_unstable();
+        rgba[channel] = channels[channel][channels[channel].len() / 2];
+    }
+    Rgba(rgba)
+}
+
+fn draw_vertical_line(image: &mut RgbaImage, x: u32, color: Rgba<u8>) {
+    if x >= image.width() {
+        return;
+    }
+    for y in 0..image.height() {
+        image.put_pixel(x, y, color);
+    }
+}
+
+fn draw_horizontal_line(image: &mut RgbaImage, y: u32, color: Rgba<u8>) {
+    if y >= image.height() {
+        return;
+    }
+    for x in 0..image.width() {
+        image.put_pixel(x, y, color);
+    }
 }
 
 fn color_range_mask(
@@ -3212,6 +3579,148 @@ mod tests {
             })
         );
         assert_equal!(report.sha256.len(), 64);
+    }
+
+    #[test]
+    fn point_report_maps_normalized_points_to_pixels_and_color() {
+        let dir = tempdir().unwrap();
+        let image_path = dir.path().join("sample.png");
+        let mut image = ImageBuffer::from_pixel(4, 4, Rgba([0u8, 0, 0, 255]));
+        image.put_pixel(3, 3, Rgba([10u8, 20, 30, 40]));
+        image.save(&image_path).unwrap();
+
+        let report =
+            report_scene_asset_points(&image_path, &[SceneAssetNormalizedPoint { x: 1.0, y: 1.0 }])
+                .unwrap();
+
+        assert_equal!(report.samples.len(), 1);
+        assert_equal!(report.samples[0].pixel_x, 3);
+        assert_equal!(report.samples[0].pixel_y, 3);
+        assert_equal!(report.samples[0].rgba, [10, 20, 30, 40]);
+    }
+
+    #[test]
+    fn grid_preview_draws_reference_lines() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join("source.png");
+        let output = dir.path().join("grid.png");
+        let image = ImageBuffer::from_pixel(5, 5, Rgba([0u8, 0, 0, 255]));
+        image.save(&source).unwrap();
+
+        preview_scene_asset_grid(
+            &source,
+            &output,
+            SceneAssetGridPreviewOptions { step: 0.5 },
+            false,
+        )
+        .unwrap();
+
+        let preview = load_rgba_image(&output).unwrap();
+        assert_equal!(*preview.get_pixel(0, 0), Rgba([255u8, 220, 64, 255]));
+        assert_equal!(*preview.get_pixel(2, 2), Rgba([255u8, 220, 64, 255]));
+        assert_equal!(*preview.get_pixel(4, 2), Rgba([255u8, 64, 64, 220]));
+    }
+
+    #[test]
+    fn fill_region_paints_only_bounded_polygon() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join("source.png");
+        let output = dir.path().join("fill.png");
+        let image = ImageBuffer::from_pixel(4, 4, Rgba([0u8, 0, 0, 255]));
+        image.save(&source).unwrap();
+
+        let report = fill_scene_asset_region(
+            &source,
+            &output,
+            SceneAssetFillOptions {
+                color: [200, 100, 50, 255],
+                whole_image: false,
+                within_regions: Vec::new(),
+                within_polygons: vec![vec![
+                    SceneAssetNormalizedPoint { x: 0.0, y: 0.0 },
+                    SceneAssetNormalizedPoint { x: 0.5, y: 0.0 },
+                    SceneAssetNormalizedPoint { x: 0.5, y: 1.0 },
+                    SceneAssetNormalizedPoint { x: 0.0, y: 1.0 },
+                ]],
+                protect_regions: Vec::new(),
+            },
+            None,
+            false,
+        )
+        .unwrap();
+
+        let edited = load_rgba_image(&output).unwrap();
+        assert_equal!(report.changed_pixels, 8);
+        assert_equal!(*edited.get_pixel(0, 0), Rgba([200u8, 100, 50, 255]));
+        assert_equal!(*edited.get_pixel(3, 0), Rgba([0u8, 0, 0, 255]));
+    }
+
+    #[test]
+    fn sample_fill_uses_median_sample_color() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join("source.png");
+        let output = dir.path().join("sample-fill.png");
+        let mut image = ImageBuffer::from_pixel(4, 4, Rgba([0u8, 0, 0, 255]));
+        image.put_pixel(0, 0, Rgba([80u8, 90, 100, 255]));
+        image.save(&source).unwrap();
+
+        sample_fill_scene_asset_region(
+            &source,
+            &output,
+            SceneAssetSampleFillOptions {
+                sample_point: SceneAssetNormalizedPoint { x: 0.0, y: 0.0 },
+                sample_radius: 0,
+                within_regions: Vec::new(),
+                within_polygons: vec![vec![
+                    SceneAssetNormalizedPoint { x: 0.5, y: 0.0 },
+                    SceneAssetNormalizedPoint { x: 1.0, y: 0.0 },
+                    SceneAssetNormalizedPoint { x: 1.0, y: 1.0 },
+                    SceneAssetNormalizedPoint { x: 0.5, y: 1.0 },
+                ]],
+                protect_regions: Vec::new(),
+            },
+            None,
+            false,
+        )
+        .unwrap();
+
+        let edited = load_rgba_image(&output).unwrap();
+        assert_equal!(*edited.get_pixel(3, 0), Rgba([80u8, 90, 100, 255]));
+        assert_equal!(*edited.get_pixel(0, 0), Rgba([80u8, 90, 100, 255]));
+        assert_equal!(*edited.get_pixel(1, 0), Rgba([0u8, 0, 0, 255]));
+    }
+
+    #[test]
+    fn alpha_paint_changes_alpha_without_changing_rgb() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join("source.png");
+        let output = dir.path().join("alpha.png");
+        let image = ImageBuffer::from_pixel(4, 4, Rgba([20u8, 40, 60, 255]));
+        image.save(&source).unwrap();
+
+        alpha_paint_scene_asset_region(
+            &source,
+            &output,
+            SceneAssetAlphaPaintOptions {
+                alpha: 80,
+                whole_image: false,
+                within_regions: Vec::new(),
+                within_polygons: vec![vec![
+                    SceneAssetNormalizedPoint { x: 0.0, y: 0.0 },
+                    SceneAssetNormalizedPoint { x: 0.5, y: 0.0 },
+                    SceneAssetNormalizedPoint { x: 0.5, y: 1.0 },
+                    SceneAssetNormalizedPoint { x: 0.0, y: 1.0 },
+                ]],
+                protect_regions: Vec::new(),
+            },
+            None,
+            false,
+        )
+        .unwrap();
+
+        let edited = load_rgba_image(&output).unwrap();
+        assert_equal!(*edited.get_pixel(0, 0), Rgba([20u8, 40, 60, 80]));
+        assert_equal!(*edited.get_pixel(3, 0), Rgba([20u8, 40, 60, 255]));
     }
 
     #[test]
