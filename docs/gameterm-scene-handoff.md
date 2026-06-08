@@ -24,6 +24,13 @@ Keep moving Scene Mode toward a dogfoodable visual-novel-style surface where
 the user can see Codex dialogue, type through a Composer dock, and use the
 normal macOS GameTerm app without shell-only setup.
 
+Current next priority:
+
+- TTS polish is the active scoped product lane. The scope is recorded in
+  [Scene TTS Polish Scope](gameterm-scene-tts-polish-scope.md).
+- Persistent Codex sessions are deferred for now because the current dogfood
+  use case does not need cross-disconnect conversation resume.
+
 ## Latest Commits
 
 Recent committed work:

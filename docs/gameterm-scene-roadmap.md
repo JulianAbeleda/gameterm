@@ -112,6 +112,7 @@ implementation details.
 | Codex compose bridge | [Codex Compose Bridge Scope](gameterm-scene-codex-compose-bridge-scope.md) | First-pass implemented |
 | Codex session bridge | [Codex Session Bridge Scope](gameterm-scene-codex-session-bridge-scope.md) | First-pass implemented |
 | Real Codex dogfood pass | [Real Codex Dogfood Scope](gameterm-scene-real-codex-dogfood-scope.md) | Complete |
+| Scene TTS polish | [Scene TTS Polish Scope](gameterm-scene-tts-polish-scope.md) | Scoped |
 | Arkey-style capability routing | [Arkey Capability Routing Scope](gameterm-scene-arkey-capability-routing-scope.md) | Scoped |
 | App tiling and desktop actions | [App Tiling Scope](gameterm-scene-app-tiling-scope.md) | Scoped |
 | Dogfood workspace | [Dogfood Workspace Scope](gameterm-scene-dogfood-workspace-scope.md) | Scoped |
