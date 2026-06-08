@@ -1,6 +1,35 @@
 use crate::runtime_status::{clip_text, wrap_text};
 use crate::{VisualComposeMessage, VisualComposeRole};
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VisualDialogueTextBlock {
+    pub kind: VisualDialogueTextBlockKind,
+    pub marker: Option<String>,
+    pub display_text: String,
+}
+
+impl VisualDialogueTextBlock {
+    pub fn speech_allowed(&self) -> bool {
+        matches!(
+            self.kind,
+            VisualDialogueTextBlockKind::Prose
+                | VisualDialogueTextBlockKind::Heading
+                | VisualDialogueTextBlockKind::Bullet
+                | VisualDialogueTextBlockKind::Numbered
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VisualDialogueTextBlockKind {
+    Blank,
+    Prose,
+    Heading,
+    Bullet,
+    Numbered,
+    TechnicalSkipped,
+}
+
 pub(crate) fn wrap_compose_transcript_for_vn(
     messages: &[VisualComposeMessage],
     dialogue_width: usize,
@@ -67,30 +96,31 @@ fn wrap_error_for_vn(error: &str, dialogue_width: usize) -> Vec<String> {
 }
 
 fn wrap_dialogue_display_text(text: &str, dialogue_width: usize) -> Vec<String> {
-    let display_text = structured_dialogue_text(text).unwrap_or_else(|| text.trim().to_string());
-    let normalized = normalize_dialogue_blocks(&display_text);
     let mut lines = Vec::new();
-    for raw_line in normalized.lines() {
-        let line = raw_line.trim();
-        if line.is_empty() {
-            push_blank_once(&mut lines);
-            continue;
+    for block in dialogue_text_blocks(text) {
+        match block.kind {
+            VisualDialogueTextBlockKind::Blank => {
+                push_blank_once(&mut lines);
+            }
+            VisualDialogueTextBlockKind::Heading => {
+                push_blank_once(&mut lines);
+                lines.extend(wrap_text(&block.display_text, dialogue_width));
+                lines.push(String::new());
+            }
+            VisualDialogueTextBlockKind::Numbered | VisualDialogueTextBlockKind::Bullet => {
+                lines.extend(wrap_marked_line(
+                    block.marker.as_deref().unwrap_or("-"),
+                    &block.display_text,
+                    dialogue_width,
+                ));
+            }
+            VisualDialogueTextBlockKind::Prose | VisualDialogueTextBlockKind::TechnicalSkipped => {
+                lines.extend(wrap_text(
+                    &strip_inline_markers(&block.display_text),
+                    dialogue_width,
+                ));
+            }
         }
-        if let Some(heading) = colon_heading(line) {
-            push_blank_once(&mut lines);
-            lines.extend(wrap_text(&heading, dialogue_width));
-            lines.push(String::new());
-            continue;
-        }
-        if let Some((marker, body)) = numbered_parts(line) {
-            lines.extend(wrap_marked_line(marker, body, dialogue_width));
-            continue;
-        }
-        if let Some(body) = bullet_body(line) {
-            lines.extend(wrap_marked_line("-", body, dialogue_width));
-            continue;
-        }
-        lines.extend(wrap_text(&strip_inline_markers(line), dialogue_width));
     }
 
     lines = collapse_blanks_between_list_items(lines);
@@ -98,6 +128,57 @@ fn wrap_dialogue_display_text(text: &str, dialogue_width: usize) -> Vec<String> 
         lines.pop();
     }
     lines
+}
+
+pub fn dialogue_text_blocks(text: &str) -> Vec<VisualDialogueTextBlock> {
+    let display_text = structured_dialogue_text(text).unwrap_or_else(|| text.trim().to_string());
+    let normalized = normalize_dialogue_blocks(&display_text);
+    let mut blocks = Vec::new();
+    for raw_line in normalized.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            blocks.push(VisualDialogueTextBlock {
+                kind: VisualDialogueTextBlockKind::Blank,
+                marker: None,
+                display_text: String::new(),
+            });
+            continue;
+        }
+        if let Some(heading) = colon_heading(line) {
+            blocks.push(VisualDialogueTextBlock {
+                kind: VisualDialogueTextBlockKind::Heading,
+                marker: None,
+                display_text: heading,
+            });
+            continue;
+        }
+        if let Some((marker, body)) = numbered_parts(line) {
+            blocks.push(VisualDialogueTextBlock {
+                kind: VisualDialogueTextBlockKind::Numbered,
+                marker: Some(marker.to_string()),
+                display_text: body.to_string(),
+            });
+            continue;
+        }
+        if let Some(body) = bullet_body(line) {
+            blocks.push(VisualDialogueTextBlock {
+                kind: VisualDialogueTextBlockKind::Bullet,
+                marker: Some("-".to_string()),
+                display_text: body.to_string(),
+            });
+            continue;
+        }
+        blocks.push(VisualDialogueTextBlock {
+            kind: if dialogue_line_is_technical(line) {
+                VisualDialogueTextBlockKind::TechnicalSkipped
+            } else {
+                VisualDialogueTextBlockKind::Prose
+            },
+            marker: None,
+            display_text: line.to_string(),
+        });
+    }
+    blocks
 }
 
 fn structured_dialogue_text(text: &str) -> Option<String> {
@@ -270,6 +351,41 @@ fn looks_like_clock_label(text: &str) -> bool {
         return false;
     };
     hour.chars().all(|ch| ch.is_ascii_digit()) && minute.chars().all(|ch| ch.is_ascii_digit())
+}
+
+fn dialogue_line_is_technical(line: &str) -> bool {
+    let lower = line.to_ascii_lowercase();
+    line.starts_with("diff --git")
+        || line.starts_with("@@")
+        || line.starts_with("+++")
+        || line.starts_with("---")
+        || line.starts_with('{')
+        || line.starts_with('}')
+        || line.starts_with('[') && line.ends_with(']')
+        || lower.starts_with("error:")
+        || lower.starts_with("warning:")
+        || lower.starts_with("thread '")
+        || lower.contains("stack backtrace")
+        || line_is_path_or_identifier_heavy(line)
+}
+
+fn line_is_path_or_identifier_heavy(line: &str) -> bool {
+    let path_like = (line.matches('/').count() >= 2 || line.matches('\\').count() >= 2)
+        && line.split_whitespace().count() <= 4;
+    let total_chars = line.chars().count().max(1);
+    let identifier_chars = line
+        .chars()
+        .filter(|ch| {
+            ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '/' | '\\' | '.' | ':')
+        })
+        .count();
+    let identifier_heavy = identifier_chars * 100 / total_chars > 85
+        && line.split_whitespace().count() <= 4
+        && !line.contains(' ');
+    let punctuation_heavy =
+        line.chars().filter(|ch| ch.is_ascii_punctuation()).count() * 100 / total_chars > 45;
+
+    path_like || identifier_heavy || punctuation_heavy
 }
 
 fn replace_display_urls(text: &str) -> String {
@@ -517,5 +633,25 @@ mod tests {
                 "- Push commits."
             ]
         );
+    }
+
+    #[test]
+    fn dialogue_text_blocks_classify_headings_lists_and_technical_lines() {
+        let blocks = dialogue_text_blocks(
+            "Plan:\n1. Run the smoke.\n- Record notes.\n/Users/julianabeleda/env/gameterm",
+        )
+        .into_iter()
+        .filter(|block| block.kind != VisualDialogueTextBlockKind::Blank)
+        .collect::<Vec<_>>();
+
+        assert_eq!(blocks[0].kind, VisualDialogueTextBlockKind::Heading);
+        assert_eq!(blocks[0].display_text, "Plan:");
+        assert_eq!(blocks[1].kind, VisualDialogueTextBlockKind::Numbered);
+        assert_eq!(blocks[1].marker.as_deref(), Some("1"));
+        assert_eq!(blocks[1].display_text, "Run the smoke.");
+        assert_eq!(blocks[2].kind, VisualDialogueTextBlockKind::Bullet);
+        assert_eq!(blocks[2].display_text, "Record notes.");
+        assert_eq!(blocks[3].kind, VisualDialogueTextBlockKind::TechnicalSkipped);
+        assert!(!blocks[3].speech_allowed());
     }
 }

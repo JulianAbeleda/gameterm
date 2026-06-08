@@ -61,7 +61,10 @@ pub use vn_asset_intake::{
     VnAssetUsedAsset,
 };
 pub use vn_layout::*;
-pub use vn_text::truncate_to_screen;
+pub use vn_text::{
+    dialogue_text_blocks, truncate_to_screen, VisualDialogueTextBlock,
+    VisualDialogueTextBlockKind,
+};
 use vn_text::{place_vn_overlay_text, wrap_compose_transcript_for_vn};
 pub use workspace_scene::{
     generate_workspace_context_error_scene, generate_workspace_scene, ScenePaneContext,
