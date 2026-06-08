@@ -1273,3 +1273,53 @@ Known warning noise:
 
 - macOS `objc` macro `unexpected cfg` warnings
 - `screen_line.rs` unused assignment warning
+
+## Scene TTS Polish Verification
+
+Date: 2026-06-08.
+
+Scope:
+
+```text
+docs/gameterm-scene-tts-polish-scope.md
+6d76dc425..883385ae6
+```
+
+Commands:
+
+```sh
+cargo test -p gameterm-visual vn_text
+cargo test -p gameterm-gui visual_speech_blocks --bin gameterm-gui
+cargo test -p gameterm-gui visual_tts_ --bin gameterm-gui
+cargo test -p gameterm-gui scene_debug_menu_tts_test --bin gameterm-gui
+git diff --check
+```
+
+Result: PASS.
+
+Summary:
+
+- `vn_text`: 4 passed, 0 failed.
+- `visual_speech_blocks`: 6 passed, 0 failed.
+- `visual_tts_`: 10 passed, 0 failed.
+- `scene_debug_menu_tts_test`: 1 passed, 0 failed.
+- `git diff --check`: clean.
+
+Covered:
+
+- visible dialogue and TTS extraction share the same block projection
+- headings, bullets, numbered items, prose, and technical skipped lines are
+  classified consistently
+- raw URLs, Unix paths, Windows paths, env vars, flags, and commit hashes are
+  filtered from speakable TTS text
+- stale queued or playing TTS requests are ignored after the generation changes
+- `Debug -> Voice` exposes TTS test and stop actions
+
+Remaining manual validation:
+
+- launch the installed app, choose `1. Scene Mode + VOICEVOX`, run
+  `Debug -> Voice -> Test TTS playback`, and confirm audio output
+- submit real Codex and fake Codex prompts and confirm speech does not overlap
+  while text remains visible
+- inspect timing diagnostics to decide whether speaking-block highlighting or a
+  first-block reveal delay is worth adding

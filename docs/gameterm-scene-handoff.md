@@ -6,14 +6,14 @@ deeper product context.
 
 ## Current Snapshot
 
-- Date: 2026-06-07
+- Date: 2026-06-08
 - Branch: `main`
-- Latest behavior commit: `41fc33eec [visual] serialize Scene TTS playback`
+- Latest behavior commit: `883385ae6 [visual] add Scene TTS queue diagnostics`
 - Latest refactor commit: `017ddf309 [gui] NFC - move SceneRuntime test import`
 - Latest tooling commit: `ec1b29b8e [tools] add local CT2 Scene translation helper`
 - Remote state at handoff time: local branch is ahead of `origin/main` by the
-  Scene TTS/test/refactor commits listed below
-- Worktree state at handoff time: docs refresh in progress
+  Scene TTS polish commits listed below
+- Worktree state at handoff time: clean after docs commit
 - Local app bundle refreshed: `/Users/julianabeleda/Applications/GameTerm.app`
 - Persistent Scene compose config:
   `/Users/julianabeleda/.config/gameterm/scene-compose.json`
@@ -26,8 +26,11 @@ normal macOS GameTerm app without shell-only setup.
 
 Current next priority:
 
-- TTS polish is the active scoped product lane. The scope is recorded in
-  [Scene TTS Polish Scope](gameterm-scene-tts-polish-scope.md).
+- TTS polish first pass is implemented. The scope and remaining dogfood items
+  are recorded in [Scene TTS Polish Scope](gameterm-scene-tts-polish-scope.md).
+- Next priority is a live app dogfood pass with real Codex plus VOICEVOX to
+  verify text/audio timing and decide whether speaking-block highlighting or
+  first-block reveal delay is worth adding.
 - Persistent Codex sessions are deferred for now because the current dogfood
   use case does not need cross-disconnect conversation resume.
 
@@ -35,6 +38,10 @@ Current next priority:
 
 Recent committed work:
 
+- `883385ae6 [visual] add Scene TTS queue diagnostics`
+- `e53a8efdf [gui] align Scene TTS extraction with dialogue blocks`
+- `363b0c804 [visual] add Scene dialogue block projection`
+- `6d76dc425 [docs] scope Scene TTS polish`
 - `017ddf309 [gui] NFC - move SceneRuntime test import`
 - `b7ffb250d [gui] NFC - split Scene stage image helpers`
 - `96e1cbae7 [gui] NFC - split Scene overlay input helpers`
@@ -65,6 +72,20 @@ Recent committed work:
 
 Latest behavior change:
 
+- Scene TTS polish first pass is implemented. Visible dialogue formatting and
+  speech extraction now share `VisualDialogueTextBlock` projection, so headings,
+  bullets, numbered items, prose, and technical skipped lines use the same block
+  boundaries.
+- Scene TTS cleanup now has regression coverage proving raw URLs, Unix paths,
+  Windows paths, env vars, flags, and commit hashes do not reach speakable
+  output while display text stays useful.
+- Scene TTS requests now carry queue generation ids. New prompts, fake-Codex
+  toggles, history clears, STT auto-submit, and Stop TTS invalidate older queued
+  or playing speech.
+- Scene TTS diagnostics now show queue depth, current block, current phase,
+  skipped count, last error, and timing summary in `Debug -> Voice`.
+- `Debug -> Voice -> Test TTS playback` can enqueue a deterministic TTS test
+  without requiring Codex. `Stop TTS playback` invalidates the active queue.
 - Scene compose history now carries turn/block metadata. The VN dialogue panel
   renders through a transcript formatter instead of directly wrapping raw
   message strings, so user prompts, structured compose JSON, and flattened
@@ -144,6 +165,10 @@ VOICEVOX/TTS status:
   `ci/scene-tts/ct2-en-to-ja.sh` when `.cache/scene-tts` has the int8 FuguMT
   model installed. This removes the `codex exec` translation delay from the
   default app path.
+- TTS blocks are still not allowed to hide completed Codex text while audio is
+  delayed. The current implementation records speaking/done state and
+  diagnostics; a future pass can decide whether to visually highlight the active
+  block or delay only the first block behind an explicit setting.
 
 ## App And Config State
 
@@ -233,6 +258,24 @@ Results:
 - `cargo check -p gameterm-gui`: passed with only known existing warnings.
 - Focused GUI filters passed.
 
+Latest TTS polish verification:
+
+```sh
+cargo test -p gameterm-visual vn_text
+cargo test -p gameterm-gui visual_speech_blocks --bin gameterm-gui
+cargo test -p gameterm-gui visual_tts_ --bin gameterm-gui
+cargo test -p gameterm-gui scene_debug_menu_tts_test --bin gameterm-gui
+git diff --check
+```
+
+Results:
+
+- `vn_text`: 4 passed, 0 failed.
+- `visual_speech_blocks`: 6 passed, 0 failed.
+- `visual_tts_`: 10 passed, 0 failed.
+- `scene_debug_menu_tts_test`: 1 passed, 0 failed.
+- `git diff --check`: clean.
+
 Smoke captures:
 
 ```text
@@ -282,7 +325,19 @@ session identity, stream progress into the dialogue panel, or support
 
 ## Recommended Next Actions
 
-1. Reduce remaining VOICEVOX latency:
+1. Run the live TTS dogfood pass:
+   - launch the installed app with `make dev-app-open`
+   - choose `1. Scene Mode + VOICEVOX`
+   - use `Debug -> Voice -> Test TTS playback`
+   - send one real Codex prompt and one fake-Codex prompt
+   - confirm text remains visible, speech does not overlap, and diagnostics
+     identify translation/synthesis/player timing
+2. Decide whether to add visible speaking-block polish:
+   - current state marks blocks internally and in diagnostics
+   - optional follow-up is visual highlighting for the currently speaking block
+   - optional first-block reveal delay must stay config/debug-controlled, not
+     the default
+3. Reduce remaining VOICEVOX latency:
    - local CTranslate2 translation is now wired and avoids `codex exec`
    - current Scene test phrase benchmark: wrapper generation `1.617s` before
      playback, down from roughly `6.1s` before audio was ready with Codex
@@ -291,21 +346,18 @@ session identity, stream progress into the dialogue panel, or support
      path
    - next bottleneck is translation helper process startup plus VOICEVOX
      synthesis; pure Rust in-process translation remains deferred
-2. Push local commits after the handoff/refactor docs refresh is committed.
-3. Decide the next work lane:
-   - product: persistent Codex sessions / `codex exec resume`
-   - refactor: deeper split of compose/STT backend internals
+4. Decide the next work lane:
+   - product: app tiling and desktop actions
+   - product: Arkey-style capability routing
+   - refactor: only scoped cleanup that directly supports the next product lane
    - tooling: table-driven cleanup for Scene shell helpers
-4. Scope persistent Codex sessions:
-   - parse session/thread metadata from Codex JSONL if available
-   - persist session identity per Scene overlay/session
-   - add reset/new-session action
-   - add `codex exec resume` support
-5. Decide whether progress/streaming events should render into Scene Mode or
+5. Persistent Codex sessions stay deferred unless disconnected-session resume
+   becomes a real dogfood problem.
+6. Decide whether progress/streaming events should render into Scene Mode or
    stay a follow-up.
-6. Keep app-launch config behavior explicit; do not silently enable network
+7. Keep app-launch config behavior explicit; do not silently enable network
    backends without user/app config.
-7. Keep future commits separated by concern.
+8. Keep future commits separated by concern.
 
 Commit discipline:
 

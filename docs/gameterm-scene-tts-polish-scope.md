@@ -1,6 +1,6 @@
 # GameTerm Scene TTS Polish Scope
 
-Status: SCOPED.
+Status: FIRST PASS IMPLEMENTED.
 
 Date: 2026-06-08
 
@@ -44,7 +44,7 @@ Implemented first pass:
   configured.
 - Compose text remains visible even if TTS is delayed or stale.
 
-Known dogfood gaps:
+Known dogfood gaps before this pass:
 
 - visible text appears before audio because synthesis and playback happen
   after the compose result is already rendered
@@ -58,6 +58,44 @@ Known dogfood gaps:
 - debug output does not expose queue depth, current block, last timings, or
   why a block was skipped
 - no explicit TTS test action exists in the central Scene debug menu
+
+## Implementation Status
+
+Implemented commits:
+
+- `6d76dc425 [docs] scope Scene TTS polish`
+- `363b0c804 [visual] add Scene dialogue block projection`
+- `e53a8efdf [gui] align Scene TTS extraction with dialogue blocks`
+- `883385ae6 [visual] add Scene TTS queue diagnostics`
+
+The first pass implements:
+
+- shared dialogue block projection for visible text and TTS extraction
+- colon heading, bullet, numbered-list, prose, and technical-line block
+  classification
+- speakable cleanup coverage for raw URLs, Unix paths, Windows paths, env vars,
+  flags, hashes, and command/path-looking spans
+- per-request TTS generation ids so stale queued or playing speech cannot mark
+  the wrong visible turn/block
+- interruption of old TTS work when a new compose turn starts, fake Codex is
+  toggled, history is cleared, STT auto-submit starts, or Stop TTS is used
+- waited player execution so speech blocks do not overlap
+- queue depth, current block, phase, skipped count, errors, and timing summary
+  in `Debug -> Voice`
+- `Debug -> Voice -> Test TTS playback` and `Stop TTS playback`
+
+The implementation consolidated queue invalidation, stale-event handling,
+diagnostics, and debug controls into one behavior commit because they share the
+same `VisualOverlaySession` and `SceneTtsState` coordination path.
+
+Remaining follow-up:
+
+- run a live app dogfood pass with real Codex plus VOICEVOX and record the
+  text/audio timing result
+- decide whether first-block text reveal should be delayed behind a config or
+  debug setting; by default, completed Codex text still renders immediately
+- add visible highlighting for the currently speaking block if dogfood shows it
+  is needed
 
 ## Product Contract
 

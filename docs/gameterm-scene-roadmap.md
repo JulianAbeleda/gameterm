@@ -112,7 +112,7 @@ implementation details.
 | Codex compose bridge | [Codex Compose Bridge Scope](gameterm-scene-codex-compose-bridge-scope.md) | First-pass implemented |
 | Codex session bridge | [Codex Session Bridge Scope](gameterm-scene-codex-session-bridge-scope.md) | First-pass implemented |
 | Real Codex dogfood pass | [Real Codex Dogfood Scope](gameterm-scene-real-codex-dogfood-scope.md) | Complete |
-| Scene TTS polish | [Scene TTS Polish Scope](gameterm-scene-tts-polish-scope.md) | Scoped |
+| Scene TTS polish | [Scene TTS Polish Scope](gameterm-scene-tts-polish-scope.md) | First-pass implemented; live dogfood pending |
 | Arkey-style capability routing | [Arkey Capability Routing Scope](gameterm-scene-arkey-capability-routing-scope.md) | Scoped |
 | App tiling and desktop actions | [App Tiling Scope](gameterm-scene-app-tiling-scope.md) | Scoped |
 | Dogfood workspace | [Dogfood Workspace Scope](gameterm-scene-dogfood-workspace-scope.md) | Scoped |
@@ -464,8 +464,8 @@ Allowed next refactor lanes:
 
 - use [Maintainability Refactor Scope](gameterm-scene-maintainability-refactor-scope.md)
   as the current refactor plan
-- split compose/TTS speech-block responsibilities first, because dogfood found
-  future-turn text/voice timing risk
+- keep compose/TTS speech-block responsibilities stable; only refactor deeper
+  if live dogfood exposes another timing or ownership risk
 - split compose backend config/process/failure handling next
 - split STT/microphone helpers after compose/TTS conventions settle
 - split render primitives only with smoke coverage
