@@ -1,11 +1,13 @@
 use gameterm_visual::{
-    continuity_report_for_scene_asset_frames, default_scene_asset_feature_map,
-    export_scene_asset_source_images, generate_scene_asset_animation,
-    generate_scene_asset_expression, inspect_scene_asset_image, load_scene_asset_feature_map,
-    load_scene_asset_recipe_book, magic_erase_scene_asset_image,
-    make_scene_asset_background_transparent, make_scene_asset_background_transparent_polished,
-    validate_scene_asset_feature_map, write_scene_asset_json, SceneAssetBackgroundSample,
-    SceneAssetDefringeMode, SceneAssetMaskPolishOptions, SceneAssetNormalizedPoint,
+    channel_matte_erase_scene_asset_image, cleanup_scene_asset_hair_edges,
+    color_range_erase_scene_asset_image, continuity_report_for_scene_asset_frames,
+    default_scene_asset_feature_map, export_scene_asset_source_images,
+    generate_scene_asset_animation, generate_scene_asset_expression, inspect_scene_asset_image,
+    load_scene_asset_feature_map, load_scene_asset_recipe_book, magic_erase_add_scene_asset_image,
+    magic_erase_scene_asset_image, make_scene_asset_background_transparent,
+    make_scene_asset_background_transparent_polished, validate_scene_asset_feature_map,
+    write_scene_asset_json, SceneAssetBackgroundSample, SceneAssetDefringeMode,
+    SceneAssetHairCleanupMode, SceneAssetMaskPolishOptions, SceneAssetNormalizedPoint,
 };
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -37,8 +39,15 @@ struct CliArgs {
     remove_small: Option<usize>,
     fill_holes: Option<usize>,
     defringe: Option<SceneAssetDefringeMode>,
+    threshold: Option<u8>,
+    neutrality: Option<u8>,
+    radius: Option<u32>,
+    strength: Option<f32>,
+    mode: Option<SceneAssetHairCleanupMode>,
+    hair_region: Option<String>,
     seed_x: Option<f32>,
     seed_y: Option<f32>,
+    seeds: Vec<SceneAssetNormalizedPoint>,
     sample: Option<SceneAssetBackgroundSample>,
     global: bool,
     frames: Vec<PathBuf>,
@@ -56,7 +65,11 @@ fn usage() {
   cargo run -p gameterm-visual --example scene_asset_edit -- animation --base IMAGE --feature-map PATH --recipe PATH --animation NAME --output-dir DIR [--character NAME] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- remove-background --source IMAGE --output PATH [--tolerance N] [--feather N] [--sample corners|edges] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- remove-background-polished --source IMAGE --output PATH [--tolerance N] [--sample corners|edges] [--erode N] [--dilate N] [--open N] [--close N] [--remove-small N] [--fill-holes N] [--feather N] [--defringe none|white] [--protect FEATURE_MAP] [--protect-regions CSV] [--force]
+  cargo run -p gameterm-visual --example scene_asset_edit -- color-range-erase --source IMAGE --output PATH [--tolerance N] [--sample corners|edges] [--erode N] [--dilate N] [--open N] [--close N] [--remove-small N] [--fill-holes N] [--feather N] [--defringe none|white] [--protect FEATURE_MAP] [--protect-regions CSV] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- magic-erase --source IMAGE --output PATH --seed-x N --seed-y N [--tolerance N] [--feather N] [--global] [--force]
+  cargo run -p gameterm-visual --example scene_asset_edit -- magic-erase-add --source IMAGE --output PATH --seed X,Y [--seed X,Y ...] [--tolerance N] [--erode N] [--dilate N] [--open N] [--close N] [--remove-small N] [--fill-holes N] [--feather N] [--defringe none|white] [--protect FEATURE_MAP] [--protect-regions CSV] [--force]
+  cargo run -p gameterm-visual --example scene_asset_edit -- channel-matte-erase --source IMAGE --output PATH [--threshold N] [--neutrality N] [--erode N] [--dilate N] [--open N] [--close N] [--remove-small N] [--fill-holes N] [--feather N] [--defringe none|white] [--protect FEATURE_MAP] [--protect-regions CSV] [--force]
+  cargo run -p gameterm-visual --example scene_asset_edit -- hair-cleanup --source IMAGE --output PATH [--mode decontaminate] [--radius N] [--strength N] [--protect FEATURE_MAP] [--hair-region NAME] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- continuity FRAME... [--pretty]
   cargo run -p gameterm-visual --example scene_asset_edit -- export-source --source IMAGE --output-source-root DIR --source-id ID --character NAME --expressions CSV [--force]
 
@@ -85,8 +98,15 @@ Options:
   --remove-small N           Drop selected components smaller than N pixels.
   --fill-holes N             Fill unselected holes up to N pixels.
   --defringe none|white      Recolor light edge pixels after alpha masking.
+  --threshold N              Channel matte brightness threshold. Default: 238.
+  --neutrality N             Channel matte max RGB spread. Default: 28.
+  --radius N                 Hair cleanup sample radius. Default: 4.
+  --strength N               Hair cleanup decontamination strength, 0..1. Default: 0.85.
+  --mode decontaminate       Hair cleanup mode.
+  --hair-region NAME         Optional feature-map region for hair cleanup.
   --seed-x N                 Normalized magic-erase seed x, 0..1.
   --seed-y N                 Normalized magic-erase seed y, 0..1.
+  --seed X,Y                 Repeated normalized seed for magic-erase-add.
   --sample corners|edges     Background samples. Default: corners.
   --global                   Select all matching pixels instead of contiguous seed fill.
   --pretty                   Pretty-print JSON.
@@ -113,7 +133,11 @@ fn main() {
         Some("animation") => run_animation(args),
         Some("remove-background") => run_remove_background(args),
         Some("remove-background-polished") => run_remove_background_polished(args),
+        Some("color-range-erase") => run_color_range_erase(args),
         Some("magic-erase") => run_magic_erase(args),
+        Some("magic-erase-add") => run_magic_erase_add(args),
+        Some("channel-matte-erase") => run_channel_matte_erase(args),
+        Some("hair-cleanup") => run_hair_cleanup(args),
         Some("continuity") => run_continuity(args),
         Some("export-source") => run_export_source(args),
         Some(command) => Err(format!("unknown command: {command}")),
@@ -224,31 +248,29 @@ fn run_remove_background(args: CliArgs) -> Result<(), String> {
 }
 
 fn run_remove_background_polished(args: CliArgs) -> Result<(), String> {
-    let source = required_path(args.source, "--source")?;
-    let output = required_path(args.output, "--output")?;
-    let protect_map_path = args.protect.or(args.feature_map);
-    let feature_map = protect_map_path
-        .as_deref()
-        .map(load_scene_asset_feature_map)
-        .transpose()
-        .map_err(|err| err.to_string())?;
-    let options = SceneAssetMaskPolishOptions {
-        tolerance: args.tolerance.unwrap_or(24),
-        feather: args.feather.unwrap_or(0),
-        sample: args.sample.unwrap_or(SceneAssetBackgroundSample::Corners),
-        erode: args.erode.unwrap_or(0),
-        dilate: args.dilate.unwrap_or(0),
-        open: args.open.unwrap_or(0),
-        close: args.close.unwrap_or(0),
-        remove_small: args.remove_small.unwrap_or(0),
-        fill_holes: args.fill_holes.unwrap_or(0),
-        defringe: args.defringe.unwrap_or(SceneAssetDefringeMode::None),
-        protect_regions: csv_values(args.protect_regions.as_deref()),
-    };
+    let source = required_path(args.source.clone(), "--source")?;
+    let output = required_path(args.output.clone(), "--output")?;
+    let feature_map = load_optional_protect_map(&args)?;
+    let options = mask_polish_options(&args);
     let report = make_scene_asset_background_transparent_polished(
         &source,
         &output,
         options,
+        feature_map.as_ref(),
+        args.force,
+    )
+    .map_err(|err| err.to_string())?;
+    write_json(None, &report, args.pretty, true)
+}
+
+fn run_color_range_erase(args: CliArgs) -> Result<(), String> {
+    let source = required_path(args.source.clone(), "--source")?;
+    let output = required_path(args.output.clone(), "--output")?;
+    let feature_map = load_optional_protect_map(&args)?;
+    let report = color_range_erase_scene_asset_image(
+        &source,
+        &output,
+        mask_polish_options(&args),
         feature_map.as_ref(),
         args.force,
     )
@@ -278,6 +300,87 @@ fn run_magic_erase(args: CliArgs) -> Result<(), String> {
     )
     .map_err(|err| err.to_string())?;
     write_json(None, &report, args.pretty, true)
+}
+
+fn run_magic_erase_add(args: CliArgs) -> Result<(), String> {
+    let source = required_path(args.source.clone(), "--source")?;
+    let output = required_path(args.output.clone(), "--output")?;
+    if args.seeds.is_empty() {
+        return Err("--seed is required at least once".to_string());
+    }
+    let feature_map = load_optional_protect_map(&args)?;
+    let report = magic_erase_add_scene_asset_image(
+        &source,
+        &output,
+        &args.seeds,
+        mask_polish_options(&args),
+        feature_map.as_ref(),
+        args.force,
+    )
+    .map_err(|err| err.to_string())?;
+    write_json(None, &report, args.pretty, true)
+}
+
+fn run_channel_matte_erase(args: CliArgs) -> Result<(), String> {
+    let source = required_path(args.source.clone(), "--source")?;
+    let output = required_path(args.output.clone(), "--output")?;
+    let feature_map = load_optional_protect_map(&args)?;
+    let report = channel_matte_erase_scene_asset_image(
+        &source,
+        &output,
+        args.threshold.unwrap_or(238),
+        args.neutrality.unwrap_or(28),
+        mask_polish_options(&args),
+        feature_map.as_ref(),
+        args.force,
+    )
+    .map_err(|err| err.to_string())?;
+    write_json(None, &report, args.pretty, true)
+}
+
+fn run_hair_cleanup(args: CliArgs) -> Result<(), String> {
+    let source = required_path(args.source.clone(), "--source")?;
+    let output = required_path(args.output.clone(), "--output")?;
+    let feature_map = load_optional_protect_map(&args)?;
+    let report = cleanup_scene_asset_hair_edges(
+        &source,
+        &output,
+        args.mode
+            .unwrap_or(SceneAssetHairCleanupMode::Decontaminate),
+        args.radius.unwrap_or(4),
+        args.strength.unwrap_or(0.85),
+        feature_map.as_ref(),
+        args.hair_region.as_deref(),
+        args.force,
+    )
+    .map_err(|err| err.to_string())?;
+    write_json(None, &report, args.pretty, true)
+}
+
+fn load_optional_protect_map(
+    args: &CliArgs,
+) -> Result<Option<gameterm_visual::SceneAssetFeatureMap>, String> {
+    let protect_map_path = args.protect.as_ref().or(args.feature_map.as_ref());
+    protect_map_path
+        .map(|path| load_scene_asset_feature_map(path))
+        .transpose()
+        .map_err(|err| err.to_string())
+}
+
+fn mask_polish_options(args: &CliArgs) -> SceneAssetMaskPolishOptions {
+    SceneAssetMaskPolishOptions {
+        tolerance: args.tolerance.unwrap_or(24),
+        feather: args.feather.unwrap_or(0),
+        sample: args.sample.unwrap_or(SceneAssetBackgroundSample::Corners),
+        erode: args.erode.unwrap_or(0),
+        dilate: args.dilate.unwrap_or(0),
+        open: args.open.unwrap_or(0),
+        close: args.close.unwrap_or(0),
+        remove_small: args.remove_small.unwrap_or(0),
+        fill_holes: args.fill_holes.unwrap_or(0),
+        defringe: args.defringe.unwrap_or(SceneAssetDefringeMode::None),
+        protect_regions: csv_values(args.protect_regions.as_deref()),
+    }
 }
 
 fn run_continuity(args: CliArgs) -> Result<(), String> {
@@ -357,8 +460,17 @@ fn parse_args() -> Result<CliArgs, String> {
             "--defringe" => {
                 parsed.defringe = Some(parse_defringe(&next_text(&mut args, "--defringe")?)?)
             }
+            "--threshold" => parsed.threshold = Some(next_parse(&mut args, "--threshold")?),
+            "--neutrality" => parsed.neutrality = Some(next_parse(&mut args, "--neutrality")?),
+            "--radius" => parsed.radius = Some(next_parse(&mut args, "--radius")?),
+            "--strength" => parsed.strength = Some(next_parse(&mut args, "--strength")?),
+            "--mode" => parsed.mode = Some(parse_hair_mode(&next_text(&mut args, "--mode")?)?),
+            "--hair-region" => parsed.hair_region = Some(next_text(&mut args, "--hair-region")?),
             "--seed-x" => parsed.seed_x = Some(next_parse(&mut args, "--seed-x")?),
             "--seed-y" => parsed.seed_y = Some(next_parse(&mut args, "--seed-y")?),
+            "--seed" => parsed
+                .seeds
+                .push(parse_seed(&next_text(&mut args, "--seed")?)?),
             "--sample" => parsed.sample = Some(parse_sample(&next_text(&mut args, "--sample")?)?),
             "--global" => parsed.global = true,
             "--pretty" => parsed.pretty = true,
@@ -434,6 +546,30 @@ fn parse_defringe(value: &str) -> Result<SceneAssetDefringeMode, String> {
             "--defringe value `{value}` is invalid; expected none or white"
         )),
     }
+}
+
+fn parse_hair_mode(value: &str) -> Result<SceneAssetHairCleanupMode, String> {
+    match value {
+        "decontaminate" => Ok(SceneAssetHairCleanupMode::Decontaminate),
+        _ => Err(format!(
+            "--mode value `{value}` is invalid; expected decontaminate"
+        )),
+    }
+}
+
+fn parse_seed(value: &str) -> Result<SceneAssetNormalizedPoint, String> {
+    let (x, y) = value
+        .split_once(',')
+        .ok_or_else(|| format!("--seed value `{value}` is invalid; expected X,Y"))?;
+    let x = x
+        .trim()
+        .parse::<f32>()
+        .map_err(|err| format!("--seed x value `{x}` is invalid: {err}"))?;
+    let y = y
+        .trim()
+        .parse::<f32>()
+        .map_err(|err| format!("--seed y value `{y}` is invalid: {err}"))?;
+    Ok(SceneAssetNormalizedPoint { x, y })
 }
 
 fn csv_values(value: Option<&str>) -> Vec<String> {
