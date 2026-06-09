@@ -1,6 +1,8 @@
+use super::mask::mask_index;
 use super::pixels::pixel_index;
 use super::selection_ops::apply_transparency_mask;
 use super::*;
+use image::{ImageBuffer, Rgba};
 use k9::assert_equal;
 use tempfile::tempdir;
 
