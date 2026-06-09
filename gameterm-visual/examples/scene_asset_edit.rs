@@ -129,6 +129,7 @@ struct CliArgs {
     pretty: bool,
     force: bool,
     dry_run: bool,
+    preview: bool,
 }
 
 fn usage() {
@@ -136,7 +137,7 @@ fn usage() {
         "Usage:
   cargo run -p gameterm-visual --example scene_asset_edit -- inspect IMAGE [--output PATH] [--pretty]
   cargo run -p gameterm-visual --example scene_asset_edit -- pipeline-run --pipeline PIPELINE.json --input-root DIR --transformation-root DIR --output-root DIR [--dry-run] [--force] [--pretty]
-  cargo run -p gameterm-visual --example scene_asset_edit -- operation-run --operation OPERATION.json --input-root DIR --transformation-root DIR --output-root DIR [--output REPORT.json] [--dry-run] [--force] [--pretty]
+  cargo run -p gameterm-visual --example scene_asset_edit -- operation-run --operation OPERATION.json --input-root DIR --transformation-root DIR --output-root DIR [--output REPORT.json] [--preview] [--dry-run] [--force] [--pretty]
   cargo run -p gameterm-visual --example scene_asset_edit -- compare --before BEFORE.png --after AFTER.png [--output REPORT.json] [--pretty]
   cargo run -p gameterm-visual --example scene_asset_edit -- sample --source IMAGE [--point X,Y ...] [--within-polygon X,Y;X,Y;X,Y] [--within-regions CSV] [--protect FEATURE_MAP] [--output REPORT] [--pretty]
   cargo run -p gameterm-visual --example scene_asset_edit -- point-report --source IMAGE --point X,Y [--point X,Y ...] [--pretty]
@@ -270,6 +271,7 @@ Options:
   --pretty                   Pretty-print JSON.
   --force                    Overwrite existing files.
   --dry-run                  Validate a pipeline without writing outputs.
+  --preview                  Run an operation into Transformation preview files.
   -h, --help                 Show this help."
     );
 }
@@ -378,6 +380,7 @@ fn run_operation(args: CliArgs) -> Result<(), String> {
         SceneAssetOperationRunOptions {
             force: args.force,
             dry_run: args.dry_run,
+            preview: args.preview,
             pretty: args.pretty,
         },
     )
@@ -1278,6 +1281,7 @@ fn parse_args() -> Result<CliArgs, String> {
             "--pretty" => parsed.pretty = true,
             "--force" => parsed.force = true,
             "--dry-run" => parsed.dry_run = true,
+            "--preview" => parsed.preview = true,
             "-h" | "--help" => {
                 usage();
                 std::process::exit(0);

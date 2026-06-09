@@ -199,6 +199,7 @@ impl SceneAssetOperationExpectations {
 pub struct SceneAssetOperationRunOptions {
     pub force: bool,
     pub dry_run: bool,
+    pub preview: bool,
     pub pretty: bool,
 }
 
@@ -214,7 +215,12 @@ pub struct SceneAssetOperationRunReport {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub report_path: Option<String>,
     pub dry_run: bool,
+    pub preview: bool,
     pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requested_output_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diff_preview_path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub before: Option<SceneAssetImageReport>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1822,9 +1828,15 @@ pub fn run_scene_asset_operation(
         });
     }
     let before = inspect_scene_asset_image(&source_path)?;
+    let requested_output_path = resolve_pipeline_output_path(roots, &operation.output);
+    let step_output = if options.preview {
+        operation_preview_output(&operation.id)
+    } else {
+        operation.output.clone()
+    };
     let step = SceneAssetPipelineStep {
         command: operation.command.clone(),
-        output: Some(operation.output.clone()),
+        output: Some(step_output),
         args: operation.args.clone(),
     };
     let step_report = run_scene_asset_pipeline_step(
@@ -1839,15 +1851,38 @@ pub fn run_scene_asset_operation(
         },
     )?;
     let output_path = step_report.output_path.clone().unwrap_or_else(|| {
-        resolve_pipeline_output_path(roots, &operation.output)
-            .display()
-            .to_string()
+        resolve_pipeline_output_path(
+            roots,
+            step.output
+                .as_deref()
+                .expect("operation step output is always present"),
+        )
+        .display()
+        .to_string()
     });
     let compare = if !options.dry_run && step_report.advanced_source {
         Some(compare_scene_asset_images(
             &source_path,
             Path::new(&output_path),
         )?)
+    } else {
+        None
+    };
+    let diff_preview_path = if options.preview
+        && !options.dry_run
+        && compare
+            .as_ref()
+            .is_some_and(|report| report.same_dimensions)
+    {
+        let path =
+            resolve_pipeline_output_path(roots, &operation_diff_preview_output(&operation.id));
+        write_scene_asset_diff_preview(
+            &source_path,
+            Path::new(&output_path),
+            &path,
+            options.force,
+        )?;
+        Some(path.display().to_string())
     } else {
         None
     };
@@ -1871,7 +1906,12 @@ pub fn run_scene_asset_operation(
         output_path,
         report_path: step_report.report_path.clone(),
         dry_run: options.dry_run,
+        preview: options.preview,
         status,
+        requested_output_path: options
+            .preview
+            .then_some(requested_output_path.display().to_string()),
+        diff_preview_path,
         before: Some(before),
         after,
         compare,
@@ -1945,6 +1985,69 @@ pub fn compare_scene_asset_images(
         before,
         after,
     })
+}
+
+fn write_scene_asset_diff_preview(
+    before_path: &Path,
+    after_path: &Path,
+    output_path: &Path,
+    force: bool,
+) -> Result<(), SceneAssetEditError> {
+    let before = load_rgba_image(before_path)?;
+    let after = load_rgba_image(after_path)?;
+    if before.dimensions() != after.dimensions() {
+        return Err(SceneAssetEditError::InvalidOperation(format!(
+            "cannot write diff preview for different dimensions: {} vs {}",
+            before_path.display(),
+            after_path.display()
+        )));
+    }
+    let mut preview = after.clone();
+    for y in 0..after.height() {
+        for x in 0..after.width() {
+            let before_pixel = before.get_pixel(x, y);
+            let after_pixel = after.get_pixel(x, y);
+            if before_pixel.0 == after_pixel.0 {
+                let dimmed = [
+                    (after_pixel[0] as f32 * 0.55).round() as u8,
+                    (after_pixel[1] as f32 * 0.55).round() as u8,
+                    (after_pixel[2] as f32 * 0.55).round() as u8,
+                    after_pixel[3],
+                ];
+                preview.put_pixel(x, y, Rgba(dimmed));
+            } else {
+                preview.put_pixel(x, y, Rgba([255, 48, 96, 255]));
+            }
+        }
+    }
+    save_rgba_image(&preview, output_path, force)
+}
+
+fn operation_preview_output(id: &str) -> String {
+    format!("{}.preview.png", sanitize_operation_id(id))
+}
+
+fn operation_diff_preview_output(id: &str) -> String {
+    format!("{}.diff.png", sanitize_operation_id(id))
+}
+
+fn sanitize_operation_id(id: &str) -> String {
+    let sanitized = id
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>();
+    let trimmed = sanitized.trim_matches('-');
+    if trimmed.is_empty() {
+        "operation".to_string()
+    } else {
+        trimmed.to_string()
+    }
 }
 
 fn operation_expectation_failures(
@@ -6566,6 +6669,7 @@ mod tests {
             SceneAssetOperationRunOptions {
                 force: false,
                 dry_run: false,
+                preview: false,
                 pretty: true,
             },
         )
@@ -6589,6 +6693,7 @@ mod tests {
             SceneAssetOperationRunOptions {
                 force: false,
                 dry_run: true,
+                preview: false,
                 pretty: true,
             },
         )
@@ -6596,6 +6701,67 @@ mod tests {
 
         assert_equal!(dry_report.status, "validated");
         assert!(!transformation_root.join("02-dry-run.png").exists());
+    }
+
+    #[test]
+    fn operation_run_preview_writes_review_artifacts_without_accepting_output() {
+        let dir = tempdir().unwrap();
+        let input_root = dir.path().join("Input");
+        let transformation_root = dir.path().join("Transformation");
+        let output_root = dir.path().join("Output");
+        std::fs::create_dir_all(&input_root).unwrap();
+        std::fs::create_dir_all(&transformation_root).unwrap();
+        std::fs::create_dir_all(&output_root).unwrap();
+
+        let source = input_root.join("source.png");
+        let image = ImageBuffer::from_pixel(4, 4, Rgba([0u8, 0, 0, 255]));
+        image.save(&source).unwrap();
+        let operation = SceneAssetOperation {
+            asset_operation_version: 1,
+            id: "preview fill".to_string(),
+            intent: None,
+            source: "source.png".to_string(),
+            output: "Output/final.png".to_string(),
+            command: "fill-region".to_string(),
+            args: BTreeMap::from([
+                ("color".to_string(), serde_json::json!("#ff0000ff")),
+                (
+                    "within_polygons".to_string(),
+                    serde_json::json!(["0.0,0.0;0.5,0.0;0.5,1.0;0.0,1.0"]),
+                ),
+            ]),
+            expectations: SceneAssetOperationExpectations::default(),
+        };
+        let operation_path = dir.path().join("preview-operation.json");
+        write_scene_asset_json(&operation_path, &operation, true, false).unwrap();
+
+        let report = run_scene_asset_operation(
+            &operation_path,
+            &SceneAssetPipelineRoots {
+                input_root,
+                transformation_root: transformation_root.clone(),
+                output_root: output_root.clone(),
+            },
+            SceneAssetOperationRunOptions {
+                force: false,
+                dry_run: false,
+                preview: true,
+                pretty: true,
+            },
+        )
+        .unwrap();
+
+        assert_equal!(report.status, "ok");
+        assert!(report.preview);
+        assert_equal!(
+            report.requested_output_path,
+            Some(output_root.join("final.png").display().to_string())
+        );
+        assert!(transformation_root
+            .join("preview-fill.preview.png")
+            .is_file());
+        assert!(transformation_root.join("preview-fill.diff.png").is_file());
+        assert!(!output_root.join("final.png").exists());
     }
 
     #[test]
