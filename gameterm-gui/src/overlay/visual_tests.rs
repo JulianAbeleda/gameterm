@@ -1,7 +1,7 @@
 use super::super::visual_compose::{
     codex_compose_argv, codex_output_text, compose_backend_config, run_codex_compose_backend,
-    CodexComposeConfig, ComposeBackendConfig, ComposeBackendLabel, ComposeBackendRequest,
-    ComposeBackendResult,
+    CodexComposeConfig, ComposeBackendCancel, ComposeBackendConfig, ComposeBackendLabel,
+    ComposeBackendRequest, ComposeBackendResult,
 };
 use super::super::visual_stt::{SceneMicDevice, SceneSttConfig, SceneSttResult, SceneSttState};
 use super::super::visual_tts::{SceneTtsConfig, SceneTtsEvent};
@@ -17,6 +17,7 @@ use super::visual_dialogue_scroll::{
     apply_dialogue_scroll_key, apply_dialogue_scroll_wheel, handle_dialogue_scroll_wheel,
     SceneDialogueScrollback,
 };
+use super::visual_event_drain::drain_compose_results;
 use super::visual_frame::{replace_last_screen_line, replace_screen_line};
 use super::visual_input_keys::{
     is_tts_toggle_key, visual_input_from_key, visual_input_resets_dialogue_scroll,
@@ -27,7 +28,6 @@ use super::visual_render::apply_voice_debug_frame;
 use super::visual_scene_debug_input::handle_scene_debug_session_input;
 use super::visual_scene_files::*;
 use super::visual_scene_patches::*;
-use super::visual_event_drain::drain_compose_results;
 use super::visual_voice_debug::{SceneVoiceDebugState, VoiceDebugMenuEffect};
 use super::visual_voice_events::apply_stt_result;
 use gameterm_term::TerminalSize;
@@ -1074,6 +1074,47 @@ fn compose_future_turns_render_like_first_turn_across_reply_shapes() {
 }
 
 #[test]
+fn compose_dock_shows_wait_seconds_until_reply() {
+    let mut dock = SceneComposeDock::default();
+    assert!(dock.render_line(80).contains("type here; enter submits"));
+
+    dock.begin_backend_wait();
+    let line = dock.render_line(80);
+    assert!(line.contains("waiting for reply... 0s"));
+    assert!(line.contains("esc cancels"));
+    let staged = dock.render_staged_dock_line(
+        120,
+        VnOverlayRect {
+            col: 2,
+            row: 0,
+            width: 80,
+            height: 1,
+        },
+    );
+    assert!(staged.contains("waiting for reply... 0s"));
+
+    dock.end_backend_wait();
+    assert!(dock.render_line(80).contains("type here; enter submits"));
+}
+
+#[test]
+fn compose_wait_render_tick_fires_once_per_second() {
+    let (tts_tx, _tts_rx) = mpsc::channel();
+    let mut session = VisualOverlaySession::new(
+        SceneTtsConfig::voicevox_default(),
+        tts_tx,
+        SceneSttConfig::whisper_default(),
+    );
+
+    assert!(!session.compose_wait_render_tick());
+    session.compose_dock.begin_backend_wait();
+    assert!(session.compose_wait_render_tick());
+    assert!(!session.compose_wait_render_tick());
+    session.compose_dock.end_backend_wait();
+    assert!(!session.compose_wait_render_tick());
+}
+
+#[test]
 fn compose_result_drain_resets_scroll_and_records_reply() {
     let (tts_tx, _tts_rx) = mpsc::channel();
     let mut session = VisualOverlaySession::new(
@@ -1090,6 +1131,7 @@ fn compose_result_drain_resets_scroll_and_records_reply() {
     let history_before = runtime.as_ref().unwrap().compose_history_len();
     session.dialogue_scroll.offset = 5;
     session.compose_backend_running = true;
+    session.compose_dock.begin_backend_wait();
 
     let (compose_tx, compose_rx) = mpsc::channel();
     compose_tx
@@ -1102,6 +1144,7 @@ fn compose_result_drain_resets_scroll_and_records_reply() {
 
     assert!(needs_render);
     assert!(!session.compose_backend_running);
+    assert!(session.compose_dock.backend_wait_seconds().is_none());
     assert_eq!(session.dialogue_scroll.offset, 0);
     let runtime = runtime.as_mut().unwrap();
     assert!(runtime.compose_history_len() > history_before);
@@ -1262,6 +1305,7 @@ fn busy_compose_submit_keeps_running_turn_and_history_intact() {
     let mut compose_dock = SceneComposeDock::default();
     let mut stt_state = SceneSttState::default();
     let mut compose_backend_running = true;
+    let mut compose_cancel = None;
     let (compose_tx, compose_rx) = mpsc::channel();
     apply_stt_result(
         &mut runtime,
@@ -1274,6 +1318,7 @@ fn busy_compose_submit_keeps_running_turn_and_history_intact() {
             error: None,
         },
         &mut compose_backend_running,
+        &mut compose_cancel,
         &compose_tx,
         Path::new("scene.json"),
         7,
@@ -1725,7 +1770,7 @@ fn codex_backend_fake_command_updates_dialogue_status() {
         json: true,
         timeout: std::time::Duration::from_secs(90),
     };
-    let result = run_codex_compose_backend(request, config);
+    let result = run_codex_compose_backend(request, config, &ComposeBackendCancel::new());
 
     assert_eq!(result.label, ComposeBackendLabel::Codex);
     assert_eq!(result.exit_code, Some(0));

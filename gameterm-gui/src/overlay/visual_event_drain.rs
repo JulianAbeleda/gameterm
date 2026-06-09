@@ -48,6 +48,8 @@ pub(super) fn drain_compose_results(
     let mut needs_render = false;
     while let Ok(result) = compose_rx.try_recv() {
         session.compose_backend_running = false;
+        session.compose_cancel = None;
+        session.compose_dock.end_backend_wait();
         if let Some(runtime) = runtime.as_mut() {
             session.dialogue_scroll.reset_to_bottom();
             let voice_block_sync = !session.tts_state.is_muted();
@@ -124,6 +126,7 @@ pub(super) fn drain_stt_results(
                     &mut session.stt_state,
                     result,
                     &mut session.compose_backend_running,
+                    &mut session.compose_cancel,
                     compose_tx,
                     scene_path,
                     pane_id,

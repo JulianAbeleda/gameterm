@@ -1,5 +1,6 @@
 use super::visual_frame::clip_text;
 use gameterm_visual::VnOverlayRect;
+use std::time::Instant;
 use termwiz::input::KeyCode;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -8,6 +9,7 @@ pub(super) struct SceneComposeDock {
     pub(super) cursor: usize,
     pub(super) history: Vec<String>,
     history_index: Option<usize>,
+    backend_wait_started: Option<Instant>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,6 +82,24 @@ impl SceneComposeDock {
         self.clear_buffer();
     }
 
+    pub(super) fn begin_backend_wait(&mut self) {
+        self.backend_wait_started = Some(Instant::now());
+    }
+
+    pub(super) fn end_backend_wait(&mut self) {
+        self.backend_wait_started = None;
+    }
+
+    pub(super) fn backend_wait_seconds(&self) -> Option<u64> {
+        self.backend_wait_started
+            .map(|started| started.elapsed().as_secs())
+    }
+
+    fn waiting_placeholder(&self) -> Option<String> {
+        self.backend_wait_seconds()
+            .map(|seconds| format!(" waiting for reply... {seconds}s · esc cancels"))
+    }
+
     pub(super) fn insert_transcript(&mut self, transcript: &str) {
         let transcript = transcript.trim();
         if transcript.is_empty() {
@@ -100,7 +120,10 @@ impl SceneComposeDock {
         let mut line = String::from(" Compose: ");
         line.push_str(&self.buffer_with_cursor());
         if self.buffer.is_empty() {
-            line.push_str("  type here; enter submits");
+            match self.waiting_placeholder() {
+                Some(waiting) => line.push_str(&format!(" {}", waiting.trim_start())),
+                None => line.push_str("  type here; enter submits"),
+            }
         }
         clip_text(&line, cols.max(1))
     }
@@ -109,7 +132,10 @@ impl SceneComposeDock {
         let mut line = String::from(" ");
         line.push_str(&self.buffer_with_cursor());
         if self.buffer.is_empty() {
-            line.push_str(" type here; enter submits");
+            match self.waiting_placeholder() {
+                Some(waiting) => line.push_str(&waiting),
+                None => line.push_str(" type here; enter submits"),
+            }
         }
         let content_width = rect.width.min(cols.saturating_sub(rect.col)).max(1);
         let indent = " ".repeat(rect.col.min(cols.saturating_sub(1)));

@@ -1,6 +1,6 @@
 pub(super) use super::visual_compose_backend::{
-    compose_running_status, spawn_compose_backend, ComposeBackendLabel, ComposeBackendRequest,
-    ComposeBackendResult,
+    compose_running_status, spawn_compose_backend, ComposeBackendCancel, ComposeBackendLabel,
+    ComposeBackendRequest, ComposeBackendResult,
 };
 
 #[cfg(test)]

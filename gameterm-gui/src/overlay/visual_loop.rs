@@ -128,6 +128,7 @@ pub(super) fn show_visual_scene_overlay_with_source(
         );
         needs_render |=
             reconcile_scene_voice_hold_state(pane_id, &mut runtime, &mut session, &stt_tx);
+        needs_render |= session.compose_wait_render_tick();
         if let Some(runtime) = runtime.as_mut() {
             needs_render |= session.advance_dialogue_reveal(runtime);
         }
@@ -218,6 +219,24 @@ pub(super) fn show_visual_scene_overlay_with_source(
                         )?;
                         continue;
                     }
+                    if session.compose_backend_running && matches!(key, KeyCode::Escape) {
+                        // Esc during an in-flight compose request cancels the
+                        // prompt instead of closing the overlay. The canceled
+                        // result still arrives through the compose channel so
+                        // completion stays on one path.
+                        if let Some(cancel) = session.compose_cancel.take() {
+                            cancel.cancel();
+                        }
+                        runtime.mark_action_status("Compose cancel requested");
+                        render_runtime_with_compose_and_scroll(
+                            &mut term,
+                            runtime,
+                            &sprite_manifest,
+                            &session.compose_dock,
+                            &session.dialogue_scroll,
+                        )?;
+                        continue;
+                    }
                     if runtime.view() != VisualView::VnLayoutDebugger
                         && is_tts_toggle_key(key, modifiers)
                     {
@@ -297,7 +316,7 @@ pub(super) fn show_visual_scene_overlay_with_source(
                                     continue;
                                 }
                                 session.compose_backend_running = true;
-                                spawn_compose_backend(
+                                session.compose_cancel = Some(spawn_compose_backend(
                                     ComposeBackendRequest {
                                         prompt,
                                         backend_prompt,
@@ -305,7 +324,8 @@ pub(super) fn show_visual_scene_overlay_with_source(
                                         pane_id: Some(pane_id),
                                     },
                                     compose_tx.clone(),
-                                );
+                                ));
+                                session.compose_dock.begin_backend_wait();
                                 render_runtime_with_compose_and_scroll(
                                     &mut term,
                                     runtime,

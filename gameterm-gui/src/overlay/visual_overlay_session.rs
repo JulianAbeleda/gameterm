@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 
 use gameterm_visual::SceneRuntime;
 
+use super::super::visual_compose::ComposeBackendCancel;
 use super::super::visual_speech_blocks::{SpeakableSegment, SpeakableSource, SpeechBlockKind};
 use super::super::visual_stt::{
     scene_microphone_devices, SceneMicDevice, SceneSttConfig, SceneSttSession, SceneSttState,
@@ -49,6 +50,8 @@ pub(super) struct VisualOverlaySession {
     pub(super) dialogue_scroll: SceneDialogueScrollback,
     pub(super) compose_debug_backend: SceneComposeDebugBackend,
     pub(super) compose_backend_running: bool,
+    pub(super) compose_cancel: Option<ComposeBackendCancel>,
+    last_compose_wait_second: Option<u64>,
     pub(super) tts_worker: SceneTtsWorker,
     pub(super) tts_state: SceneTtsState,
     pub(super) stt_config: SceneSttConfig,
@@ -85,6 +88,8 @@ impl VisualOverlaySession {
             dialogue_scroll,
             compose_debug_backend: SceneComposeDebugBackend::RealCodex,
             compose_backend_running: false,
+            compose_cancel: None,
+            last_compose_wait_second: None,
             tts_worker,
             tts_state,
             stt_config,
@@ -177,6 +182,20 @@ impl VisualOverlaySession {
         }
         self.sync_tts_debug();
         status
+    }
+
+    /// Repaint once per second while a compose backend request is in flight
+    /// so the dock's elapsed-seconds wait indicator visibly counts.
+    pub(super) fn compose_wait_render_tick(&mut self) -> bool {
+        let Some(seconds) = self.compose_dock.backend_wait_seconds() else {
+            self.last_compose_wait_second = None;
+            return false;
+        };
+        if self.last_compose_wait_second == Some(seconds) {
+            return false;
+        }
+        self.last_compose_wait_second = Some(seconds);
+        true
     }
 
     pub(super) fn advance_dialogue_reveal(&mut self, runtime: &mut SceneRuntime) -> bool {

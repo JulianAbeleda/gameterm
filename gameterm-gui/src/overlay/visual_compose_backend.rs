@@ -1,7 +1,8 @@
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::mpsc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -51,6 +52,7 @@ impl ComposeBackendResult {
             ComposeFailureKind::CodexTimedOut | ComposeFailureKind::ComposeTimedOut => {
                 format!("{} timed out", self.label.name())
             }
+            ComposeFailureKind::Canceled => format!("{} canceled", self.label.name()),
             _ => self.label.failed_status().to_string(),
         }
     }
@@ -73,6 +75,9 @@ impl ComposeBackendResult {
             }
             ComposeFailureKind::ComposeTimedOut => {
                 format!("Compose timed out before returning a reply for: {}", self.prompt)
+            }
+            ComposeFailureKind::Canceled => {
+                format!("{} canceled for: {}", self.label.name(), self.prompt)
             }
             ComposeFailureKind::EmptyDiagnostic => {
                 format!("{} failed for: {}", self.label.name(), self.prompt)
@@ -125,6 +130,7 @@ enum ComposeFailureKind {
     CodexAuthBlocked,
     CodexTimedOut,
     ComposeTimedOut,
+    Canceled,
     EmptyDiagnostic,
     Other,
 }
@@ -154,6 +160,9 @@ fn classify_compose_failure(result: &ComposeBackendResult) -> ComposeFailureKind
     }
     if diagnostic.contains("compose backend timed out") {
         return ComposeFailureKind::ComposeTimedOut;
+    }
+    if diagnostic.contains("compose backend canceled") {
+        return ComposeFailureKind::Canceled;
     }
     ComposeFailureKind::Other
 }
@@ -205,17 +214,43 @@ pub(super) fn compose_running_status(prompt: &str) -> String {
     }
 }
 
+/// Cancels an in-flight compose backend request. Cancellation kills the
+/// backend child process; the worker still delivers a result through the
+/// normal channel so the overlay keeps a single completion path.
+#[derive(Debug, Clone)]
+pub(super) struct ComposeBackendCancel(Arc<AtomicBool>);
+
+impl ComposeBackendCancel {
+    pub(super) fn new() -> Self {
+        Self(Arc::new(AtomicBool::new(false)))
+    }
+
+    pub(super) fn cancel(&self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
+
+    fn is_canceled(&self) -> bool {
+        self.0.load(Ordering::SeqCst)
+    }
+}
+
 pub(super) fn spawn_compose_backend(
     request: ComposeBackendRequest,
     tx: mpsc::Sender<ComposeBackendResult>,
-) {
+) -> ComposeBackendCancel {
+    let cancel = ComposeBackendCancel::new();
+    let worker_cancel = cancel.clone();
     thread::spawn(move || {
-        let result = run_compose_backend(request);
+        let result = run_compose_backend(request, &worker_cancel);
         let _ = tx.send(result);
     });
+    cancel
 }
 
-fn run_compose_backend(request: ComposeBackendRequest) -> ComposeBackendResult {
+fn run_compose_backend(
+    request: ComposeBackendRequest,
+    cancel: &ComposeBackendCancel,
+) -> ComposeBackendResult {
     match compose_backend_config_from_env() {
         ComposeBackendConfig::BuiltIn => ComposeBackendResult {
             stdout: deterministic_compose_reply(&request.prompt),
@@ -224,8 +259,10 @@ fn run_compose_backend(request: ComposeBackendRequest) -> ComposeBackendResult {
             prompt: request.prompt,
             label: ComposeBackendLabel::Compose,
         },
-        ComposeBackendConfig::Command(command) => run_configured_compose_backend(request, command),
-        ComposeBackendConfig::Codex(config) => run_codex_compose_backend(request, config),
+        ComposeBackendConfig::Command(command) => {
+            run_configured_compose_backend(request, command, cancel)
+        }
+        ComposeBackendConfig::Codex(config) => run_codex_compose_backend(request, config, cancel),
         ComposeBackendConfig::Invalid(err) => ComposeBackendResult {
             stdout: String::new(),
             stderr: err,
@@ -451,6 +488,7 @@ fn codex_timeout_from_sources(
 pub(super) fn run_configured_compose_backend(
     request: ComposeBackendRequest,
     command: String,
+    cancel: &ComposeBackendCancel,
 ) -> ComposeBackendResult {
     let argv = match parse_compose_backend_argv(&command) {
         Ok(argv) => argv,
@@ -494,7 +532,7 @@ pub(super) fn run_configured_compose_backend(
         let _ = stdin.write_all(request.backend_prompt.as_bytes());
     }
 
-    match wait_for_child_output(child, COMPOSE_BACKEND_TIMEOUT) {
+    match wait_for_child_output(child, COMPOSE_BACKEND_TIMEOUT, cancel) {
         Ok(output) => ComposeBackendResult {
             prompt: request.prompt,
             stdout: String::from_utf8_lossy(&output.stdout).to_string(),
@@ -519,6 +557,7 @@ fn parse_compose_backend_argv(command: &str) -> Result<Vec<String>, String> {
 pub(super) fn run_codex_compose_backend(
     request: ComposeBackendRequest,
     config: CodexComposeConfig,
+    cancel: &ComposeBackendCancel,
 ) -> ComposeBackendResult {
     let output_file = std::env::temp_dir().join(format!(
         "gameterm-scene-codex-{}-{}.txt",
@@ -539,7 +578,14 @@ pub(super) fn run_codex_compose_backend(
         };
     };
 
-    let result = run_codex_command(request.clone(), program, args, &output_file, config.timeout);
+    let result = run_codex_command(
+        request.clone(),
+        program,
+        args,
+        &output_file,
+        config.timeout,
+        cancel,
+    );
     let _ = std::fs::remove_file(output_file);
     result
 }
@@ -574,6 +620,7 @@ fn run_codex_command(
     args: &[String],
     output_file: &Path,
     timeout: Duration,
+    cancel: &ComposeBackendCancel,
 ) -> ComposeBackendResult {
     let child = match backend_command(program, args, &request)
         .stdin(Stdio::null())
@@ -591,7 +638,7 @@ fn run_codex_command(
         }
     };
 
-    match wait_for_child_output(child, timeout) {
+    match wait_for_child_output(child, timeout, cancel) {
         Ok(output) => ComposeBackendResult {
             prompt: request.prompt,
             stdout: codex_output_text(output_file, &output.stdout),
@@ -655,12 +702,21 @@ struct CollectedProcessError {
 fn wait_for_child_output(
     mut child: Child,
     timeout: Duration,
+    cancel: &ComposeBackendCancel,
 ) -> Result<CollectedProcessOutput, CollectedProcessError> {
     let stdout = child.stdout.take().map(read_pipe);
     let stderr = child.stderr.take().map(read_pipe);
     let deadline = Instant::now() + timeout;
 
     loop {
+        if cancel.is_canceled() {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(CollectedProcessError {
+                stdout: join_pipe(stdout),
+                stderr: "compose backend canceled".to_string(),
+            });
+        }
         match child.try_wait() {
             Ok(Some(status)) => {
                 return Ok(CollectedProcessOutput {
@@ -740,6 +796,41 @@ mod tests {
             permissions.set_mode(0o755);
             std::fs::set_permissions(path, permissions).unwrap();
         }
+    }
+
+    #[test]
+    fn wait_for_child_output_cancel_kills_backend() {
+        let mut command = Command::new("/bin/sh");
+        command
+            .args(["-c", "sleep 30"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        let child = command.spawn().unwrap();
+        let cancel = ComposeBackendCancel::new();
+        cancel.cancel();
+        let started = Instant::now();
+
+        let err = wait_for_child_output(child, Duration::from_secs(30), &cancel).unwrap_err();
+
+        assert!(err.stderr.contains("compose backend canceled"));
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    #[test]
+    fn canceled_result_reports_canceled_status_and_dialogue() {
+        let result = ComposeBackendResult {
+            prompt: "slow question".to_string(),
+            stdout: String::new(),
+            stderr: "Codex compose backend canceled".to_string(),
+            exit_code: None,
+            label: ComposeBackendLabel::Codex,
+        };
+
+        assert_eq!(result.failure_status(), "Codex canceled");
+        assert_eq!(
+            result.failure_dialogue("Codex compose backend canceled"),
+            "Codex canceled for: slow question"
+        );
     }
 
     #[test]
@@ -831,6 +922,7 @@ mod tests {
                 "{} \"short reply\"",
                 shlex::try_quote(&script.display().to_string()).unwrap()
             ),
+            &ComposeBackendCancel::new(),
         );
 
         assert_eq!(result.exit_code, Some(0));
@@ -848,17 +940,19 @@ mod tests {
         let mut request = request("11249");
         request.backend_prompt = "Latest user prompt:\n11249\n\nRecent turns:\nUser: whats the weather today?\nCodex: What city or ZIP code should I check?".to_string();
 
-        let result = run_configured_compose_backend(request, script.display().to_string());
+        let result = run_configured_compose_backend(
+            request,
+            script.display().to_string(),
+            &ComposeBackendCancel::new(),
+        );
 
         assert_eq!(result.exit_code, Some(0));
         assert!(result.stdout.contains("env:11249"));
         assert!(result.stdout.contains("context:Latest user prompt:"));
         assert!(result.stdout.contains("stdin:Latest user prompt:"));
-        assert!(
-            result
-                .stdout
-                .contains("What city or ZIP code should I check?")
-        );
+        assert!(result
+            .stdout
+            .contains("What city or ZIP code should I check?"));
     }
 
     #[test]
@@ -870,7 +964,11 @@ mod tests {
             "#!/usr/bin/env sh\nyes x | head -n 20000\nprintf done\n",
         );
 
-        let result = run_configured_compose_backend(request("large"), script.display().to_string());
+        let result = run_configured_compose_backend(
+            request("large"),
+            script.display().to_string(),
+            &ComposeBackendCancel::new(),
+        );
 
         assert_eq!(result.exit_code, Some(0));
         assert!(result.stdout.contains("done"));
@@ -886,7 +984,11 @@ mod tests {
             "#!/usr/bin/env sh\nyes err | head -n 20000 >&2\nexit 3\n",
         );
 
-        let result = run_configured_compose_backend(request("large"), script.display().to_string());
+        let result = run_configured_compose_backend(
+            request("large"),
+            script.display().to_string(),
+            &ComposeBackendCancel::new(),
+        );
 
         assert_eq!(result.exit_code, Some(3));
         assert!(result.stderr.len() > 20_000);
@@ -903,7 +1005,12 @@ mod tests {
             .unwrap();
         child.stdin.take();
 
-        let err = wait_for_child_output(child, Duration::from_millis(50)).unwrap_err();
+        let err = wait_for_child_output(
+            child,
+            Duration::from_millis(50),
+            &ComposeBackendCancel::new(),
+        )
+        .unwrap_err();
 
         assert_eq!(String::from_utf8_lossy(&err.stdout), "started");
         assert_eq!(err.stderr, "compose backend timed out after 0s");
@@ -976,7 +1083,11 @@ mod tests {
             json: true,
             timeout: DEFAULT_CODEX_TIMEOUT,
         };
-        let result = run_codex_compose_backend(request("look at roadmap"), config);
+        let result = run_codex_compose_backend(
+            request("look at roadmap"),
+            config,
+            &ComposeBackendCancel::new(),
+        );
 
         assert_eq!(result.label, ComposeBackendLabel::Codex);
         assert_eq!(result.exit_code, Some(0));

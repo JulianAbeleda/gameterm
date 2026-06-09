@@ -3,7 +3,8 @@ use std::path::Path;
 use std::sync::mpsc;
 
 use super::super::visual_compose::{
-    ComposeBackendRequest, ComposeBackendResult, compose_running_status, spawn_compose_backend,
+    compose_running_status, spawn_compose_backend, ComposeBackendCancel, ComposeBackendRequest,
+    ComposeBackendResult,
 };
 use super::super::visual_stt::{SceneSttResult, SceneSttState};
 use super::super::visual_tts::{SceneTtsEvent, SceneTtsResult, SceneTtsState};
@@ -46,6 +47,7 @@ pub(super) fn apply_stt_result(
     stt_state: &mut SceneSttState,
     result: SceneSttResult,
     compose_backend_running: &mut bool,
+    compose_cancel: &mut Option<ComposeBackendCancel>,
     compose_tx: &mpsc::Sender<ComposeBackendResult>,
     scene_path: &Path,
     pane_id: mux::pane::PaneId,
@@ -71,7 +73,7 @@ pub(super) fn apply_stt_result(
             compose_dock.mark_submitted(&prompt);
             runtime.mark_compose_running(compose_running_status(&prompt), &prompt);
             *compose_backend_running = true;
-            spawn_compose_backend(
+            *compose_cancel = Some(spawn_compose_backend(
                 ComposeBackendRequest {
                     prompt,
                     backend_prompt,
@@ -79,7 +81,8 @@ pub(super) fn apply_stt_result(
                     pane_id: Some(pane_id),
                 },
                 compose_tx.clone(),
-            );
+            ));
+            compose_dock.begin_backend_wait();
         }
     } else if let Some(error) = result.error {
         runtime.mark_action_status(format!("{status}: {error}"));
