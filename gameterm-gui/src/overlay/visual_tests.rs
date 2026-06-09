@@ -1411,6 +1411,7 @@ fn codex_backend_fake_command_updates_dialogue_status() {
 
     let request = ComposeBackendRequest {
         prompt: "look at roadmap".to_string(),
+        backend_prompt: "look at roadmap".to_string(),
         scene_path: Some("scene.json".to_string()),
         pane_id: Some(7),
     };

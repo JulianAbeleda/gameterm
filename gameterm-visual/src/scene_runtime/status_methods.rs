@@ -17,6 +17,10 @@ impl SceneRuntime {
         self.bump_generation();
     }
 
+    pub fn compose_backend_prompt(&self, prompt: &str) -> String {
+        self.compose_state.backend_prompt_with_context(prompt)
+    }
+
     pub fn mark_compose_succeeded(&mut self, speaker: &str, reply: &str) {
         let trimmed_reply = reply.trim();
         let role = if speaker.trim().is_empty() {

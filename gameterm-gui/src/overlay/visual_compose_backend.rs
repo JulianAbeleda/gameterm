@@ -24,6 +24,7 @@ const COMPOSE_BACKEND_POLL_INTERVAL: Duration = Duration::from_millis(25);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct ComposeBackendRequest {
     pub(super) prompt: String,
+    pub(super) backend_prompt: String,
     pub(super) scene_path: Option<String>,
     pub(super) pane_id: Option<usize>,
 }
@@ -490,7 +491,7 @@ pub(super) fn run_configured_compose_backend(
     };
 
     if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(request.prompt.as_bytes());
+        let _ = stdin.write_all(request.backend_prompt.as_bytes());
     }
 
     match wait_for_child_output(child, COMPOSE_BACKEND_TIMEOUT) {
@@ -527,7 +528,7 @@ pub(super) fn run_codex_compose_backend(
             .map(|duration| duration.as_nanos())
             .unwrap_or_default()
     ));
-    let argv = codex_compose_argv(&config, &output_file, &request.prompt);
+    let argv = codex_compose_argv(&config, &output_file, &request.backend_prompt);
     let Some((program, args)) = argv.split_first() else {
         return ComposeBackendResult {
             prompt: request.prompt,
@@ -615,6 +616,7 @@ fn backend_command(program: &str, args: &[String], request: &ComposeBackendReque
     command
         .args(args)
         .env("GAMETERM_SCENE_COMPOSE_PROMPT", &request.prompt)
+        .env("GAMETERM_SCENE_COMPOSE_CONTEXT", &request.backend_prompt)
         .env(
             "GAMETERM_SCENE_COMPOSE_SESSION_ID",
             request
@@ -723,6 +725,7 @@ mod tests {
     fn request(prompt: &str) -> ComposeBackendRequest {
         ComposeBackendRequest {
             prompt: prompt.to_string(),
+            backend_prompt: prompt.to_string(),
             scene_path: Some("scene.json".to_string()),
             pane_id: Some(7),
         }
@@ -832,6 +835,30 @@ mod tests {
 
         assert_eq!(result.exit_code, Some(0));
         assert_eq!(result.stdout, "reply:short reply:hello:7\n");
+    }
+
+    #[test]
+    fn run_configured_compose_backend_receives_context_prompt_on_stdin() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = dir.path().join("stdin-compose.sh");
+        executable_script(
+            &script,
+            "#!/usr/bin/env sh\nprintf 'env:%s\\n' \"$GAMETERM_SCENE_COMPOSE_PROMPT\"\nprintf 'context:%s\\n' \"$GAMETERM_SCENE_COMPOSE_CONTEXT\"\nprintf 'stdin:'\ncat\n",
+        );
+        let mut request = request("11249");
+        request.backend_prompt = "Latest user prompt:\n11249\n\nRecent turns:\nUser: whats the weather today?\nCodex: What city or ZIP code should I check?".to_string();
+
+        let result = run_configured_compose_backend(request, script.display().to_string());
+
+        assert_eq!(result.exit_code, Some(0));
+        assert!(result.stdout.contains("env:11249"));
+        assert!(result.stdout.contains("context:Latest user prompt:"));
+        assert!(result.stdout.contains("stdin:Latest user prompt:"));
+        assert!(
+            result
+                .stdout
+                .contains("What city or ZIP code should I check?")
+        );
     }
 
     #[test]

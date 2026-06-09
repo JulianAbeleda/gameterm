@@ -165,6 +165,72 @@ impl VisualComposeRuntimeState {
         self.active_block_index = 0;
     }
 
+    pub(crate) fn backend_prompt_with_context(&self, prompt: &str) -> String {
+        let prompt = prompt.trim();
+        if self.history.is_empty() {
+            return prompt.to_string();
+        }
+
+        const RECENT_CONTEXT_TURNS: usize = 6;
+        const CONTEXT_MESSAGE_MAX_CHARS: usize = 500;
+        let recent_turns =
+            self.recent_turn_context_summary(RECENT_CONTEXT_TURNS, CONTEXT_MESSAGE_MAX_CHARS);
+        if recent_turns.trim().is_empty() {
+            return prompt.to_string();
+        }
+
+        format!(
+            "GameTerm Scene Mode conversation context follows. Use it for continuity across Scene Mode turns. If the latest user prompt is a fragment, answer it as a continuation of the recent turns. Do not say you lack prior context when the recent turns provide it.\n\nLatest user prompt:\n{prompt}\n\nRecent turns:\n{recent_turns}\n\nResponse rules:\n- Answer the latest user prompt.\n- Use recent turns as background, not as a topic switch.\n- Keep useful technical details visible when they matter.\n- Return only the assistant reply text unless a structured Scene Mode JSON patch is specifically needed."
+        )
+    }
+
+    fn recent_turn_context_summary(&self, max_turns: usize, max_message_chars: usize) -> String {
+        let mut turn_ids = self
+            .history
+            .iter()
+            .map(|message| message.turn_id)
+            .collect::<Vec<_>>();
+        turn_ids.dedup();
+        if turn_ids.len() > max_turns {
+            turn_ids = turn_ids.split_off(turn_ids.len() - max_turns);
+        }
+
+        turn_ids
+            .into_iter()
+            .filter_map(|turn_id| {
+                let mut lines = Vec::new();
+                for message in self
+                    .history
+                    .iter()
+                    .filter(|message| message.turn_id == turn_id)
+                {
+                    let text = cap_compose_context_text(&message.text, max_message_chars);
+                    if text.is_empty() {
+                        continue;
+                    }
+                    let label = match message.role {
+                        VisualComposeRole::User => "User".to_string(),
+                        VisualComposeRole::Assistant => message
+                            .speaker
+                            .as_deref()
+                            .filter(|speaker| !speaker.trim().is_empty())
+                            .unwrap_or("Assistant")
+                            .to_string(),
+                        VisualComposeRole::System => "Scene".to_string(),
+                        VisualComposeRole::Error => "Error".to_string(),
+                    };
+                    lines.push(format!("{label}: {text}"));
+                }
+                if lines.is_empty() {
+                    None
+                } else {
+                    Some(lines.join("\n"))
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n")
+    }
+
     pub(crate) fn latest_assistant_speaker(&self) -> Option<&str> {
         self.history.iter().rev().find_map(|message| {
             if matches!(
@@ -364,6 +430,16 @@ impl VisualComposeRuntimeState {
         message.visibility = visibility;
         true
     }
+}
+
+fn cap_compose_context_text(text: &str, max_chars: usize) -> String {
+    let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized.chars().count() <= max_chars {
+        return normalized;
+    }
+    let mut capped = normalized.chars().take(max_chars).collect::<String>();
+    capped.push_str("...");
+    capped
 }
 
 fn next_fake_stream_reveal_len(text: &str, current_chars: usize, target_chars: usize) -> usize {

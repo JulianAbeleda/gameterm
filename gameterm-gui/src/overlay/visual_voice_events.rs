@@ -67,12 +67,14 @@ pub(super) fn apply_stt_result(
                 runtime.mark_action_status("Voice transcript ready: compose busy");
                 return;
             }
+            let backend_prompt = runtime.compose_backend_prompt(&prompt);
             compose_dock.mark_submitted(&prompt);
             runtime.mark_compose_running(compose_running_status(&prompt), &prompt);
             *compose_backend_running = true;
             spawn_compose_backend(
                 ComposeBackendRequest {
                     prompt,
+                    backend_prompt,
                     scene_path: Some(scene_path.display().to_string()),
                     pane_id: Some(pane_id),
                 },

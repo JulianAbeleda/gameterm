@@ -265,6 +265,7 @@ pub(super) fn show_visual_scene_overlay_with_source(
                                     continue;
                                 }
                                 session.interrupt_tts_queue();
+                                let backend_prompt = runtime.compose_backend_prompt(&prompt);
                                 session.compose_dock.mark_submitted(&prompt);
                                 let running_status = if session.compose_debug_backend.is_fake() {
                                     format!("Fake Codex running: {prompt}")
@@ -298,6 +299,7 @@ pub(super) fn show_visual_scene_overlay_with_source(
                                 spawn_compose_backend(
                                     ComposeBackendRequest {
                                         prompt,
+                                        backend_prompt,
                                         scene_path: Some(scene_path.display().to_string()),
                                         pane_id: Some(pane_id),
                                     },

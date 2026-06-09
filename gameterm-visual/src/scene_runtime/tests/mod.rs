@@ -2426,6 +2426,25 @@ fn compose_runtime_history_is_capped() {
 }
 
 #[test]
+fn compose_backend_prompt_includes_recent_turn_context_for_followups() {
+    let mut runtime = SceneRuntime::new(staged_compose_scene()).unwrap();
+
+    assert_eq!(runtime.compose_backend_prompt("hello"), "hello");
+
+    runtime.mark_compose_running("Compose running", "whats the weather today?");
+    runtime.mark_compose_succeeded("Codex", "What city or ZIP code should I check?");
+
+    let prompt = runtime.compose_backend_prompt("11249");
+
+    assert!(prompt.contains("GameTerm Scene Mode conversation context follows."));
+    assert!(prompt.contains("Latest user prompt:\n11249"));
+    assert!(prompt.contains("User: whats the weather today?"));
+    assert!(prompt.contains("Codex: What city or ZIP code should I check?"));
+    assert!(prompt.contains("If the latest user prompt is a fragment"));
+    assert!(!prompt.contains("User: 11249"));
+}
+
+#[test]
 fn layered_input_map_owns_input_before_mode_map() {
     let mut scene = VisualScene::demo();
     scene.mode.input_map = vec![VisualInputBinding {
