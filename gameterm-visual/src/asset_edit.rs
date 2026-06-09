@@ -267,6 +267,18 @@ pub struct SceneAssetAcceptOutputReport {
     pub image: SceneAssetImageReport,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetOperationValidationReport {
+    pub operation: String,
+    pub id: String,
+    pub status: String,
+    pub source_path: String,
+    pub requested_output_path: String,
+    pub command: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SceneAssetOperationErrorReport {
     pub operation: String,
@@ -1417,6 +1429,20 @@ fn run_scene_asset_pipeline_step(
 
     if options.dry_run {
         validate_pipeline_command_name(&step.command)?;
+        validate_scene_asset_pipeline_step_args(step, roots)?;
+        if output_path.is_none() {
+            return Err(SceneAssetEditError::InvalidOperation(format!(
+                "pipeline step `{}` requires an output",
+                step.command
+            )));
+        }
+        if let Some(output_path) = &output_path {
+            if output_path.exists() && !options.force {
+                return Err(SceneAssetEditError::OutputExists(
+                    output_path.display().to_string(),
+                ));
+            }
+        }
         return Ok(SceneAssetPipelineStepReport {
             index,
             command: step.command.clone(),
@@ -1962,6 +1988,60 @@ pub fn run_scene_asset_operation(
         compare,
         expectation_failures,
         step: step_report,
+    })
+}
+
+pub fn validate_scene_asset_operation(
+    operation_path: &Path,
+    roots: &SceneAssetPipelineRoots,
+    force: bool,
+) -> Result<SceneAssetOperationValidationReport, SceneAssetEditError> {
+    let operation: SceneAssetOperation = load_json(operation_path)?;
+    if operation.asset_operation_version != 1 {
+        return Err(SceneAssetEditError::InvalidOperation(format!(
+            "unsupported asset_operation_version {}; expected 1",
+            operation.asset_operation_version
+        )));
+    }
+    if operation.id.trim().is_empty() {
+        return Err(SceneAssetEditError::InvalidOperation(
+            "asset operation id is required".to_string(),
+        ));
+    }
+    if operation.output.trim().is_empty() {
+        return Err(SceneAssetEditError::InvalidOperation(
+            "asset operation output is required".to_string(),
+        ));
+    }
+    validate_pipeline_command_name(&operation.command)?;
+    let source_path = resolve_asset_operation_source_path(roots, &operation.source);
+    if !source_path.is_file() {
+        return Err(SceneAssetEditError::ImageFile {
+            path: source_path.display().to_string(),
+            message: "operation source does not exist".to_string(),
+        });
+    }
+    inspect_scene_asset_image(&source_path)?;
+    let requested_output_path = resolve_pipeline_output_path(roots, &operation.output);
+    if requested_output_path.exists() && !force {
+        return Err(SceneAssetEditError::OutputExists(
+            requested_output_path.display().to_string(),
+        ));
+    }
+    let step = SceneAssetPipelineStep {
+        command: operation.command.clone(),
+        output: Some(operation.output.clone()),
+        args: operation.args,
+    };
+    validate_scene_asset_pipeline_step_args(&step, roots)?;
+    Ok(SceneAssetOperationValidationReport {
+        operation: "validate_operation".to_string(),
+        id: operation.id,
+        status: "ok".to_string(),
+        source_path: source_path.display().to_string(),
+        requested_output_path: requested_output_path.display().to_string(),
+        command: operation.command,
+        warnings: Vec::new(),
     })
 }
 
@@ -4096,6 +4176,205 @@ fn validate_pipeline_command_name(command: &str) -> Result<(), SceneAssetEditErr
             "unsupported pipeline command `{command}`"
         ))),
     }
+}
+
+fn validate_scene_asset_pipeline_step_args(
+    step: &SceneAssetPipelineStep,
+    roots: &SceneAssetPipelineRoots,
+) -> Result<(), SceneAssetEditError> {
+    validate_pipeline_command_name(&step.command)?;
+    let feature_map = load_pipeline_feature_map(roots, &step.args)?;
+    match step.command.as_str() {
+        "sample" => {
+            let within_regions = pipeline_string_list_arg(&step.args, "within_regions")?;
+            pipeline_points_arg(&step.args, "points", "point")?;
+            pipeline_polygons_arg(&step.args, "within_polygons")?;
+            validate_pipeline_region_names(feature_map.as_ref(), &within_regions)?;
+        }
+        "mask-preview" => {
+            let mode = pipeline_mask_preview_mode_arg(&step.args)?;
+            let seeds = pipeline_points_arg(&step.args, "seeds", "seed")?;
+            if mode == SceneAssetMaskPreviewMode::MagicAdd && seeds.is_empty() {
+                return Err(SceneAssetEditError::InvalidOperation(
+                    "magic-add mask preview requires at least one seed".to_string(),
+                ));
+            }
+            pipeline_u8_arg(&step.args, "threshold", 238)?;
+            pipeline_u8_arg(&step.args, "neutrality", 28)?;
+            let polish = pipeline_mask_polish_options(&step.args)?;
+            validate_mask_polish_regions(feature_map.as_ref(), &polish)?;
+        }
+        "remove-background" => {
+            pipeline_u8_arg(&step.args, "tolerance", 24)?;
+            pipeline_u32_arg(&step.args, "feather", 0)?;
+            pipeline_background_sample_arg(&step.args, "sample")?;
+        }
+        "remove-background-polished" | "color-range-erase" => {
+            let polish = pipeline_mask_polish_options(&step.args)?;
+            validate_mask_polish_regions(feature_map.as_ref(), &polish)?;
+        }
+        "magic-erase-add" => {
+            let seeds = pipeline_points_arg(&step.args, "seeds", "seed")?;
+            if seeds.is_empty() {
+                return Err(SceneAssetEditError::InvalidOperation(
+                    "magic-erase-add requires at least one seed".to_string(),
+                ));
+            }
+            let polish = pipeline_mask_polish_options(&step.args)?;
+            validate_mask_polish_regions(feature_map.as_ref(), &polish)?;
+        }
+        "hair-cleanup" => {
+            pipeline_u32_arg(&step.args, "radius", 4)?;
+            pipeline_f32_arg(&step.args, "strength", 0.85)?;
+            if let Some(region) = pipeline_string_arg(&step.args, "hair_region")? {
+                validate_pipeline_region_names(feature_map.as_ref(), &[region])?;
+            }
+        }
+        "fill-region" => {
+            pipeline_color_arg(&step.args, "color")?;
+            pipeline_bool_arg(&step.args, "whole_image", false)?;
+            let within_regions = pipeline_string_list_arg(&step.args, "within_regions")?;
+            pipeline_polygons_arg(&step.args, "within_polygons")?;
+            let protect_regions = pipeline_string_list_arg(&step.args, "protect_regions")?;
+            validate_pipeline_region_names(feature_map.as_ref(), &within_regions)?;
+            validate_pipeline_region_names(feature_map.as_ref(), &protect_regions)?;
+        }
+        "sample-fill" => {
+            pipeline_required_point_arg(&step.args, "sample_point")?;
+            pipeline_u32_arg(&step.args, "sample_radius", 1)?;
+            let within_regions = pipeline_string_list_arg(&step.args, "within_regions")?;
+            pipeline_polygons_arg(&step.args, "within_polygons")?;
+            let protect_regions = pipeline_string_list_arg(&step.args, "protect_regions")?;
+            validate_pipeline_region_names(feature_map.as_ref(), &within_regions)?;
+            validate_pipeline_region_names(feature_map.as_ref(), &protect_regions)?;
+        }
+        "alpha-paint" => {
+            pipeline_u8_arg(&step.args, "alpha", 255)?;
+            pipeline_bool_arg(&step.args, "whole_image", false)?;
+            let within_regions = pipeline_string_list_arg(&step.args, "within_regions")?;
+            pipeline_polygons_arg(&step.args, "within_polygons")?;
+            let protect_regions = pipeline_string_list_arg(&step.args, "protect_regions")?;
+            validate_pipeline_region_names(feature_map.as_ref(), &within_regions)?;
+            validate_pipeline_region_names(feature_map.as_ref(), &protect_regions)?;
+        }
+        "clone-stamp" => {
+            pipeline_required_point_arg(&step.args, "sample_origin")?;
+            pipeline_required_point_arg(&step.args, "target_origin")?;
+            let within_regions = pipeline_string_list_arg(&step.args, "within_regions")?;
+            pipeline_polygons_arg(&step.args, "within_polygons")?;
+            let protect_regions = pipeline_string_list_arg(&step.args, "protect_regions")?;
+            validate_pipeline_region_names(feature_map.as_ref(), &within_regions)?;
+            validate_pipeline_region_names(feature_map.as_ref(), &protect_regions)?;
+        }
+        "draw-shape" => {
+            pipeline_draw_shape_arg(&step.args)?;
+            pipeline_color_arg(&step.args, "color")?;
+            pipeline_u32_arg(&step.args, "stroke_width", 1)?;
+            pipeline_bool_arg(&step.args, "fill", false)?;
+            pipeline_rect_arg(&step.args, "rect")?;
+            pipeline_points_arg(&step.args, "points", "point")?;
+            let protect_regions = pipeline_string_list_arg(&step.args, "protect_regions")?;
+            validate_pipeline_region_names(feature_map.as_ref(), &protect_regions)?;
+        }
+        "stroke-path" => {
+            pipeline_path_points_arg(&step.args, "path")?;
+            pipeline_color_arg(&step.args, "color")?;
+            pipeline_u32_arg(&step.args, "width", 1)?;
+            pipeline_bool_arg(&step.args, "closed", false)?;
+            let protect_regions = pipeline_string_list_arg(&step.args, "protect_regions")?;
+            validate_pipeline_region_names(feature_map.as_ref(), &protect_regions)?;
+        }
+        "crop" => {
+            pipeline_rect_arg(&step.args, "rect")?;
+            pipeline_bool_arg(&step.args, "content_bounds", false)?;
+        }
+        "pad" => {
+            pipeline_u32_required_arg(&step.args, "width")?;
+            pipeline_u32_required_arg(&step.args, "height")?;
+            pipeline_pad_anchor_arg(&step.args)?;
+            pipeline_optional_color_arg(&step.args, "color", [0, 0, 0, 0])?;
+        }
+        "transform" => {
+            pipeline_translate_arg(&step.args)?;
+            pipeline_f32_arg(&step.args, "scale", 1.0)?;
+            pipeline_bool_arg(&step.args, "flip_x", false)?;
+            pipeline_bool_arg(&step.args, "flip_y", false)?;
+            pipeline_resample_arg(&step.args)?;
+        }
+        "levels" => {
+            pipeline_channel_arg(&step.args)?;
+            pipeline_u8_arg(&step.args, "black", 0)?;
+            pipeline_u8_arg(&step.args, "white", 255)?;
+            pipeline_f32_arg(&step.args, "gamma", 1.0)?;
+            validate_adjustment_regions(&step.args, feature_map.as_ref())?;
+        }
+        "brightness-contrast" => {
+            pipeline_f32_arg(&step.args, "brightness", 0.0)?;
+            pipeline_f32_arg(&step.args, "contrast", 0.0)?;
+            validate_adjustment_regions(&step.args, feature_map.as_ref())?;
+        }
+        "hsl" => {
+            pipeline_f32_arg(&step.args, "hue", 0.0)?;
+            pipeline_f32_arg(&step.args, "saturation", 0.0)?;
+            pipeline_f32_arg(&step.args, "lightness", 0.0)?;
+            validate_adjustment_regions(&step.args, feature_map.as_ref())?;
+        }
+        "blur" => {
+            pipeline_f32_arg(&step.args, "radius", 1.0)?;
+            validate_adjustment_regions(&step.args, feature_map.as_ref())?;
+        }
+        "unsharp-mask" => {
+            pipeline_f32_arg(&step.args, "radius", 1.0)?;
+            pipeline_f32_arg(&step.args, "amount", 1.0)?;
+            pipeline_u8_arg(&step.args, "threshold", 0)?;
+            validate_adjustment_regions(&step.args, feature_map.as_ref())?;
+        }
+        command => {
+            return Err(SceneAssetEditError::InvalidOperation(format!(
+                "unsupported pipeline command `{command}`"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_mask_polish_regions(
+    feature_map: Option<&SceneAssetFeatureMap>,
+    polish: &SceneAssetMaskPolishOptions,
+) -> Result<(), SceneAssetEditError> {
+    validate_pipeline_region_names(feature_map, &polish.within_regions)?;
+    validate_pipeline_region_names(feature_map, &polish.protect_regions)
+}
+
+fn validate_adjustment_regions(
+    args: &BTreeMap<String, serde_json::Value>,
+    feature_map: Option<&SceneAssetFeatureMap>,
+) -> Result<(), SceneAssetEditError> {
+    let within_regions = pipeline_string_list_arg(args, "within_regions")?;
+    pipeline_polygons_arg(args, "within_polygons")?;
+    let protect_regions = pipeline_string_list_arg(args, "protect_regions")?;
+    validate_pipeline_region_names(feature_map, &within_regions)?;
+    validate_pipeline_region_names(feature_map, &protect_regions)
+}
+
+fn validate_pipeline_region_names(
+    feature_map: Option<&SceneAssetFeatureMap>,
+    regions: &[String],
+) -> Result<(), SceneAssetEditError> {
+    if regions.is_empty() {
+        return Ok(());
+    }
+    let Some(feature_map) = feature_map else {
+        return Err(SceneAssetEditError::InvalidOperation(
+            "feature map is required when using named regions".to_string(),
+        ));
+    };
+    for region in regions {
+        if !feature_map.regions.contains_key(region) {
+            return Err(SceneAssetEditError::UnknownRegion(region.clone()));
+        }
+    }
+    Ok(())
 }
 
 fn load_pipeline_feature_map(
@@ -6964,6 +7243,114 @@ mod tests {
 
         assert_equal!(dry_report.status, "validated");
         assert!(!transformation_root.join("02-dry-run.png").exists());
+    }
+
+    #[test]
+    fn validate_operation_reports_success_without_writing_output() {
+        let dir = tempdir().unwrap();
+        let input_root = dir.path().join("Input");
+        let transformation_root = dir.path().join("Transformation");
+        let output_root = dir.path().join("Output");
+        std::fs::create_dir_all(&input_root).unwrap();
+        std::fs::create_dir_all(&transformation_root).unwrap();
+        std::fs::create_dir_all(&output_root).unwrap();
+
+        let source = input_root.join("source.png");
+        let image = ImageBuffer::from_pixel(4, 4, Rgba([0u8, 0, 0, 255]));
+        image.save(&source).unwrap();
+        let operation = SceneAssetOperation {
+            asset_operation_version: 1,
+            id: "validate-fill".to_string(),
+            intent: None,
+            source: "source.png".to_string(),
+            output: "01-filled.png".to_string(),
+            command: "fill-region".to_string(),
+            args: BTreeMap::from([
+                ("color".to_string(), serde_json::json!("#ff0000ff")),
+                ("whole_image".to_string(), serde_json::json!(true)),
+            ]),
+            expectations: SceneAssetOperationExpectations::default(),
+        };
+        let operation_path = dir.path().join("operation.json");
+        write_scene_asset_json(&operation_path, &operation, true, false).unwrap();
+
+        let report = validate_scene_asset_operation(
+            &operation_path,
+            &SceneAssetPipelineRoots {
+                input_root,
+                transformation_root: transformation_root.clone(),
+                output_root,
+            },
+            false,
+        )
+        .unwrap();
+
+        assert_equal!(report.operation, "validate_operation");
+        assert_equal!(report.id, "validate-fill");
+        assert_equal!(report.status, "ok");
+        assert_equal!(report.command, "fill-region");
+        assert!(!transformation_root.join("01-filled.png").exists());
+    }
+
+    #[test]
+    fn validate_operation_rejects_unknown_protected_region() {
+        let dir = tempdir().unwrap();
+        let input_root = dir.path().join("Input");
+        let transformation_root = dir.path().join("Transformation");
+        let output_root = dir.path().join("Output");
+        std::fs::create_dir_all(&input_root).unwrap();
+        std::fs::create_dir_all(&transformation_root).unwrap();
+        std::fs::create_dir_all(&output_root).unwrap();
+
+        let source = input_root.join("source.png");
+        let image = ImageBuffer::from_pixel(4, 4, Rgba([0u8, 0, 0, 255]));
+        image.save(&source).unwrap();
+        let feature_map = SceneAssetFeatureMap {
+            feature_map_version: 1,
+            character: "kiki".to_string(),
+            base: "source.png".to_string(),
+            regions: BTreeMap::from([(
+                "face".to_string(),
+                SceneAssetNormalizedRect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 0.5,
+                    h: 0.5,
+                },
+            )]),
+            anchors: BTreeMap::new(),
+        };
+        write_scene_asset_json(&input_root.join("map.json"), &feature_map, true, false).unwrap();
+        let operation = SceneAssetOperation {
+            asset_operation_version: 1,
+            id: "validate-region".to_string(),
+            intent: None,
+            source: "source.png".to_string(),
+            output: "01-filled.png".to_string(),
+            command: "fill-region".to_string(),
+            args: BTreeMap::from([
+                ("protect".to_string(), serde_json::json!("map.json")),
+                ("protect_regions".to_string(), serde_json::json!(["eyes"])),
+                ("color".to_string(), serde_json::json!("#ff0000ff")),
+                ("whole_image".to_string(), serde_json::json!(true)),
+            ]),
+            expectations: SceneAssetOperationExpectations::default(),
+        };
+        let operation_path = dir.path().join("operation.json");
+        write_scene_asset_json(&operation_path, &operation, true, false).unwrap();
+
+        let err = validate_scene_asset_operation(
+            &operation_path,
+            &SceneAssetPipelineRoots {
+                input_root,
+                transformation_root,
+                output_root,
+            },
+            false,
+        )
+        .unwrap_err();
+
+        assert!(matches!(err, SceneAssetEditError::UnknownRegion(region) if region == "eyes"));
     }
 
     #[test]
