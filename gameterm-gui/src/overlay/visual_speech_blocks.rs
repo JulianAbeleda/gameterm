@@ -34,6 +34,87 @@ impl SpeakableSource {
     }
 }
 
+/// Display blocks and speakable segments for one compose reply.
+///
+/// Display content and speech content are distinct concerns: the transcript
+/// must show the full reply (paths, code, JSON included) while TTS speaks
+/// only the speakable subset. `segment_block_ordinals[i]` is the index in
+/// `display_blocks` of the block that produced `segments[i]`, so callers can
+/// stamp runtime block ids onto the speech queue.
+pub(super) struct ComposeReplyBlocks {
+    pub(super) display_blocks: Vec<String>,
+    pub(super) segments: Vec<SpeakableSegment>,
+    pub(super) segment_block_ordinals: Vec<usize>,
+}
+
+pub(super) fn extract_compose_reply_blocks(
+    speaker: Option<&str>,
+    text: &str,
+    source: SpeakableSource,
+) -> ComposeReplyBlocks {
+    let mut display_blocks = Vec::new();
+    let mut segments = Vec::new();
+    let mut segment_block_ordinals = Vec::new();
+    for unit in split_reply_display_units(text) {
+        match unit {
+            ReplyDisplayUnit::CodeBlock(code) => {
+                let code = code.trim_end().to_string();
+                if !code.trim().is_empty() {
+                    display_blocks.push(code);
+                }
+            }
+            ReplyDisplayUnit::Line(line) => {
+                display_blocks.push(line.clone());
+                let ordinal = display_blocks.len() - 1;
+                for segment in extract_speakable_segments(speaker, &line, source) {
+                    segments.push(segment);
+                    segment_block_ordinals.push(ordinal);
+                }
+            }
+        }
+    }
+    ComposeReplyBlocks {
+        display_blocks,
+        segments,
+        segment_block_ordinals,
+    }
+}
+
+enum ReplyDisplayUnit {
+    Line(String),
+    CodeBlock(String),
+}
+
+/// Split a reply into display units: one unit per content line, with fenced
+/// code grouped into a single unit so the code stays contiguous. Fence marker
+/// lines carry no content of their own and are dropped from display.
+fn split_reply_display_units(text: &str) -> Vec<ReplyDisplayUnit> {
+    let mut units = Vec::new();
+    let mut fence: Option<Vec<&str>> = None;
+    for line in text.lines() {
+        if line.trim_start().starts_with("```") {
+            match fence.take() {
+                Some(content) => units.push(ReplyDisplayUnit::CodeBlock(content.join("\n"))),
+                None => fence = Some(Vec::new()),
+            }
+            continue;
+        }
+        if let Some(content) = fence.as_mut() {
+            content.push(line);
+            continue;
+        }
+        let trimmed = line.trim();
+        if !trimmed.is_empty() {
+            units.push(ReplyDisplayUnit::Line(trimmed.to_string()));
+        }
+    }
+    if let Some(content) = fence.take() {
+        // Unterminated fence: keep the content visible rather than dropping it.
+        units.push(ReplyDisplayUnit::CodeBlock(content.join("\n")));
+    }
+    units
+}
+
 pub(super) fn extract_speakable_segments(
     speaker: Option<&str>,
     text: &str,

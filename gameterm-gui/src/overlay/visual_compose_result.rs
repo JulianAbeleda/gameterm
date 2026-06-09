@@ -1,6 +1,6 @@
 use crate::overlay::visual_compose::{ComposeBackendLabel, ComposeBackendResult};
 use crate::overlay::visual_speech_blocks::{
-    extract_speakable_segments, SpeakableSegment, SpeakableSource,
+    extract_compose_reply_blocks, ComposeReplyBlocks, SpeakableSegment, SpeakableSource,
 };
 use gameterm_visual::{SceneRuntime, VisualSceneDialoguePatch, VisualScenePatch};
 use serde::Deserialize;
@@ -23,11 +23,12 @@ pub(super) fn compose_result_speakable_segments(
     let Some((speaker, dialogue_text)) = compose_result_reply_preview(result) else {
         return Vec::new();
     };
-    extract_speakable_segments(
+    extract_compose_reply_blocks(
         Some(&speaker),
         &dialogue_text,
         SpeakableSource::ComposeReply,
     )
+    .segments
 }
 
 #[cfg(test)]
@@ -78,13 +79,7 @@ pub(super) fn apply_compose_backend_result(
                 speaker,
                 dialogue_text,
             }) => {
-                let mut segments = extract_speakable_segments(
-                    Some(&speaker),
-                    &dialogue_text,
-                    SpeakableSource::ComposeReply,
-                );
-                stamp_runtime_blocks(runtime, &speaker, &mut segments, voice_block_sync);
-                return segments;
+                return stamp_runtime_blocks(runtime, &speaker, &dialogue_text, voice_block_sync);
             }
             Some(StructuredComposeOutcome::NoReply) => {
                 runtime.mark_compose_succeeded("Scene", "");
@@ -115,10 +110,7 @@ pub(super) fn apply_compose_backend_result(
         if let Err(err) = runtime.apply_scene_patch(patch) {
             runtime.mark_action_status(format!("Compose reply failed: {err}"));
         } else {
-            let mut segments =
-                extract_speakable_segments(Some("Codex"), &reply, SpeakableSource::ComposeReply);
-            stamp_runtime_blocks(runtime, "Codex", &mut segments, voice_block_sync);
-            return segments;
+            return stamp_runtime_blocks(runtime, "Codex", &reply, voice_block_sync);
         }
         return Vec::new();
     }
@@ -130,32 +122,30 @@ pub(super) fn apply_compose_backend_result(
 fn stamp_runtime_blocks(
     runtime: &mut SceneRuntime,
     speaker: &str,
-    segments: &mut [SpeakableSegment],
+    dialogue_text: &str,
     voice_block_sync: bool,
-) {
-    if segments.is_empty() {
-        runtime.mark_compose_succeeded(speaker, "");
-        return;
+) -> Vec<SpeakableSegment> {
+    // Display blocks come from the full reply text; the speech filter only
+    // decides what is spoken. A reply that is entirely technical (a path, a
+    // code block, JSON) must still land in the visible transcript even though
+    // it produces no speakable segments.
+    let ComposeReplyBlocks {
+        display_blocks,
+        mut segments,
+        segment_block_ordinals,
+    } = extract_compose_reply_blocks(Some(speaker), dialogue_text, SpeakableSource::ComposeReply);
+    if display_blocks.is_empty() {
+        runtime.mark_compose_succeeded(speaker, dialogue_text);
+        return Vec::new();
     }
-    let mut blocks = Vec::new();
-    let mut segment_block_ordinals = Vec::new();
-    for segment in segments.iter() {
-        let starts_new_block = match blocks.last() {
-            Some(block) => block != &segment.display_text,
-            None => true,
-        };
-        if starts_new_block {
-            blocks.push(segment.display_text.clone());
-        }
-        segment_block_ordinals.push(blocks.len().saturating_sub(1));
-    }
-    let ids = runtime.mark_compose_succeeded_blocks(speaker, &blocks, !voice_block_sync);
+    let ids = runtime.mark_compose_succeeded_blocks(speaker, &display_blocks, !voice_block_sync);
     for (segment, block_ordinal) in segments.iter_mut().zip(segment_block_ordinals) {
         if let Some((turn_id, block_index)) = ids.get(block_ordinal).copied() {
             segment.turn_id = turn_id;
             segment.block_index = block_index;
         }
     }
+    segments
 }
 
 pub(super) fn fake_codex_compose_result(prompt: String) -> ComposeBackendResult {

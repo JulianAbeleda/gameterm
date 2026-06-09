@@ -885,6 +885,147 @@ fn compose_backend_success_updates_dialogue() {
     assert_eq!(segments[0].speaker.as_deref(), Some("Codex"));
 }
 
+fn staged_vn_scene() -> VisualScene {
+    let mut scene = VisualScene::demo();
+    scene.stage = VisualStage {
+        layers: vec![VisualStageLayer {
+            layer_id: "background".to_string(),
+            zorder: 0,
+            displayables: vec![VisualStageDisplayable {
+                tag: "background".to_string(),
+                sprite: "vn.background.school_classroom".to_string(),
+                placement: VisualStagePlacement::Fullscreen,
+                zorder: 0,
+                visible: true,
+            }],
+        }],
+    };
+    scene
+}
+
+fn succeeded_codex_result(prompt: &str, stdout: &str) -> ComposeBackendResult {
+    ComposeBackendResult {
+        prompt: prompt.to_string(),
+        stdout: stdout.to_string(),
+        stderr: String::new(),
+        exit_code: Some(0),
+        label: ComposeBackendLabel::Codex,
+    }
+}
+
+#[test]
+fn compose_technical_reply_stays_visible_in_transcript() {
+    let mut runtime = SceneRuntime::new(staged_vn_scene()).unwrap();
+    runtime.mark_compose_running("Codex running", "where is the scene config");
+    let before = runtime.compose_history_len();
+    let segments = apply_compose_backend_result(
+        &mut runtime,
+        succeeded_codex_result(
+            "where is the scene config",
+            "~/.config/gameterm/scenes/default.json",
+        ),
+        true,
+    );
+
+    assert!(segments.is_empty());
+    assert!(runtime.compose_history_len() > before);
+    while runtime.advance_compose_reveal(usize::MAX) {}
+    let frame = runtime.render_text_frame(120, 40);
+    assert!(frame.contains("default.json"));
+}
+
+#[test]
+fn compose_code_fence_reply_renders_content_without_fence_markers() {
+    let mut runtime = SceneRuntime::new(staged_vn_scene()).unwrap();
+    runtime.mark_compose_running("Codex running", "show me the fix");
+    let segments = apply_compose_backend_result(
+        &mut runtime,
+        succeeded_codex_result(
+            "show me the fix",
+            "```rust\nfn scene_fix() -> bool { true }\n```",
+        ),
+        true,
+    );
+
+    assert!(segments.is_empty());
+    while runtime.advance_compose_reveal(usize::MAX) {}
+    let frame = runtime.render_text_frame(120, 40);
+    assert!(frame.contains("fn scene_fix()"));
+    assert!(!frame.contains("```"));
+}
+
+#[test]
+fn compose_mixed_reply_keeps_technical_lines_visible_and_unspoken() {
+    let mut runtime = SceneRuntime::new(staged_vn_scene()).unwrap();
+    runtime.mark_compose_running("Codex running", "where is the config");
+    let segments = apply_compose_backend_result(
+        &mut runtime,
+        succeeded_codex_result(
+            "where is the config",
+            "The config lives here.\n~/.config/gameterm/scenes/default.json",
+        ),
+        true,
+    );
+
+    assert_eq!(segments.len(), 1);
+    assert_eq!(segments[0].text, "The config lives here.");
+    while runtime.advance_compose_reveal(usize::MAX) {}
+    let frame = runtime.render_text_frame(120, 40);
+    assert!(frame.contains("The config lives here."));
+    assert!(frame.contains("default.json"));
+}
+
+#[test]
+fn compose_reply_segments_map_to_their_display_blocks() {
+    let mut runtime = SceneRuntime::new(staged_vn_scene()).unwrap();
+    runtime.mark_compose_running("Codex running", "explain then show");
+    let segments = apply_compose_backend_result(
+        &mut runtime,
+        succeeded_codex_result(
+            "explain then show",
+            "First the summary paragraph.\n\n~/.config/gameterm/scenes/default.json\n\nThen the closing paragraph.",
+        ),
+        true,
+    );
+
+    assert_eq!(segments.len(), 2);
+    assert_ne!(segments[0].turn_id, 0);
+    assert_eq!(segments[0].turn_id, segments[1].turn_id);
+    // Three display blocks share the turn with the user prompt: the prompt is
+    // block 0, replies are 1..=3. The unspoken technical block still occupies
+    // its own block index between the two spoken paragraphs.
+    assert_eq!(segments[1].block_index, segments[0].block_index + 2);
+
+    // Voice events for the spoken blocks reveal the right text.
+    runtime.mark_compose_block_done(segments[0].turn_id, segments[0].block_index);
+    let frame = runtime.render_text_frame(120, 40);
+    assert!(frame.contains("First the summary paragraph."));
+}
+
+#[test]
+fn compose_reply_blocks_reveal_via_ticks_without_voice_events() {
+    let mut runtime = SceneRuntime::new(staged_vn_scene()).unwrap();
+    runtime.mark_compose_running("Codex running", "first");
+    let _ = apply_compose_backend_result(
+        &mut runtime,
+        succeeded_codex_result("first", "First turn prose reply."),
+        true,
+    );
+    runtime.mark_compose_running("Codex running", "future");
+    let _ = apply_compose_backend_result(
+        &mut runtime,
+        succeeded_codex_result("future", "Future turn prose reply.\n\nSecond paragraph."),
+        true,
+    );
+
+    // No mark_compose_block_speaking/done calls: ticks alone must reveal.
+    while runtime.advance_compose_reveal(24) {}
+    let frame = runtime.render_text_frame(120, 40);
+    assert!(frame.contains("First turn prose reply."));
+    assert!(frame.contains("Future turn prose reply."));
+    assert!(frame.contains("Second paragraph."));
+}
+
 #[test]
 fn compose_result_speakable_segments_preview_plain_output() {
     let result = ComposeBackendResult {
