@@ -20,11 +20,14 @@ land without destabilizing upstream behavior.
 
 Current state:
 
-- `gameterm-visual/src/lib.rs` is about 7.7k lines.
+- `gameterm-visual/src/lib.rs` was about 7.7k lines at the initial audit.
+- After the first model extraction it is about 6.3k lines.
 - It still combines schema/data definitions, runtime behavior, rendering text
   helpers, and a large inline test module.
 - The recent `asset_edit/` refactor is the model to continue following:
   focused modules, a small facade, and boundary tests.
+- Full follow-up scope now lives in
+  `structure/Development/scene-runtime-a-refactor-scope.md`.
 
 Risk:
 
