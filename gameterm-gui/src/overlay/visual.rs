@@ -1,26 +1,26 @@
-use anyhow::Context;
-use gameterm_term::TerminalSize;
-use gameterm_visual::{
-    VisualInput, VisualMode, VisualModeOutcome, VisualScene, VisualSceneSource, VisualView,
-};
+use gameterm_visual::VisualScene;
 use mux::termwiztermtab::TermWizTerminal;
 use std::path::PathBuf;
-use std::sync::mpsc;
-use std::time::Duration;
-use termwiz::input::{InputEvent, KeyCode, KeyEvent, MouseButtons, MouseEvent};
-use termwiz::surface::Change;
-use termwiz::terminal::Terminal;
 use window::Window;
 
 #[cfg(test)]
+use gameterm_term::TerminalSize;
+#[cfg(test)]
 use gameterm_visual::{
-    vn_overlay_layout, SceneRuntime, VisualInteractiveDebugMenu, VisualRenderSnapshot,
-    VisualResolvedSprite, VisualSpriteManifestStatus, VnDialogueScrollMetrics, VnOverlayRect,
+    vn_overlay_layout, SceneRuntime, VisualInput, VisualInteractiveDebugMenu, VisualMode,
+    VisualRenderSnapshot, VisualResolvedSprite, VisualSceneSource, VisualSpriteManifestStatus,
+    VnDialogueScrollMetrics, VnOverlayRect,
 };
 #[cfg(test)]
 use std::path::Path;
 #[cfg(test)]
+use std::sync::mpsc;
+#[cfg(test)]
+use std::time::Duration;
+#[cfg(test)]
 use termwiz::input::Modifiers;
+#[cfg(test)]
+use termwiz::input::{KeyCode, MouseButtons};
 
 #[path = "visual_command_dispatch.rs"]
 mod visual_command_dispatch;
@@ -38,6 +38,8 @@ mod visual_frame;
 mod visual_input_keys;
 #[path = "visual_kiki_idle.rs"]
 mod visual_kiki_idle;
+#[path = "visual_loop.rs"]
+mod visual_loop;
 #[path = "visual_overlay_session.rs"]
 mod visual_overlay_session;
 #[path = "visual_render.rs"]
@@ -58,50 +60,58 @@ mod visual_voice_hold_flow;
 #[cfg(test)]
 use super::visual_compose::ComposeBackendLabel;
 #[cfg(test)]
+use super::visual_compose::ComposeBackendRequest;
+#[cfg(test)]
 use super::visual_compose::ComposeBackendResult;
-use super::visual_compose::{compose_running_status, spawn_compose_backend, ComposeBackendRequest};
+#[cfg(test)]
 use super::visual_stt::SceneSttConfig;
 #[cfg(test)]
 use super::visual_stt::{SceneMicDevice, SceneSttResult, SceneSttState};
+#[cfg(test)]
 use super::visual_tts::SceneTtsConfig;
-use super::visual_voice_hold::set_scene_voice_hold_active;
 #[cfg(test)]
 use visual_command_dispatch::write_story_state_file;
+#[cfg(test)]
 use visual_command_dispatch::{dispatch_pending_action, RunCommandDispatch};
+#[cfg(test)]
 use visual_compose_dock::SceneComposeAction;
 #[cfg(test)]
 use visual_compose_dock::SceneComposeDock;
 #[cfg(test)]
 use visual_compose_result::compose_result_speakable_segments;
+#[cfg(test)]
 use visual_compose_result::{apply_compose_backend_result, fake_codex_compose_result};
 #[cfg(test)]
 use visual_compose_result::{sanitize_compose_output, COMPOSE_OUTPUT_LIMIT};
 #[cfg(test)]
+use visual_dialogue_scroll::handle_dialogue_scroll_wheel;
+#[cfg(test)]
 use visual_dialogue_scroll::{
     apply_dialogue_scroll_key, apply_dialogue_scroll_wheel, SceneDialogueScrollback,
 };
-use visual_dialogue_scroll::{handle_dialogue_scroll_key, handle_dialogue_scroll_wheel};
-use visual_event_drain::{
-    drain_command_results, drain_compose_results, drain_mic_test_results, drain_stt_results,
-    drain_tts_results,
-};
 #[cfg(test)]
 use visual_frame::{replace_last_screen_line, replace_screen_line};
+#[cfg(test)]
 use visual_input_keys::{
     is_tts_toggle_key, visual_input_from_key, visual_input_resets_dialogue_scroll,
 };
+#[cfg(test)]
 use visual_kiki_idle::*;
 #[cfg(test)]
 use visual_overlay_session::SceneComposeDebugBackend;
+#[cfg(test)]
 use visual_overlay_session::VisualOverlaySession;
 #[cfg(test)]
 use visual_render::apply_voice_debug_frame;
-use visual_render::{render_error, render_runtime, render_runtime_with_compose_and_scroll};
+use visual_render::{render_error, render_runtime};
+#[cfg(test)]
 use visual_scene_debug_input::handle_scene_debug_session_input;
 pub(crate) use visual_scene_files::SceneOverlayLaunchOptions;
+use visual_scene_files::VisualSceneOverlaySource;
+#[cfg(test)]
 use visual_scene_files::*;
+#[cfg(test)]
 use visual_scene_patches::*;
-use visual_voice_hold_flow::reconcile_scene_voice_hold_state;
 
 pub(crate) fn show_visual_scene_overlay_with_options(
     term: TermWizTerminal,
@@ -109,7 +119,7 @@ pub(crate) fn show_visual_scene_overlay_with_options(
     gui_window: Option<Window>,
     launch_options: SceneOverlayLaunchOptions,
 ) -> anyhow::Result<()> {
-    show_visual_scene_overlay_with_source(
+    visual_loop::show_visual_scene_overlay_with_source(
         term,
         route_pane_id,
         gui_window,
@@ -126,7 +136,7 @@ pub fn show_generated_visual_scene_overlay(
     action_base_dir: PathBuf,
     source_label: impl Into<String>,
 ) -> anyhow::Result<()> {
-    show_visual_scene_overlay_with_source(
+    visual_loop::show_visual_scene_overlay_with_source(
         term,
         route_pane_id,
         gui_window,
@@ -137,464 +147,6 @@ pub fn show_generated_visual_scene_overlay(
         },
         SceneOverlayLaunchOptions::default(),
     )
-}
-
-fn show_visual_scene_overlay_with_source(
-    mut term: TermWizTerminal,
-    route_pane_id: Option<mux::pane::PaneId>,
-    gui_window: Option<Window>,
-    source: VisualSceneOverlaySource,
-    launch_options: SceneOverlayLaunchOptions,
-) -> anyhow::Result<()> {
-    term.set_raw_mode()?;
-    term.render(&[Change::Title("GameTerm Scene".to_string())])?;
-    let pane_id = term
-        .pane_id()
-        .context("Scene Mode terminal is not attached to a mux pane")?;
-    let _active_scene_overlay = ActiveSceneOverlay::new(pane_id);
-
-    let mut scene_path = default_scene_path();
-    let sprite_manifest_path = default_sprite_manifest_path();
-    let mut sprite_manifest;
-    let mut load_error;
-    let mut runtime;
-    let mut reload_count = 1;
-    let (command_tx, command_rx) = mpsc::channel();
-    let generated_scene = match source {
-        VisualSceneOverlaySource::Default => {
-            (runtime, sprite_manifest, load_error) =
-                initial_scene_state(&mut term, &scene_path, &sprite_manifest_path, reload_count)?;
-            None
-        }
-        VisualSceneOverlaySource::Generated {
-            scene,
-            action_base_dir,
-            source_label,
-        } => {
-            (runtime, sprite_manifest, load_error) = initial_generated_scene_state(
-                &mut term,
-                scene.clone(),
-                source_label.clone(),
-                &sprite_manifest_path,
-                action_base_dir.clone(),
-                reload_count,
-            )?;
-            scene_path = PathBuf::from(source_label.as_str());
-            Some((scene, source_label, action_base_dir))
-        }
-    };
-    let mut file_watcher = if generated_scene.is_some() {
-        SceneFileWatcher::disabled()
-    } else {
-        SceneFileWatcher::from_env(&scene_path, &sprite_manifest_path)
-    };
-    let mut patch_inbox = ScenePatchInbox::from_env();
-    let (scene_patch_tx, scene_patch_rx) = mpsc::channel();
-    let _scene_patch_subscription =
-        ScenePatchNotificationSubscription::new(pane_id, route_pane_id, scene_patch_tx);
-    let (compose_tx, compose_rx) = mpsc::channel();
-    let (tts_tx, tts_rx) = mpsc::channel();
-    let tts_config = launch_options
-        .tts_config
-        .unwrap_or_else(SceneTtsConfig::from_env);
-    let (stt_tx, stt_rx) = mpsc::channel();
-    let stt_config = launch_options
-        .stt_config
-        .unwrap_or_else(SceneSttConfig::from_env);
-    let (mic_test_tx, mic_test_rx) = mpsc::channel();
-    let mut session = VisualOverlaySession::new(tts_config, tts_tx.clone(), stt_config);
-
-    loop {
-        let mut needs_render = drain_command_results(&command_rx, &mut runtime);
-        needs_render |= drain_compose_results(&compose_rx, &mut runtime, &mut session);
-        needs_render |= drain_tts_results(&tts_rx, &mut runtime, &mut session);
-        needs_render |= drain_stt_results(
-            &stt_rx,
-            &mut runtime,
-            &mut session,
-            &compose_tx,
-            &scene_path,
-            pane_id,
-        );
-        needs_render |= drain_mic_test_results(
-            &mic_test_rx,
-            &mut runtime,
-            &mut session.dialogue_scroll,
-            &mut session.mic_test_running,
-        );
-        needs_render |=
-            reconcile_scene_voice_hold_state(pane_id, &mut runtime, &mut session, &stt_tx);
-        if let Some(runtime) = runtime.as_mut() {
-            needs_render |= session.advance_dialogue_reveal(runtime);
-        }
-        if needs_render {
-            if let Some(runtime) = runtime.as_ref() {
-                render_runtime_with_compose_and_scroll(
-                    &mut term,
-                    runtime,
-                    &sprite_manifest,
-                    &session.compose_dock,
-                    &session.dialogue_scroll,
-                )?;
-            }
-        }
-
-        let Some(input) = term.poll_input(Some(Duration::from_millis(100)))? else {
-            if file_watcher.changed(&scene_path, &sprite_manifest_path) {
-                reload_active_scene(
-                    &mut term,
-                    &scene_path,
-                    &sprite_manifest_path,
-                    &mut reload_count,
-                    &mut runtime,
-                    &mut sprite_manifest,
-                    &mut load_error,
-                )?;
-                session.dialogue_scroll.reset_to_bottom();
-                file_watcher.refresh(&scene_path, &sprite_manifest_path);
-            }
-            if let Some(path) = patch_inbox.changed_path() {
-                if let Some(runtime) = runtime.as_mut() {
-                    apply_scene_patch_file(&mut term, runtime, &sprite_manifest, &path)?;
-                    session.dialogue_scroll.reset_to_bottom();
-                }
-                patch_inbox.refresh();
-            }
-            while let Ok(scene_patch) = scene_patch_rx.try_recv() {
-                if let Some(runtime) = runtime.as_mut() {
-                    apply_scene_patch_json(
-                        &mut term,
-                        runtime,
-                        &sprite_manifest,
-                        &scene_patch.patch_json,
-                        scene_patch.source_pane_id,
-                    )?;
-                    session.dialogue_scroll.reset_to_bottom();
-                }
-            }
-            if let Some(runtime) = runtime.as_ref() {
-                let sprite = current_kiki_idle_sprite(&sprite_manifest);
-                if runtime_has_kiki_idle_animation(runtime, &sprite_manifest) {
-                    if session.last_idle_sprite != sprite {
-                        render_runtime_with_compose_and_scroll(
-                            &mut term,
-                            runtime,
-                            &sprite_manifest,
-                            &session.compose_dock,
-                            &session.dialogue_scroll,
-                        )?;
-                        session.last_idle_sprite = sprite;
-                    }
-                } else {
-                    session.last_idle_sprite = None;
-                }
-            }
-            continue;
-        };
-        match input {
-            InputEvent::Key(KeyEvent { key, modifiers }) => {
-                if let Some(runtime) = runtime.as_mut() {
-                    if session.stt_state.is_running() && matches!(key, KeyCode::Escape) {
-                        if let Some(stt_session) = session.stt_session.take() {
-                            stt_session.cancel();
-                        }
-                        set_scene_voice_hold_active(pane_id, false);
-                        session.dialogue_scroll.cancel_voice_hold();
-                        runtime.mark_action_status(session.stt_state.mark_canceling());
-                        session
-                            .dialogue_scroll
-                            .voice_debug
-                            .sync_status(session.stt_state.last_status());
-                        render_runtime_with_compose_and_scroll(
-                            &mut term,
-                            runtime,
-                            &sprite_manifest,
-                            &session.compose_dock,
-                            &session.dialogue_scroll,
-                        )?;
-                        continue;
-                    }
-                    if runtime.view() != VisualView::VnLayoutDebugger
-                        && is_tts_toggle_key(key, modifiers)
-                    {
-                        runtime.mark_action_status(session.tts_state.toggle_muted());
-                        session.sync_tts_debug();
-                        render_runtime_with_compose_and_scroll(
-                            &mut term,
-                            runtime,
-                            &sprite_manifest,
-                            &session.compose_dock,
-                            &session.dialogue_scroll,
-                        )?;
-                        continue;
-                    }
-                    // While the VN layout debugger menu is open it owns every
-                    // key. The compose dock must not intercept text/navigation
-                    // input before the debugger can select, adjust, or edit.
-                    let in_layout_debug = runtime.view() == VisualView::VnLayoutDebugger;
-                    if !runtime.scene().stage.is_empty() && !in_layout_debug {
-                        match session.compose_dock.handle_key(key) {
-                            SceneComposeAction::Consumed => {
-                                render_runtime_with_compose_and_scroll(
-                                    &mut term,
-                                    runtime,
-                                    &sprite_manifest,
-                                    &session.compose_dock,
-                                    &session.dialogue_scroll,
-                                )?;
-                                continue;
-                            }
-                            SceneComposeAction::Submitted(prompt) => {
-                                if session.compose_backend_running {
-                                    runtime
-                                        .mark_compose_failed("Compose backend is already running");
-                                    runtime.mark_action_status(
-                                        "Compose busy: finish the current reply first",
-                                    );
-                                    render_runtime_with_compose_and_scroll(
-                                        &mut term,
-                                        runtime,
-                                        &sprite_manifest,
-                                        &session.compose_dock,
-                                        &session.dialogue_scroll,
-                                    )?;
-                                    continue;
-                                }
-                                session.interrupt_tts_queue();
-                                session.compose_dock.mark_submitted(&prompt);
-                                let running_status = if session.compose_debug_backend.is_fake() {
-                                    format!("Fake Codex running: {prompt}")
-                                } else {
-                                    compose_running_status(&prompt)
-                                };
-                                runtime.mark_compose_running(running_status, &prompt);
-                                session.dialogue_scroll.reset_to_bottom();
-                                if session.compose_debug_backend.is_fake() {
-                                    let result = fake_codex_compose_result(prompt);
-                                    let speakable_segments = apply_compose_backend_result(
-                                        runtime,
-                                        result,
-                                        !session.tts_state.is_muted(),
-                                    );
-                                    if !session.tts_state.is_muted() {
-                                        session.enqueue_tts_segments(speakable_segments);
-                                    } else {
-                                        session.sync_tts_debug();
-                                    }
-                                    render_runtime_with_compose_and_scroll(
-                                        &mut term,
-                                        runtime,
-                                        &sprite_manifest,
-                                        &session.compose_dock,
-                                        &session.dialogue_scroll,
-                                    )?;
-                                    continue;
-                                }
-                                session.compose_backend_running = true;
-                                spawn_compose_backend(
-                                    ComposeBackendRequest {
-                                        prompt,
-                                        scene_path: Some(scene_path.display().to_string()),
-                                        pane_id: Some(pane_id),
-                                    },
-                                    compose_tx.clone(),
-                                );
-                                render_runtime_with_compose_and_scroll(
-                                    &mut term,
-                                    runtime,
-                                    &sprite_manifest,
-                                    &session.compose_dock,
-                                    &session.dialogue_scroll,
-                                )?;
-                                continue;
-                            }
-                            SceneComposeAction::Fallthrough => {}
-                        }
-                    }
-                }
-                let visual_input = visual_input_from_key(key);
-                // While the VN layout debugger menu is open it owns every key so
-                // that r resets values and esc cancels an edit instead of
-                // reloading or closing the whole overlay.
-                let in_layout_debug = runtime.as_ref().map_or(false, |runtime| {
-                    runtime.view() == VisualView::VnLayoutDebugger
-                });
-                if !in_layout_debug {
-                    if let Some(runtime) = runtime.as_ref() {
-                        if handle_dialogue_scroll_key(
-                            runtime,
-                            &mut session.dialogue_scroll,
-                            visual_input,
-                            term.get_screen_size()?,
-                        ) {
-                            render_runtime_with_compose_and_scroll(
-                                &mut term,
-                                runtime,
-                                &sprite_manifest,
-                                &session.compose_dock,
-                                &session.dialogue_scroll,
-                            )?;
-                            continue;
-                        }
-                    }
-                }
-                if visual_input == VisualInput::Close && !in_layout_debug {
-                    break;
-                }
-                if visual_input == VisualInput::Reload && !in_layout_debug {
-                    if let Some((scene, source_label, action_base_dir)) = &generated_scene {
-                        reload_generated_scene(
-                            &mut term,
-                            scene.clone(),
-                            source_label,
-                            &sprite_manifest_path,
-                            action_base_dir,
-                            &mut reload_count,
-                            &mut runtime,
-                            &mut sprite_manifest,
-                            &mut load_error,
-                        )?;
-                    } else {
-                        reload_active_scene(
-                            &mut term,
-                            &scene_path,
-                            &sprite_manifest_path,
-                            &mut reload_count,
-                            &mut runtime,
-                            &mut sprite_manifest,
-                            &mut load_error,
-                        )?;
-                    }
-                    session.dialogue_scroll.reset_to_bottom();
-                    file_watcher.refresh(&scene_path, &sprite_manifest_path);
-                    continue;
-                }
-                if let Some(runtime) = runtime.as_mut() {
-                    if in_layout_debug {
-                        let debug_effect = handle_scene_debug_session_input(
-                            runtime,
-                            &mut session,
-                            visual_input,
-                            &mic_test_tx,
-                        );
-                        if debug_effect.handled {
-                            if debug_effect.reset_compose_dialogue {
-                                session.dialogue_scroll.reset_to_bottom();
-                            }
-                            render_runtime_with_compose_and_scroll(
-                                &mut term,
-                                runtime,
-                                &sprite_manifest,
-                                &session.compose_dock,
-                                &session.dialogue_scroll,
-                            )?;
-                            continue;
-                        }
-                    }
-                    let vn_layout_before = runtime
-                        .vn_layout_debug_overrides()
-                        .map(persistable_vn_overlay_layout);
-                    if runtime.handle_input(visual_input) == VisualModeOutcome::Exit {
-                        break;
-                    }
-                    if visual_input_resets_dialogue_scroll(visual_input) {
-                        session.dialogue_scroll.reset_to_bottom();
-                    }
-                    persist_vn_overlay_layout_if_changed(vn_layout_before, runtime);
-                    let size = term.get_screen_size()?;
-                    dispatch_pending_action(
-                        runtime,
-                        &mut scene_path,
-                        &mut reload_count,
-                        RunCommandDispatch {
-                            window_id: term
-                                .window_id()
-                                .context("Scene Mode terminal is not attached to a mux window")?,
-                            pane_id: route_pane_id.or_else(|| term.pane_id()),
-                            terminal_size: TerminalSize {
-                                rows: size.rows,
-                                cols: size.cols,
-                                pixel_width: size.xpixel.saturating_mul(size.cols),
-                                pixel_height: size.ypixel.saturating_mul(size.rows),
-                                dpi: 0,
-                            },
-                            gui_window: gui_window.clone(),
-                            command_tx: command_tx.clone(),
-                        },
-                    )?;
-                    file_watcher.refresh(&scene_path, &sprite_manifest_path);
-                    patch_inbox.refresh();
-                    render_runtime_with_compose_and_scroll(
-                        &mut term,
-                        runtime,
-                        &sprite_manifest,
-                        &session.compose_dock,
-                        &session.dialogue_scroll,
-                    )?;
-                }
-            }
-            InputEvent::KeyUp(KeyEvent { .. }) => {}
-            InputEvent::Mouse(MouseEvent {
-                x,
-                y,
-                mouse_buttons,
-                ..
-            }) if mouse_buttons.contains(MouseButtons::VERT_WHEEL) => {
-                if let Some(runtime) = runtime.as_ref() {
-                    let size = term.get_screen_size()?;
-                    if handle_dialogue_scroll_wheel(
-                        runtime,
-                        &mut session.dialogue_scroll,
-                        size.cols,
-                        size.rows,
-                        x,
-                        y,
-                        mouse_buttons,
-                    ) {
-                        render_runtime_with_compose_and_scroll(
-                            &mut term,
-                            runtime,
-                            &sprite_manifest,
-                            &session.compose_dock,
-                            &session.dialogue_scroll,
-                        )?;
-                        continue;
-                    }
-                }
-            }
-            InputEvent::Resized { .. } => {
-                if let Some(runtime) = runtime.as_ref() {
-                    let size = term.get_screen_size()?;
-                    let metrics = runtime.vn_dialogue_scroll_metrics(
-                        size.cols,
-                        size.rows,
-                        session.dialogue_scroll.offset,
-                    );
-                    session.dialogue_scroll.clamp(metrics.max_scroll_offset);
-                    render_runtime_with_compose_and_scroll(
-                        &mut term,
-                        runtime,
-                        &sprite_manifest,
-                        &session.compose_dock,
-                        &session.dialogue_scroll,
-                    )?;
-                } else {
-                    let error = load_error
-                        .as_deref()
-                        .unwrap_or("scene failed to load for an unknown reason");
-                    let source = VisualSceneSource::invalid(
-                        scene_path.display().to_string(),
-                        reload_count,
-                        error.to_string(),
-                    );
-                    render_error(&mut term, &source)?;
-                }
-            }
-            _ => {}
-        }
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]
