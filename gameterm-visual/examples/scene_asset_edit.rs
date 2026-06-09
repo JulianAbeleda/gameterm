@@ -13,21 +13,22 @@ use gameterm_visual::{
     pad_scene_asset_image, preview_scene_asset_grid, preview_scene_asset_selection_mask,
     render_scene_asset_state, render_scene_asset_state_sheet, report_scene_asset_points,
     restore_scene_asset_from_source, run_scene_asset_operation, run_scene_asset_pipeline,
-    sample_fill_scene_asset_region, sample_scene_asset_image, stroke_scene_asset_path,
-    transform_scene_asset_image, unsharp_mask_scene_asset_image, validate_scene_asset_feature_map,
-    write_scene_asset_json, SceneAssetAlphaPaintOptions, SceneAssetBackgroundSample,
-    SceneAssetBlendMode, SceneAssetBlurOptions, SceneAssetBrightnessContrastOptions,
-    SceneAssetCloneStampOptions, SceneAssetColorChannel, SceneAssetCompositeLayer,
-    SceneAssetCompositeOptions, SceneAssetCropOptions, SceneAssetDefringeMode,
-    SceneAssetDrawShapeKind, SceneAssetDrawShapeOptions, SceneAssetFillOptions,
-    SceneAssetGridPreviewOptions, SceneAssetHairCleanupMode, SceneAssetHslOptions,
-    SceneAssetLevelsOptions, SceneAssetMaskPolishOptions, SceneAssetMaskPreviewMode,
-    SceneAssetMaskPreviewOptions, SceneAssetNormalizedPoint, SceneAssetNormalizedRect,
-    SceneAssetOperationRunOptions, SceneAssetPadAnchor, SceneAssetPadOptions,
-    SceneAssetPipelineRoots, SceneAssetPipelineRunOptions, SceneAssetResampleFilter,
-    SceneAssetRestoreFilter, SceneAssetRestoreOptions, SceneAssetSampleFillOptions,
-    SceneAssetSampleOptions, SceneAssetStateManifestOptions, SceneAssetStateRenderOptions,
-    SceneAssetStrokePathOptions, SceneAssetTransformOptions, SceneAssetUnsharpMaskOptions,
+    sample_fill_scene_asset_region, sample_scene_asset_image, scene_asset_operation_error_report,
+    stroke_scene_asset_path, transform_scene_asset_image, unsharp_mask_scene_asset_image,
+    validate_scene_asset_feature_map, write_scene_asset_json, SceneAssetAlphaPaintOptions,
+    SceneAssetBackgroundSample, SceneAssetBlendMode, SceneAssetBlurOptions,
+    SceneAssetBrightnessContrastOptions, SceneAssetCloneStampOptions, SceneAssetColorChannel,
+    SceneAssetCompositeLayer, SceneAssetCompositeOptions, SceneAssetCropOptions,
+    SceneAssetDefringeMode, SceneAssetDrawShapeKind, SceneAssetDrawShapeOptions,
+    SceneAssetFillOptions, SceneAssetGridPreviewOptions, SceneAssetHairCleanupMode,
+    SceneAssetHslOptions, SceneAssetLevelsOptions, SceneAssetMaskPolishOptions,
+    SceneAssetMaskPreviewMode, SceneAssetMaskPreviewOptions, SceneAssetNormalizedPoint,
+    SceneAssetNormalizedRect, SceneAssetOperationRunOptions, SceneAssetPadAnchor,
+    SceneAssetPadOptions, SceneAssetPipelineRoots, SceneAssetPipelineRunOptions,
+    SceneAssetResampleFilter, SceneAssetRestoreFilter, SceneAssetRestoreOptions,
+    SceneAssetSampleFillOptions, SceneAssetSampleOptions, SceneAssetStateManifestOptions,
+    SceneAssetStateRenderOptions, SceneAssetStrokePathOptions, SceneAssetTransformOptions,
+    SceneAssetUnsharpMaskOptions,
 };
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -367,7 +368,7 @@ fn run_pipeline(args: CliArgs) -> Result<(), String> {
 
 fn run_operation(args: CliArgs) -> Result<(), String> {
     let operation = required_path(args.operation.clone(), "--operation")?;
-    let report = run_scene_asset_operation(
+    match run_scene_asset_operation(
         &operation,
         &SceneAssetPipelineRoots {
             input_root: required_path(args.input_root.clone(), "--input-root")?,
@@ -383,9 +384,20 @@ fn run_operation(args: CliArgs) -> Result<(), String> {
             preview: args.preview,
             pretty: args.pretty,
         },
-    )
-    .map_err(|err| err.to_string())?;
-    write_json(args.output.as_deref(), &report, args.pretty, args.force)
+    ) {
+        Ok(report) => write_json(args.output.as_deref(), &report, args.pretty, args.force),
+        Err(err) => {
+            if let Some(output) = args.output.as_deref() {
+                let report = scene_asset_operation_error_report(&err);
+                write_json(Some(output), &report, args.pretty, args.force).map_err(
+                    |write_err| {
+                        format!("{err}; also failed to write operation error report: {write_err}")
+                    },
+                )?;
+            }
+            Err(err.to_string())
+        }
+    }
 }
 
 fn run_compare(args: CliArgs) -> Result<(), String> {

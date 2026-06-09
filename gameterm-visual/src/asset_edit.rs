@@ -232,6 +232,16 @@ pub struct SceneAssetOperationRunReport {
     pub step: SceneAssetPipelineStepReport,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SceneAssetOperationErrorReport {
+    pub operation: String,
+    pub status: String,
+    pub code: String,
+    pub message: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hint: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SceneAssetAnimationRecipe {
     pub fps: u32,
@@ -1985,6 +1995,99 @@ pub fn compare_scene_asset_images(
         before,
         after,
     })
+}
+
+pub fn scene_asset_operation_error_report(
+    error: &SceneAssetEditError,
+) -> SceneAssetOperationErrorReport {
+    let (code, hint) = match error {
+        SceneAssetEditError::ImageFile { message, .. }
+            if message.contains("operation source does not exist") =>
+        {
+            (
+                "missing_source",
+                Some("Check the operation `source` path and input root.".to_string()),
+            )
+        }
+        SceneAssetEditError::ImageFile { .. } => (
+            "image_file",
+            Some(
+                "Check that the image path exists and is a readable PNG or supported image file."
+                    .to_string(),
+            ),
+        ),
+        SceneAssetEditError::JsonFile { .. } => (
+            "json_file",
+            Some("Check that the JSON path exists and is readable.".to_string()),
+        ),
+        SceneAssetEditError::JsonParse { .. } => (
+            "json_parse",
+            Some("Validate the JSON syntax and schema version.".to_string()),
+        ),
+        SceneAssetEditError::UnknownRegion(_) => (
+            "unknown_region",
+            Some("Run map-template or choose a region that exists in the feature map.".to_string()),
+        ),
+        SceneAssetEditError::InvalidFeatureMap(_) => (
+            "invalid_feature_map",
+            Some("Run validate-map against the image and feature map.".to_string()),
+        ),
+        SceneAssetEditError::InvalidColor(_) => (
+            "invalid_color",
+            Some("Use #rrggbb or #rrggbbaa color syntax.".to_string()),
+        ),
+        SceneAssetEditError::UnknownExpression(_) => (
+            "unknown_expression",
+            Some("Choose an expression listed in the recipe book.".to_string()),
+        ),
+        SceneAssetEditError::UnknownAnimation(_) => (
+            "unknown_animation",
+            Some("Choose an animation listed in the recipe book.".to_string()),
+        ),
+        SceneAssetEditError::InvalidOperation(message)
+            if message.contains("unsupported pipeline command") =>
+        {
+            (
+                "unknown_command",
+                Some(
+                    "Choose one of the supported scene_asset_edit operation commands.".to_string(),
+                ),
+            )
+        }
+        SceneAssetEditError::InvalidOperation(message)
+            if message.contains("is required") || message.contains("requires") =>
+        {
+            (
+                "missing_argument",
+                Some("Add the required field or argument to the operation JSON.".to_string()),
+            )
+        }
+        SceneAssetEditError::InvalidOperation(message) if message.contains("must be") => (
+            "invalid_argument",
+            Some("Adjust the argument type or value in the operation JSON.".to_string()),
+        ),
+        SceneAssetEditError::InvalidOperation(_) => (
+            "invalid_operation",
+            Some(
+                "Inspect the operation command and args, then run with --dry-run first."
+                    .to_string(),
+            ),
+        ),
+        SceneAssetEditError::OutputExists(_) => (
+            "output_exists",
+            Some(
+                "Choose a new output path or pass --force when overwriting is intended."
+                    .to_string(),
+            ),
+        ),
+    };
+    SceneAssetOperationErrorReport {
+        operation: "operation_error".to_string(),
+        status: "error".to_string(),
+        code: code.to_string(),
+        message: error.to_string(),
+        hint,
+    }
 }
 
 fn write_scene_asset_diff_preview(
@@ -6762,6 +6865,16 @@ mod tests {
             .is_file());
         assert!(transformation_root.join("preview-fill.diff.png").is_file());
         assert!(!output_root.join("final.png").exists());
+    }
+
+    #[test]
+    fn operation_error_report_uses_stable_codes_and_hints() {
+        let report =
+            scene_asset_operation_error_report(&SceneAssetEditError::UnknownRegion("hair".into()));
+
+        assert_equal!(report.status, "error");
+        assert_equal!(report.code, "unknown_region");
+        assert!(report.hint.unwrap().contains("map-template"));
     }
 
     #[test]
