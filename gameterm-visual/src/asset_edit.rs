@@ -743,6 +743,45 @@ pub struct SceneAssetMaskPreviewReport {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetMaskExportReport {
+    pub operation: String,
+    pub source: String,
+    pub output_path: String,
+    pub mode: SceneAssetMaskPreviewMode,
+    pub selected_pixels: usize,
+    pub total_pixels: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selected_bounds: Option<SceneAssetPixelRect>,
+    pub report: SceneAssetImageReport,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetMaskApplyReport {
+    pub operation: String,
+    pub source: String,
+    pub mask: String,
+    pub output_path: String,
+    pub selected_pixels: usize,
+    pub changed_pixels: usize,
+    pub alpha: u8,
+    pub report: SceneAssetImageReport,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetMaskCompositeReport {
+    pub operation: String,
+    pub source: String,
+    pub patch: String,
+    pub mask: String,
+    pub output_path: String,
+    pub selected_pixels: usize,
+    pub changed_pixels: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub changed_bounds: Option<SceneAssetPixelRect>,
+    pub report: SceneAssetImageReport,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SceneAssetPointSample {
     pub point: SceneAssetNormalizedPoint,
     pub pixel_x: u32,
@@ -1492,6 +1531,54 @@ fn run_scene_asset_pipeline_step(
                     polish: pipeline_mask_polish_options(&step.args)?,
                 },
                 feature_map.as_ref(),
+                options.force,
+            )?;
+            serde_json::to_value(report).map_err(|err| SceneAssetEditError::JsonFile {
+                path: report_path.display().to_string(),
+                message: err.to_string(),
+            })?
+        }
+        "mask-export" => {
+            let report = export_scene_asset_selection_mask(
+                current_source,
+                &output_path,
+                SceneAssetMaskPreviewOptions {
+                    mode: pipeline_mask_preview_mode_arg(&step.args)?,
+                    seeds: pipeline_points_arg(&step.args, "seeds", "seed")?,
+                    threshold: pipeline_u8_arg(&step.args, "threshold", 238)?,
+                    neutrality: pipeline_u8_arg(&step.args, "neutrality", 28)?,
+                    polish: pipeline_mask_polish_options(&step.args)?,
+                },
+                feature_map.as_ref(),
+                options.force,
+            )?;
+            serde_json::to_value(report).map_err(|err| SceneAssetEditError::JsonFile {
+                path: report_path.display().to_string(),
+                message: err.to_string(),
+            })?
+        }
+        "mask-apply-alpha" => {
+            let mask_path = pipeline_required_asset_path_arg(roots, &step.args, "mask")?;
+            let report = apply_scene_asset_mask_alpha(
+                current_source,
+                &mask_path,
+                &output_path,
+                pipeline_u8_arg(&step.args, "alpha", 0)?,
+                options.force,
+            )?;
+            serde_json::to_value(report).map_err(|err| SceneAssetEditError::JsonFile {
+                path: report_path.display().to_string(),
+                message: err.to_string(),
+            })?
+        }
+        "mask-composite" => {
+            let mask_path = pipeline_required_asset_path_arg(roots, &step.args, "mask")?;
+            let patch_path = pipeline_required_asset_path_arg(roots, &step.args, "patch")?;
+            let report = composite_scene_asset_mask(
+                current_source,
+                &patch_path,
+                &mask_path,
+                &output_path,
                 options.force,
             )?;
             serde_json::to_value(report).map_err(|err| SceneAssetEditError::JsonFile {
@@ -2744,6 +2831,137 @@ pub fn preview_scene_asset_selection_mask(
         mode: options.mode,
         selected_pixels,
         total_pixels: mask.len(),
+        report: inspect_scene_asset_image(output_path)?,
+    })
+}
+
+pub fn export_scene_asset_selection_mask(
+    source_path: &Path,
+    output_path: &Path,
+    options: SceneAssetMaskPreviewOptions,
+    feature_map: Option<&SceneAssetFeatureMap>,
+    force: bool,
+) -> Result<SceneAssetMaskExportReport, SceneAssetEditError> {
+    if output_path.exists() && !force {
+        return Err(SceneAssetEditError::OutputExists(
+            output_path.display().to_string(),
+        ));
+    }
+    let image = load_rgba_image(source_path)?;
+    if let Some(feature_map) = feature_map {
+        validate_scene_asset_feature_map(feature_map, image.width(), image.height())?;
+    }
+    let mask = preview_selection_mask(&image, &options, feature_map)?;
+    let selected_pixels = mask.selected_count();
+    let selected_bounds = mask_selection_bounds(mask.width, mask.height, mask.pixels());
+    let output = mask_export_image(&mask);
+    save_rgba_image(&output, output_path, force)?;
+    Ok(SceneAssetMaskExportReport {
+        operation: "mask_export".to_string(),
+        source: source_path.display().to_string(),
+        output_path: output_path.display().to_string(),
+        mode: options.mode,
+        selected_pixels,
+        total_pixels: mask.len(),
+        selected_bounds,
+        report: inspect_scene_asset_image(output_path)?,
+    })
+}
+
+pub fn apply_scene_asset_mask_alpha(
+    source_path: &Path,
+    mask_path: &Path,
+    output_path: &Path,
+    alpha: u8,
+    force: bool,
+) -> Result<SceneAssetMaskApplyReport, SceneAssetEditError> {
+    if output_path.exists() && !force {
+        return Err(SceneAssetEditError::OutputExists(
+            output_path.display().to_string(),
+        ));
+    }
+    let mut image = load_rgba_image(source_path)?;
+    let mask = load_scene_asset_mask(mask_path, image.width(), image.height())?;
+    let selected_pixels = mask.selected_count();
+    let mut changed_pixels = 0;
+    for y in 0..image.height() {
+        for x in 0..image.width() {
+            if !mask.pixels()[mask_index(image.width(), x, y)] {
+                continue;
+            }
+            let pixel = image.get_pixel_mut(x, y);
+            if pixel[3] != alpha {
+                pixel[3] = alpha;
+                changed_pixels += 1;
+            }
+        }
+    }
+    save_rgba_image(&image, output_path, force)?;
+    Ok(SceneAssetMaskApplyReport {
+        operation: "mask_apply_alpha".to_string(),
+        source: source_path.display().to_string(),
+        mask: mask_path.display().to_string(),
+        output_path: output_path.display().to_string(),
+        selected_pixels,
+        changed_pixels,
+        alpha,
+        report: inspect_scene_asset_image(output_path)?,
+    })
+}
+
+pub fn composite_scene_asset_mask(
+    source_path: &Path,
+    patch_path: &Path,
+    mask_path: &Path,
+    output_path: &Path,
+    force: bool,
+) -> Result<SceneAssetMaskCompositeReport, SceneAssetEditError> {
+    if output_path.exists() && !force {
+        return Err(SceneAssetEditError::OutputExists(
+            output_path.display().to_string(),
+        ));
+    }
+    let mut image = load_rgba_image(source_path)?;
+    let patch = load_rgba_image(patch_path)?;
+    if image.dimensions() != patch.dimensions() {
+        return Err(SceneAssetEditError::InvalidOperation(format!(
+            "mask-composite source and patch dimensions differ: {}x{} vs {}x{}",
+            image.width(),
+            image.height(),
+            patch.width(),
+            patch.height()
+        )));
+    }
+    let mask = load_scene_asset_mask(mask_path, image.width(), image.height())?;
+    let selected_pixels = mask.selected_count();
+    let mut changed_pixels = 0;
+    let mut changed_mask = vec![false; pixel_len(&image)];
+    for y in 0..image.height() {
+        for x in 0..image.width() {
+            let index = mask_index(image.width(), x, y);
+            if !mask.pixels()[index] {
+                continue;
+            }
+            let patch_pixel = patch.get_pixel(x, y);
+            let target = image.get_pixel_mut(x, y);
+            if target.0 != patch_pixel.0 {
+                *target = *patch_pixel;
+                changed_pixels += 1;
+                changed_mask[index] = true;
+            }
+        }
+    }
+    let changed_bounds = mask_selection_bounds(image.width(), image.height(), &changed_mask);
+    save_rgba_image(&image, output_path, force)?;
+    Ok(SceneAssetMaskCompositeReport {
+        operation: "mask_composite".to_string(),
+        source: source_path.display().to_string(),
+        patch: patch_path.display().to_string(),
+        mask: mask_path.display().to_string(),
+        output_path: output_path.display().to_string(),
+        selected_pixels,
+        changed_pixels,
+        changed_bounds,
         report: inspect_scene_asset_image(output_path)?,
     })
 }
@@ -4146,13 +4364,16 @@ fn pipeline_report_path(output_path: &PathBuf) -> PathBuf {
 }
 
 fn pipeline_command_advances_source(command: &str) -> bool {
-    !matches!(command, "sample" | "mask-preview")
+    !matches!(command, "sample" | "mask-preview" | "mask-export")
 }
 
 fn validate_pipeline_command_name(command: &str) -> Result<(), SceneAssetEditError> {
     match command {
         "sample"
         | "mask-preview"
+        | "mask-export"
+        | "mask-apply-alpha"
+        | "mask-composite"
         | "remove-background"
         | "remove-background-polished"
         | "color-range-erase"
@@ -4203,6 +4424,27 @@ fn validate_scene_asset_pipeline_step_args(
             pipeline_u8_arg(&step.args, "neutrality", 28)?;
             let polish = pipeline_mask_polish_options(&step.args)?;
             validate_mask_polish_regions(feature_map.as_ref(), &polish)?;
+        }
+        "mask-export" => {
+            let mode = pipeline_mask_preview_mode_arg(&step.args)?;
+            let seeds = pipeline_points_arg(&step.args, "seeds", "seed")?;
+            if mode == SceneAssetMaskPreviewMode::MagicAdd && seeds.is_empty() {
+                return Err(SceneAssetEditError::InvalidOperation(
+                    "mask-export with magic-add requires at least one seed".to_string(),
+                ));
+            }
+            pipeline_u8_arg(&step.args, "threshold", 238)?;
+            pipeline_u8_arg(&step.args, "neutrality", 28)?;
+            let polish = pipeline_mask_polish_options(&step.args)?;
+            validate_mask_polish_regions(feature_map.as_ref(), &polish)?;
+        }
+        "mask-apply-alpha" => {
+            pipeline_required_asset_path_arg(roots, &step.args, "mask")?;
+            pipeline_u8_arg(&step.args, "alpha", 0)?;
+        }
+        "mask-composite" => {
+            pipeline_required_asset_path_arg(roots, &step.args, "mask")?;
+            pipeline_required_asset_path_arg(roots, &step.args, "patch")?;
         }
         "remove-background" => {
             pipeline_u8_arg(&step.args, "tolerance", 24)?;
@@ -4411,6 +4653,21 @@ fn pipeline_string_arg(
         .ok_or_else(|| {
             SceneAssetEditError::InvalidOperation(format!("pipeline arg `{key}` must be a string"))
         })
+}
+
+fn pipeline_required_asset_path_arg(
+    roots: &SceneAssetPipelineRoots,
+    args: &BTreeMap<String, serde_json::Value>,
+    key: &str,
+) -> Result<PathBuf, SceneAssetEditError> {
+    let path = pipeline_string_arg(args, key)?.ok_or_else(|| {
+        SceneAssetEditError::InvalidOperation(format!("pipeline arg `{key}` is required"))
+    })?;
+    Ok(resolve_asset_prefixed_path(
+        roots,
+        Path::new(&path),
+        &roots.transformation_root,
+    ))
 }
 
 fn pipeline_string_list_arg(
@@ -5297,6 +5554,74 @@ fn selection_mask_preview_image(image: &RgbaImage, mask: &SceneAssetMask) -> Rgb
         }
     }
     output
+}
+
+fn mask_export_image(mask: &SceneAssetMask) -> RgbaImage {
+    let mut image = RgbaImage::new(mask.width, mask.height);
+    for y in 0..mask.height {
+        for x in 0..mask.width {
+            let selected = mask.pixels()[mask_index(mask.width, x, y)];
+            let value = if selected { 255 } else { 0 };
+            image.put_pixel(x, y, Rgba([value, value, value, 255]));
+        }
+    }
+    image
+}
+
+fn load_scene_asset_mask(
+    mask_path: &Path,
+    expected_width: u32,
+    expected_height: u32,
+) -> Result<SceneAssetMask, SceneAssetEditError> {
+    let mask_image = load_rgba_image(mask_path)?;
+    if mask_image.width() != expected_width || mask_image.height() != expected_height {
+        return Err(SceneAssetEditError::InvalidOperation(format!(
+            "mask dimensions differ from source: {}x{} vs {}x{}",
+            mask_image.width(),
+            mask_image.height(),
+            expected_width,
+            expected_height
+        )));
+    }
+    let pixels = mask_image
+        .pixels()
+        .map(|pixel| {
+            let luminance = (pixel[0] as u16 + pixel[1] as u16 + pixel[2] as u16) / 3;
+            let has_color = pixel[0] != 0 || pixel[1] != 0 || pixel[2] != 0;
+            pixel[3] > 0 && (luminance >= 128 || (pixel[3] >= 128 && has_color))
+        })
+        .collect();
+    Ok(SceneAssetMask::from_pixels(
+        expected_width,
+        expected_height,
+        pixels,
+    ))
+}
+
+fn mask_selection_bounds(width: u32, height: u32, pixels: &[bool]) -> Option<SceneAssetPixelRect> {
+    let mut min_x = width;
+    let mut min_y = height;
+    let mut max_x = 0;
+    let mut max_y = 0;
+    let mut found = false;
+    for y in 0..height {
+        for x in 0..width {
+            if !pixels[mask_index(width, x, y)] {
+                continue;
+            }
+            found = true;
+            min_x = min_x.min(x);
+            min_y = min_y.min(y);
+            max_x = max_x.max(x);
+            max_y = max_y.max(y);
+        }
+    }
+    found.then_some(SceneAssetPixelRect {
+        x: min_x,
+        y: min_y,
+        w: max_x.saturating_sub(min_x).saturating_add(1),
+        h: max_y.saturating_sub(min_y).saturating_add(1),
+    })
 }
 
 fn paint_bounds_mask(
@@ -8529,6 +8854,104 @@ mod tests {
         assert_equal!(report.selected_pixels, 32);
         assert!(preview.get_pixel(1, 1)[0] > preview.get_pixel(6, 1)[0]);
         assert_equal!(*original.get_pixel(6, 1), Rgba([255u8, 255, 255, 255]));
+    }
+
+    #[test]
+    fn mask_export_roundtrips_through_apply_alpha_and_composite() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join("source.png");
+        let mask_path = dir.path().join("mask.png");
+        let alpha_output = dir.path().join("alpha.png");
+        let patch_path = dir.path().join("patch.png");
+        let composite_output = dir.path().join("composite.png");
+        let mut image = ImageBuffer::from_pixel(4, 4, Rgba([0u8, 0, 0, 255]));
+        for y in 0..2 {
+            for x in 0..2 {
+                image.put_pixel(x, y, Rgba([255, 255, 255, 255]));
+            }
+        }
+        image.save(&source).unwrap();
+        ImageBuffer::from_pixel(4, 4, Rgba([255u8, 0, 0, 255]))
+            .save(&patch_path)
+            .unwrap();
+
+        let mask_report = export_scene_asset_selection_mask(
+            &source,
+            &mask_path,
+            SceneAssetMaskPreviewOptions {
+                mode: SceneAssetMaskPreviewMode::MagicAdd,
+                seeds: vec![SceneAssetNormalizedPoint { x: 0.125, y: 0.125 }],
+                threshold: 238,
+                neutrality: 28,
+                polish: SceneAssetMaskPolishOptions {
+                    tolerance: 0,
+                    ..SceneAssetMaskPolishOptions::default()
+                },
+            },
+            None,
+            false,
+        )
+        .unwrap();
+
+        assert_equal!(mask_report.selected_pixels, 4);
+        assert_equal!(
+            mask_report.selected_bounds,
+            Some(SceneAssetPixelRect {
+                x: 0,
+                y: 0,
+                w: 2,
+                h: 2
+            })
+        );
+
+        let alpha_report =
+            apply_scene_asset_mask_alpha(&source, &mask_path, &alpha_output, 0, false).unwrap();
+        assert_equal!(alpha_report.selected_pixels, 4);
+        assert_equal!(alpha_report.changed_pixels, 4);
+        let alpha_image = load_rgba_image(&alpha_output).unwrap();
+        assert_equal!(alpha_image.get_pixel(0, 0)[3], 0);
+        assert_equal!(alpha_image.get_pixel(3, 3)[3], 255);
+
+        let composite_report =
+            composite_scene_asset_mask(&source, &patch_path, &mask_path, &composite_output, false)
+                .unwrap();
+        assert_equal!(composite_report.selected_pixels, 4);
+        assert_equal!(composite_report.changed_pixels, 4);
+        assert_equal!(
+            composite_report.changed_bounds,
+            Some(SceneAssetPixelRect {
+                x: 0,
+                y: 0,
+                w: 2,
+                h: 2
+            })
+        );
+        let composite = load_rgba_image(&composite_output).unwrap();
+        assert_equal!(composite.get_pixel(0, 0).0, [255, 0, 0, 255]);
+        assert_equal!(composite.get_pixel(3, 3).0, [0, 0, 0, 255]);
+    }
+
+    #[test]
+    fn mask_composite_rejects_dimension_mismatch() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join("source.png");
+        let patch = dir.path().join("patch.png");
+        let mask = dir.path().join("mask.png");
+        let output = dir.path().join("output.png");
+        ImageBuffer::from_pixel(4, 4, Rgba([0u8, 0, 0, 255]))
+            .save(&source)
+            .unwrap();
+        ImageBuffer::from_pixel(3, 4, Rgba([255u8, 0, 0, 255]))
+            .save(&patch)
+            .unwrap();
+        ImageBuffer::from_pixel(4, 4, Rgba([255u8, 255, 255, 255]))
+            .save(&mask)
+            .unwrap();
+
+        let err = composite_scene_asset_mask(&source, &patch, &mask, &output, false).unwrap_err();
+        assert!(
+            matches!(err, SceneAssetEditError::InvalidOperation(message) if message.contains("dimensions differ"))
+        );
     }
 
     #[test]

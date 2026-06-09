@@ -1,14 +1,15 @@
 use gameterm_visual::{
-    accept_scene_asset_output, alpha_paint_scene_asset_region, blur_scene_asset_image,
-    brightness_contrast_scene_asset_image, channel_matte_erase_scene_asset_image,
-    cleanup_scene_asset_hair_edges, clone_stamp_scene_asset_region,
-    color_range_erase_scene_asset_image, compare_scene_asset_images, composite_scene_asset_layers,
+    accept_scene_asset_output, alpha_paint_scene_asset_region, apply_scene_asset_mask_alpha,
+    blur_scene_asset_image, brightness_contrast_scene_asset_image,
+    channel_matte_erase_scene_asset_image, cleanup_scene_asset_hair_edges,
+    clone_stamp_scene_asset_region, color_range_erase_scene_asset_image,
+    compare_scene_asset_images, composite_scene_asset_layers, composite_scene_asset_mask,
     continuity_report_for_scene_asset_frames, create_scene_asset_state_manifest,
     crop_scene_asset_image, default_scene_asset_feature_map, draw_scene_asset_shape,
-    export_scene_asset_source_images, fill_scene_asset_region, generate_scene_asset_animation,
-    generate_scene_asset_expression, hsl_scene_asset_image, inspect_scene_asset_image,
-    levels_scene_asset_image, load_scene_asset_feature_map, load_scene_asset_recipe_book,
-    magic_erase_add_scene_asset_image, magic_erase_scene_asset_image,
+    export_scene_asset_selection_mask, export_scene_asset_source_images, fill_scene_asset_region,
+    generate_scene_asset_animation, generate_scene_asset_expression, hsl_scene_asset_image,
+    inspect_scene_asset_image, levels_scene_asset_image, load_scene_asset_feature_map,
+    load_scene_asset_recipe_book, magic_erase_add_scene_asset_image, magic_erase_scene_asset_image,
     make_scene_asset_background_transparent, make_scene_asset_background_transparent_polished,
     pad_scene_asset_image, preview_scene_asset_grid, preview_scene_asset_selection_mask,
     render_scene_asset_state, render_scene_asset_state_sheet, report_scene_asset_points,
@@ -46,6 +47,8 @@ struct CliArgs {
     output: Option<PathBuf>,
     report: Option<PathBuf>,
     cutout: Option<PathBuf>,
+    mask: Option<PathBuf>,
+    patch: Option<PathBuf>,
     output_dir: Option<PathBuf>,
     output_source_root: Option<PathBuf>,
     source: Option<PathBuf>,
@@ -177,6 +180,9 @@ fn usage() {
   cargo run -p gameterm-visual --example scene_asset_edit -- magic-erase --source IMAGE --output PATH --seed-x N --seed-y N [--tolerance N] [--feather N] [--global] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- magic-erase-add --source IMAGE --output PATH --seed X,Y [--seed X,Y ...] [--tolerance N] [--erode N] [--dilate N] [--open N] [--close N] [--remove-small N] [--fill-holes N] [--feather N] [--defringe none|white] [--protect FEATURE_MAP] [--protect-regions CSV] [--within-regions CSV] [--within-polygon X,Y;X,Y;X,Y] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- channel-matte-erase --source IMAGE --output PATH [--threshold N] [--neutrality N] [--erode N] [--dilate N] [--open N] [--close N] [--remove-small N] [--fill-holes N] [--feather N] [--defringe none|white] [--protect FEATURE_MAP] [--protect-regions CSV] [--within-regions CSV] [--within-polygon X,Y;X,Y;X,Y] [--force]
+  cargo run -p gameterm-visual --example scene_asset_edit -- mask-export --source IMAGE --output MASK.png --selection-mode background|color-range|magic-add|channel-matte [--seed X,Y ...] [--threshold N] [--neutrality N] [--tolerance N] [--sample corners|edges] [--within-regions CSV] [--within-polygon X,Y;X,Y;X,Y] [--protect FEATURE_MAP] [--protect-regions CSV] [--force]
+  cargo run -p gameterm-visual --example scene_asset_edit -- mask-apply-alpha --source IMAGE --mask MASK.png --output IMAGE --alpha N [--force]
+  cargo run -p gameterm-visual --example scene_asset_edit -- mask-composite --source IMAGE --patch PATCH.png --mask MASK.png --output IMAGE [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- mask-preview --source IMAGE --output PATH --selection-mode background|color-range|magic-add|channel-matte [--seed X,Y ...] [--threshold N] [--neutrality N] [--tolerance N] [--sample corners|edges] [--within-regions CSV] [--within-polygon X,Y;X,Y;X,Y] [--protect FEATURE_MAP] [--protect-regions CSV] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- hair-cleanup --source IMAGE --output PATH [--mode decontaminate] [--radius N] [--strength N] [--protect FEATURE_MAP] [--hair-region NAME] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- restore-from-source --base IMAGE --cutout IMAGE --output PATH [--feature-map PATH] [--restore-regions CSV] [--polygon X,Y;X,Y;X,Y] [--restore-filter all|non-background] [--tolerance N] [--sample corners|edges] [--force]
@@ -193,6 +199,8 @@ Options:
   --output PATH              Output JSON or PNG path.
   --report PATH              Report path for commands where --output is an image path.
   --cutout PATH              Damaged transparent cutout for restore-from-source.
+  --mask PATH                Mask PNG for mask apply/composite.
+  --patch PATH               Patch PNG for mask composite.
   --output-dir PATH          Output directory for generated animation frames.
   --output-source-root PATH  Source-root layout used by scene_vn_asset_intake.
   --source PATH              Source image for export-source.
@@ -334,6 +342,9 @@ fn main() {
         Some("magic-erase") => run_magic_erase(args),
         Some("magic-erase-add") => run_magic_erase_add(args),
         Some("channel-matte-erase") => run_channel_matte_erase(args),
+        Some("mask-export") => run_mask_export(args),
+        Some("mask-apply-alpha") => run_mask_apply_alpha(args),
+        Some("mask-composite") => run_mask_composite(args),
         Some("mask-preview") => run_mask_preview(args),
         Some("hair-cleanup") => run_hair_cleanup(args),
         Some("restore-from-source") => run_restore_from_source(args),
@@ -1077,6 +1088,55 @@ fn run_channel_matte_erase(args: CliArgs) -> Result<(), String> {
     write_json(None, &report, args.pretty, true)
 }
 
+fn run_mask_export(args: CliArgs) -> Result<(), String> {
+    let source = required_path(args.source.clone(), "--source")?;
+    let output = required_path(args.output.clone(), "--output")?;
+    let feature_map = load_optional_protect_map(&args)?;
+    let report = export_scene_asset_selection_mask(
+        &source,
+        &output,
+        SceneAssetMaskPreviewOptions {
+            mode: args
+                .selection_mode
+                .ok_or_else(|| "--selection-mode is required".to_string())?,
+            seeds: args.seeds.clone(),
+            threshold: args.threshold.unwrap_or(238),
+            neutrality: args.neutrality.unwrap_or(28),
+            polish: mask_polish_options(&args),
+        },
+        feature_map.as_ref(),
+        args.force,
+    )
+    .map_err(|err| err.to_string())?;
+    write_json(None, &report, args.pretty, true)
+}
+
+fn run_mask_apply_alpha(args: CliArgs) -> Result<(), String> {
+    let source = required_path(args.source.clone(), "--source")?;
+    let mask = required_path(args.mask.clone(), "--mask")?;
+    let output = required_path(args.output.clone(), "--output")?;
+    let report = apply_scene_asset_mask_alpha(
+        &source,
+        &mask,
+        &output,
+        args.alpha
+            .ok_or_else(|| "--alpha is required".to_string())?,
+        args.force,
+    )
+    .map_err(|err| err.to_string())?;
+    write_json(None, &report, args.pretty, true)
+}
+
+fn run_mask_composite(args: CliArgs) -> Result<(), String> {
+    let source = required_path(args.source.clone(), "--source")?;
+    let patch = required_path(args.patch.clone(), "--patch")?;
+    let mask = required_path(args.mask.clone(), "--mask")?;
+    let output = required_path(args.output.clone(), "--output")?;
+    let report = composite_scene_asset_mask(&source, &patch, &mask, &output, args.force)
+        .map_err(|err| err.to_string())?;
+    write_json(None, &report, args.pretty, true)
+}
+
 fn run_mask_preview(args: CliArgs) -> Result<(), String> {
     let source = required_path(args.source.clone(), "--source")?;
     let output = required_path(args.output.clone(), "--output")?;
@@ -1224,6 +1284,8 @@ fn parse_args() -> Result<CliArgs, String> {
             "--output" | "-o" => parsed.output = Some(next_path(&mut args, "--output")?),
             "--report" => parsed.report = Some(next_path(&mut args, "--report")?),
             "--cutout" => parsed.cutout = Some(next_path(&mut args, "--cutout")?),
+            "--mask" => parsed.mask = Some(next_path(&mut args, "--mask")?),
+            "--patch" => parsed.patch = Some(next_path(&mut args, "--patch")?),
             "--output-dir" => parsed.output_dir = Some(next_path(&mut args, "--output-dir")?),
             "--output-source-root" => {
                 parsed.output_source_root = Some(next_path(&mut args, "--output-source-root")?)
