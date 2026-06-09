@@ -9,12 +9,12 @@ deeper product context.
 - Date: 2026-06-09
 - Branch: `main`
 - Latest behavior commit: `0891c8942 [visual] add Scene asset review previews`
-- Latest refactor commit: `017ddf309 [gui] NFC - move SceneRuntime test import`
+- Latest refactor commit: `a811ff942 [visual] NFC - split Scene asset edit recipes`
 - Latest tooling commit: `ec1b29b8e [tools] add local CT2 Scene translation helper`
 - Remote state at handoff time: local branch is ahead of `origin/main` by the
-  Scene TTS polish, Scene asset editor, Scene asset operation, and Scene asset
-  primitive-tightening commits listed below
-- Worktree state at handoff time: clean after primitive workflow docs commit
+  Scene asset editor refactor commits listed below
+- Worktree state at handoff time: clean after the asset editor refactor docs
+  commit
 - Local app bundle refreshed: `/Users/julianabeleda/Applications/GameTerm.app`
 - Persistent Scene compose config:
   `/Users/julianabeleda/.config/gameterm/scene-compose.json`
@@ -36,11 +36,11 @@ Current next priority:
   [Scene Asset Primitive Tightening Scope](gameterm-scene-asset-primitive-tightening-scope.md),
   and the original completion scope is recorded in
   `structure/Development/scene-asset-edit-feature-scope.md`.
-- Current maintainability assessment: repo grade is **B / B+**. The product is
-  verified and disciplined, but `gameterm-visual/src/asset_edit.rs` now
-  concentrates too many image-editor concerns in one roughly 9.9k-line file.
-  The active primitive-editor refactor scope is
-  [Scene Asset Editor Refactor Scope](gameterm-scene-asset-editor-refactor-scope.md).
+- Current maintainability assessment: repo grade is **A-** after the asset
+  editor refactor. `gameterm-visual/src/asset_edit.rs` is now about 3.9k lines
+  and shared support code lives under `gameterm-visual/src/asset_edit/`.
+  A stricter A pass would split the remaining public mask/paint/filter
+  operation bodies into family modules.
 - TTS polish first pass is implemented. The scope and remaining dogfood items
   are recorded in [Scene TTS Polish Scope](gameterm-scene-tts-polish-scope.md).
 - Next priority is either a live app dogfood pass with real Codex plus VOICEVOX,
@@ -52,6 +52,17 @@ Current next priority:
 
 Recent committed work:
 
+- `a811ff942 [visual] NFC - split Scene asset edit recipes`
+- `a0cf1549b [test] NFC - move Scene asset edit tests`
+- `b33db0306 [visual] NFC - split Scene asset edit runner support`
+- `d073592cd [visual] NFC - split Scene asset edit pipeline args`
+- `77395e4be [visual] NFC - split Scene asset edit composite state`
+- `88cea8610 [visual] NFC - split Scene asset edit review previews`
+- `f109d6d54 [visual] NFC - split Scene asset edit pixel primitives`
+- `b02473720 [visual] NFC - split Scene asset edit mask core`
+- `b4eac419a [visual] NFC - split Scene asset edit IO roots`
+- `812154d83 [visual] NFC - split Scene asset edit model types`
+- `afa34d737 [docs] scope Scene asset editor refactor`
 - `0891c8942 [visual] add Scene asset review previews`
 - `c1907b9a8 [visual] assert Scene asset protected regions`
 - `e5e9e0577 [visual] add Scene asset mask roundtrip`
@@ -166,6 +177,13 @@ Latest behavior change:
 
 Latest refactor pass:
 
+- The Scene asset editor refactor split the former all-purpose
+  `asset_edit.rs` into `model`, `io`, `roots`, `mask`, `pixels`,
+  `composite`, `review`, `operation_support`, `pipeline_args`, `recipes`, and
+  `tests` modules. Public API names remain re-exported from the facade.
+- Focused verification for each NFC lane used
+  `cargo test -p gameterm-visual asset_edit`,
+  `cargo check -p gameterm-visual --examples`, and `git diff --check`.
 - `visual_speech_blocks.rs` now owns speakable segment types, extraction,
   technical cleanup, and chunk splitting. `visual_tts.rs` keeps TTS
   worker/backend execution.

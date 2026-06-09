@@ -2,11 +2,11 @@
 
 Date: 2026-06-09
 
-Status: scoped.
+Status: first pass implemented.
 
 ## Assessment Grade
 
-Current repo grade: **B / B+**.
+Current repo grade after this pass: **A-**.
 
 The codebase is in a good product position:
 
@@ -16,18 +16,20 @@ The codebase is in a good product position:
 - commit discipline has improved
 - docs, handoff, smoke report, and roadmap are current
 
-The main reason this is not an A is maintainability concentration:
+The remaining reason this is A- rather than a stricter A is residual
+operation-family concentration:
 
-- `gameterm-visual/src/asset_edit.rs` is now the largest GameTerm-owned logic
-  file at roughly 9.9k lines
-- it owns public data models, pipeline parsing, operation execution, image IO,
-  mask algorithms, paint/draw operations, transforms, filters, review previews,
-  protected-region reports, and tests
-- new feature work can still land safely, but changing this file now requires
-  holding too many unrelated concerns in memory
+- `gameterm-visual/src/asset_edit.rs` is down to roughly 3.9k lines from about
+  9.9k lines
+- it now acts as the public API facade plus operation command surface
+- models, IO, roots, mask core, pixel primitives, composite/state rendering,
+  review previews, recipe/continuity helpers, pipeline argument parsing,
+  operation diagnostics, and tests have clear owners
+- the next strict-A cleanup would split the remaining public mask/paint/filter
+  operation bodies into family modules
 
-This is a refactor problem, not a correctness problem. The primitive layer is
-working. The next pass should preserve behavior and split ownership.
+This was a refactor problem, not a correctness problem. The primitive layer
+continues to work, and this pass preserved behavior.
 
 ## Principles Applied
 
@@ -54,20 +56,21 @@ fix as its own `[visual]` or `[test]` commit before continuing.
 
 ## Current Hotspots
 
-Scene and asset-editor owned size snapshot:
+Scene asset-editor size snapshot after this pass:
 
 ```text
-9860  gameterm-visual/src/asset_edit.rs
-7693  gameterm-visual/src/lib.rs
-2026  gameterm-gui/src/overlay/visual.rs
-1904  ci/gameterm-scene-author.sh
-1719  ci/gameterm-scene-verify.sh
-1513  gameterm-gui/src/overlay/visual_tts.rs
-1441  ci/gameterm-scene-smoke.sh
-1131  ci/gameterm-scene-workspace.sh
-1104  gameterm-gui/src/overlay/visual_compose_backend.rs
-1061  gameterm-gui/src/termwindow/render/visual_quad.rs
-1044  gameterm-gui/src/overlay/visual_stt_backend.rs
+3853  gameterm-visual/src/asset_edit.rs
+2280  gameterm-visual/src/asset_edit/tests.rs
+1315  gameterm-visual/src/asset_edit/model.rs
+647   gameterm-visual/src/asset_edit/pipeline_args.rs
+466   gameterm-visual/src/asset_edit/pixels.rs
+333   gameterm-visual/src/asset_edit/mask.rs
+253   gameterm-visual/src/asset_edit/review.rs
+246   gameterm-visual/src/asset_edit/recipes.rs
+230   gameterm-visual/src/asset_edit/composite.rs
+180   gameterm-visual/src/asset_edit/operation_support.rs
+118   gameterm-visual/src/asset_edit/io.rs
+103   gameterm-visual/src/asset_edit/roots.rs
 ```
 
 Why `asset_edit.rs` goes first:
@@ -101,28 +104,28 @@ After this refactor:
 - tests should remain at least as strong as today
 - each image-editing concern should have a clear module owner
 
-Target module shape:
+Implemented module shape:
 
 ```text
 gameterm-visual/src/
-  asset_edit.rs                  facade and public re-exports
+  asset_edit.rs                  facade, public API, operation command surface
   asset_edit/
     model.rs                     DTOs, options, reports, error type
     io.rs                        JSON/image load-save, hashes, output writes
     roots.rs                     Input/Transformation/Output path resolution
-    masks.rs                     selection masks, morphology, export/apply/composite
-    paint.rs                     fill, sample-fill, alpha-paint, clone, draw, stroke
-    transform.rs                 crop, pad, transform, levels, HSL, blur, unsharp
+    mask.rs                      mask data structure and morphology core
+    pixels.rs                    pixel indexing, drawing, blend, transform helpers
     composite.rs                 layers, blend modes, state manifests/sheets
-    review.rs                    compare reports, diff previews, contact sheets
-    operation.rs                 operation/session run, protected-region checks
-    pipeline.rs                  pipeline run, command validation, arg parsing
+    review.rs                    diff previews, contact sheets, preview path names
+    operation_support.rs         operation diagnostics and expectation checks
+    pipeline_args.rs             pipeline argument parsing and region validation
     recipes.rs                   expression, animation, continuity helpers
-    tests.rs                     shared test helpers or final broad tests only
+    tests.rs                     asset editor regression suite
 ```
 
-This is a target shape, not a mandate to create every module if a move becomes
-mostly churn. Stop when ownership is clear enough.
+Paint/filter public command bodies remain in the facade for now because moving
+them would require broader family-module extraction. Ownership is clear enough
+for the next GUI/semantic-editing work.
 
 ## Non-Goals
 
@@ -551,7 +554,7 @@ Pause and rescope if:
 This refactor pass is complete when:
 
 - `asset_edit.rs` is a facade and public API owner, not the home of every
-  algorithm
+  shared support algorithm
 - masks, paint/draw, transforms, review, operation, pipeline, and IO each have
   clear module ownership
 - public imports remain compatible for the example CLI and callers
@@ -560,12 +563,12 @@ This refactor pass is complete when:
 - the focused and broad verification commands pass
 - the roadmap and handoff describe the new module layout
 
-## Expected Grade After Completion
+## Actual Grade After Completion
 
-Expected repo grade after this pass: **B+ / A-**.
+Repo grade after this pass: **A-**.
 
 The codebase will still be a large terminal emulator fork with real complexity.
 That is appropriate. The improvement is that the newest GameTerm-owned
-complexity will be split by primitive responsibility, so future GUI or
+complexity is now split by primitive responsibility, so future GUI or
 semantic-editing work can build on the image editor without reopening a
 9k-line all-purpose module.
