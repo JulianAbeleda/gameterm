@@ -1,6 +1,27 @@
 # GameTerm Scene Mode Compose Reply Visibility Scope
 
-Status: SCOPED.
+Status: IMPLEMENTED (lanes 1-4 landed; live dogfood checklist pending).
+
+Implementation record (2026-06-09):
+
+- `[visual] render full compose replies independent of speech filter`
+- `[visual] add visible trace for patch-only compose replies`
+- `[visual] align typed compose busy handling with voice path`
+- `[test] cover future-turn compose reply visibility`
+
+Verification record:
+
+- `cargo test -p gameterm-visual`: 242 passed
+- `cargo test -p gameterm-gui compose --bin gameterm-gui`: 49 passed
+- `cargo check -p gameterm-gui`: no errors
+- `ci/gameterm-scene-verify.sh --all`: Scene Mode verification succeeded
+- `ci/check-commit-message.sh origin/main..HEAD`: pass
+
+Remaining: the live dogfood checklist in Lane 5 (real Codex + VOICEVOX from an
+interactive GUI session). Display-block granularity note: blocks are one per
+content line with fenced code grouped into a single block; blank-line paragraph
+grouping is not possible on the plain path because `sanitize_compose_output`
+collapses blank lines before block extraction.
 
 This scope follows the June 9, 2026 future-turn rendering audit. It fixes the
 confirmed defect that successful compose replies can be partially or completely
@@ -126,8 +147,9 @@ Centralization / orthogonality:
 
 Commit discipline:
 
-- `[gui]` for compose result/display pipeline behavior fixes.
-- `[visual]` only if compose-state methods change.
+- `[visual]` for compose result/display pipeline behavior fixes; the commit
+  checker does not allow a `[gui]` prefix, and Scene Mode product surface
+  belongs to `[visual]` regardless of which crate hosts the code.
 - `[test]` for verification-only additions.
 - `[docs]` for this scope and handoff updates.
 - No NFC mixing; each lane below is a separate commit.
@@ -319,14 +341,12 @@ Manual dogfood checklist for the live run, with the real Codex backend:
 
 ## First Implementation Slice
 
-1. `[gui] render full compose replies independent of speech filter` (Lane 1)
-2. `[gui] add visible trace for patch-only compose replies` (Lane 2)
-3. `[gui] align typed compose busy handling with voice path` (Lane 3)
+1. `[visual] render full compose replies independent of speech filter` (Lane 1)
+2. `[visual] add visible trace for patch-only compose replies` (Lane 2)
+3. `[visual] align typed compose busy handling with voice path` (Lane 3)
 4. `[test] cover future-turn compose reply visibility` (Lane 4)
 5. `[docs] record compose reply visibility verification` (Lane 5 results,
    handoff update)
 
 Lane 1 lands first; it is the fix that addresses the dogfooded symptom. Lanes
-2 and 3 are small and independent. If Lane 1's display-block grouping needs a
-`compose_state.rs` guard, that change ships inside the Lane 1 commit as
-`[visual]` only if it is behavioral, otherwise it stays `[gui]`-side.
+2 and 3 are small and independent.
