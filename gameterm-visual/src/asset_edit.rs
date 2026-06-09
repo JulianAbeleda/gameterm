@@ -184,6 +184,10 @@ pub struct SceneAssetOperationExpectations {
     #[serde(default)]
     pub must_preserve_alpha_outside_region: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub must_preserve_regions: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_changed_pixels_in_protected_regions: Option<usize>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub review_points: Vec<String>,
 }
 
@@ -191,6 +195,8 @@ impl SceneAssetOperationExpectations {
     fn is_empty(&self) -> bool {
         self.max_changed_pixel_ratio.is_none()
             && !self.must_preserve_alpha_outside_region
+            && self.must_preserve_regions.is_empty()
+            && self.max_changed_pixels_in_protected_regions.is_none()
             && self.review_points.is_empty()
     }
 }
@@ -227,9 +233,25 @@ pub struct SceneAssetOperationRunReport {
     pub after: Option<SceneAssetImageReport>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub compare: Option<SceneAssetCompareReport>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub protected_region_report: Option<SceneAssetProtectedRegionReport>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub expectation_failures: Vec<String>,
     pub step: SceneAssetPipelineStepReport,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SceneAssetProtectedRegionChange {
+    pub region: String,
+    pub changed_pixels: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SceneAssetProtectedRegionReport {
+    pub checked_regions: Vec<String>,
+    pub changed_pixels: usize,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub changed_regions: Vec<SceneAssetProtectedRegionChange>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2045,8 +2067,27 @@ pub fn run_scene_asset_operation(
         None
     };
     let after = compare.as_ref().map(|report| report.after.clone());
-    let expectation_failures =
-        operation_expectation_failures(&operation.expectations, compare.as_ref());
+    let protected_region_report = if !options.dry_run
+        && step_report.advanced_source
+        && !operation.expectations.must_preserve_regions.is_empty()
+    {
+        load_pipeline_feature_map(roots, &operation.args)?.map_or(Ok(None), |feature_map| {
+            compare_protected_regions(
+                &source_path,
+                Path::new(&output_path),
+                &feature_map,
+                &operation.expectations.must_preserve_regions,
+            )
+            .map(Some)
+        })?
+    } else {
+        None
+    };
+    let expectation_failures = operation_expectation_failures(
+        &operation.expectations,
+        compare.as_ref(),
+        protected_region_report.as_ref(),
+    );
     let status = if options.dry_run {
         "validated"
     } else if expectation_failures.is_empty() {
@@ -2073,6 +2114,7 @@ pub fn run_scene_asset_operation(
         before: Some(before),
         after,
         compare,
+        protected_region_report,
         expectation_failures,
         step: step_report,
     })
@@ -2121,6 +2163,13 @@ pub fn validate_scene_asset_operation(
         args: operation.args,
     };
     validate_scene_asset_pipeline_step_args(&step, roots)?;
+    if !operation.expectations.must_preserve_regions.is_empty() {
+        let feature_map = load_pipeline_feature_map(roots, &step.args)?;
+        validate_pipeline_region_names(
+            feature_map.as_ref(),
+            &operation.expectations.must_preserve_regions,
+        )?;
+    }
     Ok(SceneAssetOperationValidationReport {
         operation: "validate_operation".to_string(),
         id: operation.id,
@@ -2431,6 +2480,7 @@ fn sanitize_operation_id(id: &str) -> String {
 fn operation_expectation_failures(
     expectations: &SceneAssetOperationExpectations,
     compare: Option<&SceneAssetCompareReport>,
+    protected_region_report: Option<&SceneAssetProtectedRegionReport>,
 ) -> Vec<String> {
     let mut failures = Vec::new();
     if let (Some(max_ratio), Some(compare)) = (expectations.max_changed_pixel_ratio, compare) {
@@ -2441,7 +2491,70 @@ fn operation_expectation_failures(
             ));
         }
     }
+    if !expectations.must_preserve_regions.is_empty() {
+        match protected_region_report {
+            Some(report) => {
+                let max_changed = expectations
+                    .max_changed_pixels_in_protected_regions
+                    .unwrap_or(0);
+                if report.changed_pixels > max_changed {
+                    failures.push(format!(
+                        "protected regions changed {} pixels, exceeding max_changed_pixels_in_protected_regions {}",
+                        report.changed_pixels, max_changed
+                    ));
+                }
+            }
+            None => failures.push(
+                "must_preserve_regions requires a feature map and comparable output".to_string(),
+            ),
+        }
+    }
     failures
+}
+
+fn compare_protected_regions(
+    before_path: &Path,
+    after_path: &Path,
+    feature_map: &SceneAssetFeatureMap,
+    regions: &[String],
+) -> Result<SceneAssetProtectedRegionReport, SceneAssetEditError> {
+    let before = load_rgba_image(before_path)?;
+    let after = load_rgba_image(after_path)?;
+    if before.dimensions() != after.dimensions() {
+        return Err(SceneAssetEditError::InvalidOperation(format!(
+            "protected-region compare dimensions differ: {}x{} vs {}x{}",
+            before.width(),
+            before.height(),
+            after.width(),
+            after.height()
+        )));
+    }
+    validate_scene_asset_feature_map(feature_map, before.width(), before.height())?;
+    let mut changed_regions = Vec::new();
+    let mut changed_pixels = 0;
+    for region in regions {
+        let rect = feature_map.pixel_region(region, before.width(), before.height())?;
+        let mut region_changed_pixels = 0;
+        for y in rect.y..rect.bottom().min(before.height()) {
+            for x in rect.x..rect.right().min(before.width()) {
+                if before.get_pixel(x, y).0 != after.get_pixel(x, y).0 {
+                    region_changed_pixels += 1;
+                }
+            }
+        }
+        changed_pixels += region_changed_pixels;
+        if region_changed_pixels > 0 {
+            changed_regions.push(SceneAssetProtectedRegionChange {
+                region: region.clone(),
+                changed_pixels: region_changed_pixels,
+            });
+        }
+    }
+    Ok(SceneAssetProtectedRegionReport {
+        checked_regions: regions.to_vec(),
+        changed_pixels,
+        changed_regions,
+    })
 }
 
 pub fn generate_scene_asset_expression(
@@ -7676,6 +7789,156 @@ mod tests {
         .unwrap_err();
 
         assert!(matches!(err, SceneAssetEditError::UnknownRegion(region) if region == "eyes"));
+    }
+
+    #[test]
+    fn protected_region_assertion_fails_when_region_changes() {
+        let dir = tempdir().unwrap();
+        let input_root = dir.path().join("Input");
+        let transformation_root = dir.path().join("Transformation");
+        let output_root = dir.path().join("Output");
+        std::fs::create_dir_all(&input_root).unwrap();
+        std::fs::create_dir_all(&transformation_root).unwrap();
+        std::fs::create_dir_all(&output_root).unwrap();
+
+        let source = input_root.join("source.png");
+        ImageBuffer::from_pixel(4, 4, Rgba([0u8, 0, 0, 255]))
+            .save(&source)
+            .unwrap();
+        let feature_map = SceneAssetFeatureMap {
+            feature_map_version: 1,
+            character: "kiki".to_string(),
+            base: "source.png".to_string(),
+            regions: BTreeMap::from([(
+                "face".to_string(),
+                SceneAssetNormalizedRect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 0.5,
+                    h: 1.0,
+                },
+            )]),
+            anchors: BTreeMap::new(),
+        };
+        write_scene_asset_json(&input_root.join("map.json"), &feature_map, true, false).unwrap();
+        let operation = SceneAssetOperation {
+            asset_operation_version: 1,
+            id: "fill-protected".to_string(),
+            intent: None,
+            source: "source.png".to_string(),
+            output: "filled.png".to_string(),
+            command: "fill-region".to_string(),
+            args: BTreeMap::from([
+                ("protect".to_string(), serde_json::json!("map.json")),
+                ("color".to_string(), serde_json::json!("#ff0000ff")),
+                ("whole_image".to_string(), serde_json::json!(true)),
+            ]),
+            expectations: SceneAssetOperationExpectations {
+                must_preserve_regions: vec!["face".to_string()],
+                max_changed_pixels_in_protected_regions: Some(0),
+                ..Default::default()
+            },
+        };
+        let operation_path = dir.path().join("operation.json");
+        write_scene_asset_json(&operation_path, &operation, true, false).unwrap();
+
+        let report = run_scene_asset_operation(
+            &operation_path,
+            &SceneAssetPipelineRoots {
+                input_root,
+                transformation_root,
+                output_root,
+            },
+            SceneAssetOperationRunOptions {
+                force: false,
+                dry_run: false,
+                preview: false,
+                pretty: true,
+            },
+        )
+        .unwrap();
+
+        assert_equal!(report.status, "expectation_failed");
+        let protected = report.protected_region_report.unwrap();
+        assert_equal!(protected.changed_pixels, 8);
+        assert_equal!(protected.changed_regions[0].region, "face");
+        assert!(report
+            .expectation_failures
+            .iter()
+            .any(|failure| failure.contains("protected regions changed")));
+    }
+
+    #[test]
+    fn protected_region_assertion_passes_when_region_is_restored() {
+        let dir = tempdir().unwrap();
+        let input_root = dir.path().join("Input");
+        let transformation_root = dir.path().join("Transformation");
+        let output_root = dir.path().join("Output");
+        std::fs::create_dir_all(&input_root).unwrap();
+        std::fs::create_dir_all(&transformation_root).unwrap();
+        std::fs::create_dir_all(&output_root).unwrap();
+
+        let source = input_root.join("source.png");
+        ImageBuffer::from_pixel(4, 4, Rgba([0u8, 0, 0, 255]))
+            .save(&source)
+            .unwrap();
+        let feature_map = SceneAssetFeatureMap {
+            feature_map_version: 1,
+            character: "kiki".to_string(),
+            base: "source.png".to_string(),
+            regions: BTreeMap::from([(
+                "face".to_string(),
+                SceneAssetNormalizedRect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 0.5,
+                    h: 1.0,
+                },
+            )]),
+            anchors: BTreeMap::new(),
+        };
+        write_scene_asset_json(&input_root.join("map.json"), &feature_map, true, false).unwrap();
+        let operation = SceneAssetOperation {
+            asset_operation_version: 1,
+            id: "fill-around-protected".to_string(),
+            intent: None,
+            source: "source.png".to_string(),
+            output: "filled.png".to_string(),
+            command: "fill-region".to_string(),
+            args: BTreeMap::from([
+                ("protect".to_string(), serde_json::json!("map.json")),
+                ("protect_regions".to_string(), serde_json::json!(["face"])),
+                ("color".to_string(), serde_json::json!("#ff0000ff")),
+                ("whole_image".to_string(), serde_json::json!(true)),
+            ]),
+            expectations: SceneAssetOperationExpectations {
+                must_preserve_regions: vec!["face".to_string()],
+                max_changed_pixels_in_protected_regions: Some(0),
+                ..Default::default()
+            },
+        };
+        let operation_path = dir.path().join("operation.json");
+        write_scene_asset_json(&operation_path, &operation, true, false).unwrap();
+
+        let report = run_scene_asset_operation(
+            &operation_path,
+            &SceneAssetPipelineRoots {
+                input_root,
+                transformation_root,
+                output_root,
+            },
+            SceneAssetOperationRunOptions {
+                force: false,
+                dry_run: false,
+                preview: false,
+                pretty: true,
+            },
+        )
+        .unwrap();
+
+        assert_equal!(report.status, "ok");
+        assert_equal!(report.protected_region_report.unwrap().changed_pixels, 0);
+        assert!(report.expectation_failures.is_empty());
     }
 
     #[test]
