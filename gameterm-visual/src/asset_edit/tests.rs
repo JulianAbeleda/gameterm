@@ -1,6 +1,7 @@
-use super::mask::mask_index;
+use super::io::load_rgba_image;
+use super::mask::{mask_index, SceneAssetMask};
 use super::pixels::pixel_index;
-use super::selection_ops::apply_transparency_mask;
+use super::selection_ops::{apply_transparency_mask, defringe_scene_asset_edges};
 use super::*;
 use image::{ImageBuffer, Rgba};
 use k9::assert_equal;

@@ -1,10 +1,24 @@
 use super::io::{load_rgba_image, save_rgba_image};
+use super::mask::SceneAssetMask;
+use super::pixels::{
+    composite_scaled, draw_ellipse, draw_line_in_region, erase_region, fill_region, multiply_alpha,
+    normalized_point_to_pixel, parse_rgba, scale_region, tint_region, translate_region,
+};
+use super::roots::resolve_recipe_path;
+use super::selection_ops::{
+    apply_mask_polish, apply_transparency_mask, background_magic_mask, channel_matte_mask,
+    color_range_mask, contiguous_magic_mask, decontaminate_light_edges, defringe_scene_asset_edges,
+    global_magic_mask, multi_seed_contiguous_mask, polished_background_mask,
+    restore_pixels_from_source_image,
+};
 use super::{
-    apply_operation, content_bounds, inspect_scene_asset_image, rounded_f32,
-    validate_scene_asset_feature_map, SceneAssetAnimationOutput, SceneAssetContinuityCheck,
+    content_bounds, inspect_scene_asset_image, rounded_f32, validate_scene_asset_feature_map,
+    SceneAssetAnimationOutput, SceneAssetBackgroundSample, SceneAssetContinuityCheck,
     SceneAssetContinuityReport, SceneAssetContinuityStatus, SceneAssetDimensions,
-    SceneAssetEditError, SceneAssetExportReport, SceneAssetExpressionOutput, SceneAssetFeatureMap,
-    SceneAssetPixelRect, SceneAssetRecipeBook,
+    SceneAssetEditError, SceneAssetEditOperation, SceneAssetExportReport,
+    SceneAssetExpressionOutput, SceneAssetFeatureMap, SceneAssetHairCleanupMode,
+    SceneAssetMaskPolishOptions, SceneAssetPixelRect, SceneAssetRecipeBook,
+    SceneAssetRestoreOptions,
 };
 use image::RgbaImage;
 use std::path::{Path, PathBuf};
@@ -243,4 +257,314 @@ fn changed_pixel_ratio(a: &RgbaImage, b: &RgbaImage) -> f32 {
         .filter(|(a, b)| a.0 != b.0)
         .count();
     rounded_f32(changed as f32 / (a.width() as usize * a.height() as usize).max(1) as f32)
+}
+
+fn apply_operation(
+    image: &mut RgbaImage,
+    feature_map: &SceneAssetFeatureMap,
+    operation: &SceneAssetEditOperation,
+    recipe_base_dir: Option<&Path>,
+) -> Result<(), SceneAssetEditError> {
+    match operation {
+        SceneAssetEditOperation::EraseRegion { region, soften } => {
+            let rect = feature_map.pixel_region(region, image.width(), image.height())?;
+            erase_region(image, rect, *soften);
+        }
+        SceneAssetEditOperation::FillRegion { region, color } => {
+            let rect = feature_map.pixel_region(region, image.width(), image.height())?;
+            fill_region(image, rect, parse_rgba(color)?);
+        }
+        SceneAssetEditOperation::DrawLine {
+            region,
+            from,
+            to,
+            color,
+            width,
+        } => {
+            let rect = feature_map.pixel_region(region, image.width(), image.height())?;
+            draw_line_in_region(image, rect, *from, *to, parse_rgba(color)?, *width);
+        }
+        SceneAssetEditOperation::DrawPolyline {
+            region,
+            points,
+            color,
+            width,
+        } => {
+            let rect = feature_map.pixel_region(region, image.width(), image.height())?;
+            for pair in points.windows(2) {
+                draw_line_in_region(image, rect, pair[0], pair[1], parse_rgba(color)?, *width);
+            }
+        }
+        SceneAssetEditOperation::DrawEllipse {
+            region,
+            stroke,
+            fill,
+            width,
+        } => {
+            let rect = feature_map.pixel_region(region, image.width(), image.height())?;
+            draw_ellipse(
+                image,
+                rect,
+                stroke.as_deref().map(parse_rgba).transpose()?,
+                fill.as_deref().map(parse_rgba).transpose()?,
+                *width,
+            );
+        }
+        SceneAssetEditOperation::CompositePng {
+            region,
+            path,
+            opacity,
+        } => {
+            let rect = feature_map.pixel_region(region, image.width(), image.height())?;
+            let overlay_path = resolve_recipe_path(path, recipe_base_dir);
+            let overlay = load_rgba_image(&overlay_path)?;
+            composite_scaled(image, rect, &overlay, *opacity);
+        }
+        SceneAssetEditOperation::TranslateRegion { region, dx, dy } => {
+            let rect = feature_map.pixel_region(region, image.width(), image.height())?;
+            translate_region(image, rect, *dx, *dy);
+        }
+        SceneAssetEditOperation::ScaleRegion { region, sx, sy } => {
+            let rect = feature_map.pixel_region(region, image.width(), image.height())?;
+            scale_region(image, rect, *sx, *sy)?;
+        }
+        SceneAssetEditOperation::Opacity { region, alpha } => {
+            let rect = feature_map.pixel_region(region, image.width(), image.height())?;
+            multiply_alpha(image, rect, *alpha);
+        }
+        SceneAssetEditOperation::ColorTint {
+            region,
+            color,
+            amount,
+        } => {
+            let rect = feature_map.pixel_region(region, image.width(), image.height())?;
+            tint_region(image, rect, parse_rgba(color)?, *amount);
+        }
+        SceneAssetEditOperation::MagicErase {
+            seed,
+            tolerance,
+            contiguous,
+            feather,
+        } => {
+            let seed = normalized_point_to_pixel(*seed, image.width(), image.height())?;
+            let mask = if *contiguous {
+                contiguous_magic_mask(image, &[seed], *tolerance)
+            } else {
+                global_magic_mask(image, *image.get_pixel(seed.0, seed.1), *tolerance)
+            };
+            apply_transparency_mask(image, &mask, *feather);
+        }
+        SceneAssetEditOperation::RemoveBackground {
+            tolerance,
+            feather,
+            sample,
+        } => {
+            let mask = background_magic_mask(image, *tolerance, *sample);
+            apply_transparency_mask(image, &mask, *feather);
+        }
+        SceneAssetEditOperation::RemoveBackgroundPolished {
+            tolerance,
+            feather,
+            sample,
+            erode,
+            dilate,
+            open,
+            close,
+            remove_small,
+            fill_holes,
+            defringe,
+            protect_regions,
+            within_regions,
+            within_polygons,
+        } => {
+            let options = SceneAssetMaskPolishOptions {
+                tolerance: *tolerance,
+                feather: *feather,
+                sample: *sample,
+                erode: *erode,
+                dilate: *dilate,
+                open: *open,
+                close: *close,
+                remove_small: *remove_small,
+                fill_holes: *fill_holes,
+                defringe: *defringe,
+                protect_regions: protect_regions.clone(),
+                within_regions: within_regions.clone(),
+                within_polygons: within_polygons.clone(),
+            };
+            let mask = polished_background_mask(image, &options, Some(feature_map))?;
+            apply_transparency_mask(image, mask.pixels(), *feather);
+            defringe_scene_asset_edges(image, *defringe);
+        }
+        SceneAssetEditOperation::ColorRangeErase {
+            tolerance,
+            feather,
+            sample,
+            erode,
+            dilate,
+            open,
+            close,
+            remove_small,
+            fill_holes,
+            defringe,
+            protect_regions,
+            within_regions,
+            within_polygons,
+        } => {
+            let options = SceneAssetMaskPolishOptions {
+                tolerance: *tolerance,
+                feather: *feather,
+                sample: *sample,
+                erode: *erode,
+                dilate: *dilate,
+                open: *open,
+                close: *close,
+                remove_small: *remove_small,
+                fill_holes: *fill_holes,
+                defringe: *defringe,
+                protect_regions: protect_regions.clone(),
+                within_regions: within_regions.clone(),
+                within_polygons: within_polygons.clone(),
+            };
+            let mask = apply_mask_polish(
+                SceneAssetMask::from_pixels(
+                    image.width(),
+                    image.height(),
+                    color_range_mask(image, *tolerance, *sample),
+                ),
+                &options,
+                Some(feature_map),
+            )?;
+            apply_transparency_mask(image, mask.pixels(), *feather);
+            defringe_scene_asset_edges(image, *defringe);
+        }
+        SceneAssetEditOperation::MagicEraseAdd {
+            seeds,
+            tolerance,
+            feather,
+            erode,
+            dilate,
+            open,
+            close,
+            remove_small,
+            fill_holes,
+            defringe,
+            protect_regions,
+            within_regions,
+            within_polygons,
+        } => {
+            let options = SceneAssetMaskPolishOptions {
+                tolerance: *tolerance,
+                feather: *feather,
+                sample: default_background_sample(),
+                erode: *erode,
+                dilate: *dilate,
+                open: *open,
+                close: *close,
+                remove_small: *remove_small,
+                fill_holes: *fill_holes,
+                defringe: *defringe,
+                protect_regions: protect_regions.clone(),
+                within_regions: within_regions.clone(),
+                within_polygons: within_polygons.clone(),
+            };
+            let mask = apply_mask_polish(
+                multi_seed_contiguous_mask(image, seeds, *tolerance)?,
+                &options,
+                Some(feature_map),
+            )?;
+            apply_transparency_mask(image, mask.pixels(), *feather);
+            defringe_scene_asset_edges(image, *defringe);
+        }
+        SceneAssetEditOperation::ChannelMatteErase {
+            threshold,
+            neutrality,
+            feather,
+            erode,
+            dilate,
+            open,
+            close,
+            remove_small,
+            fill_holes,
+            defringe,
+            protect_regions,
+            within_regions,
+            within_polygons,
+        } => {
+            let options = SceneAssetMaskPolishOptions {
+                tolerance: default_magic_tolerance(),
+                feather: *feather,
+                sample: default_background_sample(),
+                erode: *erode,
+                dilate: *dilate,
+                open: *open,
+                close: *close,
+                remove_small: *remove_small,
+                fill_holes: *fill_holes,
+                defringe: *defringe,
+                protect_regions: protect_regions.clone(),
+                within_regions: within_regions.clone(),
+                within_polygons: within_polygons.clone(),
+            };
+            let mask = apply_mask_polish(
+                SceneAssetMask::from_pixels(
+                    image.width(),
+                    image.height(),
+                    channel_matte_mask(image, *threshold, *neutrality),
+                ),
+                &options,
+                Some(feature_map),
+            )?;
+            apply_transparency_mask(image, mask.pixels(), *feather);
+            defringe_scene_asset_edges(image, *defringe);
+        }
+        SceneAssetEditOperation::HairCleanup {
+            mode,
+            radius,
+            strength,
+            region,
+        } => {
+            let pixel_region = region
+                .as_deref()
+                .map(|region| feature_map.pixel_region(region, image.width(), image.height()))
+                .transpose()?;
+            match mode {
+                SceneAssetHairCleanupMode::Decontaminate => {
+                    decontaminate_light_edges(image, *radius, *strength, pixel_region);
+                }
+            }
+        }
+        SceneAssetEditOperation::RestoreFromSource {
+            path,
+            regions,
+            polygons,
+            filter,
+            tolerance,
+            sample,
+        } => {
+            let source_path = resolve_recipe_path(path, recipe_base_dir);
+            let source = load_rgba_image(&source_path)?;
+            restore_pixels_from_source_image(
+                &source,
+                image,
+                &SceneAssetRestoreOptions {
+                    regions: regions.clone(),
+                    polygons: polygons.clone(),
+                    filter: *filter,
+                    tolerance: *tolerance,
+                    sample: *sample,
+                },
+                Some(feature_map),
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn default_magic_tolerance() -> u8 {
+    24
+}
+
+fn default_background_sample() -> SceneAssetBackgroundSample {
+    SceneAssetBackgroundSample::Corners
 }
