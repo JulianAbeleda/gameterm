@@ -4,7 +4,8 @@ use super::actions::{
     action_kind_detail, action_kind_name, action_policy_summary, action_request_detail,
     action_request_name,
 };
-use super::{dialogue_index, entity_mode, SceneRuntime};
+use super::snapshot::entity_mode;
+use super::{dialogue_index, SceneRuntime};
 use crate::conditions::{condition_guard_detail, conditions_match};
 use crate::{
     VisualDialogueLine, VisualInputBinding, VisualLayerState, VisualLayerTransitionReport,
