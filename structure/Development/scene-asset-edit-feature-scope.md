@@ -50,10 +50,12 @@ These commands already exist in
 | Command | Family | Current role |
 |---|---|---|
 | `inspect` | Analysis | Reports dimensions, color type, alpha, bounds, checksum |
+| `sample` | Analysis | Reports sampled point and polygon color/alpha statistics |
 | `map-template` | Structure | Generates a feature-map template for a character image |
 | `validate-map` | Structure | Validates feature map regions against an image |
 | `expression` | Structure | Applies a recipe expression to a base image |
 | `animation` | Structure | Generates animation frames from a recipe |
+| `pipeline-run` | Pipeline | Runs repeatable multi-step image-edit workflows |
 | `remove-background` | Selection | Simple connected-background removal |
 | `remove-background-polished` | Selection | Connected-background removal with morphology/polish |
 | `color-range-erase` | Selection | Erases all pixels matching sampled background color |
@@ -62,7 +64,25 @@ These commands already exist in
 | `channel-matte-erase` | Selection | Erases bright neutral pixels by channel matte |
 | `mask-preview` | Selection | Writes non-destructive red-mask preview PNG |
 | `hair-cleanup` | Selection | Decontaminates light/white edge pixels |
+| `fill-region` | Paint | Fills a bounded region with a solid RGBA color |
+| `sample-fill` | Paint | Fills a bounded region with a sampled median color |
+| `alpha-paint` | Paint | Paints alpha into a bounded region |
+| `clone-stamp` | Paint | Copies pixels from one source offset into a bounded target |
+| `draw-shape` | Paint | Draws rectangle, line, polygon, or ellipse corrections |
+| `stroke-path` | Paint | Draws path/polygon outlines |
 | `restore-from-source` | Restore | Copies pixels from base into a damaged cutout |
+| `crop` | Transform | Crops by normalized rect or visible content bounds |
+| `pad` | Transform | Places an image on a larger canvas with an anchor |
+| `transform` | Transform | Translates, scales, and flips sprites |
+| `levels` | Adjustment | Applies black/white/gamma channel corrections |
+| `brightness-contrast` | Adjustment | Applies deterministic brightness/contrast correction |
+| `hsl` | Adjustment | Applies hue, saturation, and lightness correction |
+| `blur` | Filter | Blurs globally or inside bounded regions |
+| `unsharp-mask` | Filter | Sharpens globally or inside bounded regions |
+| `composite` | Composite | Stacks layers with blend modes, opacity, and offsets |
+| `state-manifest` | State | Creates a character part/state manifest |
+| `state-render` | State | Renders one character state combination |
+| `state-sheet` | State | Renders a spritesheet and frame-index JSON |
 | `continuity` | Analysis | Compares frames for animation consistency |
 | `export-source` | Structure | Exports a source-root layout for VN asset intake |
 
@@ -75,24 +95,20 @@ Shared implemented flags:
 - bounded selection: `--within-regions`, `--within-polygon`
 - coordinate inputs: normalized points and polygons
 
-## Current Gap
+## Completion State
 
-The editor is currently strong at subtraction:
-
-```text
-select pixels -> erase / alpha / restore from existing source
-```
-
-It does not yet have a true draw/paint family:
+The first Rust-first non-GUI pass is complete. The editor now supports the
+full deterministic cycle:
 
 ```text
-select or describe region -> lay down new pixels
+inspect/sample -> select/mask -> erase/fill/paint/clone -> transform/adjust
+-> composite/state-render -> VN-ready PNG output
 ```
 
-This is a separate missing class from adjustment, transform, sharpen, or
-composite. It matters for the Kiki hair workflow because some problems are not
-only "erase the white"; sometimes we need to fill an exposed region with a
-nearby sampled color, paint a small correction, or clone a neighboring texture.
+The remaining editor work is GUI-specific: mouse point picking, live previews,
+lasso/polygon drawing, drag handles, menus, and state/timeline panels. Optional
+ML helpers are explicitly post-100 because they add model/runtime complexity and
+are not needed for the deterministic terminal substrate.
 
 ## Global CLI Rules
 
@@ -958,29 +974,31 @@ command substrate is complete enough that a GUI would only add interaction:
 mouse selection, drag handles, live previews, menus, and file picking. The GUI
 should not need to invent new image semantics.
 
-The non-GUI substrate is 100% when these lanes are implemented and verified:
+The non-GUI substrate is now 100% for the first Rust-first pass:
 
 | Lane | Status | Required before GUI-only |
 |---|---:|---|
 | Existing masking/cutout | Done | Keep stable |
-| Coordinate helpers | Partial | Add `sample`; keep `point-report` and `grid-preview` |
-| Paint primitives | Partial | Add `clone-stamp`, `draw-shape`, `stroke-path` |
-| Pipeline runner | Missing | Add `pipeline-run` with per-step reports |
-| Transform ops | Missing | Add `crop`, `pad`, `transform` |
-| Adjustment ops | Missing | Add `levels`, `brightness-contrast`, `hsl` |
-| Filter ops | Missing | Add `unsharp-mask`, `blur`; defer heavy denoise if needed |
-| Compositing | Missing | Add `composite` with basic blend modes |
-| State variants | Missing | Add `state-manifest`, `state-render`, `state-sheet` |
-| Verification fixtures | Partial | Add fixtures/smokes for every lane |
+| Coordinate helpers | Done | `sample`, `point-report`, and `grid-preview` are available |
+| Paint primitives | Done | `fill-region`, `sample-fill`, `alpha-paint`, `clone-stamp`, `draw-shape`, `stroke-path` |
+| Pipeline runner | Done | `pipeline-run` runs JSON workflows with per-step reports |
+| Transform ops | Done | `crop`, `pad`, `transform` |
+| Adjustment ops | Done | `levels`, `brightness-contrast`, `hsl` |
+| Filter ops | Done | `unsharp-mask`, `blur`; heavy denoise remains optional |
+| Compositing | Done | `composite` with normal/add/multiply/screen blend modes |
+| State variants | Done | `state-manifest`, `state-render`, `state-sheet` |
+| Verification fixtures | Done | Fixture pipeline plus real Kiki smoke outputs for every lane |
 
 Optional ML commands (`detect`, `matte-ml`, `upscale`, `inpaint-ml`) are not
 part of 100% for the first Rust-first pass. They are post-100 extensions
 because they add model/runtime complexity and are not required for the GUI to
 control the deterministic editor.
 
-## Remaining Work To Reach 100%
+## Completed Work To Reach 100%
 
 ### Lane 1: Pipeline Runner
+
+Status: Complete in `ecec652ca [visual] add Scene asset pipeline runner`.
 
 Commands:
 
@@ -1008,6 +1026,8 @@ Commit:
 
 ### Lane 2: Coordinate And Sampling Completion
 
+Status: Complete in `439dbceb5 [visual] add Scene asset sampling reports`.
+
 Commands:
 
 - `sample`
@@ -1034,6 +1054,9 @@ Commit:
 - `[visual] add Scene asset sampling reports`
 
 ### Lane 3: Paint Completion
+
+Status: Complete in `48691d047 [visual] add Scene asset paint primitives` and
+`953234b3d [visual] add Scene asset drawing operations`.
 
 Commands:
 
@@ -1067,6 +1090,8 @@ Commit:
 
 ### Lane 4: Transform Operations
 
+Status: Complete in `f87b770c2 [visual] add Scene asset transform operations`.
+
 Commands:
 
 - `crop`
@@ -1093,6 +1118,9 @@ Commit:
 
 ### Lane 5: Tonal Adjustment Operations
 
+Status: Complete in `e8cdfe80e [visual] add Scene asset tonal and filter
+operations`.
+
 Commands:
 
 - `levels`
@@ -1116,6 +1144,9 @@ Commit:
 - `[visual] add Scene asset tonal adjustments`
 
 ### Lane 6: Filter Operations
+
+Status: Complete in `e8cdfe80e [visual] add Scene asset tonal and filter
+operations`.
 
 Commands:
 
@@ -1146,6 +1177,8 @@ Commit:
 
 ### Lane 7: Compositing
 
+Status: Complete in `af3d1afb6 [visual] add Scene asset compositing and states`.
+
 Commands:
 
 - `composite`
@@ -1167,6 +1200,8 @@ Commit:
 - `[visual] add Scene asset compositing`
 
 ### Lane 8: State Variants
+
+Status: Complete in `af3d1afb6 [visual] add Scene asset compositing and states`.
 
 Commands:
 
@@ -1194,6 +1229,8 @@ Commit:
 
 ### Lane 9: Docs And Smoke Catalog
 
+Status: Complete in this docs pass.
+
 Required docs:
 
 - update this scope with implemented status
@@ -1215,18 +1252,19 @@ Commit:
 
 ## 100% Acceptance Checklist
 
-- A user can run one pipeline command to generate a transparent Kiki sprite.
-- A user can inspect and sample exact coordinates/colors from terminal.
-- A user can erase, fill, clone, alpha-paint, and draw simple shape/path
+- [x] A user can run one pipeline command to generate a transparent Kiki sprite.
+- [x] A user can inspect and sample exact coordinates/colors from terminal.
+- [x] A user can erase, fill, clone, alpha-paint, and draw simple shape/path
   corrections from terminal.
-- A user can crop, pad, translate, scale, and flip sprites from terminal.
-- A user can apply basic color and sharpness corrections from terminal.
-- A user can composite layers from terminal.
-- A user can define a character state manifest and render one state or a sheet.
-- Every command writes reproducible outputs and JSON reports.
-- Every destructive command either has a preview path or is safe to run into
+- [x] A user can crop, pad, translate, scale, and flip sprites from terminal.
+- [x] A user can apply basic color and sharpness corrections from terminal.
+- [x] A user can composite layers from terminal.
+- [x] A user can define a character state manifest and render one state or a
+  sheet.
+- [x] Every command writes reproducible outputs or deterministic PNG outputs.
+- [x] Every destructive command either has a preview path or is safe to run into
   `Transformation` first.
-- Tests and real Kiki smokes cover each lane.
+- [x] Tests and real Kiki smokes cover each lane.
 
 Once this checklist is complete, the remaining editor work is GUI-specific:
 
@@ -1238,4 +1276,3 @@ Once this checklist is complete, the remaining editor work is GUI-specific:
 - timeline/state UI
 - command palette/buttons
 - saving/loading pipeline presets
-

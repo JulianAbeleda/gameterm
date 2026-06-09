@@ -1323,3 +1323,54 @@ Remaining manual validation:
   while text remains visible
 - inspect timing diagnostics to decide whether speaking-block highlighting or a
   first-block reveal delay is worth adding
+
+## Scene Asset Editor Non-GUI Completion Smoke
+
+Date: 2026-06-08.
+
+Scope:
+
+```text
+structure/Development/scene-asset-edit-feature-scope.md
+439dbceb5..af3d1afb6
+```
+
+Local asset roots:
+
+```text
+/Users/julianabeleda/Desktop/gameterm-vn-ai-emotion-sprites/Image Editor/Input
+/Users/julianabeleda/Desktop/gameterm-vn-ai-emotion-sprites/Image Editor/Transformation
+/Users/julianabeleda/Desktop/gameterm-vn-ai-emotion-sprites/Image Editor/Output
+```
+
+Commands:
+
+```sh
+cargo test -p gameterm-visual asset_edit
+cargo check -p gameterm-visual --examples
+```
+
+Lane smokes:
+
+- sampling report: `24-sample-report.json`
+- pipeline runner: `25-pipeline-run-report.json`,
+  `25-pipeline-before-sample.json`, `25-pipeline-fill-debug.png`,
+  `25-pipeline-after-sample.json`
+- draw/paint: `26-draw-shape-debug.png`, `27-stroke-path-debug.png`,
+  `28-clone-stamp-debug.png`
+- transform: `29-crop-debug.png`, `30-pad-debug.png`,
+  `31-transform-debug.png`
+- tonal/filter: `32-levels-debug.png`, `33-brightness-contrast-debug.png`,
+  `34-hsl-debug.png`, `35-blur-debug.png`, `36-unsharp-debug.png`
+- composite/state: `37-composite-debug.png`, `38-state-manifest.json`,
+  `39-state-render-debug.png`, `40-state-sheet-debug.png`,
+  `40-state-sheet-index.json`
+
+Result: PASS.
+
+Summary:
+
+- The editor can inspect/sample, run a pipeline, mask/cutout, fill/paint/clone,
+  transform, adjust, filter, composite, and render state variants from terminal.
+- The first-pass Rust-only non-GUI substrate is complete; remaining editor work
+  is GUI interaction and presentation, not new image semantics.

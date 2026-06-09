@@ -8,12 +8,12 @@ deeper product context.
 
 - Date: 2026-06-08
 - Branch: `main`
-- Latest behavior commit: `883385ae6 [visual] add Scene TTS queue diagnostics`
+- Latest behavior commit: `af3d1afb6 [visual] add Scene asset compositing and states`
 - Latest refactor commit: `017ddf309 [gui] NFC - move SceneRuntime test import`
 - Latest tooling commit: `ec1b29b8e [tools] add local CT2 Scene translation helper`
 - Remote state at handoff time: local branch is ahead of `origin/main` by the
-  Scene TTS polish commits listed below
-- Worktree state at handoff time: clean after docs commit
+  Scene TTS polish and Scene asset editor commits listed below
+- Worktree state at handoff time: clean after asset editor docs commit
 - Local app bundle refreshed: `/Users/julianabeleda/Applications/GameTerm.app`
 - Persistent Scene compose config:
   `/Users/julianabeleda/.config/gameterm/scene-compose.json`
@@ -26,11 +26,15 @@ normal macOS GameTerm app without shell-only setup.
 
 Current next priority:
 
+- Scene asset editor non-GUI substrate is complete for the first Rust-first
+  pass. The command cookbook is recorded in
+  [Scene Asset Editor Cookbook](gameterm-scene-asset-editor-cookbook.md), and
+  the completion scope is recorded in
+  `structure/Development/scene-asset-edit-feature-scope.md`.
 - TTS polish first pass is implemented. The scope and remaining dogfood items
   are recorded in [Scene TTS Polish Scope](gameterm-scene-tts-polish-scope.md).
-- Next priority is a live app dogfood pass with real Codex plus VOICEVOX to
-  verify text/audio timing and decide whether speaking-block highlighting or
-  first-block reveal delay is worth adding.
+- Next priority is either a live app dogfood pass with real Codex plus VOICEVOX,
+  or a GUI pass on top of the completed asset editor primitives.
 - Persistent Codex sessions are deferred for now because the current dogfood
   use case does not need cross-disconnect conversation resume.
 
@@ -38,6 +42,14 @@ Current next priority:
 
 Recent committed work:
 
+- `af3d1afb6 [visual] add Scene asset compositing and states`
+- `e8cdfe80e [visual] add Scene asset tonal and filter operations`
+- `f87b770c2 [visual] add Scene asset transform operations`
+- `953234b3d [visual] add Scene asset drawing operations`
+- `ecec652ca [visual] add Scene asset pipeline runner`
+- `439dbceb5 [visual] add Scene asset sampling reports`
+- `6002f7ea9 [docs] define Scene asset editor completion`
+- `48691d047 [visual] add Scene asset paint primitives`
 - `883385ae6 [visual] add Scene TTS queue diagnostics`
 - `e53a8efdf [gui] align Scene TTS extraction with dialogue blocks`
 - `363b0c804 [visual] add Scene dialogue block projection`
@@ -169,6 +181,20 @@ VOICEVOX/TTS status:
   delayed. The current implementation records speaking/done state and
   diagnostics; a future pass can decide whether to visually highlight the active
   block or delay only the first block behind an explicit setting.
+
+Scene asset editor status:
+
+- `scene_asset_edit` is now a deterministic Rust-only terminal image editor
+  substrate. It can sample, run pipelines, mask/cutout, fill/paint/clone/draw,
+  crop/pad/transform, adjust/filter, composite, and render character state
+  sheets.
+- Local Kiki smokes wrote artifacts `24` through `40` under:
+  `/Users/julianabeleda/Desktop/gameterm-vn-ai-emotion-sprites/Image Editor/Transformation`.
+- The scope doc marks the first-pass non-GUI substrate as 100% complete. The
+  remaining work is GUI surface area: file browser, point picking, lasso/polygon
+  drawing, drag handles, live previews, and state/timeline UI.
+- Optional ML helpers such as detection, matting, upscaling, or inpainting are
+  explicitly post-100 extensions.
 
 ## App And Config State
 
@@ -323,21 +349,31 @@ This is still a one-shot local Codex bridge. It does not yet preserve Codex
 session identity, stream progress into the dialogue panel, or support
 `codex exec resume`.
 
+Scene asset editing now has a first complete non-GUI command substrate. A GUI
+would add interaction on top of existing Rust commands instead of adding new
+image semantics.
+
 ## Recommended Next Actions
 
-1. Run the live TTS dogfood pass:
+1. Decide whether the next asset-editor step is GUI:
+   - use [Scene Asset Editor Cookbook](gameterm-scene-asset-editor-cookbook.md)
+     to rerun terminal commands
+   - GUI-only scope should focus on point picking, lasso/polygon drawing, live
+     previews, file picking, command menus, and state/timeline controls
+   - do not add ML into the first GUI pass unless explicitly scoped
+2. Run the live TTS dogfood pass:
    - launch the installed app with `make dev-app-open`
    - choose `1. Scene Mode + VOICEVOX`
    - use `Debug -> Voice -> Test TTS playback`
    - send one real Codex prompt and one fake-Codex prompt
    - confirm text remains visible, speech does not overlap, and diagnostics
      identify translation/synthesis/player timing
-2. Decide whether to add visible speaking-block polish:
+3. Decide whether to add visible speaking-block polish:
    - current state marks blocks internally and in diagnostics
    - optional follow-up is visual highlighting for the currently speaking block
    - optional first-block reveal delay must stay config/debug-controlled, not
      the default
-3. Reduce remaining VOICEVOX latency:
+4. Reduce remaining VOICEVOX latency:
    - local CTranslate2 translation is now wired and avoids `codex exec`
    - current Scene test phrase benchmark: wrapper generation `1.617s` before
      playback, down from roughly `6.1s` before audio was ready with Codex
@@ -346,18 +382,18 @@ session identity, stream progress into the dialogue panel, or support
      path
    - next bottleneck is translation helper process startup plus VOICEVOX
      synthesis; pure Rust in-process translation remains deferred
-4. Decide the next work lane:
+5. Decide the next Scene product work lane:
    - product: app tiling and desktop actions
    - product: Arkey-style capability routing
    - refactor: only scoped cleanup that directly supports the next product lane
    - tooling: table-driven cleanup for Scene shell helpers
-5. Persistent Codex sessions stay deferred unless disconnected-session resume
+6. Persistent Codex sessions stay deferred unless disconnected-session resume
    becomes a real dogfood problem.
-6. Decide whether progress/streaming events should render into Scene Mode or
+7. Decide whether progress/streaming events should render into Scene Mode or
    stay a follow-up.
-7. Keep app-launch config behavior explicit; do not silently enable network
+8. Keep app-launch config behavior explicit; do not silently enable network
    backends without user/app config.
-8. Keep future commits separated by concern.
+9. Keep future commits separated by concern.
 
 Commit discipline:
 

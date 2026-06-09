@@ -65,6 +65,9 @@ Scene Mode currently has:
 - a first-pass selection-tools lane for Color Range, Magic Wand add-selection,
   channel-matte erasing, hair-edge decontamination, traced source restore,
   region/polygon-bounded selection, and non-destructive mask preview
+- a 100% first-pass Rust-only Scene asset editor substrate for terminal-native
+  sampling, repeatable pipelines, masking, fill/paint/clone/draw operations,
+  transform, tonal/filter corrections, compositing, and character state sheets
 
 Latest verification baseline:
 
@@ -120,6 +123,7 @@ implementation details.
 | Character asset editing pipeline | [Character Asset Editing Scope](gameterm-scene-character-asset-editing-scope.md) | First-pass implemented |
 | Character mask polish | [Asset Mask Polish Scope](gameterm-scene-asset-mask-polish-scope.md) | First-pass implemented |
 | Character selection tools | [Asset Selection Tools Scope](gameterm-scene-asset-selection-tools-scope.md) | Second-pass implemented |
+| Scene asset editor cookbook | [Scene Asset Editor Cookbook](gameterm-scene-asset-editor-cookbook.md) | Non-GUI substrate complete |
 | Rounded VN panel renderer | [Rounded Panel Renderer Scope](gameterm-scene-rounded-panel-renderer-scope.md) | Scoped |
 | Scene debug view separation | [Debug View Separation Scope](gameterm-scene-debug-view-separation-scope.md) | Scoped |
 | Codex compose bridge | [Codex Compose Bridge Scope](gameterm-scene-codex-compose-bridge-scope.md) | First-pass implemented |
