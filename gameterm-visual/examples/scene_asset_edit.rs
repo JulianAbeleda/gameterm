@@ -2,22 +2,24 @@ use gameterm_visual::{
     alpha_paint_scene_asset_region, channel_matte_erase_scene_asset_image,
     cleanup_scene_asset_hair_edges, clone_stamp_scene_asset_region,
     color_range_erase_scene_asset_image, continuity_report_for_scene_asset_frames,
-    default_scene_asset_feature_map, draw_scene_asset_shape, export_scene_asset_source_images,
-    fill_scene_asset_region, generate_scene_asset_animation, generate_scene_asset_expression,
-    inspect_scene_asset_image, load_scene_asset_feature_map, load_scene_asset_recipe_book,
-    magic_erase_add_scene_asset_image, magic_erase_scene_asset_image,
+    crop_scene_asset_image, default_scene_asset_feature_map, draw_scene_asset_shape,
+    export_scene_asset_source_images, fill_scene_asset_region, generate_scene_asset_animation,
+    generate_scene_asset_expression, inspect_scene_asset_image, load_scene_asset_feature_map,
+    load_scene_asset_recipe_book, magic_erase_add_scene_asset_image, magic_erase_scene_asset_image,
     make_scene_asset_background_transparent, make_scene_asset_background_transparent_polished,
-    preview_scene_asset_grid, preview_scene_asset_selection_mask, report_scene_asset_points,
-    restore_scene_asset_from_source, run_scene_asset_pipeline, sample_fill_scene_asset_region,
-    sample_scene_asset_image, stroke_scene_asset_path, validate_scene_asset_feature_map,
-    write_scene_asset_json, SceneAssetAlphaPaintOptions, SceneAssetBackgroundSample,
-    SceneAssetCloneStampOptions, SceneAssetDefringeMode, SceneAssetDrawShapeKind,
+    pad_scene_asset_image, preview_scene_asset_grid, preview_scene_asset_selection_mask,
+    report_scene_asset_points, restore_scene_asset_from_source, run_scene_asset_pipeline,
+    sample_fill_scene_asset_region, sample_scene_asset_image, stroke_scene_asset_path,
+    transform_scene_asset_image, validate_scene_asset_feature_map, write_scene_asset_json,
+    SceneAssetAlphaPaintOptions, SceneAssetBackgroundSample, SceneAssetCloneStampOptions,
+    SceneAssetCropOptions, SceneAssetDefringeMode, SceneAssetDrawShapeKind,
     SceneAssetDrawShapeOptions, SceneAssetFillOptions, SceneAssetGridPreviewOptions,
     SceneAssetHairCleanupMode, SceneAssetMaskPolishOptions, SceneAssetMaskPreviewMode,
     SceneAssetMaskPreviewOptions, SceneAssetNormalizedPoint, SceneAssetNormalizedRect,
-    SceneAssetPipelineRoots, SceneAssetPipelineRunOptions, SceneAssetRestoreFilter,
+    SceneAssetPadAnchor, SceneAssetPadOptions, SceneAssetPipelineRoots,
+    SceneAssetPipelineRunOptions, SceneAssetResampleFilter, SceneAssetRestoreFilter,
     SceneAssetRestoreOptions, SceneAssetSampleFillOptions, SceneAssetSampleOptions,
-    SceneAssetStrokePathOptions,
+    SceneAssetStrokePathOptions, SceneAssetTransformOptions,
 };
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -40,6 +42,8 @@ struct CliArgs {
     input_root: Option<PathBuf>,
     transformation_root: Option<PathBuf>,
     output_root: Option<PathBuf>,
+    width: Option<u32>,
+    height: Option<u32>,
     source_id: Option<String>,
     protect: Option<PathBuf>,
     protect_regions: Option<String>,
@@ -48,6 +52,8 @@ struct CliArgs {
     restore_filter: Option<SceneAssetRestoreFilter>,
     selection_mode: Option<SceneAssetMaskPreviewMode>,
     draw_shape: Option<SceneAssetDrawShapeKind>,
+    anchor: Option<SceneAssetPadAnchor>,
+    resample: Option<SceneAssetResampleFilter>,
     character: Option<String>,
     expressions: Option<String>,
     tolerance: Option<u8>,
@@ -82,10 +88,16 @@ struct CliArgs {
     stroke: Option<u32>,
     sample_radius: Option<u32>,
     step: Option<f32>,
+    scale: Option<f32>,
+    translate_x: i32,
+    translate_y: i32,
     whole_image: bool,
     global: bool,
     fill: bool,
     closed: bool,
+    content_bounds: bool,
+    flip_x: bool,
+    flip_y: bool,
     frames: Vec<PathBuf>,
     pretty: bool,
     force: bool,
@@ -110,6 +122,9 @@ fn usage() {
   cargo run -p gameterm-visual --example scene_asset_edit -- clone-stamp --source IMAGE --output PATH --sample-origin X,Y --target-origin X,Y (--within-polygon X,Y;X,Y;X,Y | --within-regions CSV) [--protect FEATURE_MAP] [--protect-regions CSV] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- draw-shape --source IMAGE --output PATH --shape rect|line|polygon|ellipse --color '#RRGGBB[AA]' [--rect X,Y,W,H] [--point X,Y ...] [--stroke N] [--fill] [--protect FEATURE_MAP] [--protect-regions CSV] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- stroke-path --source IMAGE --output PATH --path X,Y;X,Y[;X,Y] --color '#RRGGBB[AA]' [--width N] [--closed] [--protect FEATURE_MAP] [--protect-regions CSV] [--force]
+  cargo run -p gameterm-visual --example scene_asset_edit -- crop --source IMAGE --output PATH (--rect X,Y,W,H | --content-bounds) [--force]
+  cargo run -p gameterm-visual --example scene_asset_edit -- pad --source IMAGE --output PATH --width N --height N [--anchor center|bottom-center|top-left] [--color '#RRGGBB[AA]'] [--force]
+  cargo run -p gameterm-visual --example scene_asset_edit -- transform --source IMAGE --output PATH [--scale N] [--translate X,Y] [--flip-x] [--flip-y] [--resample nearest|lanczos3] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- remove-background --source IMAGE --output PATH [--tolerance N] [--feather N] [--sample corners|edges] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- remove-background-polished --source IMAGE --output PATH [--tolerance N] [--sample corners|edges] [--erode N] [--dilate N] [--open N] [--close N] [--remove-small N] [--fill-holes N] [--feather N] [--defringe none|white] [--protect FEATURE_MAP] [--protect-regions CSV] [--within-regions CSV] [--within-polygon X,Y;X,Y;X,Y] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- color-range-erase --source IMAGE --output PATH [--tolerance N] [--sample corners|edges] [--erode N] [--dilate N] [--open N] [--close N] [--remove-small N] [--fill-holes N] [--feather N] [--defringe none|white] [--protect FEATURE_MAP] [--protect-regions CSV] [--within-regions CSV] [--within-polygon X,Y;X,Y;X,Y] [--force]
@@ -138,6 +153,8 @@ Options:
   --input-root PATH          Pipeline input root.
   --transformation-root PATH Pipeline intermediate/output root.
   --output-root PATH         Pipeline final output root.
+  --width N                  Width for pad; stroke width for stroke-path.
+  --height N                 Height for pad.
   --source-id ID             Catalog source directory.
   --protect PATH             Feature-map JSON used to protect foreground regions.
   --protect-regions CSV      Feature region names to subtract from the erase mask.
@@ -178,13 +195,19 @@ Options:
   --rect X,Y,W,H             Normalized rectangle for draw-shape.
   --path X,Y;X,Y[;X,Y]       Normalized path for stroke-path.
   --stroke N                 Stroke width for draw-shape. Default: 1.
-  --width N                  Alias for --stroke in stroke-path.
   --sample-origin X,Y        Normalized clone-stamp source origin.
   --target-origin X,Y        Normalized clone-stamp target origin.
+  --anchor NAME              Pad anchor: center, bottom-center, top-left.
+  --scale N                  Transform scale. Default: 1.0.
+  --translate X,Y            Transform translation in pixels.
+  --resample NAME            Transform resample: nearest, lanczos3.
   --step N                   Normalized grid spacing. Default: 0.1.
   --whole-image              Allow a paint operation to affect the whole image.
   --fill                     Fill draw-shape geometry.
   --closed                   Close stroke-path back to the first point.
+  --content-bounds           Crop to visible content bounds.
+  --flip-x                   Flip transform horizontally.
+  --flip-y                   Flip transform vertically.
   --sample corners|edges     Background samples. Default: corners.
   --global                   Select all matching pixels instead of contiguous seed fill.
   --pretty                   Pretty-print JSON.
@@ -220,6 +243,9 @@ fn main() {
         Some("clone-stamp") => run_clone_stamp(args),
         Some("draw-shape") => run_draw_shape(args),
         Some("stroke-path") => run_stroke_path(args),
+        Some("crop") => run_crop(args),
+        Some("pad") => run_pad(args),
+        Some("transform") => run_transform(args),
         Some("remove-background") => run_remove_background(args),
         Some("remove-background-polished") => run_remove_background_polished(args),
         Some("color-range-erase") => run_color_range_erase(args),
@@ -526,6 +552,64 @@ fn run_stroke_path(args: CliArgs) -> Result<(), String> {
     write_json(None, &report, args.pretty, true)
 }
 
+fn run_crop(args: CliArgs) -> Result<(), String> {
+    let source = required_path(args.source.clone(), "--source")?;
+    let output = required_path(args.output.clone(), "--output")?;
+    let report = crop_scene_asset_image(
+        &source,
+        &output,
+        SceneAssetCropOptions {
+            rect: args.rect,
+            content_bounds: args.content_bounds,
+        },
+        args.force,
+    )
+    .map_err(|err| err.to_string())?;
+    write_json(None, &report, args.pretty, true)
+}
+
+fn run_pad(args: CliArgs) -> Result<(), String> {
+    let source = required_path(args.source.clone(), "--source")?;
+    let output = required_path(args.output.clone(), "--output")?;
+    let report = pad_scene_asset_image(
+        &source,
+        &output,
+        SceneAssetPadOptions {
+            width: args
+                .width
+                .ok_or_else(|| "--width is required".to_string())?,
+            height: args
+                .height
+                .ok_or_else(|| "--height is required".to_string())?,
+            anchor: args.anchor.unwrap_or(SceneAssetPadAnchor::Center),
+            color: args.color.unwrap_or([0, 0, 0, 0]),
+        },
+        args.force,
+    )
+    .map_err(|err| err.to_string())?;
+    write_json(None, &report, args.pretty, true)
+}
+
+fn run_transform(args: CliArgs) -> Result<(), String> {
+    let source = required_path(args.source.clone(), "--source")?;
+    let output = required_path(args.output.clone(), "--output")?;
+    let report = transform_scene_asset_image(
+        &source,
+        &output,
+        SceneAssetTransformOptions {
+            scale: args.scale.unwrap_or(1.0),
+            translate_x: args.translate_x,
+            translate_y: args.translate_y,
+            flip_x: args.flip_x,
+            flip_y: args.flip_y,
+            resample: args.resample.unwrap_or(SceneAssetResampleFilter::Lanczos3),
+        },
+        args.force,
+    )
+    .map_err(|err| err.to_string())?;
+    write_json(None, &report, args.pretty, true)
+}
+
 fn run_remove_background(args: CliArgs) -> Result<(), String> {
     let source = required_path(args.source, "--source")?;
     let output = required_path(args.output, "--output")?;
@@ -789,6 +873,7 @@ fn parse_args() -> Result<CliArgs, String> {
                 parsed.transformation_root = Some(next_path(&mut args, "--transformation-root")?)
             }
             "--output-root" => parsed.output_root = Some(next_path(&mut args, "--output-root")?),
+            "--height" => parsed.height = Some(next_parse(&mut args, "--height")?),
             "--source-id" => parsed.source_id = Some(next_text(&mut args, "--source-id")?),
             "--protect" => parsed.protect = Some(next_path(&mut args, "--protect")?),
             "--protect-regions" => {
@@ -835,6 +920,10 @@ fn parse_args() -> Result<CliArgs, String> {
             "--shape" => {
                 parsed.draw_shape = Some(parse_draw_shape(&next_text(&mut args, "--shape")?)?)
             }
+            "--anchor" => parsed.anchor = Some(parse_anchor(&next_text(&mut args, "--anchor")?)?),
+            "--resample" => {
+                parsed.resample = Some(parse_resample(&next_text(&mut args, "--resample")?)?)
+            }
             "--hair-region" => parsed.hair_region = Some(next_text(&mut args, "--hair-region")?),
             "--seed-x" => parsed.seed_x = Some(next_parse(&mut args, "--seed-x")?),
             "--seed-y" => parsed.seed_y = Some(next_parse(&mut args, "--seed-y")?),
@@ -873,16 +962,29 @@ fn parse_args() -> Result<CliArgs, String> {
             "--rect" => parsed.rect = Some(parse_rect(&next_text(&mut args, "--rect")?)?),
             "--color" => parsed.color = Some(parse_color(&next_text(&mut args, "--color")?)?),
             "--alpha" => parsed.alpha = Some(next_parse(&mut args, "--alpha")?),
-            "--stroke" | "--width" => parsed.stroke = Some(next_parse(&mut args, "--stroke")?),
+            "--stroke" => parsed.stroke = Some(next_parse(&mut args, "--stroke")?),
+            "--width" if parsed.command.as_deref() == Some("stroke-path") => {
+                parsed.stroke = Some(next_parse(&mut args, "--width")?)
+            }
+            "--width" => parsed.width = Some(next_parse(&mut args, "--width")?),
             "--sample-radius" => {
                 parsed.sample_radius = Some(next_parse(&mut args, "--sample-radius")?)
             }
             "--step" => parsed.step = Some(next_parse(&mut args, "--step")?),
+            "--scale" => parsed.scale = Some(next_parse(&mut args, "--scale")?),
+            "--translate" => {
+                let (x, y) = parse_i32_pair(&next_text(&mut args, "--translate")?)?;
+                parsed.translate_x = x;
+                parsed.translate_y = y;
+            }
             "--sample" => parsed.sample = Some(parse_sample(&next_text(&mut args, "--sample")?)?),
             "--whole-image" => parsed.whole_image = true,
             "--global" => parsed.global = true,
             "--fill" => parsed.fill = true,
             "--closed" => parsed.closed = true,
+            "--content-bounds" => parsed.content_bounds = true,
+            "--flip-x" => parsed.flip_x = true,
+            "--flip-y" => parsed.flip_y = true,
             "--pretty" => parsed.pretty = true,
             "--force" => parsed.force = true,
             "--dry-run" => parsed.dry_run = true,
@@ -1002,6 +1104,27 @@ fn parse_draw_shape(value: &str) -> Result<SceneAssetDrawShapeKind, String> {
     }
 }
 
+fn parse_anchor(value: &str) -> Result<SceneAssetPadAnchor, String> {
+    match value {
+        "center" => Ok(SceneAssetPadAnchor::Center),
+        "bottom-center" => Ok(SceneAssetPadAnchor::BottomCenter),
+        "top-left" => Ok(SceneAssetPadAnchor::TopLeft),
+        _ => Err(format!(
+            "--anchor value `{value}` is invalid; expected center, bottom-center, or top-left"
+        )),
+    }
+}
+
+fn parse_resample(value: &str) -> Result<SceneAssetResampleFilter, String> {
+    match value {
+        "nearest" => Ok(SceneAssetResampleFilter::Nearest),
+        "lanczos3" => Ok(SceneAssetResampleFilter::Lanczos3),
+        _ => Err(format!(
+            "--resample value `{value}` is invalid; expected nearest or lanczos3"
+        )),
+    }
+}
+
 fn parse_seed(value: &str) -> Result<SceneAssetNormalizedPoint, String> {
     parse_point_value(value, "--seed")
 }
@@ -1088,6 +1211,21 @@ fn parse_rect(value: &str) -> Result<SceneAssetNormalizedRect, String> {
         w: parse(2)?,
         h: parse(3)?,
     })
+}
+
+fn parse_i32_pair(value: &str) -> Result<(i32, i32), String> {
+    let (x, y) = value
+        .split_once(',')
+        .ok_or_else(|| format!("--translate value `{value}` is invalid; expected X,Y"))?;
+    let x = x
+        .trim()
+        .parse::<i32>()
+        .map_err(|err| format!("--translate x value `{x}` is invalid: {err}"))?;
+    let y = y
+        .trim()
+        .parse::<i32>()
+        .map_err(|err| format!("--translate y value `{y}` is invalid: {err}"))?;
+    Ok((x, y))
 }
 
 fn csv_values(value: Option<&str>) -> Vec<String> {

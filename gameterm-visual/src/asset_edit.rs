@@ -765,6 +765,61 @@ pub struct SceneAssetStrokePathOptions {
     pub protect_regions: Vec<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SceneAssetPadAnchor {
+    Center,
+    BottomCenter,
+    TopLeft,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SceneAssetResampleFilter {
+    Nearest,
+    Lanczos3,
+}
+
+impl SceneAssetResampleFilter {
+    fn filter_type(self) -> FilterType {
+        match self {
+            SceneAssetResampleFilter::Nearest => FilterType::Nearest,
+            SceneAssetResampleFilter::Lanczos3 => FilterType::Lanczos3,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetCropOptions {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rect: Option<SceneAssetNormalizedRect>,
+    #[serde(default)]
+    pub content_bounds: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetPadOptions {
+    pub width: u32,
+    pub height: u32,
+    pub anchor: SceneAssetPadAnchor,
+    pub color: [u8; 4],
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetTransformOptions {
+    #[serde(default = "default_scale")]
+    pub scale: f32,
+    #[serde(default)]
+    pub translate_x: i32,
+    #[serde(default)]
+    pub translate_y: i32,
+    #[serde(default)]
+    pub flip_x: bool,
+    #[serde(default)]
+    pub flip_y: bool,
+    pub resample: SceneAssetResampleFilter,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SceneAssetEditError {
     #[error("image file error for `{path}`: {message}")]
@@ -1305,6 +1360,58 @@ fn run_scene_asset_pipeline_step(
                     protect_regions: pipeline_string_list_arg(&step.args, "protect_regions")?,
                 },
                 feature_map.as_ref(),
+                options.force,
+            )?;
+            serde_json::to_value(report).map_err(|err| SceneAssetEditError::JsonFile {
+                path: report_path.display().to_string(),
+                message: err.to_string(),
+            })?
+        }
+        "crop" => {
+            let report = crop_scene_asset_image(
+                current_source,
+                &output_path,
+                SceneAssetCropOptions {
+                    rect: pipeline_rect_arg(&step.args, "rect")?,
+                    content_bounds: pipeline_bool_arg(&step.args, "content_bounds", false)?,
+                },
+                options.force,
+            )?;
+            serde_json::to_value(report).map_err(|err| SceneAssetEditError::JsonFile {
+                path: report_path.display().to_string(),
+                message: err.to_string(),
+            })?
+        }
+        "pad" => {
+            let report = pad_scene_asset_image(
+                current_source,
+                &output_path,
+                SceneAssetPadOptions {
+                    width: pipeline_u32_required_arg(&step.args, "width")?,
+                    height: pipeline_u32_required_arg(&step.args, "height")?,
+                    anchor: pipeline_pad_anchor_arg(&step.args)?,
+                    color: pipeline_optional_color_arg(&step.args, "color", [0, 0, 0, 0])?,
+                },
+                options.force,
+            )?;
+            serde_json::to_value(report).map_err(|err| SceneAssetEditError::JsonFile {
+                path: report_path.display().to_string(),
+                message: err.to_string(),
+            })?
+        }
+        "transform" => {
+            let (translate_x, translate_y) = pipeline_translate_arg(&step.args)?;
+            let report = transform_scene_asset_image(
+                current_source,
+                &output_path,
+                SceneAssetTransformOptions {
+                    scale: pipeline_f32_arg(&step.args, "scale", 1.0)?,
+                    translate_x,
+                    translate_y,
+                    flip_x: pipeline_bool_arg(&step.args, "flip_x", false)?,
+                    flip_y: pipeline_bool_arg(&step.args, "flip_y", false)?,
+                    resample: pipeline_resample_arg(&step.args)?,
+                },
                 options.force,
             )?;
             serde_json::to_value(report).map_err(|err| SceneAssetEditError::JsonFile {
@@ -2123,6 +2230,109 @@ pub fn stroke_scene_asset_path(
     })
 }
 
+pub fn crop_scene_asset_image(
+    source_path: &Path,
+    output_path: &Path,
+    options: SceneAssetCropOptions,
+    force: bool,
+) -> Result<SceneAssetPaintReport, SceneAssetEditError> {
+    let image = load_rgba_image(source_path)?;
+    let rect = if options.content_bounds {
+        content_bounds(&image).ok_or_else(|| {
+            SceneAssetEditError::InvalidOperation(
+                "crop --content-bounds found no visible pixels".to_string(),
+            )
+        })?
+    } else {
+        normalized_rect_arg(options.rect, "crop")?.to_pixels(image.width(), image.height())
+    };
+    let output = crop_region(&image, rect);
+    save_rgba_image(&output, output_path, force)?;
+    Ok(SceneAssetPaintReport {
+        operation: "crop".to_string(),
+        source: source_path.display().to_string(),
+        output_path: output_path.display().to_string(),
+        changed_pixels: output.width() as usize * output.height() as usize,
+        report: inspect_scene_asset_image(output_path)?,
+    })
+}
+
+pub fn pad_scene_asset_image(
+    source_path: &Path,
+    output_path: &Path,
+    options: SceneAssetPadOptions,
+    force: bool,
+) -> Result<SceneAssetPaintReport, SceneAssetEditError> {
+    let image = load_rgba_image(source_path)?;
+    if options.width < image.width() || options.height < image.height() {
+        return Err(SceneAssetEditError::InvalidOperation(
+            "pad width and height must be greater than or equal to source dimensions".to_string(),
+        ));
+    }
+    let mut output = ImageBuffer::from_pixel(options.width, options.height, Rgba(options.color));
+    let x = match options.anchor {
+        SceneAssetPadAnchor::TopLeft => 0,
+        SceneAssetPadAnchor::Center | SceneAssetPadAnchor::BottomCenter => {
+            (options.width - image.width()) / 2
+        }
+    } as i32;
+    let y = match options.anchor {
+        SceneAssetPadAnchor::TopLeft => 0,
+        SceneAssetPadAnchor::Center => (options.height - image.height()) / 2,
+        SceneAssetPadAnchor::BottomCenter => options.height - image.height(),
+    } as i32;
+    paste_region(&mut output, &image, x, y, 1.0);
+    save_rgba_image(&output, output_path, force)?;
+    Ok(SceneAssetPaintReport {
+        operation: "pad".to_string(),
+        source: source_path.display().to_string(),
+        output_path: output_path.display().to_string(),
+        changed_pixels: output.width() as usize * output.height() as usize,
+        report: inspect_scene_asset_image(output_path)?,
+    })
+}
+
+pub fn transform_scene_asset_image(
+    source_path: &Path,
+    output_path: &Path,
+    options: SceneAssetTransformOptions,
+    force: bool,
+) -> Result<SceneAssetPaintReport, SceneAssetEditError> {
+    if !options.scale.is_finite() || options.scale <= 0.0 {
+        return Err(SceneAssetEditError::InvalidOperation(
+            "transform scale must be finite and positive".to_string(),
+        ));
+    }
+    let image = load_rgba_image(source_path)?;
+    let original = image.clone();
+    let mut content = image;
+    if options.flip_x {
+        content = image::imageops::flip_horizontal(&content);
+    }
+    if options.flip_y {
+        content = image::imageops::flip_vertical(&content);
+    }
+    if (options.scale - 1.0).abs() > f32::EPSILON {
+        let width = ((content.width() as f32 * options.scale).round() as u32).max(1);
+        let height = ((content.height() as f32 * options.scale).round() as u32).max(1);
+        content = image::imageops::resize(&content, width, height, options.resample.filter_type());
+    }
+    let mut output =
+        ImageBuffer::from_pixel(original.width(), original.height(), Rgba([0, 0, 0, 0]));
+    let x = (original.width() as i32 - content.width() as i32) / 2 + options.translate_x;
+    let y = (original.height() as i32 - content.height() as i32) / 2 + options.translate_y;
+    paste_region(&mut output, &content, x, y, 1.0);
+    let changed_pixels = changed_pixel_count(&original, &output);
+    save_rgba_image(&output, output_path, force)?;
+    Ok(SceneAssetPaintReport {
+        operation: "transform".to_string(),
+        source: source_path.display().to_string(),
+        output_path: output_path.display().to_string(),
+        changed_pixels,
+        report: inspect_scene_asset_image(output_path)?,
+    })
+}
+
 fn write_polished_selection_output(
     operation: &str,
     source_path: &Path,
@@ -2624,7 +2834,10 @@ fn validate_pipeline_command_name(command: &str) -> Result<(), SceneAssetEditErr
         | "alpha-paint"
         | "clone-stamp"
         | "draw-shape"
-        | "stroke-path" => Ok(()),
+        | "stroke-path"
+        | "crop"
+        | "pad"
+        | "transform" => Ok(()),
         _ => Err(SceneAssetEditError::InvalidOperation(format!(
             "unsupported pipeline command `{command}`"
         ))),
@@ -2729,6 +2942,18 @@ fn pipeline_u32_arg(
     })
 }
 
+fn pipeline_u32_required_arg(
+    args: &BTreeMap<String, serde_json::Value>,
+    key: &str,
+) -> Result<u32, SceneAssetEditError> {
+    if pipeline_arg(args, key).is_none() {
+        return Err(SceneAssetEditError::InvalidOperation(format!(
+            "pipeline arg `{key}` is required"
+        )));
+    }
+    pipeline_u32_arg(args, key, 0)
+}
+
 fn pipeline_usize_arg(
     args: &BTreeMap<String, serde_json::Value>,
     key: &str,
@@ -2784,6 +3009,17 @@ fn pipeline_color_arg(
     Ok(parse_rgba(&color)?.0)
 }
 
+fn pipeline_optional_color_arg(
+    args: &BTreeMap<String, serde_json::Value>,
+    key: &str,
+    default: [u8; 4],
+) -> Result<[u8; 4], SceneAssetEditError> {
+    let Some(color) = pipeline_string_arg(args, key)? else {
+        return Ok(default);
+    };
+    Ok(parse_rgba(&color)?.0)
+}
+
 fn pipeline_background_sample_arg(
     args: &BTreeMap<String, serde_json::Value>,
     key: &str,
@@ -2797,6 +3033,64 @@ fn pipeline_background_sample_arg(
         value => Err(SceneAssetEditError::InvalidOperation(format!(
             "pipeline arg `{key}` value `{value}` is invalid; expected corners or edges"
         ))),
+    }
+}
+
+fn pipeline_pad_anchor_arg(
+    args: &BTreeMap<String, serde_json::Value>,
+) -> Result<SceneAssetPadAnchor, SceneAssetEditError> {
+    match pipeline_string_arg(args, "anchor")?
+        .as_deref()
+        .unwrap_or("center")
+    {
+        "center" => Ok(SceneAssetPadAnchor::Center),
+        "bottom-center" | "bottom_center" => Ok(SceneAssetPadAnchor::BottomCenter),
+        "top-left" | "top_left" => Ok(SceneAssetPadAnchor::TopLeft),
+        value => Err(SceneAssetEditError::InvalidOperation(format!(
+            "pipeline arg `anchor` value `{value}` is invalid"
+        ))),
+    }
+}
+
+fn pipeline_resample_arg(
+    args: &BTreeMap<String, serde_json::Value>,
+) -> Result<SceneAssetResampleFilter, SceneAssetEditError> {
+    match pipeline_string_arg(args, "resample")?
+        .as_deref()
+        .unwrap_or("lanczos3")
+    {
+        "nearest" => Ok(SceneAssetResampleFilter::Nearest),
+        "lanczos3" => Ok(SceneAssetResampleFilter::Lanczos3),
+        value => Err(SceneAssetEditError::InvalidOperation(format!(
+            "pipeline arg `resample` value `{value}` is invalid"
+        ))),
+    }
+}
+
+fn pipeline_translate_arg(
+    args: &BTreeMap<String, serde_json::Value>,
+) -> Result<(i32, i32), SceneAssetEditError> {
+    let Some(value) = pipeline_arg(args, "translate") else {
+        return Ok((0, 0));
+    };
+    match value {
+        serde_json::Value::String(text) => parse_i32_pair_text(text, "translate"),
+        serde_json::Value::Array(values) if values.len() == 2 => {
+            let x = values[0].as_i64().ok_or_else(|| {
+                SceneAssetEditError::InvalidOperation(
+                    "pipeline translate x must be a number".to_string(),
+                )
+            })?;
+            let y = values[1].as_i64().ok_or_else(|| {
+                SceneAssetEditError::InvalidOperation(
+                    "pipeline translate y must be a number".to_string(),
+                )
+            })?;
+            Ok((x as i32, y as i32))
+        }
+        _ => Err(SceneAssetEditError::InvalidOperation(
+            "pipeline translate must be `X,Y` or [X,Y]".to_string(),
+        )),
     }
 }
 
@@ -3065,6 +3359,25 @@ fn parse_normalized_rect_text(
         w: parse(2)?,
         h: parse(3)?,
     })
+}
+
+fn parse_i32_pair_text(value: &str, key: &str) -> Result<(i32, i32), SceneAssetEditError> {
+    let (x, y) = value.split_once(',').ok_or_else(|| {
+        SceneAssetEditError::InvalidOperation(format!(
+            "pipeline `{key}` value `{value}` is invalid; expected X,Y"
+        ))
+    })?;
+    let x = x.trim().parse::<i32>().map_err(|err| {
+        SceneAssetEditError::InvalidOperation(format!(
+            "pipeline `{key}` x value `{x}` is invalid: {err}"
+        ))
+    })?;
+    let y = y.trim().parse::<i32>().map_err(|err| {
+        SceneAssetEditError::InvalidOperation(format!(
+            "pipeline `{key}` y value `{y}` is invalid: {err}"
+        ))
+    })?;
+    Ok((x, y))
 }
 
 fn parse_normalized_point_text(
@@ -5272,6 +5585,65 @@ mod tests {
         let stroke = load_rgba_image(&stroke_output).unwrap();
         assert_equal!(*stroke.get_pixel(0, 0), Rgba([255u8, 0, 0, 255]));
         assert_equal!(*stroke.get_pixel(7, 7), Rgba([255u8, 0, 0, 255]));
+    }
+
+    #[test]
+    fn crop_pad_and_transform_update_canvas_deterministically() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join("source.png");
+        let crop_output = dir.path().join("crop.png");
+        let pad_output = dir.path().join("pad.png");
+        let transform_output = dir.path().join("transform.png");
+        let mut image = ImageBuffer::from_pixel(4, 4, Rgba([0u8, 0, 0, 0]));
+        image.put_pixel(1, 1, Rgba([200u8, 40, 60, 255]));
+        image.put_pixel(2, 1, Rgba([100u8, 80, 20, 255]));
+        image.save(&source).unwrap();
+
+        crop_scene_asset_image(
+            &source,
+            &crop_output,
+            SceneAssetCropOptions {
+                rect: None,
+                content_bounds: true,
+            },
+            false,
+        )
+        .unwrap();
+        let cropped = load_rgba_image(&crop_output).unwrap();
+        assert_equal!(cropped.width(), 2);
+        assert_equal!(cropped.height(), 1);
+
+        pad_scene_asset_image(
+            &crop_output,
+            &pad_output,
+            SceneAssetPadOptions {
+                width: 4,
+                height: 4,
+                anchor: SceneAssetPadAnchor::BottomCenter,
+                color: [0, 0, 0, 0],
+            },
+            false,
+        )
+        .unwrap();
+        let padded = load_rgba_image(&pad_output).unwrap();
+        assert_equal!(*padded.get_pixel(1, 3), Rgba([200u8, 40, 60, 255]));
+
+        transform_scene_asset_image(
+            &pad_output,
+            &transform_output,
+            SceneAssetTransformOptions {
+                scale: 1.0,
+                translate_x: 1,
+                translate_y: -1,
+                flip_x: true,
+                flip_y: false,
+                resample: SceneAssetResampleFilter::Nearest,
+            },
+            false,
+        )
+        .unwrap();
+        let transformed = load_rgba_image(&transform_output).unwrap();
+        assert_equal!(*transformed.get_pixel(3, 2), Rgba([200u8, 40, 60, 255]));
     }
 
     #[test]
