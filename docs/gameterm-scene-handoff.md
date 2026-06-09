@@ -36,6 +36,11 @@ Current next priority:
   [Scene Asset Primitive Tightening Scope](gameterm-scene-asset-primitive-tightening-scope.md),
   and the original completion scope is recorded in
   `structure/Development/scene-asset-edit-feature-scope.md`.
+- Current maintainability assessment: repo grade is **B / B+**. The product is
+  verified and disciplined, but `gameterm-visual/src/asset_edit.rs` now
+  concentrates too many image-editor concerns in one roughly 9.9k-line file.
+  The active primitive-editor refactor scope is
+  [Scene Asset Editor Refactor Scope](gameterm-scene-asset-editor-refactor-scope.md).
 - TTS polish first pass is implemented. The scope and remaining dogfood items
   are recorded in [Scene TTS Polish Scope](gameterm-scene-tts-polish-scope.md).
 - Next priority is either a live app dogfood pass with real Codex plus VOICEVOX,
@@ -420,6 +425,8 @@ image semantics.
 1. Decide whether the next asset-editor step is GUI:
    - use [Scene Asset Editor Cookbook](gameterm-scene-asset-editor-cookbook.md)
      to rerun terminal commands
+   - use [Scene Asset Editor Refactor Scope](gameterm-scene-asset-editor-refactor-scope.md)
+     if continuing the primitive-editor refactor before GUI work
    - GUI-only scope should focus on point picking, lasso/polygon drawing, live
      previews, file picking, command menus, and state/timeline controls
    - do not add ML into the first GUI pass unless explicitly scoped

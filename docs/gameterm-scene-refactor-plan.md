@@ -16,11 +16,13 @@ sweeps.
 
 Current next-pass scope:
 
+- [Scene Asset Editor Refactor Scope](gameterm-scene-asset-editor-refactor-scope.md)
 - [Scene Maintainability Refactor Scope](gameterm-scene-maintainability-refactor-scope.md)
 
 The first maintainable refactor pass is closed out later in this document. Use
-the current maintainability scope for new refactor work unless a product defect
-requires a separate behavior fix first.
+the asset-editor refactor scope when continuing the primitive-editor path. Use
+the broader maintainability scope for overlay/runtime follow-up work unless a
+product defect requires a separate behavior fix first.
 
 ## Goals
 
