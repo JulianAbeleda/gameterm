@@ -1,0 +1,14 @@
+[
+  {
+    "label": "levels",
+    "states": {
+      "tone": "32-levels-debug"
+    }
+  },
+  {
+    "label": "contrast",
+    "states": {
+      "tone": "33-brightness-contrast-debug"
+    }
+  }
+]

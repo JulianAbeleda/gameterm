@@ -893,6 +893,93 @@ pub struct SceneAssetUnsharpMaskOptions {
     pub protect_regions: Vec<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SceneAssetBlendMode {
+    Normal,
+    Add,
+    Multiply,
+    Screen,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetCompositeLayer {
+    pub path: String,
+    pub blend: SceneAssetBlendMode,
+    pub opacity: f32,
+    pub x_offset: i32,
+    pub y_offset: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetCompositeOptions {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub width: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub height: Option<u32>,
+    pub layers: Vec<SceneAssetCompositeLayer>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetCompositeReport {
+    pub operation: String,
+    pub output_path: String,
+    pub layer_count: usize,
+    pub report: SceneAssetImageReport,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetStateManifest {
+    pub asset_state_version: u64,
+    pub character: String,
+    pub base: String,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub parts: BTreeMap<String, SceneAssetStatePart>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetStatePart {
+    pub default: String,
+    pub states: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetStateManifestOptions {
+    pub character: String,
+    pub parts: BTreeMap<String, Vec<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetStateRenderOptions {
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub states: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetStateSheetFrame {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub states: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetStateSheetIndex {
+    pub frames: Vec<SceneAssetStateSheetIndexFrame>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetStateSheetIndexFrame {
+    pub index: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    pub x: u32,
+    pub y: u32,
+    pub w: u32,
+    pub h: u32,
+    pub states: BTreeMap<String, String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SceneAssetEditError {
     #[error("image file error for `{path}`: {message}")]
@@ -2719,6 +2806,157 @@ pub fn unsharp_mask_scene_asset_image(
         source: source_path.display().to_string(),
         output_path: output_path.display().to_string(),
         changed_pixels,
+        report: inspect_scene_asset_image(output_path)?,
+    })
+}
+
+pub fn composite_scene_asset_layers(
+    output_path: &Path,
+    options: SceneAssetCompositeOptions,
+    base_dir: Option<&Path>,
+    force: bool,
+) -> Result<SceneAssetCompositeReport, SceneAssetEditError> {
+    if options.layers.is_empty() {
+        return Err(SceneAssetEditError::InvalidOperation(
+            "composite requires at least one layer".to_string(),
+        ));
+    }
+    let mut loaded = Vec::with_capacity(options.layers.len());
+    for layer in &options.layers {
+        if !layer.opacity.is_finite() {
+            return Err(SceneAssetEditError::InvalidOperation(
+                "layer opacity must be finite".to_string(),
+            ));
+        }
+        let path = resolve_recipe_path(&layer.path, base_dir);
+        loaded.push((layer, load_rgba_image(&path)?));
+    }
+    let width = options.width.unwrap_or_else(|| loaded[0].1.width());
+    let height = options.height.unwrap_or_else(|| loaded[0].1.height());
+    let mut output = ImageBuffer::from_pixel(width, height, Rgba([0, 0, 0, 0]));
+    for (layer, image) in loaded {
+        paste_layer(
+            &mut output,
+            &image,
+            layer.x_offset,
+            layer.y_offset,
+            layer.opacity,
+            layer.blend,
+        );
+    }
+    save_rgba_image(&output, output_path, force)?;
+    Ok(SceneAssetCompositeReport {
+        operation: "composite".to_string(),
+        output_path: output_path.display().to_string(),
+        layer_count: options.layers.len(),
+        report: inspect_scene_asset_image(output_path)?,
+    })
+}
+
+pub fn create_scene_asset_state_manifest(
+    base_path: &Path,
+    output_path: &Path,
+    options: SceneAssetStateManifestOptions,
+    force: bool,
+) -> Result<SceneAssetStateManifest, SceneAssetEditError> {
+    inspect_scene_asset_image(base_path)?;
+    let mut parts = BTreeMap::new();
+    for (part_name, files) in options.parts {
+        if files.is_empty() {
+            return Err(SceneAssetEditError::InvalidOperation(format!(
+                "state part `{part_name}` requires at least one state file"
+            )));
+        }
+        let mut states = BTreeMap::new();
+        for file in files {
+            let state_name = Path::new(&file)
+                .file_stem()
+                .map(|stem| stem.to_string_lossy().to_string())
+                .unwrap_or_else(|| file.clone());
+            states.insert(state_name, file);
+        }
+        let default = states.keys().next().cloned().unwrap_or_default();
+        parts.insert(part_name, SceneAssetStatePart { default, states });
+    }
+    let manifest = SceneAssetStateManifest {
+        asset_state_version: 1,
+        character: options.character,
+        base: base_path.display().to_string(),
+        parts,
+    };
+    write_scene_asset_json(output_path, &manifest, true, force)?;
+    Ok(manifest)
+}
+
+pub fn load_scene_asset_state_manifest(
+    path: &Path,
+) -> Result<SceneAssetStateManifest, SceneAssetEditError> {
+    load_json(path)
+}
+
+pub fn render_scene_asset_state(
+    manifest_path: &Path,
+    output_path: &Path,
+    options: SceneAssetStateRenderOptions,
+    force: bool,
+) -> Result<SceneAssetCompositeReport, SceneAssetEditError> {
+    let manifest = load_scene_asset_state_manifest(manifest_path)?;
+    let base_dir = manifest_path.parent();
+    let composite = state_composite_options(&manifest, &options.states)?;
+    composite_scene_asset_layers(output_path, composite, base_dir, force)
+}
+
+pub fn render_scene_asset_state_sheet(
+    manifest_path: &Path,
+    frames_path: &Path,
+    output_path: &Path,
+    index_path: &Path,
+    force: bool,
+) -> Result<SceneAssetCompositeReport, SceneAssetEditError> {
+    let manifest = load_scene_asset_state_manifest(manifest_path)?;
+    let frames: Vec<SceneAssetStateSheetFrame> = load_json(frames_path)?;
+    if frames.is_empty() {
+        return Err(SceneAssetEditError::InvalidOperation(
+            "state-sheet requires at least one frame".to_string(),
+        ));
+    }
+    let base_dir = manifest_path.parent();
+    let base_path = resolve_recipe_path(&manifest.base, base_dir);
+    let base = load_rgba_image(&base_path)?;
+    let mut sheet = ImageBuffer::from_pixel(
+        base.width() * frames.len() as u32,
+        base.height(),
+        Rgba([0, 0, 0, 0]),
+    );
+    let mut index_frames = Vec::new();
+    for (index, frame) in frames.iter().enumerate() {
+        let composite = state_composite_options(&manifest, &frame.states)?;
+        let rendered = render_composite_to_image(composite, base_dir)?;
+        let x = base.width() * index as u32;
+        paste_region(&mut sheet, &rendered, x as i32, 0, 1.0);
+        index_frames.push(SceneAssetStateSheetIndexFrame {
+            index,
+            label: frame.label.clone(),
+            x,
+            y: 0,
+            w: base.width(),
+            h: base.height(),
+            states: frame.states.clone(),
+        });
+    }
+    save_rgba_image(&sheet, output_path, force)?;
+    write_scene_asset_json(
+        index_path,
+        &SceneAssetStateSheetIndex {
+            frames: index_frames,
+        },
+        true,
+        force,
+    )?;
+    Ok(SceneAssetCompositeReport {
+        operation: "state_sheet".to_string(),
+        output_path: output_path.display().to_string(),
+        layer_count: frames.len(),
         report: inspect_scene_asset_image(output_path)?,
     })
 }
@@ -5391,6 +5629,25 @@ fn paste_region(image: &mut RgbaImage, patch: &RgbaImage, x: i32, y: i32, opacit
     }
 }
 
+fn paste_layer(
+    image: &mut RgbaImage,
+    patch: &RgbaImage,
+    x: i32,
+    y: i32,
+    opacity: f32,
+    blend: SceneAssetBlendMode,
+) {
+    for patch_y in 0..patch.height() {
+        for patch_x in 0..patch.width() {
+            let target_x = x + patch_x as i32;
+            let target_y = y + patch_y as i32;
+            if let Some(pixel) = pixel_mut_checked(image, target_x, target_y) {
+                blend_pixel_mode(pixel, *patch.get_pixel(patch_x, patch_y), opacity, blend);
+            }
+        }
+    }
+}
+
 fn blend_pixel(dest: &mut Rgba<u8>, src: Rgba<u8>, opacity: f32) {
     let src_alpha = (src[3] as f32 / 255.0) * opacity.clamp(0.0, 1.0);
     if src_alpha <= 0.0 {
@@ -5409,6 +5666,33 @@ fn blend_pixel(dest: &mut Rgba<u8>, src: Rgba<u8>, opacity: f32) {
         dest[channel] = (out * 255.0).round().clamp(0.0, 255.0) as u8;
     }
     dest[3] = (out_alpha * 255.0).round().clamp(0.0, 255.0) as u8;
+}
+
+fn blend_pixel_mode(dest: &mut Rgba<u8>, src: Rgba<u8>, opacity: f32, blend: SceneAssetBlendMode) {
+    if blend == SceneAssetBlendMode::Normal {
+        blend_pixel(dest, src, opacity);
+        return;
+    }
+    let alpha = (src[3] as f32 / 255.0) * opacity.clamp(0.0, 1.0);
+    if alpha <= 0.0 {
+        return;
+    }
+    for channel in 0..3 {
+        let s = src[channel] as f32 / 255.0;
+        let d = dest[channel] as f32 / 255.0;
+        let blended = match blend {
+            SceneAssetBlendMode::Normal => s,
+            SceneAssetBlendMode::Add => (d + s).clamp(0.0, 1.0),
+            SceneAssetBlendMode::Multiply => d * s,
+            SceneAssetBlendMode::Screen => 1.0 - (1.0 - d) * (1.0 - s),
+        };
+        let out = lerp(d, blended, alpha);
+        dest[channel] = (out * 255.0).round().clamp(0.0, 255.0) as u8;
+    }
+    dest[3] = ((dest[3] as f32 / 255.0) + alpha * (1.0 - dest[3] as f32 / 255.0))
+        .mul_add(255.0, 0.0)
+        .round()
+        .clamp(0.0, 255.0) as u8;
 }
 
 fn pixel_mut_checked(image: &mut RgbaImage, x: i32, y: i32) -> Option<&mut Rgba<u8>> {
@@ -5525,6 +5809,72 @@ fn hsl_to_rgb(h: f32, s: f32, l: f32) -> [u8; 3] {
         ((g1 + m) * 255.0).round().clamp(0.0, 255.0) as u8,
         ((b1 + m) * 255.0).round().clamp(0.0, 255.0) as u8,
     ]
+}
+
+fn state_composite_options(
+    manifest: &SceneAssetStateManifest,
+    selected_states: &BTreeMap<String, String>,
+) -> Result<SceneAssetCompositeOptions, SceneAssetEditError> {
+    let mut layers = vec![SceneAssetCompositeLayer {
+        path: manifest.base.clone(),
+        blend: SceneAssetBlendMode::Normal,
+        opacity: 1.0,
+        x_offset: 0,
+        y_offset: 0,
+    }];
+    for (part_name, part) in &manifest.parts {
+        let state = selected_states
+            .get(part_name)
+            .map(String::as_str)
+            .unwrap_or(&part.default);
+        let path = part.states.get(state).ok_or_else(|| {
+            SceneAssetEditError::InvalidOperation(format!(
+                "unknown state `{state}` for part `{part_name}`"
+            ))
+        })?;
+        layers.push(SceneAssetCompositeLayer {
+            path: path.clone(),
+            blend: SceneAssetBlendMode::Normal,
+            opacity: 1.0,
+            x_offset: 0,
+            y_offset: 0,
+        });
+    }
+    Ok(SceneAssetCompositeOptions {
+        width: None,
+        height: None,
+        layers,
+    })
+}
+
+fn render_composite_to_image(
+    options: SceneAssetCompositeOptions,
+    base_dir: Option<&Path>,
+) -> Result<RgbaImage, SceneAssetEditError> {
+    if options.layers.is_empty() {
+        return Err(SceneAssetEditError::InvalidOperation(
+            "composite requires at least one layer".to_string(),
+        ));
+    }
+    let mut loaded = Vec::with_capacity(options.layers.len());
+    for layer in &options.layers {
+        let path = resolve_recipe_path(&layer.path, base_dir);
+        loaded.push((layer, load_rgba_image(&path)?));
+    }
+    let width = options.width.unwrap_or_else(|| loaded[0].1.width());
+    let height = options.height.unwrap_or_else(|| loaded[0].1.height());
+    let mut output = ImageBuffer::from_pixel(width, height, Rgba([0, 0, 0, 0]));
+    for (layer, image) in loaded {
+        paste_layer(
+            &mut output,
+            &image,
+            layer.x_offset,
+            layer.y_offset,
+            layer.opacity,
+            layer.blend,
+        );
+    }
+    Ok(output)
 }
 
 fn point_in_rect(rect: SceneAssetPixelRect, point: SceneAssetNormalizedPoint) -> (i32, i32) {
@@ -6261,6 +6611,117 @@ mod tests {
         .unwrap();
         assert_equal!(sharp_report.report.height, 5);
         assert!(sharp_report.changed_pixels > 0);
+    }
+
+    #[test]
+    fn composite_and_state_variants_render_outputs() {
+        let dir = tempdir().unwrap();
+        let base = dir.path().join("base.png");
+        let eye_open = dir.path().join("open.png");
+        let eye_closed = dir.path().join("closed.png");
+        let composite_output = dir.path().join("composite.png");
+        let manifest_path = dir.path().join("manifest.json");
+        let render_output = dir.path().join("render.png");
+        let frames_path = dir.path().join("frames.json");
+        let sheet_output = dir.path().join("sheet.png");
+        let index_output = dir.path().join("sheet-index.json");
+
+        ImageBuffer::from_pixel(4, 4, Rgba([10u8, 20, 30, 255]))
+            .save(&base)
+            .unwrap();
+        let mut open = ImageBuffer::from_pixel(4, 4, Rgba([0u8, 0, 0, 0]));
+        open.put_pixel(1, 1, Rgba([200u8, 200, 255, 255]));
+        open.save(&eye_open).unwrap();
+        let mut closed = ImageBuffer::from_pixel(4, 4, Rgba([0u8, 0, 0, 0]));
+        closed.put_pixel(1, 1, Rgba([30u8, 30, 80, 255]));
+        closed.save(&eye_closed).unwrap();
+
+        composite_scene_asset_layers(
+            &composite_output,
+            SceneAssetCompositeOptions {
+                width: None,
+                height: None,
+                layers: vec![
+                    SceneAssetCompositeLayer {
+                        path: base.display().to_string(),
+                        blend: SceneAssetBlendMode::Normal,
+                        opacity: 1.0,
+                        x_offset: 0,
+                        y_offset: 0,
+                    },
+                    SceneAssetCompositeLayer {
+                        path: eye_open.display().to_string(),
+                        blend: SceneAssetBlendMode::Normal,
+                        opacity: 1.0,
+                        x_offset: 0,
+                        y_offset: 0,
+                    },
+                ],
+            },
+            None,
+            false,
+        )
+        .unwrap();
+        let composite = load_rgba_image(&composite_output).unwrap();
+        assert_equal!(*composite.get_pixel(1, 1), Rgba([200u8, 200, 255, 255]));
+
+        let manifest = create_scene_asset_state_manifest(
+            &base,
+            &manifest_path,
+            SceneAssetStateManifestOptions {
+                character: "kiki".to_string(),
+                parts: BTreeMap::from([(
+                    "eyes".to_string(),
+                    vec![
+                        eye_open.display().to_string(),
+                        eye_closed.display().to_string(),
+                    ],
+                )]),
+            },
+            false,
+        )
+        .unwrap();
+        assert_equal!(manifest.parts["eyes"].states.len(), 2);
+
+        render_scene_asset_state(
+            &manifest_path,
+            &render_output,
+            SceneAssetStateRenderOptions {
+                states: BTreeMap::from([("eyes".to_string(), "closed".to_string())]),
+            },
+            false,
+        )
+        .unwrap();
+        let rendered = load_rgba_image(&render_output).unwrap();
+        assert_equal!(*rendered.get_pixel(1, 1), Rgba([30u8, 30, 80, 255]));
+
+        write_scene_asset_json(
+            &frames_path,
+            &vec![
+                SceneAssetStateSheetFrame {
+                    label: Some("open".to_string()),
+                    states: BTreeMap::new(),
+                },
+                SceneAssetStateSheetFrame {
+                    label: Some("closed".to_string()),
+                    states: BTreeMap::from([("eyes".to_string(), "closed".to_string())]),
+                },
+            ],
+            true,
+            false,
+        )
+        .unwrap();
+        render_scene_asset_state_sheet(
+            &manifest_path,
+            &frames_path,
+            &sheet_output,
+            &index_output,
+            false,
+        )
+        .unwrap();
+        let sheet = load_rgba_image(&sheet_output).unwrap();
+        assert_equal!(sheet.width(), 8);
+        assert!(index_output.is_file());
     }
 
     #[test]

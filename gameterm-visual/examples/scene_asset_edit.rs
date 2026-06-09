@@ -2,19 +2,21 @@ use gameterm_visual::{
     alpha_paint_scene_asset_region, blur_scene_asset_image, brightness_contrast_scene_asset_image,
     channel_matte_erase_scene_asset_image, cleanup_scene_asset_hair_edges,
     clone_stamp_scene_asset_region, color_range_erase_scene_asset_image,
-    continuity_report_for_scene_asset_frames, crop_scene_asset_image,
-    default_scene_asset_feature_map, draw_scene_asset_shape, export_scene_asset_source_images,
-    fill_scene_asset_region, generate_scene_asset_animation, generate_scene_asset_expression,
-    hsl_scene_asset_image, inspect_scene_asset_image, levels_scene_asset_image,
-    load_scene_asset_feature_map, load_scene_asset_recipe_book, magic_erase_add_scene_asset_image,
-    magic_erase_scene_asset_image, make_scene_asset_background_transparent,
-    make_scene_asset_background_transparent_polished, pad_scene_asset_image,
-    preview_scene_asset_grid, preview_scene_asset_selection_mask, report_scene_asset_points,
+    composite_scene_asset_layers, continuity_report_for_scene_asset_frames,
+    create_scene_asset_state_manifest, crop_scene_asset_image, default_scene_asset_feature_map,
+    draw_scene_asset_shape, export_scene_asset_source_images, fill_scene_asset_region,
+    generate_scene_asset_animation, generate_scene_asset_expression, hsl_scene_asset_image,
+    inspect_scene_asset_image, levels_scene_asset_image, load_scene_asset_feature_map,
+    load_scene_asset_recipe_book, magic_erase_add_scene_asset_image, magic_erase_scene_asset_image,
+    make_scene_asset_background_transparent, make_scene_asset_background_transparent_polished,
+    pad_scene_asset_image, preview_scene_asset_grid, preview_scene_asset_selection_mask,
+    render_scene_asset_state, render_scene_asset_state_sheet, report_scene_asset_points,
     restore_scene_asset_from_source, run_scene_asset_pipeline, sample_fill_scene_asset_region,
     sample_scene_asset_image, stroke_scene_asset_path, transform_scene_asset_image,
     unsharp_mask_scene_asset_image, validate_scene_asset_feature_map, write_scene_asset_json,
-    SceneAssetAlphaPaintOptions, SceneAssetBackgroundSample, SceneAssetBlurOptions,
-    SceneAssetBrightnessContrastOptions, SceneAssetCloneStampOptions, SceneAssetColorChannel,
+    SceneAssetAlphaPaintOptions, SceneAssetBackgroundSample, SceneAssetBlendMode,
+    SceneAssetBlurOptions, SceneAssetBrightnessContrastOptions, SceneAssetCloneStampOptions,
+    SceneAssetColorChannel, SceneAssetCompositeLayer, SceneAssetCompositeOptions,
     SceneAssetCropOptions, SceneAssetDefringeMode, SceneAssetDrawShapeKind,
     SceneAssetDrawShapeOptions, SceneAssetFillOptions, SceneAssetGridPreviewOptions,
     SceneAssetHairCleanupMode, SceneAssetHslOptions, SceneAssetLevelsOptions,
@@ -22,8 +24,8 @@ use gameterm_visual::{
     SceneAssetNormalizedPoint, SceneAssetNormalizedRect, SceneAssetPadAnchor, SceneAssetPadOptions,
     SceneAssetPipelineRoots, SceneAssetPipelineRunOptions, SceneAssetResampleFilter,
     SceneAssetRestoreFilter, SceneAssetRestoreOptions, SceneAssetSampleFillOptions,
-    SceneAssetSampleOptions, SceneAssetStrokePathOptions, SceneAssetTransformOptions,
-    SceneAssetUnsharpMaskOptions,
+    SceneAssetSampleOptions, SceneAssetStateManifestOptions, SceneAssetStateRenderOptions,
+    SceneAssetStrokePathOptions, SceneAssetTransformOptions, SceneAssetUnsharpMaskOptions,
 };
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -43,6 +45,9 @@ struct CliArgs {
     output_source_root: Option<PathBuf>,
     source: Option<PathBuf>,
     pipeline: Option<PathBuf>,
+    manifest: Option<PathBuf>,
+    frames_json: Option<PathBuf>,
+    index: Option<PathBuf>,
     input_root: Option<PathBuf>,
     transformation_root: Option<PathBuf>,
     output_root: Option<PathBuf>,
@@ -59,6 +64,9 @@ struct CliArgs {
     anchor: Option<SceneAssetPadAnchor>,
     resample: Option<SceneAssetResampleFilter>,
     channel: Option<SceneAssetColorChannel>,
+    layers: Vec<SceneAssetCompositeLayer>,
+    parts: Vec<(String, Vec<String>)>,
+    states: Vec<(String, String)>,
     character: Option<String>,
     expressions: Option<String>,
     tolerance: Option<u8>,
@@ -144,6 +152,10 @@ fn usage() {
   cargo run -p gameterm-visual --example scene_asset_edit -- hsl --source IMAGE --output PATH [--hue N] [--saturation N] [--lightness N] [--within-polygon X,Y;X,Y;X,Y] [--protect FEATURE_MAP] [--protect-regions CSV] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- blur --source IMAGE --output PATH [--radius N] [--within-polygon X,Y;X,Y;X,Y] [--protect FEATURE_MAP] [--protect-regions CSV] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- unsharp-mask --source IMAGE --output PATH [--radius N] [--amount N] [--threshold N] [--within-polygon X,Y;X,Y;X,Y] [--protect FEATURE_MAP] [--protect-regions CSV] [--force]
+  cargo run -p gameterm-visual --example scene_asset_edit -- composite --output IMAGE --layer PATH,normal|add|multiply|screen,OPACITY,X,Y [--width N --height N] [--force]
+  cargo run -p gameterm-visual --example scene_asset_edit -- state-manifest --base IMAGE --output manifest.json --character NAME [--part NAME=state.png,state2.png] [--force]
+  cargo run -p gameterm-visual --example scene_asset_edit -- state-render --manifest manifest.json --output IMAGE [--state part=state] [--force]
+  cargo run -p gameterm-visual --example scene_asset_edit -- state-sheet --manifest manifest.json --frames frames.json --output SHEET.png --index frame-index.json [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- remove-background --source IMAGE --output PATH [--tolerance N] [--feather N] [--sample corners|edges] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- remove-background-polished --source IMAGE --output PATH [--tolerance N] [--sample corners|edges] [--erode N] [--dilate N] [--open N] [--close N] [--remove-small N] [--fill-holes N] [--feather N] [--defringe none|white] [--protect FEATURE_MAP] [--protect-regions CSV] [--within-regions CSV] [--within-polygon X,Y;X,Y;X,Y] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- color-range-erase --source IMAGE --output PATH [--tolerance N] [--sample corners|edges] [--erode N] [--dilate N] [--open N] [--close N] [--remove-small N] [--fill-holes N] [--feather N] [--defringe none|white] [--protect FEATURE_MAP] [--protect-regions CSV] [--within-regions CSV] [--within-polygon X,Y;X,Y;X,Y] [--force]
@@ -169,6 +181,9 @@ Options:
   --output-source-root PATH  Source-root layout used by scene_vn_asset_intake.
   --source PATH              Source image for export-source.
   --pipeline PATH            Pipeline JSON for pipeline-run.
+  --manifest PATH            State manifest JSON.
+  --frames PATH              State-sheet frames JSON.
+  --index PATH               State-sheet frame-index JSON output.
   --input-root PATH          Pipeline input root.
   --transformation-root PATH Pipeline intermediate/output root.
   --output-root PATH         Pipeline final output root.
@@ -230,6 +245,9 @@ Options:
   --saturation N             HSL saturation delta, -1..1.
   --lightness N              HSL lightness delta, -1..1.
   --amount N                 Unsharp amount. Default: 1.0.
+  --layer SPEC               Composite layer: path,blend,opacity,x,y.
+  --part SPEC                State part: name=file.png,file2.png.
+  --state SPEC               State override: part=state.
   --step N                   Normalized grid spacing. Default: 0.1.
   --whole-image              Allow a paint operation to affect the whole image.
   --fill                     Fill draw-shape geometry.
@@ -280,6 +298,10 @@ fn main() {
         Some("hsl") => run_hsl(args),
         Some("blur") => run_blur(args),
         Some("unsharp-mask") => run_unsharp_mask(args),
+        Some("composite") => run_composite(args),
+        Some("state-manifest") => run_state_manifest(args),
+        Some("state-render") => run_state_render(args),
+        Some("state-sheet") => run_state_sheet(args),
         Some("remove-background") => run_remove_background(args),
         Some("remove-background-polished") => run_remove_background_polished(args),
         Some("color-range-erase") => run_color_range_erase(args),
@@ -752,6 +774,64 @@ fn run_unsharp_mask(args: CliArgs) -> Result<(), String> {
     write_json(None, &report, args.pretty, true)
 }
 
+fn run_composite(args: CliArgs) -> Result<(), String> {
+    let output = required_path(args.output.clone(), "--output")?;
+    let report = composite_scene_asset_layers(
+        &output,
+        SceneAssetCompositeOptions {
+            width: args.width,
+            height: args.height,
+            layers: args.layers.clone(),
+        },
+        None,
+        args.force,
+    )
+    .map_err(|err| err.to_string())?;
+    write_json(None, &report, args.pretty, true)
+}
+
+fn run_state_manifest(args: CliArgs) -> Result<(), String> {
+    let base = required_path(args.base.clone(), "--base")?;
+    let output = required_path(args.output.clone(), "--output")?;
+    let character = args.character.unwrap_or_else(|| "kiki".to_string());
+    let report = create_scene_asset_state_manifest(
+        &base,
+        &output,
+        SceneAssetStateManifestOptions {
+            character,
+            parts: args.parts.into_iter().collect(),
+        },
+        args.force,
+    )
+    .map_err(|err| err.to_string())?;
+    write_json(None, &report, args.pretty, true)
+}
+
+fn run_state_render(args: CliArgs) -> Result<(), String> {
+    let manifest = required_path(args.manifest.clone(), "--manifest")?;
+    let output = required_path(args.output.clone(), "--output")?;
+    let report = render_scene_asset_state(
+        &manifest,
+        &output,
+        SceneAssetStateRenderOptions {
+            states: args.states.into_iter().collect(),
+        },
+        args.force,
+    )
+    .map_err(|err| err.to_string())?;
+    write_json(None, &report, args.pretty, true)
+}
+
+fn run_state_sheet(args: CliArgs) -> Result<(), String> {
+    let manifest = required_path(args.manifest.clone(), "--manifest")?;
+    let frames = required_path(args.frames_json.clone(), "--frames")?;
+    let output = required_path(args.output.clone(), "--output")?;
+    let index = required_path(args.index.clone(), "--index")?;
+    let report = render_scene_asset_state_sheet(&manifest, &frames, &output, &index, args.force)
+        .map_err(|err| err.to_string())?;
+    write_json(None, &report, args.pretty, true)
+}
+
 fn run_remove_background(args: CliArgs) -> Result<(), String> {
     let source = required_path(args.source, "--source")?;
     let output = required_path(args.output, "--output")?;
@@ -1010,6 +1090,9 @@ fn parse_args() -> Result<CliArgs, String> {
             }
             "--source" => parsed.source = Some(next_path(&mut args, "--source")?),
             "--pipeline" => parsed.pipeline = Some(next_path(&mut args, "--pipeline")?),
+            "--manifest" => parsed.manifest = Some(next_path(&mut args, "--manifest")?),
+            "--frames" => parsed.frames_json = Some(next_path(&mut args, "--frames")?),
+            "--index" => parsed.index = Some(next_path(&mut args, "--index")?),
             "--input-root" => parsed.input_root = Some(next_path(&mut args, "--input-root")?),
             "--transformation-root" => {
                 parsed.transformation_root = Some(next_path(&mut args, "--transformation-root")?)
@@ -1069,6 +1152,15 @@ fn parse_args() -> Result<CliArgs, String> {
             "--channel" => {
                 parsed.channel = Some(parse_channel(&next_text(&mut args, "--channel")?)?)
             }
+            "--layer" => parsed
+                .layers
+                .push(parse_layer(&next_text(&mut args, "--layer")?)?),
+            "--part" => parsed
+                .parts
+                .push(parse_part(&next_text(&mut args, "--part")?)?),
+            "--state" => parsed
+                .states
+                .push(parse_state(&next_text(&mut args, "--state")?)?),
             "--hair-region" => parsed.hair_region = Some(next_text(&mut args, "--hair-region")?),
             "--seed-x" => parsed.seed_x = Some(next_parse(&mut args, "--seed-x")?),
             "--seed-y" => parsed.seed_y = Some(next_parse(&mut args, "--seed-y")?),
@@ -1290,6 +1382,66 @@ fn parse_channel(value: &str) -> Result<SceneAssetColorChannel, String> {
             "--channel value `{value}` is invalid; expected rgb, r, g, b, or a"
         )),
     }
+}
+
+fn parse_blend(value: &str) -> Result<SceneAssetBlendMode, String> {
+    match value {
+        "normal" => Ok(SceneAssetBlendMode::Normal),
+        "add" => Ok(SceneAssetBlendMode::Add),
+        "multiply" => Ok(SceneAssetBlendMode::Multiply),
+        "screen" => Ok(SceneAssetBlendMode::Screen),
+        _ => Err(format!(
+            "blend value `{value}` is invalid; expected normal, add, multiply, or screen"
+        )),
+    }
+}
+
+fn parse_layer(value: &str) -> Result<SceneAssetCompositeLayer, String> {
+    let parts = value.split(',').map(str::trim).collect::<Vec<_>>();
+    if parts.len() != 5 {
+        return Err(format!(
+            "--layer value `{value}` is invalid; expected path,blend,opacity,x,y"
+        ));
+    }
+    Ok(SceneAssetCompositeLayer {
+        path: parts[0].to_string(),
+        blend: parse_blend(parts[1])?,
+        opacity: parts[2]
+            .parse()
+            .map_err(|err| format!("--layer opacity `{}` is invalid: {err}", parts[2]))?,
+        x_offset: parts[3]
+            .parse()
+            .map_err(|err| format!("--layer x `{}` is invalid: {err}", parts[3]))?,
+        y_offset: parts[4]
+            .parse()
+            .map_err(|err| format!("--layer y `{}` is invalid: {err}", parts[4]))?,
+    })
+}
+
+fn parse_part(value: &str) -> Result<(String, Vec<String>), String> {
+    let (name, files) = value
+        .split_once('=')
+        .ok_or_else(|| format!("--part value `{value}` is invalid; expected name=file,file2"))?;
+    let files = files
+        .split(',')
+        .map(str::trim)
+        .filter(|file| !file.is_empty())
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+    if name.trim().is_empty() || files.is_empty() {
+        return Err("--part requires a name and at least one file".to_string());
+    }
+    Ok((name.trim().to_string(), files))
+}
+
+fn parse_state(value: &str) -> Result<(String, String), String> {
+    let (part, state) = value
+        .split_once('=')
+        .ok_or_else(|| format!("--state value `{value}` is invalid; expected part=state"))?;
+    if part.trim().is_empty() || state.trim().is_empty() {
+        return Err("--state requires non-empty part and state".to_string());
+    }
+    Ok((part.trim().to_string(), state.trim().to_string()))
 }
 
 fn parse_seed(value: &str) -> Result<SceneAssetNormalizedPoint, String> {
