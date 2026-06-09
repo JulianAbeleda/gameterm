@@ -135,7 +135,7 @@ implementation details.
 | Scene asset editor cookbook | [Scene Asset Editor Cookbook](gameterm-scene-asset-editor-cookbook.md) | Non-GUI substrate complete |
 | Scene asset AI/human operation layer | [Scene Asset Editor AI/Human Operation Scope](gameterm-scene-asset-editor-ai-operation-scope.md) | First-pass implemented |
 | Scene asset primitive tightening | [Scene Asset Primitive Tightening Scope](gameterm-scene-asset-primitive-tightening-scope.md) | First-pass implemented |
-| Scene asset editor refactor | [Scene Asset Editor Refactor Scope](gameterm-scene-asset-editor-refactor-scope.md) | First pass implemented |
+| Scene asset editor refactor | [Scene Asset Editor Refactor Scope](gameterm-scene-asset-editor-refactor-scope.md) | A pass implemented |
 | Rounded VN panel renderer | [Rounded Panel Renderer Scope](gameterm-scene-rounded-panel-renderer-scope.md) | Scoped |
 | Scene debug view separation | [Debug View Separation Scope](gameterm-scene-debug-view-separation-scope.md) | Scoped |
 | Codex compose bridge | [Codex Compose Bridge Scope](gameterm-scene-codex-compose-bridge-scope.md) | First-pass implemented |
@@ -491,9 +491,9 @@ it directly reduces risk for the next lane.
 
 Allowed next refactor lanes:
 
-- use [Scene Asset Editor Refactor Scope](gameterm-scene-asset-editor-refactor-scope.md)
-  only for a stricter second pass that splits the remaining operation-family
-  bodies out of `asset_edit.rs`
+- treat [Scene Asset Editor Refactor Scope](gameterm-scene-asset-editor-refactor-scope.md)
+  as complete unless new asset-editor product work creates a concrete ownership
+  problem
 - use [Maintainability Refactor Scope](gameterm-scene-maintainability-refactor-scope.md)
   for broader Scene overlay/runtime follow-up work
 - keep compose/TTS speech-block responsibilities stable; only refactor deeper

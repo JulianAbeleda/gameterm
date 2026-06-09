@@ -2,11 +2,11 @@
 
 Date: 2026-06-09
 
-Status: first pass implemented.
+Status: A pass implemented.
 
 ## Assessment Grade
 
-Current repo grade after this pass: **A-**.
+Current repo grade after this pass: **A** for the Scene asset editor area.
 
 The codebase is in a good product position:
 
@@ -16,17 +16,17 @@ The codebase is in a good product position:
 - commit discipline has improved
 - docs, handoff, smoke report, and roadmap are current
 
-The remaining reason this is A- rather than a stricter A is residual
-operation-family concentration:
+The A-level outcome is that `asset_edit.rs` is now a small facade instead of an
+operation host:
 
-- `gameterm-visual/src/asset_edit.rs` is down to roughly 3.9k lines from about
+- `gameterm-visual/src/asset_edit.rs` is down to roughly 310 lines from about
   9.9k lines
-- it now acts as the public API facade plus operation command surface
+- it now acts as the public API facade plus image inspection/feature-map helper
+  surface
 - models, IO, roots, mask core, pixel primitives, composite/state rendering,
-  review previews, recipe/continuity helpers, pipeline argument parsing,
-  operation diagnostics, and tests have clear owners
-- the next strict-A cleanup would split the remaining public mask/paint/filter
-  operation bodies into family modules
+  review previews, recipe/continuity helpers, selection operations, paint/draw
+  operations, transform/filter operations, pipeline/session running, pipeline
+  argument parsing, operation diagnostics, and tests have clear owners
 
 This was a refactor problem, not a correctness problem. The primitive layer
 continues to work, and this pass preserved behavior.
@@ -59,14 +59,18 @@ fix as its own `[visual]` or `[test]` commit before continuing.
 Scene asset-editor size snapshot after this pass:
 
 ```text
-3853  gameterm-visual/src/asset_edit.rs
-2280  gameterm-visual/src/asset_edit/tests.rs
+2286  gameterm-visual/src/asset_edit/tests.rs
 1315  gameterm-visual/src/asset_edit/model.rs
+1160  gameterm-visual/src/asset_edit/selection_ops.rs
+1139  gameterm-visual/src/asset_edit/runner.rs
 647   gameterm-visual/src/asset_edit/pipeline_args.rs
+583   gameterm-visual/src/asset_edit/paint_ops.rs
+570   gameterm-visual/src/asset_edit/recipes.rs
 466   gameterm-visual/src/asset_edit/pixels.rs
+425   gameterm-visual/src/asset_edit/transform_ops.rs
 333   gameterm-visual/src/asset_edit/mask.rs
+310   gameterm-visual/src/asset_edit.rs
 253   gameterm-visual/src/asset_edit/review.rs
-246   gameterm-visual/src/asset_edit/recipes.rs
 230   gameterm-visual/src/asset_edit/composite.rs
 180   gameterm-visual/src/asset_edit/operation_support.rs
 118   gameterm-visual/src/asset_edit/io.rs
@@ -108,7 +112,7 @@ Implemented module shape:
 
 ```text
 gameterm-visual/src/
-  asset_edit.rs                  facade, public API, operation command surface
+  asset_edit.rs                  facade, public API, image inspection, feature maps
   asset_edit/
     model.rs                     DTOs, options, reports, error type
     io.rs                        JSON/image load-save, hashes, output writes
@@ -119,7 +123,11 @@ gameterm-visual/src/
     review.rs                    diff previews, contact sheets, preview path names
     operation_support.rs         operation diagnostics and expectation checks
     pipeline_args.rs             pipeline argument parsing and region validation
-    recipes.rs                   expression, animation, continuity helpers
+    selection_ops.rs             background removal, masks, restore, cutout cleanup
+    paint_ops.rs                 sampling, fill, clone, draw, stroke operations
+    transform_ops.rs             crop, pad, transform, tonal/filter operations
+    runner.rs                    pipeline, operation, session, compare, accept
+    recipes.rs                   expression, animation, continuity, recipe operations
     tests.rs                     asset editor regression suite
 ```
 
@@ -565,7 +573,7 @@ This refactor pass is complete when:
 
 ## Actual Grade After Completion
 
-Repo grade after this pass: **A-**.
+Repo grade after this pass: **A** for this refactor scope.
 
 The codebase will still be a large terminal emulator fork with real complexity.
 That is appropriate. The improvement is that the newest GameTerm-owned

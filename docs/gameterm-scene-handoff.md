@@ -9,7 +9,7 @@ deeper product context.
 - Date: 2026-06-09
 - Branch: `main`
 - Latest behavior commit: `0891c8942 [visual] add Scene asset review previews`
-- Latest refactor commit: `a811ff942 [visual] NFC - split Scene asset edit recipes`
+- Latest refactor commit: `34fc78d0e [visual] NFC - move Scene asset recipe operations`
 - Latest tooling commit: `ec1b29b8e [tools] add local CT2 Scene translation helper`
 - Remote state at handoff time: local branch is ahead of `origin/main` by the
   Scene asset editor refactor commits listed below
@@ -36,11 +36,10 @@ Current next priority:
   [Scene Asset Primitive Tightening Scope](gameterm-scene-asset-primitive-tightening-scope.md),
   and the original completion scope is recorded in
   `structure/Development/scene-asset-edit-feature-scope.md`.
-- Current maintainability assessment: repo grade is **A-** after the asset
-  editor refactor. `gameterm-visual/src/asset_edit.rs` is now about 3.9k lines
-  and shared support code lives under `gameterm-visual/src/asset_edit/`.
-  A stricter A pass would split the remaining public mask/paint/filter
-  operation bodies into family modules.
+- Current maintainability assessment: repo grade is **A** for the Scene asset
+  editor area after the refactor. `gameterm-visual/src/asset_edit.rs` is now
+  about 310 lines and acts as a facade; operation families, runner logic, recipe
+  application, and shared support code live under `gameterm-visual/src/asset_edit/`.
 - TTS polish first pass is implemented. The scope and remaining dogfood items
   are recorded in [Scene TTS Polish Scope](gameterm-scene-tts-polish-scope.md).
 - Next priority is either a live app dogfood pass with real Codex plus VOICEVOX,
@@ -52,6 +51,11 @@ Current next priority:
 
 Recent committed work:
 
+- `34fc78d0e [visual] NFC - move Scene asset recipe operations`
+- `55fe61e0c [visual] NFC - split Scene asset operation runner`
+- `a279a4f26 [visual] NFC - split Scene asset transform operations`
+- `d517b3101 [visual] NFC - split Scene asset paint operations`
+- `f2322989d [visual] NFC - split Scene asset selection operations`
 - `a811ff942 [visual] NFC - split Scene asset edit recipes`
 - `a0cf1549b [test] NFC - move Scene asset edit tests`
 - `b33db0306 [visual] NFC - split Scene asset edit runner support`
@@ -179,7 +183,8 @@ Latest refactor pass:
 
 - The Scene asset editor refactor split the former all-purpose
   `asset_edit.rs` into `model`, `io`, `roots`, `mask`, `pixels`,
-  `composite`, `review`, `operation_support`, `pipeline_args`, `recipes`, and
+  `composite`, `review`, `operation_support`, `pipeline_args`,
+  `selection_ops`, `paint_ops`, `transform_ops`, `runner`, `recipes`, and
   `tests` modules. Public API names remain re-exported from the facade.
 - Focused verification for each NFC lane used
   `cargo test -p gameterm-visual asset_edit`,
