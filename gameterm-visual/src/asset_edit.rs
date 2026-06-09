@@ -228,6 +228,8 @@ pub struct SceneAssetOperationRunReport {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub diff_preview_path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review_preview_paths: Option<SceneAssetReviewPreviewPaths>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub before: Option<SceneAssetImageReport>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub after: Option<SceneAssetImageReport>,
@@ -882,6 +884,43 @@ pub struct SceneAssetCompareReport {
     pub changed_bounds: Option<SceneAssetPixelRect>,
     pub before: SceneAssetImageReport,
     pub after: SceneAssetImageReport,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SceneAssetReviewPreviewMode {
+    RawDiff,
+    OverlayDiff,
+    AlphaDiff,
+    Checkerboard,
+    Dark,
+    ContactSheet,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetReviewPreviewReport {
+    pub operation: String,
+    pub before_path: String,
+    pub after_path: String,
+    pub output_path: String,
+    pub mode: SceneAssetReviewPreviewMode,
+    pub report: SceneAssetImageReport,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SceneAssetReviewPreviewPaths {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw_diff: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overlay_diff: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alpha_diff: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checkerboard: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dark: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contact_sheet: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2048,24 +2087,25 @@ pub fn run_scene_asset_operation(
     } else {
         None
     };
-    let diff_preview_path = if options.preview
+    let review_preview_paths = if options.preview
         && !options.dry_run
         && compare
             .as_ref()
             .is_some_and(|report| report.same_dimensions)
     {
-        let path =
-            resolve_pipeline_output_path(roots, &operation_diff_preview_output(&operation.id));
-        write_scene_asset_diff_preview(
+        Some(write_scene_asset_operation_review_previews(
+            roots,
+            &operation.id,
             &source_path,
             Path::new(&output_path),
-            &path,
             options.force,
-        )?;
-        Some(path.display().to_string())
+        )?)
     } else {
         None
     };
+    let diff_preview_path = review_preview_paths
+        .as_ref()
+        .and_then(|paths| paths.overlay_diff.clone());
     let after = compare.as_ref().map(|report| report.after.clone());
     let protected_region_report = if !options.dry_run
         && step_report.advanced_source
@@ -2111,6 +2151,7 @@ pub fn run_scene_asset_operation(
             .preview
             .then_some(requested_output_path.display().to_string()),
         diff_preview_path,
+        review_preview_paths,
         before: Some(before),
         after,
         compare,
@@ -2414,21 +2455,131 @@ pub fn scene_asset_operation_error_report(
     }
 }
 
-fn write_scene_asset_diff_preview(
+pub fn write_scene_asset_review_preview(
     before_path: &Path,
     after_path: &Path,
     output_path: &Path,
+    mode: SceneAssetReviewPreviewMode,
     force: bool,
-) -> Result<(), SceneAssetEditError> {
+) -> Result<SceneAssetReviewPreviewReport, SceneAssetEditError> {
     let before = load_rgba_image(before_path)?;
     let after = load_rgba_image(after_path)?;
     if before.dimensions() != after.dimensions() {
         return Err(SceneAssetEditError::InvalidOperation(format!(
-            "cannot write diff preview for different dimensions: {} vs {}",
+            "cannot write review preview for different dimensions: {} vs {}",
             before_path.display(),
             after_path.display()
         )));
     }
+    let preview = scene_asset_review_preview_image(&before, &after, mode);
+    save_rgba_image(&preview, output_path, force)?;
+    Ok(SceneAssetReviewPreviewReport {
+        operation: "review_preview".to_string(),
+        before_path: before_path.display().to_string(),
+        after_path: after_path.display().to_string(),
+        output_path: output_path.display().to_string(),
+        mode,
+        report: inspect_scene_asset_image(output_path)?,
+    })
+}
+
+fn write_scene_asset_operation_review_previews(
+    roots: &SceneAssetPipelineRoots,
+    id: &str,
+    before_path: &Path,
+    after_path: &Path,
+    force: bool,
+) -> Result<SceneAssetReviewPreviewPaths, SceneAssetEditError> {
+    let raw_diff = resolve_pipeline_output_path(roots, &operation_review_output(id, "raw-diff"));
+    let overlay_diff = resolve_pipeline_output_path(roots, &operation_diff_preview_output(id));
+    let alpha_diff =
+        resolve_pipeline_output_path(roots, &operation_review_output(id, "alpha-diff"));
+    let checkerboard =
+        resolve_pipeline_output_path(roots, &operation_review_output(id, "checkerboard"));
+    let dark = resolve_pipeline_output_path(roots, &operation_review_output(id, "dark-preview"));
+    let contact_sheet = resolve_pipeline_output_path(roots, &operation_review_output(id, "review"));
+
+    write_scene_asset_review_preview(
+        before_path,
+        after_path,
+        &raw_diff,
+        SceneAssetReviewPreviewMode::RawDiff,
+        force,
+    )?;
+    write_scene_asset_review_preview(
+        before_path,
+        after_path,
+        &overlay_diff,
+        SceneAssetReviewPreviewMode::OverlayDiff,
+        force,
+    )?;
+    write_scene_asset_review_preview(
+        before_path,
+        after_path,
+        &alpha_diff,
+        SceneAssetReviewPreviewMode::AlphaDiff,
+        force,
+    )?;
+    write_scene_asset_review_preview(
+        before_path,
+        after_path,
+        &checkerboard,
+        SceneAssetReviewPreviewMode::Checkerboard,
+        force,
+    )?;
+    write_scene_asset_review_preview(
+        before_path,
+        after_path,
+        &dark,
+        SceneAssetReviewPreviewMode::Dark,
+        force,
+    )?;
+    write_scene_asset_review_preview(
+        before_path,
+        after_path,
+        &contact_sheet,
+        SceneAssetReviewPreviewMode::ContactSheet,
+        force,
+    )?;
+
+    Ok(SceneAssetReviewPreviewPaths {
+        raw_diff: Some(raw_diff.display().to_string()),
+        overlay_diff: Some(overlay_diff.display().to_string()),
+        alpha_diff: Some(alpha_diff.display().to_string()),
+        checkerboard: Some(checkerboard.display().to_string()),
+        dark: Some(dark.display().to_string()),
+        contact_sheet: Some(contact_sheet.display().to_string()),
+    })
+}
+
+fn scene_asset_review_preview_image(
+    before: &RgbaImage,
+    after: &RgbaImage,
+    mode: SceneAssetReviewPreviewMode,
+) -> RgbaImage {
+    match mode {
+        SceneAssetReviewPreviewMode::RawDiff => raw_diff_preview_image(before, after),
+        SceneAssetReviewPreviewMode::OverlayDiff => overlay_diff_preview_image(before, after),
+        SceneAssetReviewPreviewMode::AlphaDiff => alpha_diff_preview_image(before, after),
+        SceneAssetReviewPreviewMode::Checkerboard => backdrop_preview_image(after, true),
+        SceneAssetReviewPreviewMode::Dark => backdrop_preview_image(after, false),
+        SceneAssetReviewPreviewMode::ContactSheet => contact_sheet_preview_image(before, after),
+    }
+}
+
+fn raw_diff_preview_image(before: &RgbaImage, after: &RgbaImage) -> RgbaImage {
+    let mut preview = ImageBuffer::from_pixel(after.width(), after.height(), Rgba([0, 0, 0, 0]));
+    for y in 0..after.height() {
+        for x in 0..after.width() {
+            if before.get_pixel(x, y).0 != after.get_pixel(x, y).0 {
+                preview.put_pixel(x, y, Rgba([255, 48, 96, 255]));
+            }
+        }
+    }
+    preview
+}
+
+fn overlay_diff_preview_image(before: &RgbaImage, after: &RgbaImage) -> RgbaImage {
     let mut preview = after.clone();
     for y in 0..after.height() {
         for x in 0..after.width() {
@@ -2447,7 +2598,75 @@ fn write_scene_asset_diff_preview(
             }
         }
     }
-    save_rgba_image(&preview, output_path, force)
+    preview
+}
+
+fn alpha_diff_preview_image(before: &RgbaImage, after: &RgbaImage) -> RgbaImage {
+    let mut preview = ImageBuffer::from_pixel(after.width(), after.height(), Rgba([0, 0, 0, 0]));
+    for y in 0..after.height() {
+        for x in 0..after.width() {
+            let before_pixel = before.get_pixel(x, y);
+            let after_pixel = after.get_pixel(x, y);
+            if before_pixel[3] != after_pixel[3] {
+                preview.put_pixel(x, y, Rgba([64, 220, 255, 255]));
+            } else if before_pixel.0 != after_pixel.0 {
+                preview.put_pixel(x, y, Rgba([255, 48, 96, 180]));
+            }
+        }
+    }
+    preview
+}
+
+fn backdrop_preview_image(after: &RgbaImage, checkerboard: bool) -> RgbaImage {
+    let mut preview = RgbaImage::new(after.width(), after.height());
+    for y in 0..after.height() {
+        for x in 0..after.width() {
+            let base = if checkerboard {
+                let tile = ((x / 8) + (y / 8)) % 2 == 0;
+                if tile {
+                    Rgba([220, 220, 220, 255])
+                } else {
+                    Rgba([150, 150, 150, 255])
+                }
+            } else {
+                Rgba([24, 24, 28, 255])
+            };
+            preview.put_pixel(x, y, alpha_blend(base, *after.get_pixel(x, y)));
+        }
+    }
+    preview
+}
+
+fn contact_sheet_preview_image(before: &RgbaImage, after: &RgbaImage) -> RgbaImage {
+    let raw_diff = raw_diff_preview_image(before, after);
+    let mut sheet = RgbaImage::new(before.width().saturating_mul(3), before.height());
+    copy_image_at(before, &mut sheet, 0, 0);
+    copy_image_at(after, &mut sheet, before.width(), 0);
+    copy_image_at(&raw_diff, &mut sheet, before.width().saturating_mul(2), 0);
+    sheet
+}
+
+fn copy_image_at(source: &RgbaImage, target: &mut RgbaImage, offset_x: u32, offset_y: u32) {
+    for y in 0..source.height() {
+        for x in 0..source.width() {
+            let tx = offset_x.saturating_add(x);
+            let ty = offset_y.saturating_add(y);
+            if tx < target.width() && ty < target.height() {
+                target.put_pixel(tx, ty, *source.get_pixel(x, y));
+            }
+        }
+    }
+}
+
+fn alpha_blend(base: Rgba<u8>, top: Rgba<u8>) -> Rgba<u8> {
+    let alpha = top[3] as f32 / 255.0;
+    let inv_alpha = 1.0 - alpha;
+    Rgba([
+        (top[0] as f32 * alpha + base[0] as f32 * inv_alpha).round() as u8,
+        (top[1] as f32 * alpha + base[1] as f32 * inv_alpha).round() as u8,
+        (top[2] as f32 * alpha + base[2] as f32 * inv_alpha).round() as u8,
+        255,
+    ])
 }
 
 fn operation_preview_output(id: &str) -> String {
@@ -2456,6 +2675,10 @@ fn operation_preview_output(id: &str) -> String {
 
 fn operation_diff_preview_output(id: &str) -> String {
     format!("{}.diff.png", sanitize_operation_id(id))
+}
+
+fn operation_review_output(id: &str, suffix: &str) -> String {
+    format!("{}.{}.png", sanitize_operation_id(id), suffix)
 }
 
 fn sanitize_operation_id(id: &str) -> String {
@@ -7603,6 +7826,71 @@ mod tests {
     }
 
     #[test]
+    fn diff_preview_highlights_color_and_alpha_changes() {
+        let dir = tempdir().unwrap();
+        let before = dir.path().join("before.png");
+        let after = dir.path().join("after.png");
+        let raw = dir.path().join("raw.png");
+        let alpha = dir.path().join("alpha.png");
+        let before_image = ImageBuffer::from_pixel(2, 2, Rgba([0u8, 0, 0, 255]));
+        let mut after_image = before_image.clone();
+        after_image.put_pixel(1, 0, Rgba([255, 0, 0, 255]));
+        after_image.put_pixel(0, 1, Rgba([0, 0, 0, 0]));
+        before_image.save(&before).unwrap();
+        after_image.save(&after).unwrap();
+
+        write_scene_asset_review_preview(
+            &before,
+            &after,
+            &raw,
+            SceneAssetReviewPreviewMode::RawDiff,
+            false,
+        )
+        .unwrap();
+        write_scene_asset_review_preview(
+            &before,
+            &after,
+            &alpha,
+            SceneAssetReviewPreviewMode::AlphaDiff,
+            false,
+        )
+        .unwrap();
+
+        let raw_image = load_rgba_image(&raw).unwrap();
+        assert_equal!(raw_image.get_pixel(0, 0)[3], 0);
+        assert_equal!(raw_image.get_pixel(1, 0).0, [255, 48, 96, 255]);
+        let alpha_image = load_rgba_image(&alpha).unwrap();
+        assert_equal!(alpha_image.get_pixel(0, 1).0, [64, 220, 255, 255]);
+        assert_equal!(alpha_image.get_pixel(1, 0).0, [255, 48, 96, 180]);
+    }
+
+    #[test]
+    fn review_contact_sheet_preserves_dimensions() {
+        let dir = tempdir().unwrap();
+        let before = dir.path().join("before.png");
+        let after = dir.path().join("after.png");
+        let output = dir.path().join("contact.png");
+        ImageBuffer::from_pixel(2, 3, Rgba([0u8, 0, 0, 255]))
+            .save(&before)
+            .unwrap();
+        ImageBuffer::from_pixel(2, 3, Rgba([255u8, 0, 0, 255]))
+            .save(&after)
+            .unwrap();
+
+        let report = write_scene_asset_review_preview(
+            &before,
+            &after,
+            &output,
+            SceneAssetReviewPreviewMode::ContactSheet,
+            false,
+        )
+        .unwrap();
+
+        assert_equal!(report.report.width, 6);
+        assert_equal!(report.report.height, 3);
+    }
+
+    #[test]
     fn operation_run_executes_single_step_and_supports_dry_run() {
         let dir = tempdir().unwrap();
         let input_root = dir.path().join("Input");
@@ -7999,6 +8287,12 @@ mod tests {
             .join("preview-fill.preview.png")
             .is_file());
         assert!(transformation_root.join("preview-fill.diff.png").is_file());
+        let review_paths = report.review_preview_paths.unwrap();
+        assert!(PathBuf::from(review_paths.raw_diff.unwrap()).is_file());
+        assert!(PathBuf::from(review_paths.alpha_diff.unwrap()).is_file());
+        assert!(PathBuf::from(review_paths.checkerboard.unwrap()).is_file());
+        assert!(PathBuf::from(review_paths.dark.unwrap()).is_file());
+        assert!(PathBuf::from(review_paths.contact_sheet.unwrap()).is_file());
         assert!(!output_root.join("final.png").exists());
     }
 

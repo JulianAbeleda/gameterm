@@ -17,20 +17,20 @@ use gameterm_visual::{
     run_scene_asset_pipeline, sample_fill_scene_asset_region, sample_scene_asset_image,
     scene_asset_operation_error_report, stroke_scene_asset_path, transform_scene_asset_image,
     unsharp_mask_scene_asset_image, validate_scene_asset_feature_map,
-    validate_scene_asset_operation, write_scene_asset_json, SceneAssetAlphaPaintOptions,
-    SceneAssetBackgroundSample, SceneAssetBlendMode, SceneAssetBlurOptions,
-    SceneAssetBrightnessContrastOptions, SceneAssetCloneStampOptions, SceneAssetColorChannel,
-    SceneAssetCompositeLayer, SceneAssetCompositeOptions, SceneAssetCropOptions,
-    SceneAssetDefringeMode, SceneAssetDrawShapeKind, SceneAssetDrawShapeOptions,
-    SceneAssetFillOptions, SceneAssetGridPreviewOptions, SceneAssetHairCleanupMode,
-    SceneAssetHslOptions, SceneAssetLevelsOptions, SceneAssetMaskPolishOptions,
-    SceneAssetMaskPreviewMode, SceneAssetMaskPreviewOptions, SceneAssetNormalizedPoint,
-    SceneAssetNormalizedRect, SceneAssetOperationRunOptions, SceneAssetPadAnchor,
-    SceneAssetPadOptions, SceneAssetPipelineRoots, SceneAssetPipelineRunOptions,
-    SceneAssetResampleFilter, SceneAssetRestoreFilter, SceneAssetRestoreOptions,
-    SceneAssetSampleFillOptions, SceneAssetSampleOptions, SceneAssetStateManifestOptions,
-    SceneAssetStateRenderOptions, SceneAssetStrokePathOptions, SceneAssetTransformOptions,
-    SceneAssetUnsharpMaskOptions,
+    validate_scene_asset_operation, write_scene_asset_json, write_scene_asset_review_preview,
+    SceneAssetAlphaPaintOptions, SceneAssetBackgroundSample, SceneAssetBlendMode,
+    SceneAssetBlurOptions, SceneAssetBrightnessContrastOptions, SceneAssetCloneStampOptions,
+    SceneAssetColorChannel, SceneAssetCompositeLayer, SceneAssetCompositeOptions,
+    SceneAssetCropOptions, SceneAssetDefringeMode, SceneAssetDrawShapeKind,
+    SceneAssetDrawShapeOptions, SceneAssetFillOptions, SceneAssetGridPreviewOptions,
+    SceneAssetHairCleanupMode, SceneAssetHslOptions, SceneAssetLevelsOptions,
+    SceneAssetMaskPolishOptions, SceneAssetMaskPreviewMode, SceneAssetMaskPreviewOptions,
+    SceneAssetNormalizedPoint, SceneAssetNormalizedRect, SceneAssetOperationRunOptions,
+    SceneAssetPadAnchor, SceneAssetPadOptions, SceneAssetPipelineRoots,
+    SceneAssetPipelineRunOptions, SceneAssetResampleFilter, SceneAssetRestoreFilter,
+    SceneAssetRestoreOptions, SceneAssetReviewPreviewMode, SceneAssetSampleFillOptions,
+    SceneAssetSampleOptions, SceneAssetStateManifestOptions, SceneAssetStateRenderOptions,
+    SceneAssetStrokePathOptions, SceneAssetTransformOptions, SceneAssetUnsharpMaskOptions,
 };
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -95,6 +95,7 @@ struct CliArgs {
     radius: Option<u32>,
     strength: Option<f32>,
     mode: Option<SceneAssetHairCleanupMode>,
+    review_mode: Option<SceneAssetReviewPreviewMode>,
     hair_region: Option<String>,
     seed_x: Option<f32>,
     seed_y: Option<f32>,
@@ -148,6 +149,7 @@ fn usage() {
   cargo run -p gameterm-visual --example scene_asset_edit -- operation-run --operation OPERATION.json --input-root DIR --transformation-root DIR --output-root DIR [--output REPORT.json] [--preview] [--dry-run] [--force] [--pretty]
   cargo run -p gameterm-visual --example scene_asset_edit -- session-run --session SESSION.json --input-root DIR --transformation-root DIR --output-root DIR [--output REPORT.json] [--dry-run] [--force] [--pretty]
   cargo run -p gameterm-visual --example scene_asset_edit -- compare --before BEFORE.png --after AFTER.png [--output REPORT.json] [--pretty]
+  cargo run -p gameterm-visual --example scene_asset_edit -- diff-preview --before BEFORE.png --after AFTER.png --output PREVIEW.png [--mode raw-diff|overlay-diff|alpha-diff|checkerboard|dark|contact-sheet] [--force] [--pretty]
   cargo run -p gameterm-visual --example scene_asset_edit -- accept-output --source IMAGE --output IMAGE --input-root DIR --transformation-root DIR --output-root DIR [--report REPORT.json] [--force] [--pretty]
   cargo run -p gameterm-visual --example scene_asset_edit -- sample --source IMAGE [--point X,Y ...] [--within-polygon X,Y;X,Y;X,Y] [--within-regions CSV] [--protect FEATURE_MAP] [--output REPORT] [--pretty]
   cargo run -p gameterm-visual --example scene_asset_edit -- point-report --source IMAGE --point X,Y [--point X,Y ...] [--pretty]
@@ -240,6 +242,8 @@ Options:
   --radius N                 Hair cleanup sample radius. Default: 4.
   --strength N               Hair cleanup decontamination strength, 0..1. Default: 0.85.
   --mode decontaminate       Hair cleanup mode.
+  --mode raw-diff|overlay-diff|alpha-diff|checkerboard|dark|contact-sheet
+                              Review preview mode for diff-preview.
   --hair-region NAME         Optional feature-map region for hair cleanup.
   --seed-x N                 Normalized magic-erase seed x, 0..1.
   --seed-y N                 Normalized magic-erase seed y, 0..1.
@@ -310,6 +314,7 @@ fn main() {
         Some("operation-run") => run_operation(args),
         Some("session-run") => run_session(args),
         Some("compare") => run_compare(args),
+        Some("diff-preview") => run_diff_preview(args),
         Some("accept-output") => run_accept_output(args),
         Some("sample") => run_sample(args),
         Some("point-report") => run_point_report(args),
@@ -479,6 +484,22 @@ fn run_compare(args: CliArgs) -> Result<(), String> {
     let after = required_path(args.after.clone(), "--after")?;
     let report = compare_scene_asset_images(&before, &after).map_err(|err| err.to_string())?;
     write_json(args.output.as_deref(), &report, args.pretty, args.force)
+}
+
+fn run_diff_preview(args: CliArgs) -> Result<(), String> {
+    let before = required_path(args.before.clone(), "--before")?;
+    let after = required_path(args.after.clone(), "--after")?;
+    let output = required_path(args.output.clone(), "--output")?;
+    let report = write_scene_asset_review_preview(
+        &before,
+        &after,
+        &output,
+        args.review_mode
+            .unwrap_or(SceneAssetReviewPreviewMode::ContactSheet),
+        args.force,
+    )
+    .map_err(|err| err.to_string())?;
+    write_json(args.report.as_deref(), &report, args.pretty, args.force)
 }
 
 fn run_accept_output(args: CliArgs) -> Result<(), String> {
@@ -1341,6 +1362,9 @@ fn parse_args() -> Result<CliArgs, String> {
             "--neutrality" => parsed.neutrality = Some(next_parse(&mut args, "--neutrality")?),
             "--radius" => parsed.radius = Some(next_parse(&mut args, "--radius")?),
             "--strength" => parsed.strength = Some(next_parse(&mut args, "--strength")?),
+            "--mode" if parsed.command.as_deref() == Some("diff-preview") => {
+                parsed.review_mode = Some(parse_review_mode(&next_text(&mut args, "--mode")?)?)
+            }
             "--mode" => parsed.mode = Some(parse_hair_mode(&next_text(&mut args, "--mode")?)?),
             "--selection-mode" => {
                 parsed.selection_mode = Some(parse_selection_mode(&next_text(
@@ -1519,6 +1543,20 @@ fn parse_hair_mode(value: &str) -> Result<SceneAssetHairCleanupMode, String> {
         "decontaminate" => Ok(SceneAssetHairCleanupMode::Decontaminate),
         _ => Err(format!(
             "--mode value `{value}` is invalid; expected decontaminate"
+        )),
+    }
+}
+
+fn parse_review_mode(value: &str) -> Result<SceneAssetReviewPreviewMode, String> {
+    match value {
+        "raw-diff" => Ok(SceneAssetReviewPreviewMode::RawDiff),
+        "overlay-diff" => Ok(SceneAssetReviewPreviewMode::OverlayDiff),
+        "alpha-diff" => Ok(SceneAssetReviewPreviewMode::AlphaDiff),
+        "checkerboard" => Ok(SceneAssetReviewPreviewMode::Checkerboard),
+        "dark" => Ok(SceneAssetReviewPreviewMode::Dark),
+        "contact-sheet" => Ok(SceneAssetReviewPreviewMode::ContactSheet),
+        _ => Err(format!(
+            "--mode value `{value}` is invalid for diff-preview; expected raw-diff, overlay-diff, alpha-diff, checkerboard, dark, or contact-sheet"
         )),
     }
 }
