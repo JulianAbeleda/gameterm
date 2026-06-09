@@ -1,0 +1,20 @@
+{
+  "asset_operation_version": 1,
+  "id": "kiki-fixture-alpha-paint",
+  "intent": "Lower alpha in a tiny bounded area of the previous fixture operation output to prove sessions can chain Transformation sources.",
+  "source": "Transformation/41-operation-draw-shape-debug.png",
+  "output": "42-operation-alpha-debug.png",
+  "command": "alpha-paint",
+  "args": {
+    "alpha": 160,
+    "within_polygons": [
+      "0.03,0.03;0.08,0.03;0.08,0.08;0.03,0.08"
+    ]
+  },
+  "expectations": {
+    "max_changed_pixel_ratio": 0.02,
+    "review_points": [
+      "0.05,0.05"
+    ]
+  }
+}

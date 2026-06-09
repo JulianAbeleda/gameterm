@@ -2,6 +2,15 @@
 
 Date: 2026-06-09
 
+Status: first-pass implemented.
+
+Implemented commits:
+
+- `7685bb7a4 [visual] add Scene asset operation runner`
+- `2a26cf563 [visual] add Scene asset operation previews`
+- `ce40e36fe [visual] add Scene asset operation diagnostics`
+- `8c4f0aaf9 [visual] add Scene asset edit sessions`
+
 ## Purpose
 
 The Scene asset editor now has enough deterministic image primitives to modify
@@ -47,21 +56,29 @@ This is enough to perform deterministic Kiki neutral-base work such as:
 
 ## Gap
 
-The primitives exist, but the AI/human contract is still command-shaped rather
+The primitives existed, but the AI/human contract was command-shaped rather
 than operation-shaped.
 
-Current limitations:
+First-pass resolved:
 
-- CLI flags are good for terminal users but awkward as a direct AI function API.
-- Pipeline JSON is useful, but it does not yet validate a single operation as a
-  first-class request before execution.
-- Reports are per-command, but there is no unified operation envelope with
-  before/after checksums, changed bounds, changed pixel count, and suggested
-  next inspection points.
-- There is no explicit `compare` command for before/after quality checks.
+- `operation-run` accepts one versioned operation JSON envelope.
+- `--preview` writes review artifacts under `Transformation` without accepting
+  the requested final output.
+- Operation reports include before/after image reports, compare output,
+  expectation failures, preview paths, and step reports.
+- `compare` provides before/after quality checks with changed pixel count,
+  changed bounds, alpha changes, dimensions, and checksums.
+- structured operation error reports expose stable codes and hints for common
+  correction paths.
+- `session-run` executes an ordered session file and records operation order
+  plus final output.
+
+Still deferred:
+
 - Mask export/import is implicit through preview/cutout commands, not a clean
   bridge for external semantic inpainting tools.
-- Errors are mostly correct, but not always shaped for automatic correction.
+- `accept_output` is still a manual copy/review policy, not a dedicated
+  command.
 
 ## Design Principle
 
@@ -120,8 +137,8 @@ cargo run -q -p gameterm-visual --example scene_asset_edit -- operation-run \
   --pretty
 ```
 
-The first implementation can reuse the existing `pipeline-run` internals. A
-single operation is just a pipeline with one step plus a richer report envelope.
+The implementation reuses the existing `pipeline-run` internals. A single
+operation is executed as one pipeline step plus a richer report envelope.
 
 ## Operation Report
 
@@ -175,10 +192,11 @@ The AI-facing function surface should be small and stable:
 | `asset.run_operation` | Execute one operation and write report |
 | `asset.compare` | Compare source/output and report changed pixels/bounds/checksum |
 | `asset.run_pipeline` | Execute an ordered sequence of operations |
+| `asset.run_session` | Execute an ordered session file |
 | `asset.accept_output` | Copy a reviewed transformation into `Output` |
 
-The CLI can expose these as commands. A future GUI, Codex tool, or local agent
-can call the same Rust functions directly.
+The CLI now exposes the implemented operation/session/compare surface. A future
+GUI, Codex tool, or local agent can call the same Rust functions directly.
 
 ## Semantic Inpainting Bridge
 
@@ -230,6 +248,8 @@ Commit:
 
 - `[visual] add Scene asset operation runner`
 
+Status: complete.
+
 ### Lane 2: Unified Compare Report
 
 Add:
@@ -252,6 +272,8 @@ Commit:
 
 - `[visual] add Scene asset compare reports`
 
+Status: implemented inside `[visual] add Scene asset operation runner`.
+
 ### Lane 3: Preview Artifacts
 
 Add:
@@ -271,6 +293,8 @@ Definition of done:
 Commit:
 
 - `[visual] add Scene asset operation previews`
+
+Status: complete.
 
 ### Lane 4: AI-Correctable Errors
 
@@ -295,6 +319,8 @@ Definition of done:
 Commit:
 
 - `[visual] add Scene asset operation diagnostics`
+
+Status: complete.
 
 ### Lane 5: Operation Session Files
 
@@ -323,6 +349,8 @@ Commit:
 
 - `[visual] add Scene asset edit sessions`
 
+Status: complete.
+
 ### Lane 6: Docs And Agent Prompt
 
 Add:
@@ -342,20 +370,22 @@ Commit:
 
 - `[docs] document Scene asset operation workflow`
 
+Status: complete after the docs/fixture pass paired with this scope.
+
 ## Definition Of Done
 
 The AI/human operation layer is complete when:
 
-- a human can run one JSON operation without remembering command flags
+- a human can run one JSON operation without remembering command flags: done
 - an AI can propose one JSON operation, validate it, run it, inspect the report,
-  and revise parameters
-- every operation has a dry-run path
-- every operation has a stable report path
-- before/after comparison is automatic for image-writing operations
-- protected regions can be asserted
-- errors are structured enough for automatic correction
-- pipeline/session files can chain accepted operations
-- no embedded ML is required
+  and revise parameters: done
+- every operation has a dry-run path: done
+- every operation has a stable report path: done
+- before/after comparison is automatic for image-writing operations: done
+- protected regions can be asserted: inherited from the operation command args
+- errors are structured enough for automatic correction: done
+- pipeline/session files can chain accepted operations: done
+- no embedded ML is required: done
 
 ## Non-Goals
 
@@ -367,19 +397,8 @@ The AI/human operation layer is complete when:
 - No hidden writes outside `Input`, `Transformation`, or `Output` roots unless a
   user explicitly provides an absolute path.
 
-## Recommended Next Step
+## Follow-Up
 
-Start with Lane 1 and Lane 2 together:
-
-```text
-operation-run + compare
-```
-
-That gives us the minimum viable AI/human bridge:
-
-```text
-JSON edit request -> validate/run -> before/after report
-```
-
-Once that exists, preview artifacts and session files are straightforward
-extensions.
+The next asset-editor layer should be GUI-specific: file browser, point picker,
+polygon/lasso drawing, preview comparison panes, operation history, and an
+explicit accept/copy command if the GUI needs one.

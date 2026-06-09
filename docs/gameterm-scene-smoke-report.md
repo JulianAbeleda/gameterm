@@ -1374,3 +1374,80 @@ Summary:
   transform, adjust, filter, composite, and render state variants from terminal.
 - The first-pass Rust-only non-GUI substrate is complete; remaining editor work
   is GUI interaction and presentation, not new image semantics.
+
+## Scene Asset Operation Layer Smoke
+
+Date: 2026-06-09.
+
+Scope:
+
+```text
+docs/gameterm-scene-asset-editor-ai-operation-scope.md
+ceaca84eb..8c4f0aaf9
+```
+
+Temporary smoke roots:
+
+```text
+/tmp/gameterm-scene-asset-operation-smoke/Transformation
+/tmp/gameterm-scene-asset-operation-smoke/Output
+```
+
+Commands:
+
+```sh
+rm -rf /tmp/gameterm-scene-asset-operation-smoke
+mkdir -p /tmp/gameterm-scene-asset-operation-smoke/Transformation \
+  /tmp/gameterm-scene-asset-operation-smoke/Output
+
+cargo run -q -p gameterm-visual --example scene_asset_edit -- operation-run \
+  --operation ci/fixtures/gameterm-scene/kiki-asset-operation-draw-shape.json \
+  --input-root ci/fixtures/gameterm-scene/vn-asset-source \
+  --transformation-root /tmp/gameterm-scene-asset-operation-smoke/Transformation \
+  --output-root /tmp/gameterm-scene-asset-operation-smoke/Output \
+  --output /tmp/gameterm-scene-asset-operation-smoke/operation-preview-report.json \
+  --preview \
+  --pretty \
+  --force
+
+cargo run -q -p gameterm-visual --example scene_asset_edit -- session-run \
+  --session ci/fixtures/gameterm-scene/kiki-asset-session.json \
+  --input-root ci/fixtures/gameterm-scene/vn-asset-source \
+  --transformation-root /tmp/gameterm-scene-asset-operation-smoke/Transformation \
+  --output-root /tmp/gameterm-scene-asset-operation-smoke/Output \
+  --output /tmp/gameterm-scene-asset-operation-smoke/session-report.json \
+  --pretty \
+  --force
+
+cargo run -q -p gameterm-visual --example scene_asset_edit -- compare \
+  --before ci/fixtures/gameterm-scene/vn-asset-source/4cher_set4_vn_sprites/kiki-neutral.png \
+  --after /tmp/gameterm-scene-asset-operation-smoke/Transformation/42-operation-alpha-debug.png \
+  --output /tmp/gameterm-scene-asset-operation-smoke/compare-report.json \
+  --pretty \
+  --force
+```
+
+Result: PASS.
+
+Summary:
+
+- `operation-run --preview` returned `status: ok`, wrote a preview PNG, and
+  wrote a diff PNG without accepting the requested final output path.
+- `session-run` executed both fixture operations in order and returned
+  operation statuses `ok,ok`.
+- `compare` reported a bounded 5x5 changed area against the source fixture.
+
+Generated smoke artifacts:
+
+```text
+operation-preview-report.json
+session-report.json
+compare-report.json
+Transformation/41-operation-draw-shape-debug.png
+Transformation/41-operation-draw-shape-debug.report.json
+Transformation/42-operation-alpha-debug.png
+Transformation/42-operation-alpha-debug.report.json
+Transformation/kiki-fixture-draw-shape.preview.png
+Transformation/kiki-fixture-draw-shape.preview.report.json
+Transformation/kiki-fixture-draw-shape.diff.png
+```

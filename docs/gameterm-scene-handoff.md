@@ -6,13 +6,14 @@ deeper product context.
 
 ## Current Snapshot
 
-- Date: 2026-06-08
+- Date: 2026-06-09
 - Branch: `main`
-- Latest behavior commit: `af3d1afb6 [visual] add Scene asset compositing and states`
+- Latest behavior commit: `8c4f0aaf9 [visual] add Scene asset edit sessions`
 - Latest refactor commit: `017ddf309 [gui] NFC - move SceneRuntime test import`
 - Latest tooling commit: `ec1b29b8e [tools] add local CT2 Scene translation helper`
 - Remote state at handoff time: local branch is ahead of `origin/main` by the
-  Scene TTS polish and Scene asset editor commits listed below
+  Scene TTS polish, Scene asset editor, and Scene asset operation commits listed
+  below
 - Worktree state at handoff time: clean after asset editor docs commit
 - Local app bundle refreshed: `/Users/julianabeleda/Applications/GameTerm.app`
 - Persistent Scene compose config:
@@ -26,15 +27,17 @@ normal macOS GameTerm app without shell-only setup.
 
 Current next priority:
 
-- Scene asset editor non-GUI substrate is complete for the first Rust-first
-  pass. The command cookbook is recorded in
-  [Scene Asset Editor Cookbook](gameterm-scene-asset-editor-cookbook.md), and
-  the completion scope is recorded in
+- Scene asset editor non-GUI substrate and the first-pass AI/human operation
+  layer are complete. The command cookbook is recorded in
+  [Scene Asset Editor Cookbook](gameterm-scene-asset-editor-cookbook.md), the
+  operation contract is recorded in
+  [Scene Asset Editor AI/Human Operation Scope](gameterm-scene-asset-editor-ai-operation-scope.md),
+  and the completion scope is recorded in
   `structure/Development/scene-asset-edit-feature-scope.md`.
 - TTS polish first pass is implemented. The scope and remaining dogfood items
   are recorded in [Scene TTS Polish Scope](gameterm-scene-tts-polish-scope.md).
 - Next priority is either a live app dogfood pass with real Codex plus VOICEVOX,
-  or a GUI pass on top of the completed asset editor primitives.
+  or a GUI pass on top of the completed asset editor operation primitives.
 - Persistent Codex sessions are deferred for now because the current dogfood
   use case does not need cross-disconnect conversation resume.
 
@@ -42,6 +45,11 @@ Current next priority:
 
 Recent committed work:
 
+- `8c4f0aaf9 [visual] add Scene asset edit sessions`
+- `ce40e36fe [visual] add Scene asset operation diagnostics`
+- `2a26cf563 [visual] add Scene asset operation previews`
+- `7685bb7a4 [visual] add Scene asset operation runner`
+- `ceaca84eb [docs] scope Scene asset operation layer`
 - `af3d1afb6 [visual] add Scene asset compositing and states`
 - `e8cdfe80e [visual] add Scene asset tonal and filter operations`
 - `f87b770c2 [visual] add Scene asset transform operations`
@@ -84,6 +92,15 @@ Recent committed work:
 
 Latest behavior change:
 
+- Scene asset editing now has a versioned AI/human operation layer. A user or
+  agent can run a single JSON operation through `operation-run`, preview it
+  without accepting the requested output, inspect a diff artifact, and receive a
+  before/after compare report.
+- Scene asset editing now has structured operation diagnostics with stable
+  error codes and hints for common correction paths.
+- Scene asset editing now has `session-run` for ordered edit session files.
+  Operation sources can chain from `Input`, `Transformation`, or `Output` roots,
+  and session reports record operation order plus final output.
 - Scene TTS polish first pass is implemented. Visible dialogue formatting and
   speech extraction now share `VisualDialogueTextBlock` projection, so headings,
   bullets, numbered items, prose, and technical skipped lines use the same block

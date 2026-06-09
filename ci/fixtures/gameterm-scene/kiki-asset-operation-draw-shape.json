@@ -1,0 +1,20 @@
+{
+  "asset_operation_version": 1,
+  "id": "kiki-fixture-draw-shape",
+  "intent": "Draw a tiny bounded blue marker in the transparent fixture workspace so the operation report has a visible bounded diff.",
+  "source": "4cher_set4_vn_sprites/kiki-neutral.png",
+  "output": "41-operation-draw-shape-debug.png",
+  "command": "draw-shape",
+  "args": {
+    "shape": "rect",
+    "rect": "0.02,0.02,0.08,0.08",
+    "color": "#3366ffff",
+    "fill": true
+  },
+  "expectations": {
+    "max_changed_pixel_ratio": 0.03,
+    "review_points": [
+      "0.03,0.03"
+    ]
+  }
+}

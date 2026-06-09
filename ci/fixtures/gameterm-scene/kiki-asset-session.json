@@ -1,0 +1,10 @@
+{
+  "asset_session_version": 1,
+  "name": "kiki-fixture-operation-session",
+  "current_source": "4cher_set4_vn_sprites/kiki-neutral.png",
+  "accepted_outputs": [],
+  "operations": [
+    "kiki-asset-operation-draw-shape.json",
+    "kiki-asset-operation-alpha-paint.json"
+  ]
+}

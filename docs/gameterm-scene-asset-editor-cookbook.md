@@ -70,6 +70,148 @@ cargo run -q -p gameterm-visual --example scene_asset_edit -- pipeline-run \
 
 Use `--dry-run` first when editing a pipeline JSON and you only want the report.
 
+## Operation Files And Sessions
+
+Use operation files when an AI or human should describe one edit as data rather
+than as a long command line. The stable loop is:
+
+```text
+inspect -> write operation JSON -> dry-run or preview -> run -> compare
+-> keep editing or accept the output
+```
+
+Run one operation from a JSON envelope:
+
+```sh
+cargo run -q -p gameterm-visual --example scene_asset_edit -- operation-run \
+  --operation ci/fixtures/gameterm-scene/kiki-asset-operation-draw-shape.json \
+  --input-root ci/fixtures/gameterm-scene/vn-asset-source \
+  --transformation-root "$TX" \
+  --output-root "$OUT" \
+  --output "$TX/41-operation-report.json" \
+  --pretty \
+  --force
+```
+
+Preview one operation without accepting the requested output:
+
+```sh
+cargo run -q -p gameterm-visual --example scene_asset_edit -- operation-run \
+  --operation ci/fixtures/gameterm-scene/kiki-asset-operation-draw-shape.json \
+  --input-root ci/fixtures/gameterm-scene/vn-asset-source \
+  --transformation-root "$TX" \
+  --output-root "$OUT" \
+  --output "$TX/41-operation-preview-report.json" \
+  --preview \
+  --pretty \
+  --force
+```
+
+Preview mode writes review artifacts such as:
+
+```text
+kiki-fixture-draw-shape.preview.png
+kiki-fixture-draw-shape.diff.png
+```
+
+Run an ordered edit session:
+
+```sh
+cargo run -q -p gameterm-visual --example scene_asset_edit -- session-run \
+  --session ci/fixtures/gameterm-scene/kiki-asset-session.json \
+  --input-root ci/fixtures/gameterm-scene/vn-asset-source \
+  --transformation-root "$TX" \
+  --output-root "$OUT" \
+  --output "$TX/42-session-report.json" \
+  --pretty \
+  --force
+```
+
+Compare a source and a generated output:
+
+```sh
+cargo run -q -p gameterm-visual --example scene_asset_edit -- compare \
+  --before ci/fixtures/gameterm-scene/vn-asset-source/4cher_set4_vn_sprites/kiki-neutral.png \
+  --after "$TX/42-operation-alpha-debug.png" \
+  --output "$TX/43-compare-report.json" \
+  --pretty \
+  --force
+```
+
+Operation JSON shape:
+
+```json
+{
+  "asset_operation_version": 1,
+  "id": "kiki-fixture-draw-shape",
+  "intent": "Describe the exact edit in human language.",
+  "source": "4cher_set4_vn_sprites/kiki-neutral.png",
+  "output": "41-operation-draw-shape-debug.png",
+  "command": "draw-shape",
+  "args": {
+    "shape": "rect",
+    "rect": "0.02,0.02,0.08,0.08",
+    "color": "#3366ffff",
+    "fill": true
+  },
+  "expectations": {
+    "max_changed_pixel_ratio": 0.03,
+    "review_points": ["0.03,0.03"]
+  }
+}
+```
+
+Session JSON shape:
+
+```json
+{
+  "asset_session_version": 1,
+  "name": "kiki-fixture-operation-session",
+  "current_source": "4cher_set4_vn_sprites/kiki-neutral.png",
+  "accepted_outputs": [],
+  "operations": [
+    "kiki-asset-operation-draw-shape.json",
+    "kiki-asset-operation-alpha-paint.json"
+  ]
+}
+```
+
+Use deterministic operations first. Reach for external semantic inpainting only
+when the target edit requires inventing pixels that cannot be restored, sampled,
+cloned, or drawn from the existing source.
+
+Prompt template for an AI-assisted edit:
+
+```text
+You are editing a GameTerm Scene asset through deterministic Rust operations.
+
+Roots:
+- Input: <input-root>
+- Transformation: <transformation-root>
+- Output: <output-root>
+
+Goal:
+<describe the visible edit>
+
+Rules:
+- Return exactly one SceneAssetOperation JSON object.
+- Use normalized coordinates from 0.0 to 1.0.
+- Write outputs to Transformation unless I explicitly ask to accept into Output.
+- Prefer bounded regions or polygons over whole-image edits.
+- Protect face, eyes, mouth, and body unless the goal explicitly edits them.
+- Include a max_changed_pixel_ratio and review_points.
+- Do not invent hidden files or run network/ML tools.
+
+Available commands:
+sample, mask-preview, remove-background, remove-background-polished,
+color-range-erase, magic-erase-add, hair-cleanup, fill-region, sample-fill,
+alpha-paint, clone-stamp, draw-shape, stroke-path, crop, pad, transform,
+levels, brightness-contrast, hsl, blur, unsharp-mask.
+
+After I run the operation report, revise only the JSON fields needed to fix
+reported expectation failures or visual issues.
+```
+
 ## Mask And Cutout
 
 Preview a bounded color-range selection:
@@ -340,6 +482,9 @@ The first-pass completion smoke generated local artifacts:
 39-state-render-debug.png
 40-state-sheet-debug.png
 40-state-sheet-index.json
+41-operation-*.json / 41-operation-draw-shape-debug.png
+42-operation-alpha-debug.png / 42-session-report.json
+43-compare-report.json
 ```
 
 Repo verification:
