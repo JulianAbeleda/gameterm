@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-use super::{actions, dialogue_index, initial_dialogue_history};
+use super::actions;
+use super::dialogue::{dialogue_index, initial_dialogue_history};
 use crate::{
     is_empty_rpg_state, validate_dialogue_lines, validate_rpg_state, validate_state_entries,
     VisualDialogueLine, VisualDialogueLineError, VisualRpgState, VisualStateEntry,

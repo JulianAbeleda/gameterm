@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 mod actions;
 mod command_options;
 mod debug;
+mod dialogue;
 mod input;
 mod lifecycle;
 mod patch;
@@ -12,6 +13,7 @@ mod story_state;
 
 use self::actions::{action_kind_name, action_policy_summary};
 pub use self::debug::VisualSceneDebugReport;
+use self::dialogue::{dialogue_index, initial_dialogue_history};
 use self::input::default_mode_input_action;
 pub use self::patch::{
     VisualSceneDialoguePatch, VisualSceneEntityPatch, VisualScenePatch, VisualScenePatchError,
@@ -184,10 +186,6 @@ impl SceneRuntime {
 
     pub fn selected_entity(&self) -> Option<&VisualEntity> {
         self.scene.entities.get(self.selected_entity)
-    }
-
-    pub fn active_dialogue_line(&self) -> VisualDialogueLine {
-        active_dialogue_line(&self.scene, self.dialogue_index)
     }
 
     fn open_file_action_status(&self, path: &str) -> (String, Option<VisualActionRequest>) {
@@ -1383,33 +1381,6 @@ impl SceneRuntime {
             }
         }
         truncate_to_screen(out, cols, rows)
-    }
-}
-
-fn dialogue_index(scene: &VisualScene, index: usize) -> Option<usize> {
-    if scene.dialogue_lines.is_empty() {
-        None
-    } else {
-        Some(index.min(scene.dialogue_lines.len() - 1))
-    }
-}
-
-fn active_dialogue_line(scene: &VisualScene, index: usize) -> VisualDialogueLine {
-    dialogue_index(scene, index)
-        .and_then(|index| scene.dialogue_lines.get(index).cloned())
-        .unwrap_or_else(|| VisualDialogueLine {
-            speaker: scene.dialogue_speaker.clone(),
-            text: scene.dialogue.clone(),
-            portrait: None,
-            metadata: Vec::new(),
-        })
-}
-
-fn initial_dialogue_history(scene: &VisualScene, index: usize) -> Vec<VisualDialogueLine> {
-    if scene.dialogue_lines.is_empty() {
-        Vec::new()
-    } else {
-        vec![active_dialogue_line(scene, index)]
     }
 }
 
