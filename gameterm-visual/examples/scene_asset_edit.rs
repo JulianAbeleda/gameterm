@@ -1,20 +1,23 @@
 use gameterm_visual::{
     alpha_paint_scene_asset_region, channel_matte_erase_scene_asset_image,
-    cleanup_scene_asset_hair_edges, color_range_erase_scene_asset_image,
-    continuity_report_for_scene_asset_frames, default_scene_asset_feature_map,
-    export_scene_asset_source_images, fill_scene_asset_region, generate_scene_asset_animation,
-    generate_scene_asset_expression, inspect_scene_asset_image, load_scene_asset_feature_map,
-    load_scene_asset_recipe_book, magic_erase_add_scene_asset_image, magic_erase_scene_asset_image,
+    cleanup_scene_asset_hair_edges, clone_stamp_scene_asset_region,
+    color_range_erase_scene_asset_image, continuity_report_for_scene_asset_frames,
+    default_scene_asset_feature_map, draw_scene_asset_shape, export_scene_asset_source_images,
+    fill_scene_asset_region, generate_scene_asset_animation, generate_scene_asset_expression,
+    inspect_scene_asset_image, load_scene_asset_feature_map, load_scene_asset_recipe_book,
+    magic_erase_add_scene_asset_image, magic_erase_scene_asset_image,
     make_scene_asset_background_transparent, make_scene_asset_background_transparent_polished,
     preview_scene_asset_grid, preview_scene_asset_selection_mask, report_scene_asset_points,
     restore_scene_asset_from_source, run_scene_asset_pipeline, sample_fill_scene_asset_region,
-    sample_scene_asset_image, validate_scene_asset_feature_map, write_scene_asset_json,
-    SceneAssetAlphaPaintOptions, SceneAssetBackgroundSample, SceneAssetDefringeMode,
-    SceneAssetFillOptions, SceneAssetGridPreviewOptions, SceneAssetHairCleanupMode,
-    SceneAssetMaskPolishOptions, SceneAssetMaskPreviewMode, SceneAssetMaskPreviewOptions,
-    SceneAssetNormalizedPoint, SceneAssetPipelineRoots, SceneAssetPipelineRunOptions,
-    SceneAssetRestoreFilter, SceneAssetRestoreOptions, SceneAssetSampleFillOptions,
-    SceneAssetSampleOptions,
+    sample_scene_asset_image, stroke_scene_asset_path, validate_scene_asset_feature_map,
+    write_scene_asset_json, SceneAssetAlphaPaintOptions, SceneAssetBackgroundSample,
+    SceneAssetCloneStampOptions, SceneAssetDefringeMode, SceneAssetDrawShapeKind,
+    SceneAssetDrawShapeOptions, SceneAssetFillOptions, SceneAssetGridPreviewOptions,
+    SceneAssetHairCleanupMode, SceneAssetMaskPolishOptions, SceneAssetMaskPreviewMode,
+    SceneAssetMaskPreviewOptions, SceneAssetNormalizedPoint, SceneAssetNormalizedRect,
+    SceneAssetPipelineRoots, SceneAssetPipelineRunOptions, SceneAssetRestoreFilter,
+    SceneAssetRestoreOptions, SceneAssetSampleFillOptions, SceneAssetSampleOptions,
+    SceneAssetStrokePathOptions,
 };
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -44,6 +47,7 @@ struct CliArgs {
     restore_regions: Option<String>,
     restore_filter: Option<SceneAssetRestoreFilter>,
     selection_mode: Option<SceneAssetMaskPreviewMode>,
+    draw_shape: Option<SceneAssetDrawShapeKind>,
     character: Option<String>,
     expressions: Option<String>,
     tolerance: Option<u8>,
@@ -66,15 +70,22 @@ struct CliArgs {
     seeds: Vec<SceneAssetNormalizedPoint>,
     points: Vec<SceneAssetNormalizedPoint>,
     sample_point: Option<SceneAssetNormalizedPoint>,
+    sample_origin: Option<SceneAssetNormalizedPoint>,
+    target_origin: Option<SceneAssetNormalizedPoint>,
     polygons: Vec<Vec<SceneAssetNormalizedPoint>>,
     within_polygons: Vec<Vec<SceneAssetNormalizedPoint>>,
+    path: Vec<SceneAssetNormalizedPoint>,
+    rect: Option<SceneAssetNormalizedRect>,
     sample: Option<SceneAssetBackgroundSample>,
     color: Option<[u8; 4]>,
     alpha: Option<u8>,
+    stroke: Option<u32>,
     sample_radius: Option<u32>,
     step: Option<f32>,
     whole_image: bool,
     global: bool,
+    fill: bool,
+    closed: bool,
     frames: Vec<PathBuf>,
     pretty: bool,
     force: bool,
@@ -96,6 +107,9 @@ fn usage() {
   cargo run -p gameterm-visual --example scene_asset_edit -- fill-region --source IMAGE --output PATH --color '#RRGGBB[AA]' (--within-polygon X,Y;X,Y;X,Y | --within-regions CSV | --whole-image) [--protect FEATURE_MAP] [--protect-regions CSV] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- sample-fill --source IMAGE --output PATH --sample-point X,Y (--within-polygon X,Y;X,Y;X,Y | --within-regions CSV) [--sample-radius N] [--protect FEATURE_MAP] [--protect-regions CSV] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- alpha-paint --source IMAGE --output PATH --alpha N (--within-polygon X,Y;X,Y;X,Y | --within-regions CSV | --whole-image) [--protect FEATURE_MAP] [--protect-regions CSV] [--force]
+  cargo run -p gameterm-visual --example scene_asset_edit -- clone-stamp --source IMAGE --output PATH --sample-origin X,Y --target-origin X,Y (--within-polygon X,Y;X,Y;X,Y | --within-regions CSV) [--protect FEATURE_MAP] [--protect-regions CSV] [--force]
+  cargo run -p gameterm-visual --example scene_asset_edit -- draw-shape --source IMAGE --output PATH --shape rect|line|polygon|ellipse --color '#RRGGBB[AA]' [--rect X,Y,W,H] [--point X,Y ...] [--stroke N] [--fill] [--protect FEATURE_MAP] [--protect-regions CSV] [--force]
+  cargo run -p gameterm-visual --example scene_asset_edit -- stroke-path --source IMAGE --output PATH --path X,Y;X,Y[;X,Y] --color '#RRGGBB[AA]' [--width N] [--closed] [--protect FEATURE_MAP] [--protect-regions CSV] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- remove-background --source IMAGE --output PATH [--tolerance N] [--feather N] [--sample corners|edges] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- remove-background-polished --source IMAGE --output PATH [--tolerance N] [--sample corners|edges] [--erode N] [--dilate N] [--open N] [--close N] [--remove-small N] [--fill-holes N] [--feather N] [--defringe none|white] [--protect FEATURE_MAP] [--protect-regions CSV] [--within-regions CSV] [--within-polygon X,Y;X,Y;X,Y] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- color-range-erase --source IMAGE --output PATH [--tolerance N] [--sample corners|edges] [--erode N] [--dilate N] [--open N] [--close N] [--remove-small N] [--fill-holes N] [--feather N] [--defringe none|white] [--protect FEATURE_MAP] [--protect-regions CSV] [--within-regions CSV] [--within-polygon X,Y;X,Y;X,Y] [--force]
@@ -160,8 +174,17 @@ Options:
   --selection-mode MODE      Mask preview mode: background, color-range, magic-add, channel-matte.
   --color '#RRGGBB[AA]'      Fill color for paint operations.
   --alpha N                  Alpha value for paint operations, 0..255.
+  --shape NAME               Draw shape: rect, line, polygon, ellipse.
+  --rect X,Y,W,H             Normalized rectangle for draw-shape.
+  --path X,Y;X,Y[;X,Y]       Normalized path for stroke-path.
+  --stroke N                 Stroke width for draw-shape. Default: 1.
+  --width N                  Alias for --stroke in stroke-path.
+  --sample-origin X,Y        Normalized clone-stamp source origin.
+  --target-origin X,Y        Normalized clone-stamp target origin.
   --step N                   Normalized grid spacing. Default: 0.1.
   --whole-image              Allow a paint operation to affect the whole image.
+  --fill                     Fill draw-shape geometry.
+  --closed                   Close stroke-path back to the first point.
   --sample corners|edges     Background samples. Default: corners.
   --global                   Select all matching pixels instead of contiguous seed fill.
   --pretty                   Pretty-print JSON.
@@ -194,6 +217,9 @@ fn main() {
         Some("fill-region") => run_fill_region(args),
         Some("sample-fill") => run_sample_fill(args),
         Some("alpha-paint") => run_alpha_paint(args),
+        Some("clone-stamp") => run_clone_stamp(args),
+        Some("draw-shape") => run_draw_shape(args),
+        Some("stroke-path") => run_stroke_path(args),
         Some("remove-background") => run_remove_background(args),
         Some("remove-background-polished") => run_remove_background_polished(args),
         Some("color-range-erase") => run_color_range_erase(args),
@@ -416,6 +442,81 @@ fn run_alpha_paint(args: CliArgs) -> Result<(), String> {
             whole_image: args.whole_image,
             within_regions: csv_values(args.within_regions.as_deref()),
             within_polygons: args.within_polygons.clone(),
+            protect_regions: csv_values(args.protect_regions.as_deref()),
+        },
+        feature_map.as_ref(),
+        args.force,
+    )
+    .map_err(|err| err.to_string())?;
+    write_json(None, &report, args.pretty, true)
+}
+
+fn run_clone_stamp(args: CliArgs) -> Result<(), String> {
+    let source = required_path(args.source.clone(), "--source")?;
+    let output = required_path(args.output.clone(), "--output")?;
+    let feature_map = load_optional_protect_map(&args)?;
+    let report = clone_stamp_scene_asset_region(
+        &source,
+        &output,
+        SceneAssetCloneStampOptions {
+            sample_origin: args
+                .sample_origin
+                .ok_or_else(|| "--sample-origin is required".to_string())?,
+            target_origin: args
+                .target_origin
+                .ok_or_else(|| "--target-origin is required".to_string())?,
+            within_regions: csv_values(args.within_regions.as_deref()),
+            within_polygons: args.within_polygons.clone(),
+            protect_regions: csv_values(args.protect_regions.as_deref()),
+        },
+        feature_map.as_ref(),
+        args.force,
+    )
+    .map_err(|err| err.to_string())?;
+    write_json(None, &report, args.pretty, true)
+}
+
+fn run_draw_shape(args: CliArgs) -> Result<(), String> {
+    let source = required_path(args.source.clone(), "--source")?;
+    let output = required_path(args.output.clone(), "--output")?;
+    let feature_map = load_optional_protect_map(&args)?;
+    let report = draw_scene_asset_shape(
+        &source,
+        &output,
+        SceneAssetDrawShapeOptions {
+            shape: args
+                .draw_shape
+                .ok_or_else(|| "--shape is required".to_string())?,
+            color: args
+                .color
+                .ok_or_else(|| "--color is required".to_string())?,
+            stroke_width: args.stroke.unwrap_or(1),
+            fill: args.fill,
+            rect: args.rect,
+            points: args.points.clone(),
+            protect_regions: csv_values(args.protect_regions.as_deref()),
+        },
+        feature_map.as_ref(),
+        args.force,
+    )
+    .map_err(|err| err.to_string())?;
+    write_json(None, &report, args.pretty, true)
+}
+
+fn run_stroke_path(args: CliArgs) -> Result<(), String> {
+    let source = required_path(args.source.clone(), "--source")?;
+    let output = required_path(args.output.clone(), "--output")?;
+    let feature_map = load_optional_protect_map(&args)?;
+    let report = stroke_scene_asset_path(
+        &source,
+        &output,
+        SceneAssetStrokePathOptions {
+            path: args.path.clone(),
+            color: args
+                .color
+                .ok_or_else(|| "--color is required".to_string())?,
+            width: args.stroke.unwrap_or(1),
+            closed: args.closed,
             protect_regions: csv_values(args.protect_regions.as_deref()),
         },
         feature_map.as_ref(),
@@ -731,6 +832,9 @@ fn parse_args() -> Result<CliArgs, String> {
                     "--selection-mode",
                 )?)?)
             }
+            "--shape" => {
+                parsed.draw_shape = Some(parse_draw_shape(&next_text(&mut args, "--shape")?)?)
+            }
             "--hair-region" => parsed.hair_region = Some(next_text(&mut args, "--hair-region")?),
             "--seed-x" => parsed.seed_x = Some(next_parse(&mut args, "--seed-x")?),
             "--seed-y" => parsed.seed_y = Some(next_parse(&mut args, "--seed-y")?),
@@ -747,14 +851,29 @@ fn parse_args() -> Result<CliArgs, String> {
                     "--sample-point",
                 )?)
             }
+            "--sample-origin" => {
+                parsed.sample_origin = Some(parse_point_value(
+                    &next_text(&mut args, "--sample-origin")?,
+                    "--sample-origin",
+                )?)
+            }
+            "--target-origin" => {
+                parsed.target_origin = Some(parse_point_value(
+                    &next_text(&mut args, "--target-origin")?,
+                    "--target-origin",
+                )?)
+            }
             "--polygon" => parsed
                 .polygons
                 .push(parse_polygon(&next_text(&mut args, "--polygon")?)?),
             "--within-polygon" => parsed
                 .within_polygons
                 .push(parse_polygon(&next_text(&mut args, "--within-polygon")?)?),
+            "--path" => parsed.path = parse_path(&next_text(&mut args, "--path")?)?,
+            "--rect" => parsed.rect = Some(parse_rect(&next_text(&mut args, "--rect")?)?),
             "--color" => parsed.color = Some(parse_color(&next_text(&mut args, "--color")?)?),
             "--alpha" => parsed.alpha = Some(next_parse(&mut args, "--alpha")?),
+            "--stroke" | "--width" => parsed.stroke = Some(next_parse(&mut args, "--stroke")?),
             "--sample-radius" => {
                 parsed.sample_radius = Some(next_parse(&mut args, "--sample-radius")?)
             }
@@ -762,6 +881,8 @@ fn parse_args() -> Result<CliArgs, String> {
             "--sample" => parsed.sample = Some(parse_sample(&next_text(&mut args, "--sample")?)?),
             "--whole-image" => parsed.whole_image = true,
             "--global" => parsed.global = true,
+            "--fill" => parsed.fill = true,
+            "--closed" => parsed.closed = true,
             "--pretty" => parsed.pretty = true,
             "--force" => parsed.force = true,
             "--dry-run" => parsed.dry_run = true,
@@ -869,6 +990,18 @@ fn parse_selection_mode(value: &str) -> Result<SceneAssetMaskPreviewMode, String
     }
 }
 
+fn parse_draw_shape(value: &str) -> Result<SceneAssetDrawShapeKind, String> {
+    match value {
+        "rect" => Ok(SceneAssetDrawShapeKind::Rect),
+        "line" => Ok(SceneAssetDrawShapeKind::Line),
+        "polygon" => Ok(SceneAssetDrawShapeKind::Polygon),
+        "ellipse" | "circle" => Ok(SceneAssetDrawShapeKind::Ellipse),
+        _ => Err(format!(
+            "--shape value `{value}` is invalid; expected rect, line, polygon, or ellipse"
+        )),
+    }
+}
+
 fn parse_seed(value: &str) -> Result<SceneAssetNormalizedPoint, String> {
     parse_point_value(value, "--seed")
 }
@@ -922,6 +1055,39 @@ fn parse_polygon(value: &str) -> Result<Vec<SceneAssetNormalizedPoint>, String> 
         return Err("--polygon requires at least three X,Y points".to_string());
     }
     Ok(points)
+}
+
+fn parse_path(value: &str) -> Result<Vec<SceneAssetNormalizedPoint>, String> {
+    let points = value
+        .split(';')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|point| parse_point_value(point, "--path"))
+        .collect::<Result<Vec<_>, _>>()?;
+    if points.len() < 2 {
+        return Err("--path requires at least two X,Y points".to_string());
+    }
+    Ok(points)
+}
+
+fn parse_rect(value: &str) -> Result<SceneAssetNormalizedRect, String> {
+    let parts = value.split(',').map(str::trim).collect::<Vec<_>>();
+    if parts.len() != 4 {
+        return Err(format!(
+            "--rect value `{value}` is invalid; expected X,Y,W,H"
+        ));
+    }
+    let parse = |index: usize| {
+        parts[index]
+            .parse::<f32>()
+            .map_err(|err| format!("--rect value `{}` is invalid: {err}", parts[index]))
+    };
+    Ok(SceneAssetNormalizedRect {
+        x: parse(0)?,
+        y: parse(1)?,
+        w: parse(2)?,
+        h: parse(3)?,
+    })
 }
 
 fn csv_values(value: Option<&str>) -> Vec<String> {

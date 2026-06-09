@@ -716,6 +716,55 @@ pub struct SceneAssetAlphaPaintOptions {
     pub protect_regions: Vec<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SceneAssetDrawShapeKind {
+    Rect,
+    Line,
+    Polygon,
+    Ellipse,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetCloneStampOptions {
+    pub sample_origin: SceneAssetNormalizedPoint,
+    pub target_origin: SceneAssetNormalizedPoint,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub within_regions: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub within_polygons: Vec<Vec<SceneAssetNormalizedPoint>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub protect_regions: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetDrawShapeOptions {
+    pub shape: SceneAssetDrawShapeKind,
+    pub color: [u8; 4],
+    #[serde(default = "default_stroke_width")]
+    pub stroke_width: u32,
+    #[serde(default)]
+    pub fill: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rect: Option<SceneAssetNormalizedRect>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub points: Vec<SceneAssetNormalizedPoint>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub protect_regions: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetStrokePathOptions {
+    pub path: Vec<SceneAssetNormalizedPoint>,
+    pub color: [u8; 4],
+    #[serde(default = "default_stroke_width")]
+    pub width: u32,
+    #[serde(default)]
+    pub closed: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub protect_regions: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SceneAssetEditError {
     #[error("image file error for `{path}`: {message}")]
@@ -1194,6 +1243,65 @@ fn run_scene_asset_pipeline_step(
                     whole_image: pipeline_bool_arg(&step.args, "whole_image", false)?,
                     within_regions: pipeline_string_list_arg(&step.args, "within_regions")?,
                     within_polygons: pipeline_polygons_arg(&step.args, "within_polygons")?,
+                    protect_regions: pipeline_string_list_arg(&step.args, "protect_regions")?,
+                },
+                feature_map.as_ref(),
+                options.force,
+            )?;
+            serde_json::to_value(report).map_err(|err| SceneAssetEditError::JsonFile {
+                path: report_path.display().to_string(),
+                message: err.to_string(),
+            })?
+        }
+        "clone-stamp" => {
+            let report = clone_stamp_scene_asset_region(
+                current_source,
+                &output_path,
+                SceneAssetCloneStampOptions {
+                    sample_origin: pipeline_required_point_arg(&step.args, "sample_origin")?,
+                    target_origin: pipeline_required_point_arg(&step.args, "target_origin")?,
+                    within_regions: pipeline_string_list_arg(&step.args, "within_regions")?,
+                    within_polygons: pipeline_polygons_arg(&step.args, "within_polygons")?,
+                    protect_regions: pipeline_string_list_arg(&step.args, "protect_regions")?,
+                },
+                feature_map.as_ref(),
+                options.force,
+            )?;
+            serde_json::to_value(report).map_err(|err| SceneAssetEditError::JsonFile {
+                path: report_path.display().to_string(),
+                message: err.to_string(),
+            })?
+        }
+        "draw-shape" => {
+            let report = draw_scene_asset_shape(
+                current_source,
+                &output_path,
+                SceneAssetDrawShapeOptions {
+                    shape: pipeline_draw_shape_arg(&step.args)?,
+                    color: pipeline_color_arg(&step.args, "color")?,
+                    stroke_width: pipeline_u32_arg(&step.args, "stroke_width", 1)?,
+                    fill: pipeline_bool_arg(&step.args, "fill", false)?,
+                    rect: pipeline_rect_arg(&step.args, "rect")?,
+                    points: pipeline_points_arg(&step.args, "points", "point")?,
+                    protect_regions: pipeline_string_list_arg(&step.args, "protect_regions")?,
+                },
+                feature_map.as_ref(),
+                options.force,
+            )?;
+            serde_json::to_value(report).map_err(|err| SceneAssetEditError::JsonFile {
+                path: report_path.display().to_string(),
+                message: err.to_string(),
+            })?
+        }
+        "stroke-path" => {
+            let report = stroke_scene_asset_path(
+                current_source,
+                &output_path,
+                SceneAssetStrokePathOptions {
+                    path: pipeline_path_points_arg(&step.args, "path")?,
+                    color: pipeline_color_arg(&step.args, "color")?,
+                    width: pipeline_u32_arg(&step.args, "width", 1)?,
+                    closed: pipeline_bool_arg(&step.args, "closed", false)?,
                     protect_regions: pipeline_string_list_arg(&step.args, "protect_regions")?,
                 },
                 feature_map.as_ref(),
@@ -1850,6 +1958,171 @@ pub fn alpha_paint_scene_asset_region(
     })
 }
 
+pub fn clone_stamp_scene_asset_region(
+    source_path: &Path,
+    output_path: &Path,
+    options: SceneAssetCloneStampOptions,
+    feature_map: Option<&SceneAssetFeatureMap>,
+    force: bool,
+) -> Result<SceneAssetPaintReport, SceneAssetEditError> {
+    let mut image = load_rgba_image(source_path)?;
+    let source = image.clone();
+    let (sample_x, sample_y) =
+        normalized_point_to_pixel(options.sample_origin, image.width(), image.height())?;
+    let (target_x, target_y) =
+        normalized_point_to_pixel(options.target_origin, image.width(), image.height())?;
+    let dx = sample_x as i32 - target_x as i32;
+    let dy = sample_y as i32 - target_y as i32;
+    let mask = paint_bounds_mask(
+        image.width(),
+        image.height(),
+        false,
+        &options.within_regions,
+        &options.within_polygons,
+        &options.protect_regions,
+        feature_map,
+    )?;
+    let mut changed_pixels = 0;
+    for y in 0..image.height() {
+        for x in 0..image.width() {
+            if !mask.pixels()[mask_index(image.width(), x, y)] {
+                continue;
+            }
+            let source_x = x as i32 + dx;
+            let source_y = y as i32 + dy;
+            if source_x < 0
+                || source_y < 0
+                || source_x >= image.width() as i32
+                || source_y >= image.height() as i32
+            {
+                continue;
+            }
+            let replacement = *source.get_pixel(source_x as u32, source_y as u32);
+            let pixel = image.get_pixel_mut(x, y);
+            if *pixel != replacement {
+                *pixel = replacement;
+                changed_pixels += 1;
+            }
+        }
+    }
+    save_rgba_image(&image, output_path, force)?;
+    Ok(SceneAssetPaintReport {
+        operation: "clone_stamp".to_string(),
+        source: source_path.display().to_string(),
+        output_path: output_path.display().to_string(),
+        changed_pixels,
+        report: inspect_scene_asset_image(output_path)?,
+    })
+}
+
+pub fn draw_scene_asset_shape(
+    source_path: &Path,
+    output_path: &Path,
+    options: SceneAssetDrawShapeOptions,
+    feature_map: Option<&SceneAssetFeatureMap>,
+    force: bool,
+) -> Result<SceneAssetPaintReport, SceneAssetEditError> {
+    let mut image = load_rgba_image(source_path)?;
+    let original = image.clone();
+    let color = Rgba(options.color);
+    match options.shape {
+        SceneAssetDrawShapeKind::Rect => {
+            let rect = normalized_rect_arg(options.rect, "draw-shape rect")?
+                .to_pixels(image.width(), image.height());
+            if options.fill {
+                fill_region(&mut image, rect, color);
+            }
+            draw_rect_outline(&mut image, rect, color, options.stroke_width.max(1));
+        }
+        SceneAssetDrawShapeKind::Line => {
+            if options.points.len() < 2 {
+                return Err(SceneAssetEditError::InvalidOperation(
+                    "draw-shape line requires at least two --point values".to_string(),
+                ));
+            }
+            draw_normalized_line(
+                &mut image,
+                options.points[0],
+                options.points[1],
+                color,
+                options.stroke_width.max(1),
+            )?;
+        }
+        SceneAssetDrawShapeKind::Polygon => {
+            validate_polygon(&options.points)?;
+            if options.fill {
+                let mut mask = SceneAssetMask::from_pixels(
+                    image.width(),
+                    image.height(),
+                    vec![false; pixel_len(&image)],
+                );
+                mask.select_polygon(&options.points)?;
+                paint_pixels(&mut image, mask.pixels(), |pixel| {
+                    let before = *pixel;
+                    blend_pixel(pixel, color, 1.0);
+                    *pixel != before
+                });
+            }
+            draw_normalized_path(
+                &mut image,
+                &options.points,
+                color,
+                options.stroke_width.max(1),
+                true,
+            )?;
+        }
+        SceneAssetDrawShapeKind::Ellipse => {
+            let rect = normalized_rect_arg(options.rect, "draw-shape ellipse")?
+                .to_pixels(image.width(), image.height());
+            draw_ellipse(
+                &mut image,
+                rect,
+                Some(color),
+                options.fill.then_some(color),
+                options.stroke_width.max(1),
+            );
+        }
+    }
+    restore_protected_regions(&original, &mut image, feature_map, &options.protect_regions)?;
+    let changed_pixels = changed_pixel_count(&original, &image);
+    save_rgba_image(&image, output_path, force)?;
+    Ok(SceneAssetPaintReport {
+        operation: "draw_shape".to_string(),
+        source: source_path.display().to_string(),
+        output_path: output_path.display().to_string(),
+        changed_pixels,
+        report: inspect_scene_asset_image(output_path)?,
+    })
+}
+
+pub fn stroke_scene_asset_path(
+    source_path: &Path,
+    output_path: &Path,
+    options: SceneAssetStrokePathOptions,
+    feature_map: Option<&SceneAssetFeatureMap>,
+    force: bool,
+) -> Result<SceneAssetPaintReport, SceneAssetEditError> {
+    let mut image = load_rgba_image(source_path)?;
+    let original = image.clone();
+    draw_normalized_path(
+        &mut image,
+        &options.path,
+        Rgba(options.color),
+        options.width.max(1),
+        options.closed,
+    )?;
+    restore_protected_regions(&original, &mut image, feature_map, &options.protect_regions)?;
+    let changed_pixels = changed_pixel_count(&original, &image);
+    save_rgba_image(&image, output_path, force)?;
+    Ok(SceneAssetPaintReport {
+        operation: "stroke_path".to_string(),
+        source: source_path.display().to_string(),
+        output_path: output_path.display().to_string(),
+        changed_pixels,
+        report: inspect_scene_asset_image(output_path)?,
+    })
+}
+
 fn write_polished_selection_output(
     operation: &str,
     source_path: &Path,
@@ -2348,7 +2621,10 @@ fn validate_pipeline_command_name(command: &str) -> Result<(), SceneAssetEditErr
         | "hair-cleanup"
         | "fill-region"
         | "sample-fill"
-        | "alpha-paint" => Ok(()),
+        | "alpha-paint"
+        | "clone-stamp"
+        | "draw-shape"
+        | "stroke-path" => Ok(()),
         _ => Err(SceneAssetEditError::InvalidOperation(format!(
             "unsupported pipeline command `{command}`"
         ))),
@@ -2524,6 +2800,55 @@ fn pipeline_background_sample_arg(
     }
 }
 
+fn pipeline_draw_shape_arg(
+    args: &BTreeMap<String, serde_json::Value>,
+) -> Result<SceneAssetDrawShapeKind, SceneAssetEditError> {
+    match pipeline_string_arg(args, "shape")?
+        .as_deref()
+        .unwrap_or("line")
+    {
+        "rect" => Ok(SceneAssetDrawShapeKind::Rect),
+        "line" => Ok(SceneAssetDrawShapeKind::Line),
+        "polygon" => Ok(SceneAssetDrawShapeKind::Polygon),
+        "ellipse" | "circle" => Ok(SceneAssetDrawShapeKind::Ellipse),
+        value => Err(SceneAssetEditError::InvalidOperation(format!(
+            "pipeline arg `shape` value `{value}` is invalid"
+        ))),
+    }
+}
+
+fn pipeline_rect_arg(
+    args: &BTreeMap<String, serde_json::Value>,
+    key: &str,
+) -> Result<Option<SceneAssetNormalizedRect>, SceneAssetEditError> {
+    let Some(value) = pipeline_arg(args, key) else {
+        return Ok(None);
+    };
+    match value {
+        serde_json::Value::String(text) => parse_normalized_rect_text(text, key).map(Some),
+        serde_json::Value::Object(object) => {
+            let x = object.get("x").and_then(serde_json::Value::as_f64);
+            let y = object.get("y").and_then(serde_json::Value::as_f64);
+            let w = object.get("w").and_then(serde_json::Value::as_f64);
+            let h = object.get("h").and_then(serde_json::Value::as_f64);
+            match (x, y, w, h) {
+                (Some(x), Some(y), Some(w), Some(h)) => Ok(Some(SceneAssetNormalizedRect {
+                    x: x as f32,
+                    y: y as f32,
+                    w: w as f32,
+                    h: h as f32,
+                })),
+                _ => Err(SceneAssetEditError::InvalidOperation(format!(
+                    "pipeline rect `{key}` must include numeric x, y, w, and h"
+                ))),
+            }
+        }
+        _ => Err(SceneAssetEditError::InvalidOperation(format!(
+            "pipeline rect `{key}` must be `X,Y,W,H` or an object"
+        ))),
+    }
+}
+
 fn pipeline_mask_preview_mode_arg(
     args: &BTreeMap<String, serde_json::Value>,
 ) -> Result<SceneAssetMaskPreviewMode, SceneAssetEditError> {
@@ -2668,6 +2993,40 @@ fn pipeline_polygon_value(
     }
 }
 
+fn pipeline_path_points_arg(
+    args: &BTreeMap<String, serde_json::Value>,
+    key: &str,
+) -> Result<Vec<SceneAssetNormalizedPoint>, SceneAssetEditError> {
+    let Some(value) = pipeline_arg(args, key) else {
+        return Err(SceneAssetEditError::InvalidOperation(format!(
+            "pipeline arg `{key}` is required"
+        )));
+    };
+    let points = match value {
+        serde_json::Value::String(text) => text
+            .split(';')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|point| parse_normalized_point_text(point, key))
+            .collect::<Result<Vec<_>, _>>()?,
+        serde_json::Value::Array(values) => values
+            .iter()
+            .map(|value| pipeline_point_value(value, key))
+            .collect::<Result<Vec<_>, _>>()?,
+        _ => {
+            return Err(SceneAssetEditError::InvalidOperation(format!(
+                "pipeline path `{key}` must be a string or point array"
+            )))
+        }
+    };
+    if points.len() < 2 {
+        return Err(SceneAssetEditError::InvalidOperation(format!(
+            "pipeline path `{key}` requires at least two points"
+        )));
+    }
+    Ok(points)
+}
+
 fn parse_normalized_polygon_text(
     value: &str,
     key: &str,
@@ -2680,6 +3039,32 @@ fn parse_normalized_polygon_text(
         .collect::<Result<Vec<_>, _>>()?;
     validate_polygon(&points)?;
     Ok(points)
+}
+
+fn parse_normalized_rect_text(
+    value: &str,
+    key: &str,
+) -> Result<SceneAssetNormalizedRect, SceneAssetEditError> {
+    let parts = value.split(',').map(str::trim).collect::<Vec<_>>();
+    if parts.len() != 4 {
+        return Err(SceneAssetEditError::InvalidOperation(format!(
+            "pipeline rect `{key}` value `{value}` is invalid; expected X,Y,W,H"
+        )));
+    }
+    let parse = |index: usize| {
+        parts[index].parse::<f32>().map_err(|err| {
+            SceneAssetEditError::InvalidOperation(format!(
+                "pipeline rect `{key}` value `{}` is invalid: {err}",
+                parts[index]
+            ))
+        })
+    };
+    Ok(SceneAssetNormalizedRect {
+        x: parse(0)?,
+        y: parse(1)?,
+        w: parse(2)?,
+        h: parse(3)?,
+    })
 }
 
 fn parse_normalized_point_text(
@@ -4032,6 +4417,65 @@ fn draw_line(image: &mut RgbaImage, from: (i32, i32), to: (i32, i32), color: Rgb
     }
 }
 
+fn draw_normalized_line(
+    image: &mut RgbaImage,
+    from: SceneAssetNormalizedPoint,
+    to: SceneAssetNormalizedPoint,
+    color: Rgba<u8>,
+    width: u32,
+) -> Result<(), SceneAssetEditError> {
+    let from = normalized_point_to_pixel(from, image.width(), image.height())?;
+    let to = normalized_point_to_pixel(to, image.width(), image.height())?;
+    draw_line(
+        image,
+        (from.0 as i32, from.1 as i32),
+        (to.0 as i32, to.1 as i32),
+        color,
+        width,
+    );
+    Ok(())
+}
+
+fn draw_normalized_path(
+    image: &mut RgbaImage,
+    path: &[SceneAssetNormalizedPoint],
+    color: Rgba<u8>,
+    width: u32,
+    closed: bool,
+) -> Result<(), SceneAssetEditError> {
+    if path.len() < 2 {
+        return Err(SceneAssetEditError::InvalidOperation(
+            "stroke path requires at least two points".to_string(),
+        ));
+    }
+    for pair in path.windows(2) {
+        draw_normalized_line(image, pair[0], pair[1], color, width)?;
+    }
+    if closed && path.len() > 2 {
+        draw_normalized_line(image, path[path.len() - 1], path[0], color, width)?;
+    }
+    Ok(())
+}
+
+fn draw_rect_outline(
+    image: &mut RgbaImage,
+    rect: SceneAssetPixelRect,
+    color: Rgba<u8>,
+    width: u32,
+) {
+    if rect.w == 0 || rect.h == 0 {
+        return;
+    }
+    let left = rect.x as i32;
+    let right = rect.right().saturating_sub(1) as i32;
+    let top = rect.y as i32;
+    let bottom = rect.bottom().saturating_sub(1) as i32;
+    draw_line(image, (left, top), (right, top), color, width);
+    draw_line(image, (right, top), (right, bottom), color, width);
+    draw_line(image, (right, bottom), (left, bottom), color, width);
+    draw_line(image, (left, bottom), (left, top), color, width);
+}
+
 fn draw_disk(image: &mut RgbaImage, cx: i32, cy: i32, radius: i32, color: Rgba<u8>) {
     let radius = radius.max(1);
     let r2 = radius * radius;
@@ -4210,6 +4654,48 @@ fn pixel_mut_checked(image: &mut RgbaImage, x: i32, y: i32) -> Option<&mut Rgba<
     } else {
         None
     }
+}
+
+fn normalized_rect_arg(
+    rect: Option<SceneAssetNormalizedRect>,
+    label: &str,
+) -> Result<SceneAssetNormalizedRect, SceneAssetEditError> {
+    rect.ok_or_else(|| SceneAssetEditError::InvalidOperation(format!("{label} requires --rect")))
+}
+
+fn restore_protected_regions(
+    original: &RgbaImage,
+    image: &mut RgbaImage,
+    feature_map: Option<&SceneAssetFeatureMap>,
+    protect_regions: &[String],
+) -> Result<(), SceneAssetEditError> {
+    if protect_regions.is_empty() {
+        return Ok(());
+    }
+    let Some(feature_map) = feature_map else {
+        return Err(SceneAssetEditError::InvalidOperation(
+            "--protect-regions requires --protect or --feature-map".to_string(),
+        ));
+    };
+    for region in protect_regions {
+        let rect = feature_map.pixel_region(region, image.width(), image.height())?;
+        for y in rect.y..rect.bottom().min(image.height()) {
+            for x in rect.x..rect.right().min(image.width()) {
+                image.put_pixel(x, y, *original.get_pixel(x, y));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn changed_pixel_count(a: &RgbaImage, b: &RgbaImage) -> usize {
+    if a.dimensions() != b.dimensions() {
+        return a.width() as usize * a.height() as usize;
+    }
+    a.pixels()
+        .zip(b.pixels())
+        .filter(|(a, b)| a.0 != b.0)
+        .count()
 }
 
 fn point_in_rect(rect: SceneAssetPixelRect, point: SceneAssetNormalizedPoint) -> (i32, i32) {
@@ -4692,6 +5178,100 @@ mod tests {
         let edited = load_rgba_image(&output).unwrap();
         assert_equal!(*edited.get_pixel(0, 0), Rgba([20u8, 40, 60, 80]));
         assert_equal!(*edited.get_pixel(3, 0), Rgba([20u8, 40, 60, 255]));
+    }
+
+    #[test]
+    fn clone_stamp_copies_source_offset_into_bounded_target() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join("source.png");
+        let output = dir.path().join("clone.png");
+        let mut image = ImageBuffer::from_pixel(4, 4, Rgba([0u8, 0, 0, 255]));
+        image.put_pixel(0, 0, Rgba([200u8, 40, 60, 255]));
+        image.save(&source).unwrap();
+
+        let report = clone_stamp_scene_asset_region(
+            &source,
+            &output,
+            SceneAssetCloneStampOptions {
+                sample_origin: SceneAssetNormalizedPoint { x: 0.0, y: 0.0 },
+                target_origin: SceneAssetNormalizedPoint { x: 1.0, y: 1.0 },
+                within_regions: Vec::new(),
+                within_polygons: vec![vec![
+                    SceneAssetNormalizedPoint { x: 0.75, y: 0.75 },
+                    SceneAssetNormalizedPoint { x: 1.0, y: 0.75 },
+                    SceneAssetNormalizedPoint { x: 1.0, y: 1.0 },
+                    SceneAssetNormalizedPoint { x: 0.75, y: 1.0 },
+                ]],
+                protect_regions: Vec::new(),
+            },
+            None,
+            false,
+        )
+        .unwrap();
+
+        let edited = load_rgba_image(&output).unwrap();
+        assert_equal!(report.changed_pixels, 1);
+        assert_equal!(*edited.get_pixel(3, 3), Rgba([200u8, 40, 60, 255]));
+        assert_equal!(*edited.get_pixel(0, 0), Rgba([200u8, 40, 60, 255]));
+    }
+
+    #[test]
+    fn draw_shape_fills_rect_and_stroke_path_draws_outline() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join("source.png");
+        let rect_output = dir.path().join("rect.png");
+        let stroke_output = dir.path().join("stroke.png");
+        let image = ImageBuffer::from_pixel(8, 8, Rgba([0u8, 0, 0, 255]));
+        image.save(&source).unwrap();
+
+        let rect_report = draw_scene_asset_shape(
+            &source,
+            &rect_output,
+            SceneAssetDrawShapeOptions {
+                shape: SceneAssetDrawShapeKind::Rect,
+                color: [20, 200, 40, 255],
+                stroke_width: 1,
+                fill: true,
+                rect: Some(SceneAssetNormalizedRect {
+                    x: 0.25,
+                    y: 0.25,
+                    w: 0.5,
+                    h: 0.5,
+                }),
+                points: Vec::new(),
+                protect_regions: Vec::new(),
+            },
+            None,
+            false,
+        )
+        .unwrap();
+
+        let rect = load_rgba_image(&rect_output).unwrap();
+        assert!(rect_report.changed_pixels > 0);
+        assert_equal!(*rect.get_pixel(4, 4), Rgba([20u8, 200, 40, 255]));
+
+        stroke_scene_asset_path(
+            &source,
+            &stroke_output,
+            SceneAssetStrokePathOptions {
+                path: vec![
+                    SceneAssetNormalizedPoint { x: 0.0, y: 0.0 },
+                    SceneAssetNormalizedPoint { x: 1.0, y: 0.0 },
+                    SceneAssetNormalizedPoint { x: 1.0, y: 1.0 },
+                ],
+                color: [255, 0, 0, 255],
+                width: 1,
+                closed: false,
+                protect_regions: Vec::new(),
+            },
+            None,
+            false,
+        )
+        .unwrap();
+
+        let stroke = load_rgba_image(&stroke_output).unwrap();
+        assert_equal!(*stroke.get_pixel(0, 0), Rgba([255u8, 0, 0, 255]));
+        assert_equal!(*stroke.get_pixel(7, 7), Rgba([255u8, 0, 0, 255]));
     }
 
     #[test]
