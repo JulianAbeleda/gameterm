@@ -9,7 +9,7 @@ pub(super) const COMPOSE_OUTPUT_LIMIT: usize = 1200;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum StructuredComposeOutcome {
-    NoReply,
+    NoReply { status: String },
     WithReply {
         speaker: String,
         dialogue_text: String,
@@ -81,8 +81,15 @@ pub(super) fn apply_compose_backend_result(
             }) => {
                 return stamp_runtime_blocks(runtime, &speaker, &dialogue_text, voice_block_sync);
             }
-            Some(StructuredComposeOutcome::NoReply) => {
-                runtime.mark_compose_succeeded("Scene", "");
+            Some(StructuredComposeOutcome::NoReply { status }) => {
+                // A patch-only or status-only reply must still leave a visible
+                // trace of the turn in the transcript, but it is not spoken.
+                let trace = if status.trim().is_empty() {
+                    result.label.succeeded_status().to_string()
+                } else {
+                    status
+                };
+                runtime.mark_compose_succeeded("Scene", &trace);
                 return Vec::new();
             }
             None => {}
@@ -283,6 +290,7 @@ fn apply_structured_compose_backend_result(
         );
     }
 
+    let applied_status = patch.status.clone().unwrap_or_default();
     if let Err(err) = runtime.apply_scene_patch(patch) {
         runtime.mark_action_status(format!("Compose patch failed: {err}"));
         return None;
@@ -297,7 +305,9 @@ fn apply_structured_compose_backend_result(
             });
     }
 
-    Some(StructuredComposeOutcome::NoReply)
+    Some(StructuredComposeOutcome::NoReply {
+        status: applied_status,
+    })
 }
 
 fn apply_compose_backend_failure_result(runtime: &mut SceneRuntime, result: &ComposeBackendResult) {

@@ -1129,6 +1129,43 @@ fn compose_backend_structured_output_without_reply_uses_status() {
 }
 
 #[test]
+fn compose_status_only_reply_leaves_visible_system_trace() {
+    let mut runtime = SceneRuntime::new(staged_vn_scene()).unwrap();
+    runtime.mark_compose_running("Codex running", "update the scene");
+    let before = runtime.compose_history_len();
+    let segments = apply_compose_backend_result(
+        &mut runtime,
+        succeeded_codex_result("update the scene", r#"{"status":"Scene updated"}"#),
+        true,
+    );
+
+    assert!(segments.is_empty());
+    assert!(runtime.compose_history_len() > before);
+    while runtime.advance_compose_reveal(usize::MAX) {}
+    let frame = runtime.render_text_frame(120, 40);
+    assert!(frame.contains("Scene updated"));
+}
+
+#[test]
+fn compose_patch_only_reply_leaves_visible_system_trace() {
+    let mut runtime = SceneRuntime::new(staged_vn_scene()).unwrap();
+    runtime.mark_compose_running("Codex running", "rename the task");
+    let before = runtime.compose_history_len();
+    let raw_output = r#"{"patch":{"scene_patch_version":1,"updates":[{"entity_id":"task-render","label":"Task Render"}]}}"#;
+    let segments = apply_compose_backend_result(
+        &mut runtime,
+        succeeded_codex_result("rename the task", raw_output),
+        true,
+    );
+
+    assert!(segments.is_empty());
+    assert!(runtime.compose_history_len() > before);
+    while runtime.advance_compose_reveal(usize::MAX) {}
+    let frame = runtime.render_text_frame(120, 40);
+    assert!(frame.contains("Codex succeeded"));
+}
+
+#[test]
 fn compose_backend_failure_updates_error_dialogue() {
     let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
     let segments = apply_compose_backend_result(
