@@ -1,9 +1,10 @@
 use std::path::PathBuf;
 
+use super::SceneRuntime;
 use crate::conditions::conditions_match;
 use crate::{
     relationship_key, validate_layers, validate_rpg_state, validate_state_entries,
-    validate_state_operations, SceneAction, SceneActionKind, SceneActionPolicy, SceneRuntime,
+    validate_state_operations, SceneAction, SceneActionKind, SceneActionPolicy,
     VisualActionRequest, VisualDialogueLine, VisualEntity, VisualLayerState,
     VisualLayerTransitionReport, VisualProcessState, VisualRpgState, VisualRuntimeEvent,
     VisualSceneError, VisualStat, VisualStateEntry, VisualStateEntryError, VisualStateOperation,

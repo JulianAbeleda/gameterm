@@ -183,7 +183,7 @@ impl VisualScenePatch {
     }
 }
 
-impl crate::SceneRuntime {
+impl super::SceneRuntime {
     pub fn apply_scene_patch(
         &mut self,
         patch: VisualScenePatch,

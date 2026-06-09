@@ -1,6 +1,7 @@
 use std::path::Path;
 
-use crate::{RunCommandTarget, SceneRuntime, VisualComposeRole};
+use super::SceneRuntime;
+use crate::{RunCommandTarget, VisualComposeRole};
 
 impl SceneRuntime {
     pub fn mark_action_status(&mut self, status: impl Into<String>) {
