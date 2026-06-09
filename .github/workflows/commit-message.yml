@@ -1,0 +1,38 @@
+name: commit-message
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+jobs:
+  check-commit-message:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - name: Check commit message prefixes
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${PR_BASE:-}" && -n "${PR_HEAD:-}" ]]; then
+            ci/check-commit-message.sh "${PR_BASE}..${PR_HEAD}"
+            exit 0
+          fi
+
+          zero_sha="0000000000000000000000000000000000000000"
+          if [[ -z "${BEFORE:-}" || "${BEFORE}" == "${zero_sha}" ]]; then
+            ci/check-commit-message.sh "HEAD~1..HEAD"
+            exit 0
+          fi
+
+          ci/check-commit-message.sh "${BEFORE}..${AFTER}"
