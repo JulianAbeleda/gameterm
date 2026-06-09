@@ -12,23 +12,23 @@ use gameterm_visual::{
     make_scene_asset_background_transparent, make_scene_asset_background_transparent_polished,
     pad_scene_asset_image, preview_scene_asset_grid, preview_scene_asset_selection_mask,
     render_scene_asset_state, render_scene_asset_state_sheet, report_scene_asset_points,
-    restore_scene_asset_from_source, run_scene_asset_operation, run_scene_asset_pipeline,
-    sample_fill_scene_asset_region, sample_scene_asset_image, scene_asset_operation_error_report,
-    stroke_scene_asset_path, transform_scene_asset_image, unsharp_mask_scene_asset_image,
-    validate_scene_asset_feature_map, write_scene_asset_json, SceneAssetAlphaPaintOptions,
-    SceneAssetBackgroundSample, SceneAssetBlendMode, SceneAssetBlurOptions,
-    SceneAssetBrightnessContrastOptions, SceneAssetCloneStampOptions, SceneAssetColorChannel,
-    SceneAssetCompositeLayer, SceneAssetCompositeOptions, SceneAssetCropOptions,
-    SceneAssetDefringeMode, SceneAssetDrawShapeKind, SceneAssetDrawShapeOptions,
-    SceneAssetFillOptions, SceneAssetGridPreviewOptions, SceneAssetHairCleanupMode,
-    SceneAssetHslOptions, SceneAssetLevelsOptions, SceneAssetMaskPolishOptions,
-    SceneAssetMaskPreviewMode, SceneAssetMaskPreviewOptions, SceneAssetNormalizedPoint,
-    SceneAssetNormalizedRect, SceneAssetOperationRunOptions, SceneAssetPadAnchor,
-    SceneAssetPadOptions, SceneAssetPipelineRoots, SceneAssetPipelineRunOptions,
-    SceneAssetResampleFilter, SceneAssetRestoreFilter, SceneAssetRestoreOptions,
-    SceneAssetSampleFillOptions, SceneAssetSampleOptions, SceneAssetStateManifestOptions,
-    SceneAssetStateRenderOptions, SceneAssetStrokePathOptions, SceneAssetTransformOptions,
-    SceneAssetUnsharpMaskOptions,
+    restore_scene_asset_from_source, run_scene_asset_edit_session, run_scene_asset_operation,
+    run_scene_asset_pipeline, sample_fill_scene_asset_region, sample_scene_asset_image,
+    scene_asset_operation_error_report, stroke_scene_asset_path, transform_scene_asset_image,
+    unsharp_mask_scene_asset_image, validate_scene_asset_feature_map, write_scene_asset_json,
+    SceneAssetAlphaPaintOptions, SceneAssetBackgroundSample, SceneAssetBlendMode,
+    SceneAssetBlurOptions, SceneAssetBrightnessContrastOptions, SceneAssetCloneStampOptions,
+    SceneAssetColorChannel, SceneAssetCompositeLayer, SceneAssetCompositeOptions,
+    SceneAssetCropOptions, SceneAssetDefringeMode, SceneAssetDrawShapeKind,
+    SceneAssetDrawShapeOptions, SceneAssetFillOptions, SceneAssetGridPreviewOptions,
+    SceneAssetHairCleanupMode, SceneAssetHslOptions, SceneAssetLevelsOptions,
+    SceneAssetMaskPolishOptions, SceneAssetMaskPreviewMode, SceneAssetMaskPreviewOptions,
+    SceneAssetNormalizedPoint, SceneAssetNormalizedRect, SceneAssetOperationRunOptions,
+    SceneAssetPadAnchor, SceneAssetPadOptions, SceneAssetPipelineRoots,
+    SceneAssetPipelineRunOptions, SceneAssetResampleFilter, SceneAssetRestoreFilter,
+    SceneAssetRestoreOptions, SceneAssetSampleFillOptions, SceneAssetSampleOptions,
+    SceneAssetStateManifestOptions, SceneAssetStateRenderOptions, SceneAssetStrokePathOptions,
+    SceneAssetTransformOptions, SceneAssetUnsharpMaskOptions,
 };
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -49,6 +49,7 @@ struct CliArgs {
     source: Option<PathBuf>,
     pipeline: Option<PathBuf>,
     operation: Option<PathBuf>,
+    session: Option<PathBuf>,
     before: Option<PathBuf>,
     after: Option<PathBuf>,
     manifest: Option<PathBuf>,
@@ -139,6 +140,7 @@ fn usage() {
   cargo run -p gameterm-visual --example scene_asset_edit -- inspect IMAGE [--output PATH] [--pretty]
   cargo run -p gameterm-visual --example scene_asset_edit -- pipeline-run --pipeline PIPELINE.json --input-root DIR --transformation-root DIR --output-root DIR [--dry-run] [--force] [--pretty]
   cargo run -p gameterm-visual --example scene_asset_edit -- operation-run --operation OPERATION.json --input-root DIR --transformation-root DIR --output-root DIR [--output REPORT.json] [--preview] [--dry-run] [--force] [--pretty]
+  cargo run -p gameterm-visual --example scene_asset_edit -- session-run --session SESSION.json --input-root DIR --transformation-root DIR --output-root DIR [--output REPORT.json] [--dry-run] [--force] [--pretty]
   cargo run -p gameterm-visual --example scene_asset_edit -- compare --before BEFORE.png --after AFTER.png [--output REPORT.json] [--pretty]
   cargo run -p gameterm-visual --example scene_asset_edit -- sample --source IMAGE [--point X,Y ...] [--within-polygon X,Y;X,Y;X,Y] [--within-regions CSV] [--protect FEATURE_MAP] [--output REPORT] [--pretty]
   cargo run -p gameterm-visual --example scene_asset_edit -- point-report --source IMAGE --point X,Y [--point X,Y ...] [--pretty]
@@ -191,6 +193,7 @@ Options:
   --source PATH              Source image for export-source.
   --pipeline PATH            Pipeline JSON for pipeline-run.
   --operation PATH           Operation JSON for operation-run.
+  --session PATH             Edit session JSON for session-run.
   --before PATH              Before image for compare.
   --after PATH               After image for compare.
   --manifest PATH            State manifest JSON.
@@ -291,6 +294,7 @@ fn main() {
         Some("inspect") => run_inspect(args),
         Some("pipeline-run") => run_pipeline(args),
         Some("operation-run") => run_operation(args),
+        Some("session-run") => run_session(args),
         Some("compare") => run_compare(args),
         Some("sample") => run_sample(args),
         Some("point-report") => run_point_report(args),
@@ -398,6 +402,29 @@ fn run_operation(args: CliArgs) -> Result<(), String> {
             Err(err.to_string())
         }
     }
+}
+
+fn run_session(args: CliArgs) -> Result<(), String> {
+    let session = required_path(args.session.clone(), "--session")?;
+    let report = run_scene_asset_edit_session(
+        &session,
+        &SceneAssetPipelineRoots {
+            input_root: required_path(args.input_root.clone(), "--input-root")?,
+            transformation_root: required_path(
+                args.transformation_root.clone(),
+                "--transformation-root",
+            )?,
+            output_root: required_path(args.output_root.clone(), "--output-root")?,
+        },
+        SceneAssetOperationRunOptions {
+            force: args.force,
+            dry_run: args.dry_run,
+            preview: args.preview,
+            pretty: args.pretty,
+        },
+    )
+    .map_err(|err| err.to_string())?;
+    write_json(args.output.as_deref(), &report, args.pretty, args.force)
 }
 
 fn run_compare(args: CliArgs) -> Result<(), String> {
@@ -1147,6 +1174,7 @@ fn parse_args() -> Result<CliArgs, String> {
             "--source" => parsed.source = Some(next_path(&mut args, "--source")?),
             "--pipeline" => parsed.pipeline = Some(next_path(&mut args, "--pipeline")?),
             "--operation" => parsed.operation = Some(next_path(&mut args, "--operation")?),
+            "--session" => parsed.session = Some(next_path(&mut args, "--session")?),
             "--before" => parsed.before = Some(next_path(&mut args, "--before")?),
             "--after" => parsed.after = Some(next_path(&mut args, "--after")?),
             "--manifest" => parsed.manifest = Some(next_path(&mut args, "--manifest")?),

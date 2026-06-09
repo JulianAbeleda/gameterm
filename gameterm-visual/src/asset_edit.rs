@@ -232,6 +232,32 @@ pub struct SceneAssetOperationRunReport {
     pub step: SceneAssetPipelineStepReport,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetEditSession {
+    pub asset_session_version: u64,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_source: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub accepted_outputs: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub operations: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetEditSessionRunReport {
+    pub operation: String,
+    pub name: String,
+    pub dry_run: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_source: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub accepted_outputs: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub final_output_path: Option<String>,
+    pub operations: Vec<SceneAssetOperationRunReport>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SceneAssetOperationErrorReport {
     pub operation: String,
@@ -1830,7 +1856,7 @@ pub fn run_scene_asset_operation(
     }
     validate_pipeline_command_name(&operation.command)?;
 
-    let source_path = resolve_pipeline_input_path(roots, &operation.source);
+    let source_path = resolve_asset_operation_source_path(roots, &operation.source);
     if !source_path.is_file() {
         return Err(SceneAssetEditError::ImageFile {
             path: source_path.display().to_string(),
@@ -1927,6 +1953,52 @@ pub fn run_scene_asset_operation(
         compare,
         expectation_failures,
         step: step_report,
+    })
+}
+
+pub fn run_scene_asset_edit_session(
+    session_path: &Path,
+    roots: &SceneAssetPipelineRoots,
+    options: SceneAssetOperationRunOptions,
+) -> Result<SceneAssetEditSessionRunReport, SceneAssetEditError> {
+    let session: SceneAssetEditSession = load_json(session_path)?;
+    if session.asset_session_version != 1 {
+        return Err(SceneAssetEditError::InvalidOperation(format!(
+            "unsupported asset_session_version {}; expected 1",
+            session.asset_session_version
+        )));
+    }
+    if session.name.trim().is_empty() {
+        return Err(SceneAssetEditError::InvalidOperation(
+            "asset edit session name is required".to_string(),
+        ));
+    }
+    if session.operations.is_empty() {
+        return Err(SceneAssetEditError::InvalidOperation(
+            "asset edit session requires at least one operation".to_string(),
+        ));
+    }
+    let base_dir = session_path.parent();
+    let mut operation_reports = Vec::with_capacity(session.operations.len());
+    for operation in &session.operations {
+        let operation_path = resolve_recipe_path(operation, base_dir);
+        operation_reports.push(run_scene_asset_operation(
+            &operation_path,
+            roots,
+            options.clone(),
+        )?);
+    }
+    let final_output_path = operation_reports
+        .last()
+        .map(|report| report.output_path.clone());
+    Ok(SceneAssetEditSessionRunReport {
+        operation: "session_run".to_string(),
+        name: session.name,
+        dry_run: options.dry_run,
+        current_source: session.current_source,
+        accepted_outputs: session.accepted_outputs,
+        final_output_path,
+        operations: operation_reports,
     })
 }
 
@@ -3882,6 +3954,24 @@ fn resolve_pipeline_input_path(roots: &SceneAssetPipelineRoots, path: &str) -> P
     } else {
         roots.input_root.join(path)
     }
+}
+
+fn resolve_asset_operation_source_path(roots: &SceneAssetPipelineRoots, path: &str) -> PathBuf {
+    let path = PathBuf::from(path);
+    if path.is_absolute() {
+        return path;
+    }
+    let mut components = path.components();
+    if matches!(components.next(), Some(std::path::Component::Normal(prefix)) if prefix == "Transformation")
+    {
+        return roots.transformation_root.join(components.as_path());
+    }
+    let mut components = path.components();
+    if matches!(components.next(), Some(std::path::Component::Normal(prefix)) if prefix == "Output")
+    {
+        return roots.output_root.join(components.as_path());
+    }
+    roots.input_root.join(path)
 }
 
 fn resolve_pipeline_output_path(roots: &SceneAssetPipelineRoots, path: &str) -> PathBuf {
@@ -6875,6 +6965,94 @@ mod tests {
         assert_equal!(report.status, "error");
         assert_equal!(report.code, "unknown_region");
         assert!(report.hint.unwrap().contains("map-template"));
+    }
+
+    #[test]
+    fn session_run_chains_operation_files_and_transformation_sources() {
+        let dir = tempdir().unwrap();
+        let input_root = dir.path().join("Input");
+        let transformation_root = dir.path().join("Transformation");
+        let output_root = dir.path().join("Output");
+        std::fs::create_dir_all(&input_root).unwrap();
+        std::fs::create_dir_all(&transformation_root).unwrap();
+        std::fs::create_dir_all(&output_root).unwrap();
+
+        let source = input_root.join("source.png");
+        let image = ImageBuffer::from_pixel(4, 4, Rgba([0u8, 0, 0, 255]));
+        image.save(&source).unwrap();
+        let fill_operation = SceneAssetOperation {
+            asset_operation_version: 1,
+            id: "fill".to_string(),
+            intent: None,
+            source: "source.png".to_string(),
+            output: "01-filled.png".to_string(),
+            command: "fill-region".to_string(),
+            args: BTreeMap::from([
+                ("color".to_string(), serde_json::json!("#ff0000ff")),
+                ("whole_image".to_string(), serde_json::json!(true)),
+            ]),
+            expectations: SceneAssetOperationExpectations::default(),
+        };
+        let alpha_operation = SceneAssetOperation {
+            asset_operation_version: 1,
+            id: "alpha".to_string(),
+            intent: None,
+            source: "Transformation/01-filled.png".to_string(),
+            output: "02-alpha.png".to_string(),
+            command: "alpha-paint".to_string(),
+            args: BTreeMap::from([
+                ("alpha".to_string(), serde_json::json!(128)),
+                ("whole_image".to_string(), serde_json::json!(true)),
+            ]),
+            expectations: SceneAssetOperationExpectations::default(),
+        };
+        write_scene_asset_json(&dir.path().join("fill.json"), &fill_operation, true, false)
+            .unwrap();
+        write_scene_asset_json(
+            &dir.path().join("alpha.json"),
+            &alpha_operation,
+            true,
+            false,
+        )
+        .unwrap();
+        let session = SceneAssetEditSession {
+            asset_session_version: 1,
+            name: "chain".to_string(),
+            current_source: Some("source.png".to_string()),
+            accepted_outputs: Vec::new(),
+            operations: vec!["fill.json".to_string(), "alpha.json".to_string()],
+        };
+        let session_path = dir.path().join("session.json");
+        write_scene_asset_json(&session_path, &session, true, false).unwrap();
+
+        let report = run_scene_asset_edit_session(
+            &session_path,
+            &SceneAssetPipelineRoots {
+                input_root,
+                transformation_root: transformation_root.clone(),
+                output_root,
+            },
+            SceneAssetOperationRunOptions {
+                force: false,
+                dry_run: false,
+                preview: false,
+                pretty: true,
+            },
+        )
+        .unwrap();
+
+        assert_equal!(report.name, "chain");
+        assert_equal!(report.operations.len(), 2);
+        assert_equal!(
+            report.final_output_path,
+            Some(
+                transformation_root
+                    .join("02-alpha.png")
+                    .display()
+                    .to_string()
+            )
+        );
+        assert!(transformation_root.join("02-alpha.png").is_file());
     }
 
     #[test]
