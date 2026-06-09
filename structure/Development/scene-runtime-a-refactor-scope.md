@@ -53,6 +53,56 @@ The good precedent is `asset_edit.rs`: it is now a small facade over focused
 modules. The Scene Runtime should follow that shape without forcing a behavior
 change.
 
+## Implementation Result
+
+Completed on 2026-06-09.
+
+Actual post-refactor shape:
+
+```text
+gameterm-visual/src/
+  lib.rs                         # 113-line public facade
+  scene_runtime/
+    mod.rs                       # 268-line runtime type, constructors, helpers, trait glue
+    actions.rs
+    command_options.rs
+    debug.rs
+    debug_menu.rs
+    dialogue.rs
+    input.rs
+    lifecycle.rs
+    patch.rs
+    selection.rs
+    snapshot.rs
+    status_methods.rs
+    story_state.rs
+    text_frame.rs
+    vn_frame.rs
+    tests/
+      mod.rs
+      test_support.rs
+```
+
+The tests stayed under `scene_runtime/tests/` rather than root `src/tests/`
+because they intentionally exercise private runtime invariants without
+widening the public or crate-visible API.
+
+Verification completed:
+
+```sh
+cargo test -p gameterm-visual
+cargo check -p gameterm-gui
+git diff --check
+ci/check-commit-message.sh origin/main..HEAD
+```
+
+Notes:
+
+- `cargo test -p gameterm-visual` passed 241 tests.
+- `cargo check -p gameterm-gui` passed with pre-existing macOS selector cfg
+  warnings and the existing `phys_cell_idx` unused-assignment warning.
+- No runtime fields were widened to `pub(crate)` for the extraction.
+
 ## Non-Goals
 
 - No Scene JSON schema change.
