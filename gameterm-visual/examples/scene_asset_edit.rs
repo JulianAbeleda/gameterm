@@ -7,11 +7,12 @@ use gameterm_visual::{
     load_scene_asset_recipe_book, magic_erase_add_scene_asset_image, magic_erase_scene_asset_image,
     make_scene_asset_background_transparent, make_scene_asset_background_transparent_polished,
     preview_scene_asset_grid, preview_scene_asset_selection_mask, report_scene_asset_points,
-    restore_scene_asset_from_source, sample_fill_scene_asset_region, sample_scene_asset_image,
-    validate_scene_asset_feature_map, write_scene_asset_json, SceneAssetAlphaPaintOptions,
-    SceneAssetBackgroundSample, SceneAssetDefringeMode, SceneAssetFillOptions,
-    SceneAssetGridPreviewOptions, SceneAssetHairCleanupMode, SceneAssetMaskPolishOptions,
-    SceneAssetMaskPreviewMode, SceneAssetMaskPreviewOptions, SceneAssetNormalizedPoint,
+    restore_scene_asset_from_source, run_scene_asset_pipeline, sample_fill_scene_asset_region,
+    sample_scene_asset_image, validate_scene_asset_feature_map, write_scene_asset_json,
+    SceneAssetAlphaPaintOptions, SceneAssetBackgroundSample, SceneAssetDefringeMode,
+    SceneAssetFillOptions, SceneAssetGridPreviewOptions, SceneAssetHairCleanupMode,
+    SceneAssetMaskPolishOptions, SceneAssetMaskPreviewMode, SceneAssetMaskPreviewOptions,
+    SceneAssetNormalizedPoint, SceneAssetPipelineRoots, SceneAssetPipelineRunOptions,
     SceneAssetRestoreFilter, SceneAssetRestoreOptions, SceneAssetSampleFillOptions,
     SceneAssetSampleOptions,
 };
@@ -32,6 +33,10 @@ struct CliArgs {
     output_dir: Option<PathBuf>,
     output_source_root: Option<PathBuf>,
     source: Option<PathBuf>,
+    pipeline: Option<PathBuf>,
+    input_root: Option<PathBuf>,
+    transformation_root: Option<PathBuf>,
+    output_root: Option<PathBuf>,
     source_id: Option<String>,
     protect: Option<PathBuf>,
     protect_regions: Option<String>,
@@ -73,12 +78,14 @@ struct CliArgs {
     frames: Vec<PathBuf>,
     pretty: bool,
     force: bool,
+    dry_run: bool,
 }
 
 fn usage() {
     eprintln!(
         "Usage:
   cargo run -p gameterm-visual --example scene_asset_edit -- inspect IMAGE [--output PATH] [--pretty]
+  cargo run -p gameterm-visual --example scene_asset_edit -- pipeline-run --pipeline PIPELINE.json --input-root DIR --transformation-root DIR --output-root DIR [--dry-run] [--force] [--pretty]
   cargo run -p gameterm-visual --example scene_asset_edit -- sample --source IMAGE [--point X,Y ...] [--within-polygon X,Y;X,Y;X,Y] [--within-regions CSV] [--protect FEATURE_MAP] [--output REPORT] [--pretty]
   cargo run -p gameterm-visual --example scene_asset_edit -- point-report --source IMAGE --point X,Y [--point X,Y ...] [--pretty]
   cargo run -p gameterm-visual --example scene_asset_edit -- grid-preview --source IMAGE --output PATH [--step N] [--force]
@@ -113,6 +120,10 @@ Options:
   --output-dir PATH          Output directory for generated animation frames.
   --output-source-root PATH  Source-root layout used by scene_vn_asset_intake.
   --source PATH              Source image for export-source.
+  --pipeline PATH            Pipeline JSON for pipeline-run.
+  --input-root PATH          Pipeline input root.
+  --transformation-root PATH Pipeline intermediate/output root.
+  --output-root PATH         Pipeline final output root.
   --source-id ID             Catalog source directory.
   --protect PATH             Feature-map JSON used to protect foreground regions.
   --protect-regions CSV      Feature region names to subtract from the erase mask.
@@ -155,6 +166,7 @@ Options:
   --global                   Select all matching pixels instead of contiguous seed fill.
   --pretty                   Pretty-print JSON.
   --force                    Overwrite existing files.
+  --dry-run                  Validate a pipeline without writing outputs.
   -h, --help                 Show this help."
     );
 }
@@ -171,6 +183,7 @@ fn main() {
 
     let result = match args.command.as_deref() {
         Some("inspect") => run_inspect(args),
+        Some("pipeline-run") => run_pipeline(args),
         Some("sample") => run_sample(args),
         Some("point-report") => run_point_report(args),
         Some("grid-preview") => run_grid_preview(args),
@@ -205,6 +218,28 @@ fn main() {
 fn run_inspect(args: CliArgs) -> Result<(), String> {
     let image = required_path(args.image, "IMAGE")?;
     let report = inspect_scene_asset_image(&image).map_err(|err| err.to_string())?;
+    write_json(args.output.as_deref(), &report, args.pretty, args.force)
+}
+
+fn run_pipeline(args: CliArgs) -> Result<(), String> {
+    let pipeline = required_path(args.pipeline.clone(), "--pipeline")?;
+    let report = run_scene_asset_pipeline(
+        &pipeline,
+        &SceneAssetPipelineRoots {
+            input_root: required_path(args.input_root.clone(), "--input-root")?,
+            transformation_root: required_path(
+                args.transformation_root.clone(),
+                "--transformation-root",
+            )?,
+            output_root: required_path(args.output_root.clone(), "--output-root")?,
+        },
+        SceneAssetPipelineRunOptions {
+            force: args.force,
+            dry_run: args.dry_run,
+            pretty: args.pretty,
+        },
+    )
+    .map_err(|err| err.to_string())?;
     write_json(args.output.as_deref(), &report, args.pretty, args.force)
 }
 
@@ -647,6 +682,12 @@ fn parse_args() -> Result<CliArgs, String> {
                 parsed.output_source_root = Some(next_path(&mut args, "--output-source-root")?)
             }
             "--source" => parsed.source = Some(next_path(&mut args, "--source")?),
+            "--pipeline" => parsed.pipeline = Some(next_path(&mut args, "--pipeline")?),
+            "--input-root" => parsed.input_root = Some(next_path(&mut args, "--input-root")?),
+            "--transformation-root" => {
+                parsed.transformation_root = Some(next_path(&mut args, "--transformation-root")?)
+            }
+            "--output-root" => parsed.output_root = Some(next_path(&mut args, "--output-root")?),
             "--source-id" => parsed.source_id = Some(next_text(&mut args, "--source-id")?),
             "--protect" => parsed.protect = Some(next_path(&mut args, "--protect")?),
             "--protect-regions" => {
@@ -723,6 +764,7 @@ fn parse_args() -> Result<CliArgs, String> {
             "--global" => parsed.global = true,
             "--pretty" => parsed.pretty = true,
             "--force" => parsed.force = true,
+            "--dry-run" => parsed.dry_run = true,
             "-h" | "--help" => {
                 usage();
                 std::process::exit(0);

@@ -3,6 +3,7 @@ use image::{DynamicImage, ImageBuffer, Rgba, RgbaImage};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, VecDeque};
+use std::convert::TryFrom;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -100,6 +101,62 @@ pub struct SceneAssetRecipeBook {
     pub expressions: BTreeMap<String, Vec<SceneAssetEditOperation>>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub animations: BTreeMap<String, SceneAssetAnimationRecipe>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetPipeline {
+    pub asset_pipeline_version: u64,
+    pub name: String,
+    pub input: String,
+    pub steps: Vec<SceneAssetPipelineStep>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetPipelineStep {
+    pub command: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub args: BTreeMap<String, serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SceneAssetPipelineRoots {
+    pub input_root: PathBuf,
+    pub transformation_root: PathBuf,
+    pub output_root: PathBuf,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SceneAssetPipelineRunOptions {
+    pub force: bool,
+    pub dry_run: bool,
+    pub pretty: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetPipelineRunReport {
+    pub operation: String,
+    pub name: String,
+    pub input: String,
+    pub final_source: String,
+    pub dry_run: bool,
+    pub steps: Vec<SceneAssetPipelineStepReport>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetPipelineStepReport {
+    pub index: usize,
+    pub command: String,
+    pub source: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub report_path: Option<String>,
+    pub advanced_source: bool,
+    pub dry_run: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub report: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -898,6 +955,284 @@ pub fn write_scene_asset_json(
         message: err.to_string(),
     })?;
     write_file(path, format!("{json}\n").as_bytes(), force)
+}
+
+pub fn run_scene_asset_pipeline(
+    pipeline_path: &Path,
+    roots: &SceneAssetPipelineRoots,
+    options: SceneAssetPipelineRunOptions,
+) -> Result<SceneAssetPipelineRunReport, SceneAssetEditError> {
+    let pipeline: SceneAssetPipeline = load_json(pipeline_path)?;
+    if pipeline.asset_pipeline_version != 1 {
+        return Err(SceneAssetEditError::InvalidOperation(format!(
+            "unsupported asset_pipeline_version {}; expected 1",
+            pipeline.asset_pipeline_version
+        )));
+    }
+    let mut current_source = resolve_pipeline_input_path(roots, &pipeline.input);
+    let input_source = current_source.clone();
+    if !current_source.is_file() {
+        return Err(SceneAssetEditError::ImageFile {
+            path: current_source.display().to_string(),
+            message: "pipeline input does not exist".to_string(),
+        });
+    }
+
+    let mut steps = Vec::with_capacity(pipeline.steps.len());
+    for (index, step) in pipeline.steps.iter().enumerate() {
+        let step_report =
+            run_scene_asset_pipeline_step(index, step, roots, &current_source, &options)?;
+        if step_report.advanced_source {
+            if let Some(output_path) = &step_report.output_path {
+                current_source = PathBuf::from(output_path);
+            }
+        }
+        steps.push(step_report);
+    }
+
+    let input_label = input_source
+        .strip_prefix(&roots.input_root)
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|_| pipeline.input.clone());
+    Ok(SceneAssetPipelineRunReport {
+        operation: "pipeline_run".to_string(),
+        name: pipeline.name,
+        input: input_label,
+        final_source: current_source.display().to_string(),
+        dry_run: options.dry_run,
+        steps,
+    })
+}
+
+fn run_scene_asset_pipeline_step(
+    index: usize,
+    step: &SceneAssetPipelineStep,
+    roots: &SceneAssetPipelineRoots,
+    current_source: &Path,
+    options: &SceneAssetPipelineRunOptions,
+) -> Result<SceneAssetPipelineStepReport, SceneAssetEditError> {
+    let output_path = step
+        .output
+        .as_ref()
+        .map(|output| resolve_pipeline_output_path(roots, output));
+    let report_path = output_path.as_ref().map(pipeline_report_path);
+    let advances_source = pipeline_command_advances_source(&step.command);
+
+    if options.dry_run {
+        validate_pipeline_command_name(&step.command)?;
+        return Ok(SceneAssetPipelineStepReport {
+            index,
+            command: step.command.clone(),
+            source: current_source.display().to_string(),
+            output_path: output_path.as_ref().map(|path| path.display().to_string()),
+            report_path: report_path.as_ref().map(|path| path.display().to_string()),
+            advanced_source: advances_source,
+            dry_run: true,
+            report: None,
+        });
+    }
+
+    let output_path = output_path.ok_or_else(|| {
+        SceneAssetEditError::InvalidOperation(format!(
+            "pipeline step `{}` requires an output",
+            step.command
+        ))
+    })?;
+    let report_path = report_path.expect("report path is derived from output path");
+    let feature_map = load_pipeline_feature_map(roots, &step.args)?;
+    let report = match step.command.as_str() {
+        "sample" => {
+            let report = sample_scene_asset_image(
+                current_source,
+                SceneAssetSampleOptions {
+                    points: pipeline_points_arg(&step.args, "points", "point")?,
+                    within_regions: pipeline_string_list_arg(&step.args, "within_regions")?,
+                    within_polygons: pipeline_polygons_arg(&step.args, "within_polygons")?,
+                },
+                feature_map.as_ref(),
+            )?;
+            write_scene_asset_json(&output_path, &report, options.pretty, options.force)?;
+            serde_json::to_value(report).map_err(|err| SceneAssetEditError::JsonFile {
+                path: output_path.display().to_string(),
+                message: err.to_string(),
+            })?
+        }
+        "mask-preview" => {
+            let report = preview_scene_asset_selection_mask(
+                current_source,
+                &output_path,
+                SceneAssetMaskPreviewOptions {
+                    mode: pipeline_mask_preview_mode_arg(&step.args)?,
+                    seeds: pipeline_points_arg(&step.args, "seeds", "seed")?,
+                    threshold: pipeline_u8_arg(&step.args, "threshold", 238)?,
+                    neutrality: pipeline_u8_arg(&step.args, "neutrality", 28)?,
+                    polish: pipeline_mask_polish_options(&step.args)?,
+                },
+                feature_map.as_ref(),
+                options.force,
+            )?;
+            serde_json::to_value(report).map_err(|err| SceneAssetEditError::JsonFile {
+                path: report_path.display().to_string(),
+                message: err.to_string(),
+            })?
+        }
+        "remove-background" => {
+            let report = make_scene_asset_background_transparent(
+                current_source,
+                &output_path,
+                pipeline_u8_arg(&step.args, "tolerance", 24)?,
+                pipeline_u32_arg(&step.args, "feather", 0)?,
+                pipeline_background_sample_arg(&step.args, "sample")?,
+                options.force,
+            )?;
+            serde_json::to_value(report).map_err(|err| SceneAssetEditError::JsonFile {
+                path: report_path.display().to_string(),
+                message: err.to_string(),
+            })?
+        }
+        "remove-background-polished" => {
+            let report = make_scene_asset_background_transparent_polished(
+                current_source,
+                &output_path,
+                pipeline_mask_polish_options(&step.args)?,
+                feature_map.as_ref(),
+                options.force,
+            )?;
+            serde_json::to_value(report).map_err(|err| SceneAssetEditError::JsonFile {
+                path: report_path.display().to_string(),
+                message: err.to_string(),
+            })?
+        }
+        "color-range-erase" => {
+            let report = color_range_erase_scene_asset_image(
+                current_source,
+                &output_path,
+                pipeline_mask_polish_options(&step.args)?,
+                feature_map.as_ref(),
+                options.force,
+            )?;
+            serde_json::to_value(report).map_err(|err| SceneAssetEditError::JsonFile {
+                path: report_path.display().to_string(),
+                message: err.to_string(),
+            })?
+        }
+        "magic-erase-add" => {
+            let seeds = pipeline_points_arg(&step.args, "seeds", "seed")?;
+            let report = magic_erase_add_scene_asset_image(
+                current_source,
+                &output_path,
+                &seeds,
+                pipeline_mask_polish_options(&step.args)?,
+                feature_map.as_ref(),
+                options.force,
+            )?;
+            serde_json::to_value(report).map_err(|err| SceneAssetEditError::JsonFile {
+                path: report_path.display().to_string(),
+                message: err.to_string(),
+            })?
+        }
+        "hair-cleanup" => {
+            let report = cleanup_scene_asset_hair_edges(
+                current_source,
+                &output_path,
+                SceneAssetHairCleanupMode::Decontaminate,
+                pipeline_u32_arg(&step.args, "radius", 4)?,
+                pipeline_f32_arg(&step.args, "strength", 0.85)?,
+                feature_map.as_ref(),
+                pipeline_string_arg(&step.args, "hair_region")?.as_deref(),
+                options.force,
+            )?;
+            serde_json::to_value(report).map_err(|err| SceneAssetEditError::JsonFile {
+                path: report_path.display().to_string(),
+                message: err.to_string(),
+            })?
+        }
+        "fill-region" => {
+            let report = fill_scene_asset_region(
+                current_source,
+                &output_path,
+                SceneAssetFillOptions {
+                    color: pipeline_color_arg(&step.args, "color")?,
+                    whole_image: pipeline_bool_arg(&step.args, "whole_image", false)?,
+                    within_regions: pipeline_string_list_arg(&step.args, "within_regions")?,
+                    within_polygons: pipeline_polygons_arg(&step.args, "within_polygons")?,
+                    protect_regions: pipeline_string_list_arg(&step.args, "protect_regions")?,
+                },
+                feature_map.as_ref(),
+                options.force,
+            )?;
+            serde_json::to_value(report).map_err(|err| SceneAssetEditError::JsonFile {
+                path: report_path.display().to_string(),
+                message: err.to_string(),
+            })?
+        }
+        "sample-fill" => {
+            let report = sample_fill_scene_asset_region(
+                current_source,
+                &output_path,
+                SceneAssetSampleFillOptions {
+                    sample_point: pipeline_required_point_arg(&step.args, "sample_point")?,
+                    sample_radius: pipeline_u32_arg(&step.args, "sample_radius", 1)?,
+                    within_regions: pipeline_string_list_arg(&step.args, "within_regions")?,
+                    within_polygons: pipeline_polygons_arg(&step.args, "within_polygons")?,
+                    protect_regions: pipeline_string_list_arg(&step.args, "protect_regions")?,
+                },
+                feature_map.as_ref(),
+                options.force,
+            )?;
+            serde_json::to_value(report).map_err(|err| SceneAssetEditError::JsonFile {
+                path: report_path.display().to_string(),
+                message: err.to_string(),
+            })?
+        }
+        "alpha-paint" => {
+            let report = alpha_paint_scene_asset_region(
+                current_source,
+                &output_path,
+                SceneAssetAlphaPaintOptions {
+                    alpha: pipeline_u8_arg(&step.args, "alpha", 255)?,
+                    whole_image: pipeline_bool_arg(&step.args, "whole_image", false)?,
+                    within_regions: pipeline_string_list_arg(&step.args, "within_regions")?,
+                    within_polygons: pipeline_polygons_arg(&step.args, "within_polygons")?,
+                    protect_regions: pipeline_string_list_arg(&step.args, "protect_regions")?,
+                },
+                feature_map.as_ref(),
+                options.force,
+            )?;
+            serde_json::to_value(report).map_err(|err| SceneAssetEditError::JsonFile {
+                path: report_path.display().to_string(),
+                message: err.to_string(),
+            })?
+        }
+        command => {
+            return Err(SceneAssetEditError::InvalidOperation(format!(
+                "unsupported pipeline command `{command}`"
+            )));
+        }
+    };
+
+    if step.command != "sample" {
+        write_scene_asset_json(&report_path, &report, options.pretty, options.force)?;
+    }
+
+    Ok(SceneAssetPipelineStepReport {
+        index,
+        command: step.command.clone(),
+        source: current_source.display().to_string(),
+        output_path: Some(output_path.display().to_string()),
+        report_path: Some(
+            if step.command == "sample" {
+                output_path
+            } else {
+                report_path
+            }
+            .display()
+            .to_string(),
+        ),
+        advanced_source: advances_source,
+        dry_run: false,
+        report: Some(report),
+    })
 }
 
 pub fn generate_scene_asset_expression(
@@ -1966,6 +2301,407 @@ fn load_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T, SceneAssetE
         path: path.display().to_string(),
         message: err.to_string(),
     })
+}
+
+fn resolve_pipeline_input_path(roots: &SceneAssetPipelineRoots, path: &str) -> PathBuf {
+    let path = PathBuf::from(path);
+    if path.is_absolute() {
+        path
+    } else {
+        roots.input_root.join(path)
+    }
+}
+
+fn resolve_pipeline_output_path(roots: &SceneAssetPipelineRoots, path: &str) -> PathBuf {
+    let path = PathBuf::from(path);
+    if path.is_absolute() {
+        return path;
+    }
+    let mut components = path.components();
+    if matches!(components.next(), Some(std::path::Component::Normal(prefix)) if prefix == "Output")
+    {
+        return roots.output_root.join(components.as_path());
+    }
+    roots.transformation_root.join(path)
+}
+
+fn pipeline_report_path(output_path: &PathBuf) -> PathBuf {
+    let stem = output_path
+        .file_stem()
+        .map(|stem| stem.to_string_lossy())
+        .unwrap_or_else(|| "step".into());
+    output_path.with_file_name(format!("{stem}.report.json"))
+}
+
+fn pipeline_command_advances_source(command: &str) -> bool {
+    !matches!(command, "sample" | "mask-preview")
+}
+
+fn validate_pipeline_command_name(command: &str) -> Result<(), SceneAssetEditError> {
+    match command {
+        "sample"
+        | "mask-preview"
+        | "remove-background"
+        | "remove-background-polished"
+        | "color-range-erase"
+        | "magic-erase-add"
+        | "hair-cleanup"
+        | "fill-region"
+        | "sample-fill"
+        | "alpha-paint" => Ok(()),
+        _ => Err(SceneAssetEditError::InvalidOperation(format!(
+            "unsupported pipeline command `{command}`"
+        ))),
+    }
+}
+
+fn load_pipeline_feature_map(
+    roots: &SceneAssetPipelineRoots,
+    args: &BTreeMap<String, serde_json::Value>,
+) -> Result<Option<SceneAssetFeatureMap>, SceneAssetEditError> {
+    let path = pipeline_string_arg(args, "protect")?
+        .or(pipeline_string_arg(args, "feature_map")?)
+        .map(|path| resolve_pipeline_input_path(roots, &path));
+    path.map(|path| load_scene_asset_feature_map(&path))
+        .transpose()
+}
+
+fn pipeline_arg<'a>(
+    args: &'a BTreeMap<String, serde_json::Value>,
+    key: &str,
+) -> Option<&'a serde_json::Value> {
+    args.get(key).or_else(|| {
+        let kebab = key.replace('_', "-");
+        args.get(&kebab)
+    })
+}
+
+fn pipeline_string_arg(
+    args: &BTreeMap<String, serde_json::Value>,
+    key: &str,
+) -> Result<Option<String>, SceneAssetEditError> {
+    let Some(value) = pipeline_arg(args, key) else {
+        return Ok(None);
+    };
+    value
+        .as_str()
+        .map(|value| Some(value.to_string()))
+        .ok_or_else(|| {
+            SceneAssetEditError::InvalidOperation(format!("pipeline arg `{key}` must be a string"))
+        })
+}
+
+fn pipeline_string_list_arg(
+    args: &BTreeMap<String, serde_json::Value>,
+    key: &str,
+) -> Result<Vec<String>, SceneAssetEditError> {
+    let Some(value) = pipeline_arg(args, key) else {
+        return Ok(Vec::new());
+    };
+    match value {
+        serde_json::Value::String(text) => Ok(text
+            .split(',')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToString::to_string)
+            .collect()),
+        serde_json::Value::Array(values) => values
+            .iter()
+            .map(|value| {
+                value.as_str().map(ToString::to_string).ok_or_else(|| {
+                    SceneAssetEditError::InvalidOperation(format!(
+                        "pipeline arg `{key}` entries must be strings"
+                    ))
+                })
+            })
+            .collect(),
+        _ => Err(SceneAssetEditError::InvalidOperation(format!(
+            "pipeline arg `{key}` must be a string or string array"
+        ))),
+    }
+}
+
+fn pipeline_u8_arg(
+    args: &BTreeMap<String, serde_json::Value>,
+    key: &str,
+    default: u8,
+) -> Result<u8, SceneAssetEditError> {
+    let Some(value) = pipeline_arg(args, key) else {
+        return Ok(default);
+    };
+    let number = value.as_u64().ok_or_else(|| {
+        SceneAssetEditError::InvalidOperation(format!("pipeline arg `{key}` must be a number"))
+    })?;
+    u8::try_from(number).map_err(|_| {
+        SceneAssetEditError::InvalidOperation(format!("pipeline arg `{key}` must fit in u8"))
+    })
+}
+
+fn pipeline_u32_arg(
+    args: &BTreeMap<String, serde_json::Value>,
+    key: &str,
+    default: u32,
+) -> Result<u32, SceneAssetEditError> {
+    let Some(value) = pipeline_arg(args, key) else {
+        return Ok(default);
+    };
+    let number = value.as_u64().ok_or_else(|| {
+        SceneAssetEditError::InvalidOperation(format!("pipeline arg `{key}` must be a number"))
+    })?;
+    u32::try_from(number).map_err(|_| {
+        SceneAssetEditError::InvalidOperation(format!("pipeline arg `{key}` must fit in u32"))
+    })
+}
+
+fn pipeline_usize_arg(
+    args: &BTreeMap<String, serde_json::Value>,
+    key: &str,
+    default: usize,
+) -> Result<usize, SceneAssetEditError> {
+    let Some(value) = pipeline_arg(args, key) else {
+        return Ok(default);
+    };
+    let number = value.as_u64().ok_or_else(|| {
+        SceneAssetEditError::InvalidOperation(format!("pipeline arg `{key}` must be a number"))
+    })?;
+    usize::try_from(number).map_err(|_| {
+        SceneAssetEditError::InvalidOperation(format!("pipeline arg `{key}` must fit in usize"))
+    })
+}
+
+fn pipeline_f32_arg(
+    args: &BTreeMap<String, serde_json::Value>,
+    key: &str,
+    default: f32,
+) -> Result<f32, SceneAssetEditError> {
+    let Some(value) = pipeline_arg(args, key) else {
+        return Ok(default);
+    };
+    let number = value.as_f64().ok_or_else(|| {
+        SceneAssetEditError::InvalidOperation(format!("pipeline arg `{key}` must be a number"))
+    })?;
+    Ok(number as f32)
+}
+
+fn pipeline_bool_arg(
+    args: &BTreeMap<String, serde_json::Value>,
+    key: &str,
+    default: bool,
+) -> Result<bool, SceneAssetEditError> {
+    let Some(value) = pipeline_arg(args, key) else {
+        return Ok(default);
+    };
+    value.as_bool().ok_or_else(|| {
+        SceneAssetEditError::InvalidOperation(format!("pipeline arg `{key}` must be a boolean"))
+    })
+}
+
+fn pipeline_color_arg(
+    args: &BTreeMap<String, serde_json::Value>,
+    key: &str,
+) -> Result<[u8; 4], SceneAssetEditError> {
+    let Some(color) = pipeline_string_arg(args, key)? else {
+        return Err(SceneAssetEditError::InvalidOperation(format!(
+            "pipeline arg `{key}` is required"
+        )));
+    };
+    Ok(parse_rgba(&color)?.0)
+}
+
+fn pipeline_background_sample_arg(
+    args: &BTreeMap<String, serde_json::Value>,
+    key: &str,
+) -> Result<SceneAssetBackgroundSample, SceneAssetEditError> {
+    match pipeline_string_arg(args, key)?
+        .as_deref()
+        .unwrap_or("corners")
+    {
+        "corners" => Ok(SceneAssetBackgroundSample::Corners),
+        "edges" => Ok(SceneAssetBackgroundSample::Edges),
+        value => Err(SceneAssetEditError::InvalidOperation(format!(
+            "pipeline arg `{key}` value `{value}` is invalid; expected corners or edges"
+        ))),
+    }
+}
+
+fn pipeline_mask_preview_mode_arg(
+    args: &BTreeMap<String, serde_json::Value>,
+) -> Result<SceneAssetMaskPreviewMode, SceneAssetEditError> {
+    match pipeline_string_arg(args, "selection_mode")?
+        .as_deref()
+        .unwrap_or("background")
+    {
+        "background" => Ok(SceneAssetMaskPreviewMode::Background),
+        "color-range" | "color_range" => Ok(SceneAssetMaskPreviewMode::ColorRange),
+        "magic-add" | "magic_add" => Ok(SceneAssetMaskPreviewMode::MagicAdd),
+        "channel-matte" | "channel_matte" => Ok(SceneAssetMaskPreviewMode::ChannelMatte),
+        value => Err(SceneAssetEditError::InvalidOperation(format!(
+            "pipeline arg `selection_mode` value `{value}` is invalid"
+        ))),
+    }
+}
+
+fn pipeline_mask_polish_options(
+    args: &BTreeMap<String, serde_json::Value>,
+) -> Result<SceneAssetMaskPolishOptions, SceneAssetEditError> {
+    Ok(SceneAssetMaskPolishOptions {
+        tolerance: pipeline_u8_arg(args, "tolerance", 24)?,
+        feather: pipeline_u32_arg(args, "feather", 0)?,
+        sample: pipeline_background_sample_arg(args, "sample")?,
+        erode: pipeline_u32_arg(args, "erode", 0)?,
+        dilate: pipeline_u32_arg(args, "dilate", 0)?,
+        open: pipeline_u32_arg(args, "open", 0)?,
+        close: pipeline_u32_arg(args, "close", 0)?,
+        remove_small: pipeline_usize_arg(args, "remove_small", 0)?,
+        fill_holes: pipeline_usize_arg(args, "fill_holes", 0)?,
+        defringe: match pipeline_string_arg(args, "defringe")?
+            .as_deref()
+            .unwrap_or("none")
+        {
+            "none" => SceneAssetDefringeMode::None,
+            "white" => SceneAssetDefringeMode::White,
+            value => {
+                return Err(SceneAssetEditError::InvalidOperation(format!(
+                    "pipeline arg `defringe` value `{value}` is invalid"
+                )))
+            }
+        },
+        protect_regions: pipeline_string_list_arg(args, "protect_regions")?,
+        within_regions: pipeline_string_list_arg(args, "within_regions")?,
+        within_polygons: pipeline_polygons_arg(args, "within_polygons")?,
+    })
+}
+
+fn pipeline_points_arg(
+    args: &BTreeMap<String, serde_json::Value>,
+    plural_key: &str,
+    singular_key: &str,
+) -> Result<Vec<SceneAssetNormalizedPoint>, SceneAssetEditError> {
+    let mut points = Vec::new();
+    if let Some(value) = pipeline_arg(args, plural_key) {
+        match value {
+            serde_json::Value::Array(values) => {
+                for value in values {
+                    points.push(pipeline_point_value(value, plural_key)?);
+                }
+            }
+            _ => points.push(pipeline_point_value(value, plural_key)?),
+        }
+    }
+    if let Some(value) = pipeline_arg(args, singular_key) {
+        points.push(pipeline_point_value(value, singular_key)?);
+    }
+    Ok(points)
+}
+
+fn pipeline_required_point_arg(
+    args: &BTreeMap<String, serde_json::Value>,
+    key: &str,
+) -> Result<SceneAssetNormalizedPoint, SceneAssetEditError> {
+    let Some(value) = pipeline_arg(args, key) else {
+        return Err(SceneAssetEditError::InvalidOperation(format!(
+            "pipeline arg `{key}` is required"
+        )));
+    };
+    pipeline_point_value(value, key)
+}
+
+fn pipeline_point_value(
+    value: &serde_json::Value,
+    key: &str,
+) -> Result<SceneAssetNormalizedPoint, SceneAssetEditError> {
+    match value {
+        serde_json::Value::String(text) => parse_normalized_point_text(text, key),
+        serde_json::Value::Object(object) => {
+            let x = object.get("x").and_then(serde_json::Value::as_f64);
+            let y = object.get("y").and_then(serde_json::Value::as_f64);
+            match (x, y) {
+                (Some(x), Some(y)) => Ok(SceneAssetNormalizedPoint {
+                    x: x as f32,
+                    y: y as f32,
+                }),
+                _ => Err(SceneAssetEditError::InvalidOperation(format!(
+                    "pipeline point `{key}` must include numeric x and y"
+                ))),
+            }
+        }
+        _ => Err(SceneAssetEditError::InvalidOperation(format!(
+            "pipeline point `{key}` must be `X,Y` or {{\"x\":N,\"y\":N}}"
+        ))),
+    }
+}
+
+fn pipeline_polygons_arg(
+    args: &BTreeMap<String, serde_json::Value>,
+    key: &str,
+) -> Result<Vec<Vec<SceneAssetNormalizedPoint>>, SceneAssetEditError> {
+    let mut polygons = Vec::new();
+    if let Some(value) = pipeline_arg(args, key) {
+        match value {
+            serde_json::Value::Array(values) => {
+                for value in values {
+                    polygons.push(pipeline_polygon_value(value, key)?);
+                }
+            }
+            _ => polygons.push(pipeline_polygon_value(value, key)?),
+        }
+    }
+    if let Some(value) = pipeline_arg(args, "within_polygon") {
+        polygons.push(pipeline_polygon_value(value, "within_polygon")?);
+    }
+    Ok(polygons)
+}
+
+fn pipeline_polygon_value(
+    value: &serde_json::Value,
+    key: &str,
+) -> Result<Vec<SceneAssetNormalizedPoint>, SceneAssetEditError> {
+    match value {
+        serde_json::Value::String(text) => parse_normalized_polygon_text(text, key),
+        serde_json::Value::Array(values) => values
+            .iter()
+            .map(|value| pipeline_point_value(value, key))
+            .collect(),
+        _ => Err(SceneAssetEditError::InvalidOperation(format!(
+            "pipeline polygon `{key}` must be a string or point array"
+        ))),
+    }
+}
+
+fn parse_normalized_polygon_text(
+    value: &str,
+    key: &str,
+) -> Result<Vec<SceneAssetNormalizedPoint>, SceneAssetEditError> {
+    let points = value
+        .split(';')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|point| parse_normalized_point_text(point, key))
+        .collect::<Result<Vec<_>, _>>()?;
+    validate_polygon(&points)?;
+    Ok(points)
+}
+
+fn parse_normalized_point_text(
+    value: &str,
+    key: &str,
+) -> Result<SceneAssetNormalizedPoint, SceneAssetEditError> {
+    let (x, y) = value.split_once(',').ok_or_else(|| {
+        SceneAssetEditError::InvalidOperation(format!(
+            "pipeline point `{key}` value `{value}` is invalid; expected X,Y"
+        ))
+    })?;
+    let x = x.trim().parse::<f32>().map_err(|err| {
+        SceneAssetEditError::InvalidOperation(format!(
+            "pipeline point `{key}` x value `{x}` is invalid: {err}"
+        ))
+    })?;
+    let y = y.trim().parse::<f32>().map_err(|err| {
+        SceneAssetEditError::InvalidOperation(format!(
+            "pipeline point `{key}` y value `{y}` is invalid: {err}"
+        ))
+    })?;
+    Ok(SceneAssetNormalizedPoint { x, y })
 }
 
 fn read_file(path: &Path, kind: &str) -> Result<Vec<u8>, SceneAssetEditError> {
@@ -3753,6 +4489,85 @@ mod tests {
         assert_equal!(region.median_rgba, [10, 20, 30, 255]);
         assert_equal!(region.mean_rgba, [10.0, 20.0, 30.0, 255.0]);
         assert_equal!(region.alpha_coverage, 1.0);
+    }
+
+    #[test]
+    fn pipeline_run_chains_preview_paint_and_sample_steps() {
+        let dir = tempdir().unwrap();
+        let input_root = dir.path().join("Input");
+        let transformation_root = dir.path().join("Transformation");
+        let output_root = dir.path().join("Output");
+        std::fs::create_dir_all(&input_root).unwrap();
+        std::fs::create_dir_all(&transformation_root).unwrap();
+        std::fs::create_dir_all(&output_root).unwrap();
+
+        let source = input_root.join("source.png");
+        let image = ImageBuffer::from_pixel(4, 4, Rgba([0u8, 0, 0, 255]));
+        image.save(&source).unwrap();
+
+        let polygon = serde_json::json!(["0.5,0.0;1.0,0.0;1.0,1.0;0.5,1.0"]);
+        let pipeline = SceneAssetPipeline {
+            asset_pipeline_version: 1,
+            name: "test-pipeline".to_string(),
+            input: "source.png".to_string(),
+            steps: vec![
+                SceneAssetPipelineStep {
+                    command: "mask-preview".to_string(),
+                    output: Some("01-preview.png".to_string()),
+                    args: BTreeMap::from([
+                        (
+                            "selection_mode".to_string(),
+                            serde_json::json!("color-range"),
+                        ),
+                        ("tolerance".to_string(), serde_json::json!(0)),
+                    ]),
+                },
+                SceneAssetPipelineStep {
+                    command: "fill-region".to_string(),
+                    output: Some("02-filled.png".to_string()),
+                    args: BTreeMap::from([
+                        ("color".to_string(), serde_json::json!("#ff0000ff")),
+                        ("within_polygons".to_string(), polygon),
+                    ]),
+                },
+                SceneAssetPipelineStep {
+                    command: "sample".to_string(),
+                    output: Some("03-sample.json".to_string()),
+                    args: BTreeMap::from([("point".to_string(), serde_json::json!("1.0,0.0"))]),
+                },
+            ],
+        };
+        let pipeline_path = dir.path().join("pipeline.json");
+        write_scene_asset_json(&pipeline_path, &pipeline, true, false).unwrap();
+
+        let report = run_scene_asset_pipeline(
+            &pipeline_path,
+            &SceneAssetPipelineRoots {
+                input_root,
+                transformation_root: transformation_root.clone(),
+                output_root,
+            },
+            SceneAssetPipelineRunOptions {
+                force: false,
+                dry_run: false,
+                pretty: true,
+            },
+        )
+        .unwrap();
+
+        assert_equal!(report.steps.len(), 3);
+        assert_equal!(report.steps[0].advanced_source, false);
+        assert_equal!(report.steps[1].advanced_source, true);
+        assert!(transformation_root.join("01-preview.png").is_file());
+        assert!(transformation_root.join("01-preview.report.json").is_file());
+        assert!(transformation_root.join("02-filled.png").is_file());
+        assert!(transformation_root.join("02-filled.report.json").is_file());
+        assert!(transformation_root.join("03-sample.json").is_file());
+
+        let sample =
+            load_json::<SceneAssetSampleReport>(&transformation_root.join("03-sample.json"))
+                .unwrap();
+        assert_equal!(sample.points[0].rgba, [255, 0, 0, 255]);
     }
 
     #[test]

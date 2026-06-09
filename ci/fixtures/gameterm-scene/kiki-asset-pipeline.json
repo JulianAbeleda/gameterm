@@ -1,0 +1,31 @@
+{
+  "asset_pipeline_version": 1,
+  "name": "kiki-debug-fill-and-sample",
+  "input": "neutral_base.png",
+  "steps": [
+    {
+      "command": "sample",
+      "output": "25-pipeline-before-sample.json",
+      "args": {
+        "point": "0.05,0.05"
+      }
+    },
+    {
+      "command": "fill-region",
+      "output": "25-pipeline-fill-debug.png",
+      "args": {
+        "color": "#3366ffff",
+        "within_polygons": [
+          "0.02,0.02;0.12,0.02;0.12,0.12;0.02,0.12"
+        ]
+      }
+    },
+    {
+      "command": "sample",
+      "output": "25-pipeline-after-sample.json",
+      "args": {
+        "point": "0.05,0.05"
+      }
+    }
+  ]
+}
