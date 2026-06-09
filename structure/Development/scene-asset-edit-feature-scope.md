@@ -951,3 +951,291 @@ After the full first product pass, the user can:
 5. output a final VN-ready sprite in `Output`
 6. later graduate that flat sprite into a state/variant character model
 
+## 100% Non-GUI Definition
+
+For this editor, "100%" does not mean Photoshop-complete. It means the Rust
+command substrate is complete enough that a GUI would only add interaction:
+mouse selection, drag handles, live previews, menus, and file picking. The GUI
+should not need to invent new image semantics.
+
+The non-GUI substrate is 100% when these lanes are implemented and verified:
+
+| Lane | Status | Required before GUI-only |
+|---|---:|---|
+| Existing masking/cutout | Done | Keep stable |
+| Coordinate helpers | Partial | Add `sample`; keep `point-report` and `grid-preview` |
+| Paint primitives | Partial | Add `clone-stamp`, `draw-shape`, `stroke-path` |
+| Pipeline runner | Missing | Add `pipeline-run` with per-step reports |
+| Transform ops | Missing | Add `crop`, `pad`, `transform` |
+| Adjustment ops | Missing | Add `levels`, `brightness-contrast`, `hsl` |
+| Filter ops | Missing | Add `unsharp-mask`, `blur`; defer heavy denoise if needed |
+| Compositing | Missing | Add `composite` with basic blend modes |
+| State variants | Missing | Add `state-manifest`, `state-render`, `state-sheet` |
+| Verification fixtures | Partial | Add fixtures/smokes for every lane |
+
+Optional ML commands (`detect`, `matte-ml`, `upscale`, `inpaint-ml`) are not
+part of 100% for the first Rust-first pass. They are post-100 extensions
+because they add model/runtime complexity and are not required for the GUI to
+control the deterministic editor.
+
+## Remaining Work To Reach 100%
+
+### Lane 1: Pipeline Runner
+
+Commands:
+
+- `pipeline-run`
+
+Why this is required:
+
+- The current Kiki workflow still requires manual chaining.
+- A GUI should call one pipeline or update one pipeline step, not encode image
+  editing logic itself.
+
+Definition of done:
+
+- reads a pipeline JSON
+- resolves paths relative to `Input`, `Transformation`, and `Output`
+- runs existing commands in sequence
+- writes per-step reports
+- supports dry-run report without writing outputs
+- fails safely on missing input, unknown command, or existing output without
+  `--force`
+
+Commit:
+
+- `[visual] add Scene asset pipeline runner`
+
+### Lane 2: Coordinate And Sampling Completion
+
+Commands:
+
+- `sample`
+
+Already present:
+
+- `point-report`
+- `grid-preview`
+
+Why this is required:
+
+- GUI point picking maps directly to normalized coordinates.
+- Terminal users still need deterministic color/coordinate reports.
+
+Definition of done:
+
+- `sample --point X,Y` reports RGBA and pixel coordinate
+- `sample --within-polygon ...` reports mean/median RGBA and alpha coverage
+- sample reports can be emitted to JSON files
+- Kiki smoke samples hair, skin, and background points
+
+Commit:
+
+- `[visual] add Scene asset sampling reports`
+
+### Lane 3: Paint Completion
+
+Commands:
+
+- `clone-stamp`
+- `draw-shape`
+- `stroke-path`
+
+Already present:
+
+- `fill-region`
+- `sample-fill`
+- `alpha-paint`
+
+Why this is required:
+
+- These are the missing deterministic "lay down pixels" operations.
+- A GUI brush/lasso can call these primitives instead of inventing paint logic.
+
+Definition of done:
+
+- `clone-stamp` copies pixels from sampled source offset into a bounded target
+  polygon
+- `draw-shape` supports rect, line, polygon first; circle/ellipse can follow
+- `stroke-path` draws a visible outline for traced polygons
+- all paint commands require explicit bounds unless `--whole-image` is passed
+- all paint commands can respect protected feature-map regions
+
+Commit:
+
+- `[visual] add Scene asset drawing operations`
+
+### Lane 4: Transform Operations
+
+Commands:
+
+- `crop`
+- `pad`
+- `transform`
+
+Why this is required:
+
+- Sprite alignment, idle motion, and sheet generation need deterministic canvas
+  operations.
+- A GUI should expose handles/sliders over these same commands.
+
+Definition of done:
+
+- `crop --rect X,Y,W,H` and `crop --content-bounds`
+- `pad --width N --height N --anchor center|bottom-center|top-left`
+- `transform --translate X,Y --scale N --flip-x --flip-y`
+- rotation can be second pass if affine complexity threatens scope
+- output dimensions and alpha behavior are covered by tests
+
+Commit:
+
+- `[visual] add Scene asset transform operations`
+
+### Lane 5: Tonal Adjustment Operations
+
+Commands:
+
+- `levels`
+- `brightness-contrast`
+- `hsl`
+
+Why this is required:
+
+- Generated sprite variants drift in color.
+- The editor needs deterministic correction before compositing/state work.
+
+Definition of done:
+
+- commands can apply globally or within bounded masks
+- alpha is preserved unless explicitly adjusted
+- tests cover clamping and region-scoped edits
+- Kiki smoke normalizes one debug region without changing the whole sprite
+
+Commit:
+
+- `[visual] add Scene asset tonal adjustments`
+
+### Lane 6: Filter Operations
+
+Commands:
+
+- `unsharp-mask`
+- `blur`
+
+Deferred if needed:
+
+- `denoise`
+- `smart-sharpen`
+- `high-pass`
+
+Why this is required:
+
+- Gives basic quality control for soft generated assets.
+- The GUI can later expose this as sliders without new image code.
+
+Definition of done:
+
+- blur supports at least gaussian or box blur
+- unsharp-mask supports radius and amount
+- commands preserve canvas size and alpha
+- tests prove nonzero visual change and bounded operation behavior
+
+Commit:
+
+- `[visual] add Scene asset filter operations`
+
+### Lane 7: Compositing
+
+Commands:
+
+- `composite`
+
+Why this is required:
+
+- State variants need a layer compositor.
+- GUI layer panels should be data over this command.
+
+Definition of done:
+
+- supports repeated `--layer path,blend,opacity,x,y`
+- supports `normal` and `add` minimum; `multiply` and `screen` preferred
+- rejects mismatched dimensions unless a canvas size is provided
+- preserves alpha compositing behavior in tests
+
+Commit:
+
+- `[visual] add Scene asset compositing`
+
+### Lane 8: State Variants
+
+Commands:
+
+- `state-manifest`
+- `state-render`
+- `state-sheet`
+
+Why this is required:
+
+- This is the point where the editor becomes a character asset system instead
+  of a loose pile of PNG tools.
+- VN expressions, blink states, mouth states, and idle sheets all become data.
+
+Definition of done:
+
+- manifest schema supports base image, named parts, default states, and state
+  file paths
+- `state-render` renders one state combination into a PNG
+- `state-sheet` renders a frame list into a spritesheet and frame-index JSON
+- tests cover missing state, default state, and deterministic sheet layout
+
+Commit:
+
+- `[visual] add Scene asset state variants`
+
+### Lane 9: Docs And Smoke Catalog
+
+Required docs:
+
+- update this scope with implemented status
+- add a short user-facing command cookbook for the `Image Editor` folder
+- add a Kiki pipeline fixture or smoke recipe
+
+Required smokes:
+
+- Kiki transparent cutout pipeline
+- coordinate/grid smoke
+- paint smoke
+- transform smoke
+- tonal/filter smoke
+- composite/state smoke
+
+Commit:
+
+- `[docs] record Scene asset editor completion`
+
+## 100% Acceptance Checklist
+
+- A user can run one pipeline command to generate a transparent Kiki sprite.
+- A user can inspect and sample exact coordinates/colors from terminal.
+- A user can erase, fill, clone, alpha-paint, and draw simple shape/path
+  corrections from terminal.
+- A user can crop, pad, translate, scale, and flip sprites from terminal.
+- A user can apply basic color and sharpness corrections from terminal.
+- A user can composite layers from terminal.
+- A user can define a character state manifest and render one state or a sheet.
+- Every command writes reproducible outputs and JSON reports.
+- Every destructive command either has a preview path or is safe to run into
+  `Transformation` first.
+- Tests and real Kiki smokes cover each lane.
+
+Once this checklist is complete, the remaining editor work is GUI-specific:
+
+- file browser
+- mouse point picking
+- polygon/lasso drawing
+- drag handles
+- live preview panes
+- timeline/state UI
+- command palette/buttons
+- saving/loading pipeline presets
+
