@@ -7,12 +7,13 @@ use gameterm_visual::{
     load_scene_asset_recipe_book, magic_erase_add_scene_asset_image, magic_erase_scene_asset_image,
     make_scene_asset_background_transparent, make_scene_asset_background_transparent_polished,
     preview_scene_asset_grid, preview_scene_asset_selection_mask, report_scene_asset_points,
-    restore_scene_asset_from_source, sample_fill_scene_asset_region,
+    restore_scene_asset_from_source, sample_fill_scene_asset_region, sample_scene_asset_image,
     validate_scene_asset_feature_map, write_scene_asset_json, SceneAssetAlphaPaintOptions,
     SceneAssetBackgroundSample, SceneAssetDefringeMode, SceneAssetFillOptions,
     SceneAssetGridPreviewOptions, SceneAssetHairCleanupMode, SceneAssetMaskPolishOptions,
     SceneAssetMaskPreviewMode, SceneAssetMaskPreviewOptions, SceneAssetNormalizedPoint,
     SceneAssetRestoreFilter, SceneAssetRestoreOptions, SceneAssetSampleFillOptions,
+    SceneAssetSampleOptions,
 };
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -78,6 +79,7 @@ fn usage() {
     eprintln!(
         "Usage:
   cargo run -p gameterm-visual --example scene_asset_edit -- inspect IMAGE [--output PATH] [--pretty]
+  cargo run -p gameterm-visual --example scene_asset_edit -- sample --source IMAGE [--point X,Y ...] [--within-polygon X,Y;X,Y;X,Y] [--within-regions CSV] [--protect FEATURE_MAP] [--output REPORT] [--pretty]
   cargo run -p gameterm-visual --example scene_asset_edit -- point-report --source IMAGE --point X,Y [--point X,Y ...] [--pretty]
   cargo run -p gameterm-visual --example scene_asset_edit -- grid-preview --source IMAGE --output PATH [--step N] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- map-template IMAGE --character NAME --output PATH [--base TEXT] [--force]
@@ -169,6 +171,7 @@ fn main() {
 
     let result = match args.command.as_deref() {
         Some("inspect") => run_inspect(args),
+        Some("sample") => run_sample(args),
         Some("point-report") => run_point_report(args),
         Some("grid-preview") => run_grid_preview(args),
         Some("map-template") => run_map_template(args),
@@ -202,6 +205,22 @@ fn main() {
 fn run_inspect(args: CliArgs) -> Result<(), String> {
     let image = required_path(args.image, "IMAGE")?;
     let report = inspect_scene_asset_image(&image).map_err(|err| err.to_string())?;
+    write_json(args.output.as_deref(), &report, args.pretty, args.force)
+}
+
+fn run_sample(args: CliArgs) -> Result<(), String> {
+    let source = required_path(args.source.clone(), "--source")?;
+    let feature_map = load_optional_protect_map(&args)?;
+    let report = sample_scene_asset_image(
+        &source,
+        SceneAssetSampleOptions {
+            points: args.points.clone(),
+            within_regions: csv_values(args.within_regions.as_deref()),
+            within_polygons: args.within_polygons.clone(),
+        },
+        feature_map.as_ref(),
+    )
+    .map_err(|err| err.to_string())?;
     write_json(args.output.as_deref(), &report, args.pretty, args.force)
 }
 

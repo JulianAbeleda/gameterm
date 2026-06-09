@@ -31,7 +31,7 @@ pub use asset_edit::{
     load_scene_asset_recipe_book, magic_erase_add_scene_asset_image, magic_erase_scene_asset_image,
     make_scene_asset_background_transparent, make_scene_asset_background_transparent_polished,
     preview_scene_asset_grid, preview_scene_asset_selection_mask, report_scene_asset_points,
-    restore_scene_asset_from_source, sample_fill_scene_asset_region,
+    restore_scene_asset_from_source, sample_fill_scene_asset_region, sample_scene_asset_image,
     validate_scene_asset_feature_map, write_scene_asset_json, SceneAssetAlphaPaintOptions,
     SceneAssetAnimationFrame, SceneAssetAnimationOutput, SceneAssetAnimationRecipe,
     SceneAssetBackgroundSample, SceneAssetContinuityCheck, SceneAssetContinuityReport,
@@ -43,8 +43,9 @@ pub use asset_edit::{
     SceneAssetMaskPreviewMode, SceneAssetMaskPreviewOptions, SceneAssetMaskPreviewReport,
     SceneAssetNormalizedPoint, SceneAssetNormalizedRect, SceneAssetPaintReport,
     SceneAssetPixelRect, SceneAssetPointReport, SceneAssetPointSample, SceneAssetRecipeBook,
-    SceneAssetRestoreFilter, SceneAssetRestoreOptions, SceneAssetRestoreReport,
-    SceneAssetSampleFillOptions, SceneAssetSelectionReport,
+    SceneAssetRegionSample, SceneAssetRestoreFilter, SceneAssetRestoreOptions,
+    SceneAssetRestoreReport, SceneAssetSampleFillOptions, SceneAssetSampleOptions,
+    SceneAssetSampleReport, SceneAssetSelectionReport,
 };
 #[cfg(test)]
 pub(crate) use compose_state::VisualComposePhase;

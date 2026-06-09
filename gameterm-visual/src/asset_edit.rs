@@ -571,6 +571,34 @@ pub struct SceneAssetPointReport {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetRegionSample {
+    pub pixel_count: usize,
+    pub mean_rgba: [f32; 4],
+    pub median_rgba: [u8; 4],
+    pub alpha_coverage: f32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetSampleOptions {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub points: Vec<SceneAssetNormalizedPoint>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub within_regions: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub within_polygons: Vec<Vec<SceneAssetNormalizedPoint>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetSampleReport {
+    pub operation: String,
+    pub source: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub points: Vec<SceneAssetPointSample>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub region: Option<SceneAssetRegionSample>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SceneAssetGridPreviewOptions {
     pub step: f32,
 }
@@ -1287,6 +1315,55 @@ pub fn report_scene_asset_points(
         operation: "point_report".to_string(),
         source: source_path.display().to_string(),
         samples,
+    })
+}
+
+pub fn sample_scene_asset_image(
+    source_path: &Path,
+    options: SceneAssetSampleOptions,
+    feature_map: Option<&SceneAssetFeatureMap>,
+) -> Result<SceneAssetSampleReport, SceneAssetEditError> {
+    if options.points.is_empty()
+        && options.within_regions.is_empty()
+        && options.within_polygons.is_empty()
+    {
+        return Err(SceneAssetEditError::InvalidOperation(
+            "sample requires --point, --within-regions, or --within-polygon".to_string(),
+        ));
+    }
+    let image = load_rgba_image(source_path)?;
+    if let Some(feature_map) = feature_map {
+        validate_scene_asset_feature_map(feature_map, image.width(), image.height())?;
+    }
+    let mut points = Vec::with_capacity(options.points.len());
+    for &point in &options.points {
+        let (pixel_x, pixel_y) = normalized_point_to_pixel(point, image.width(), image.height())?;
+        points.push(SceneAssetPointSample {
+            point,
+            pixel_x,
+            pixel_y,
+            rgba: image.get_pixel(pixel_x, pixel_y).0,
+        });
+    }
+    let region = if options.within_regions.is_empty() && options.within_polygons.is_empty() {
+        None
+    } else {
+        let mask = paint_bounds_mask(
+            image.width(),
+            image.height(),
+            false,
+            &options.within_regions,
+            &options.within_polygons,
+            &[],
+            feature_map,
+        )?;
+        Some(sample_masked_region(&image, mask.pixels())?)
+    };
+    Ok(SceneAssetSampleReport {
+        operation: "sample".to_string(),
+        source: source_path.display().to_string(),
+        points,
+        region,
     })
 }
 
@@ -2333,6 +2410,49 @@ fn median_sample_color(image: &RgbaImage, x: u32, y: u32, radius: u32) -> Rgba<u
         rgba[channel] = channels[channel][channels[channel].len() / 2];
     }
     Rgba(rgba)
+}
+
+fn sample_masked_region(
+    image: &RgbaImage,
+    mask: &[bool],
+) -> Result<SceneAssetRegionSample, SceneAssetEditError> {
+    let mut channels = [Vec::<u8>::new(), Vec::new(), Vec::new(), Vec::new()];
+    let mut sum = [0u64; 4];
+    let mut opaque_pixels = 0usize;
+    for y in 0..image.height() {
+        for x in 0..image.width() {
+            if !mask[mask_index(image.width(), x, y)] {
+                continue;
+            }
+            let pixel = image.get_pixel(x, y);
+            if pixel[3] > 0 {
+                opaque_pixels += 1;
+            }
+            for channel in 0..4 {
+                channels[channel].push(pixel[channel]);
+                sum[channel] += pixel[channel] as u64;
+            }
+        }
+    }
+    let pixel_count = channels[0].len();
+    if pixel_count == 0 {
+        return Err(SceneAssetEditError::InvalidOperation(
+            "sample region selected zero pixels".to_string(),
+        ));
+    }
+    let mut mean_rgba = [0.0; 4];
+    let mut median_rgba = [0; 4];
+    for channel in 0..4 {
+        channels[channel].sort_unstable();
+        mean_rgba[channel] = rounded_f32(sum[channel] as f32 / pixel_count as f32);
+        median_rgba[channel] = channels[channel][pixel_count / 2];
+    }
+    Ok(SceneAssetRegionSample {
+        pixel_count,
+        mean_rgba,
+        median_rgba,
+        alpha_coverage: rounded_f32(opaque_pixels as f32 / pixel_count as f32),
+    })
 }
 
 fn draw_vertical_line(image: &mut RgbaImage, x: u32, color: Rgba<u8>) {
@@ -3597,6 +3717,42 @@ mod tests {
         assert_equal!(report.samples[0].pixel_x, 3);
         assert_equal!(report.samples[0].pixel_y, 3);
         assert_equal!(report.samples[0].rgba, [10, 20, 30, 40]);
+    }
+
+    #[test]
+    fn sample_report_summarizes_bounded_region() {
+        let dir = tempdir().unwrap();
+        let image_path = dir.path().join("sample-region.png");
+        let mut image = ImageBuffer::from_pixel(4, 4, Rgba([0u8, 0, 0, 0]));
+        for y in 0..4 {
+            for x in 0..2 {
+                image.put_pixel(x, y, Rgba([10u8, 20, 30, 255]));
+            }
+        }
+        image.save(&image_path).unwrap();
+
+        let report = sample_scene_asset_image(
+            &image_path,
+            SceneAssetSampleOptions {
+                points: vec![SceneAssetNormalizedPoint { x: 0.0, y: 0.0 }],
+                within_regions: Vec::new(),
+                within_polygons: vec![vec![
+                    SceneAssetNormalizedPoint { x: 0.0, y: 0.0 },
+                    SceneAssetNormalizedPoint { x: 0.5, y: 0.0 },
+                    SceneAssetNormalizedPoint { x: 0.5, y: 1.0 },
+                    SceneAssetNormalizedPoint { x: 0.0, y: 1.0 },
+                ]],
+            },
+            None,
+        )
+        .unwrap();
+
+        let region = report.region.unwrap();
+        assert_equal!(report.points[0].rgba, [10, 20, 30, 255]);
+        assert_equal!(region.pixel_count, 8);
+        assert_equal!(region.median_rgba, [10, 20, 30, 255]);
+        assert_equal!(region.mean_rgba, [10.0, 20.0, 30.0, 255.0]);
+        assert_equal!(region.alpha_coverage, 1.0);
     }
 
     #[test]
