@@ -1005,9 +1005,11 @@ mod tests {
             .unwrap();
         child.stdin.take();
 
+        // The timeout must outlive shell startup under parallel test load so
+        // the child reliably prints `started` before it is killed.
         let err = wait_for_child_output(
             child,
-            Duration::from_millis(50),
+            Duration::from_millis(400),
             &ComposeBackendCancel::new(),
         )
         .unwrap_err();
