@@ -1,25 +1,29 @@
 use gameterm_visual::{
-    alpha_paint_scene_asset_region, channel_matte_erase_scene_asset_image,
-    cleanup_scene_asset_hair_edges, clone_stamp_scene_asset_region,
-    color_range_erase_scene_asset_image, continuity_report_for_scene_asset_frames,
-    crop_scene_asset_image, default_scene_asset_feature_map, draw_scene_asset_shape,
-    export_scene_asset_source_images, fill_scene_asset_region, generate_scene_asset_animation,
-    generate_scene_asset_expression, inspect_scene_asset_image, load_scene_asset_feature_map,
-    load_scene_asset_recipe_book, magic_erase_add_scene_asset_image, magic_erase_scene_asset_image,
-    make_scene_asset_background_transparent, make_scene_asset_background_transparent_polished,
-    pad_scene_asset_image, preview_scene_asset_grid, preview_scene_asset_selection_mask,
-    report_scene_asset_points, restore_scene_asset_from_source, run_scene_asset_pipeline,
-    sample_fill_scene_asset_region, sample_scene_asset_image, stroke_scene_asset_path,
-    transform_scene_asset_image, validate_scene_asset_feature_map, write_scene_asset_json,
-    SceneAssetAlphaPaintOptions, SceneAssetBackgroundSample, SceneAssetCloneStampOptions,
+    alpha_paint_scene_asset_region, blur_scene_asset_image, brightness_contrast_scene_asset_image,
+    channel_matte_erase_scene_asset_image, cleanup_scene_asset_hair_edges,
+    clone_stamp_scene_asset_region, color_range_erase_scene_asset_image,
+    continuity_report_for_scene_asset_frames, crop_scene_asset_image,
+    default_scene_asset_feature_map, draw_scene_asset_shape, export_scene_asset_source_images,
+    fill_scene_asset_region, generate_scene_asset_animation, generate_scene_asset_expression,
+    hsl_scene_asset_image, inspect_scene_asset_image, levels_scene_asset_image,
+    load_scene_asset_feature_map, load_scene_asset_recipe_book, magic_erase_add_scene_asset_image,
+    magic_erase_scene_asset_image, make_scene_asset_background_transparent,
+    make_scene_asset_background_transparent_polished, pad_scene_asset_image,
+    preview_scene_asset_grid, preview_scene_asset_selection_mask, report_scene_asset_points,
+    restore_scene_asset_from_source, run_scene_asset_pipeline, sample_fill_scene_asset_region,
+    sample_scene_asset_image, stroke_scene_asset_path, transform_scene_asset_image,
+    unsharp_mask_scene_asset_image, validate_scene_asset_feature_map, write_scene_asset_json,
+    SceneAssetAlphaPaintOptions, SceneAssetBackgroundSample, SceneAssetBlurOptions,
+    SceneAssetBrightnessContrastOptions, SceneAssetCloneStampOptions, SceneAssetColorChannel,
     SceneAssetCropOptions, SceneAssetDefringeMode, SceneAssetDrawShapeKind,
     SceneAssetDrawShapeOptions, SceneAssetFillOptions, SceneAssetGridPreviewOptions,
-    SceneAssetHairCleanupMode, SceneAssetMaskPolishOptions, SceneAssetMaskPreviewMode,
-    SceneAssetMaskPreviewOptions, SceneAssetNormalizedPoint, SceneAssetNormalizedRect,
-    SceneAssetPadAnchor, SceneAssetPadOptions, SceneAssetPipelineRoots,
-    SceneAssetPipelineRunOptions, SceneAssetResampleFilter, SceneAssetRestoreFilter,
-    SceneAssetRestoreOptions, SceneAssetSampleFillOptions, SceneAssetSampleOptions,
-    SceneAssetStrokePathOptions, SceneAssetTransformOptions,
+    SceneAssetHairCleanupMode, SceneAssetHslOptions, SceneAssetLevelsOptions,
+    SceneAssetMaskPolishOptions, SceneAssetMaskPreviewMode, SceneAssetMaskPreviewOptions,
+    SceneAssetNormalizedPoint, SceneAssetNormalizedRect, SceneAssetPadAnchor, SceneAssetPadOptions,
+    SceneAssetPipelineRoots, SceneAssetPipelineRunOptions, SceneAssetResampleFilter,
+    SceneAssetRestoreFilter, SceneAssetRestoreOptions, SceneAssetSampleFillOptions,
+    SceneAssetSampleOptions, SceneAssetStrokePathOptions, SceneAssetTransformOptions,
+    SceneAssetUnsharpMaskOptions,
 };
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -54,6 +58,7 @@ struct CliArgs {
     draw_shape: Option<SceneAssetDrawShapeKind>,
     anchor: Option<SceneAssetPadAnchor>,
     resample: Option<SceneAssetResampleFilter>,
+    channel: Option<SceneAssetColorChannel>,
     character: Option<String>,
     expressions: Option<String>,
     tolerance: Option<u8>,
@@ -89,6 +94,15 @@ struct CliArgs {
     sample_radius: Option<u32>,
     step: Option<f32>,
     scale: Option<f32>,
+    black: Option<u8>,
+    white: Option<u8>,
+    gamma: Option<f32>,
+    brightness: Option<f32>,
+    contrast: Option<f32>,
+    hue: Option<f32>,
+    saturation: Option<f32>,
+    lightness: Option<f32>,
+    amount: Option<f32>,
     translate_x: i32,
     translate_y: i32,
     whole_image: bool,
@@ -125,6 +139,11 @@ fn usage() {
   cargo run -p gameterm-visual --example scene_asset_edit -- crop --source IMAGE --output PATH (--rect X,Y,W,H | --content-bounds) [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- pad --source IMAGE --output PATH --width N --height N [--anchor center|bottom-center|top-left] [--color '#RRGGBB[AA]'] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- transform --source IMAGE --output PATH [--scale N] [--translate X,Y] [--flip-x] [--flip-y] [--resample nearest|lanczos3] [--force]
+  cargo run -p gameterm-visual --example scene_asset_edit -- levels --source IMAGE --output PATH [--channel rgb|r|g|b|a] [--black N] [--white N] [--gamma N] [--within-polygon X,Y;X,Y;X,Y] [--protect FEATURE_MAP] [--protect-regions CSV] [--force]
+  cargo run -p gameterm-visual --example scene_asset_edit -- brightness-contrast --source IMAGE --output PATH [--brightness N] [--contrast N] [--within-polygon X,Y;X,Y;X,Y] [--protect FEATURE_MAP] [--protect-regions CSV] [--force]
+  cargo run -p gameterm-visual --example scene_asset_edit -- hsl --source IMAGE --output PATH [--hue N] [--saturation N] [--lightness N] [--within-polygon X,Y;X,Y;X,Y] [--protect FEATURE_MAP] [--protect-regions CSV] [--force]
+  cargo run -p gameterm-visual --example scene_asset_edit -- blur --source IMAGE --output PATH [--radius N] [--within-polygon X,Y;X,Y;X,Y] [--protect FEATURE_MAP] [--protect-regions CSV] [--force]
+  cargo run -p gameterm-visual --example scene_asset_edit -- unsharp-mask --source IMAGE --output PATH [--radius N] [--amount N] [--threshold N] [--within-polygon X,Y;X,Y;X,Y] [--protect FEATURE_MAP] [--protect-regions CSV] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- remove-background --source IMAGE --output PATH [--tolerance N] [--feather N] [--sample corners|edges] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- remove-background-polished --source IMAGE --output PATH [--tolerance N] [--sample corners|edges] [--erode N] [--dilate N] [--open N] [--close N] [--remove-small N] [--fill-holes N] [--feather N] [--defringe none|white] [--protect FEATURE_MAP] [--protect-regions CSV] [--within-regions CSV] [--within-polygon X,Y;X,Y;X,Y] [--force]
   cargo run -p gameterm-visual --example scene_asset_edit -- color-range-erase --source IMAGE --output PATH [--tolerance N] [--sample corners|edges] [--erode N] [--dilate N] [--open N] [--close N] [--remove-small N] [--fill-holes N] [--feather N] [--defringe none|white] [--protect FEATURE_MAP] [--protect-regions CSV] [--within-regions CSV] [--within-polygon X,Y;X,Y;X,Y] [--force]
@@ -201,6 +220,16 @@ Options:
   --scale N                  Transform scale. Default: 1.0.
   --translate X,Y            Transform translation in pixels.
   --resample NAME            Transform resample: nearest, lanczos3.
+  --channel NAME             Color channel for levels: rgb, r, g, b, a.
+  --black N                  Levels black point. Default: 0.
+  --white N                  Levels white point. Default: 255.
+  --gamma N                  Levels gamma. Default: 1.0.
+  --brightness N             Brightness delta in 8-bit color units.
+  --contrast N               Contrast factor delta; 0 leaves contrast unchanged.
+  --hue N                    Hue shift in degrees.
+  --saturation N             HSL saturation delta, -1..1.
+  --lightness N              HSL lightness delta, -1..1.
+  --amount N                 Unsharp amount. Default: 1.0.
   --step N                   Normalized grid spacing. Default: 0.1.
   --whole-image              Allow a paint operation to affect the whole image.
   --fill                     Fill draw-shape geometry.
@@ -246,6 +275,11 @@ fn main() {
         Some("crop") => run_crop(args),
         Some("pad") => run_pad(args),
         Some("transform") => run_transform(args),
+        Some("levels") => run_levels(args),
+        Some("brightness-contrast") => run_brightness_contrast(args),
+        Some("hsl") => run_hsl(args),
+        Some("blur") => run_blur(args),
+        Some("unsharp-mask") => run_unsharp_mask(args),
         Some("remove-background") => run_remove_background(args),
         Some("remove-background-polished") => run_remove_background_polished(args),
         Some("color-range-erase") => run_color_range_erase(args),
@@ -610,6 +644,114 @@ fn run_transform(args: CliArgs) -> Result<(), String> {
     write_json(None, &report, args.pretty, true)
 }
 
+fn run_levels(args: CliArgs) -> Result<(), String> {
+    let source = required_path(args.source.clone(), "--source")?;
+    let output = required_path(args.output.clone(), "--output")?;
+    let feature_map = load_optional_protect_map(&args)?;
+    let report = levels_scene_asset_image(
+        &source,
+        &output,
+        SceneAssetLevelsOptions {
+            channel: args.channel.unwrap_or(SceneAssetColorChannel::Rgb),
+            black: args.black.unwrap_or(0),
+            white: args.white.unwrap_or(255),
+            gamma: args.gamma.unwrap_or(1.0),
+            within_regions: csv_values(args.within_regions.as_deref()),
+            within_polygons: args.within_polygons.clone(),
+            protect_regions: csv_values(args.protect_regions.as_deref()),
+        },
+        feature_map.as_ref(),
+        args.force,
+    )
+    .map_err(|err| err.to_string())?;
+    write_json(None, &report, args.pretty, true)
+}
+
+fn run_brightness_contrast(args: CliArgs) -> Result<(), String> {
+    let source = required_path(args.source.clone(), "--source")?;
+    let output = required_path(args.output.clone(), "--output")?;
+    let feature_map = load_optional_protect_map(&args)?;
+    let report = brightness_contrast_scene_asset_image(
+        &source,
+        &output,
+        SceneAssetBrightnessContrastOptions {
+            brightness: args.brightness.unwrap_or(0.0),
+            contrast: args.contrast.unwrap_or(0.0),
+            within_regions: csv_values(args.within_regions.as_deref()),
+            within_polygons: args.within_polygons.clone(),
+            protect_regions: csv_values(args.protect_regions.as_deref()),
+        },
+        feature_map.as_ref(),
+        args.force,
+    )
+    .map_err(|err| err.to_string())?;
+    write_json(None, &report, args.pretty, true)
+}
+
+fn run_hsl(args: CliArgs) -> Result<(), String> {
+    let source = required_path(args.source.clone(), "--source")?;
+    let output = required_path(args.output.clone(), "--output")?;
+    let feature_map = load_optional_protect_map(&args)?;
+    let report = hsl_scene_asset_image(
+        &source,
+        &output,
+        SceneAssetHslOptions {
+            hue_degrees: args.hue.unwrap_or(0.0),
+            saturation: args.saturation.unwrap_or(0.0),
+            lightness: args.lightness.unwrap_or(0.0),
+            within_regions: csv_values(args.within_regions.as_deref()),
+            within_polygons: args.within_polygons.clone(),
+            protect_regions: csv_values(args.protect_regions.as_deref()),
+        },
+        feature_map.as_ref(),
+        args.force,
+    )
+    .map_err(|err| err.to_string())?;
+    write_json(None, &report, args.pretty, true)
+}
+
+fn run_blur(args: CliArgs) -> Result<(), String> {
+    let source = required_path(args.source.clone(), "--source")?;
+    let output = required_path(args.output.clone(), "--output")?;
+    let feature_map = load_optional_protect_map(&args)?;
+    let report = blur_scene_asset_image(
+        &source,
+        &output,
+        SceneAssetBlurOptions {
+            radius: args.radius.unwrap_or(1) as f32,
+            within_regions: csv_values(args.within_regions.as_deref()),
+            within_polygons: args.within_polygons.clone(),
+            protect_regions: csv_values(args.protect_regions.as_deref()),
+        },
+        feature_map.as_ref(),
+        args.force,
+    )
+    .map_err(|err| err.to_string())?;
+    write_json(None, &report, args.pretty, true)
+}
+
+fn run_unsharp_mask(args: CliArgs) -> Result<(), String> {
+    let source = required_path(args.source.clone(), "--source")?;
+    let output = required_path(args.output.clone(), "--output")?;
+    let feature_map = load_optional_protect_map(&args)?;
+    let report = unsharp_mask_scene_asset_image(
+        &source,
+        &output,
+        SceneAssetUnsharpMaskOptions {
+            radius: args.radius.unwrap_or(1) as f32,
+            amount: args.amount.unwrap_or(1.0),
+            threshold: args.threshold.unwrap_or(0),
+            within_regions: csv_values(args.within_regions.as_deref()),
+            within_polygons: args.within_polygons.clone(),
+            protect_regions: csv_values(args.protect_regions.as_deref()),
+        },
+        feature_map.as_ref(),
+        args.force,
+    )
+    .map_err(|err| err.to_string())?;
+    write_json(None, &report, args.pretty, true)
+}
+
 fn run_remove_background(args: CliArgs) -> Result<(), String> {
     let source = required_path(args.source, "--source")?;
     let output = required_path(args.output, "--output")?;
@@ -924,6 +1066,9 @@ fn parse_args() -> Result<CliArgs, String> {
             "--resample" => {
                 parsed.resample = Some(parse_resample(&next_text(&mut args, "--resample")?)?)
             }
+            "--channel" => {
+                parsed.channel = Some(parse_channel(&next_text(&mut args, "--channel")?)?)
+            }
             "--hair-region" => parsed.hair_region = Some(next_text(&mut args, "--hair-region")?),
             "--seed-x" => parsed.seed_x = Some(next_parse(&mut args, "--seed-x")?),
             "--seed-y" => parsed.seed_y = Some(next_parse(&mut args, "--seed-y")?),
@@ -972,6 +1117,15 @@ fn parse_args() -> Result<CliArgs, String> {
             }
             "--step" => parsed.step = Some(next_parse(&mut args, "--step")?),
             "--scale" => parsed.scale = Some(next_parse(&mut args, "--scale")?),
+            "--black" => parsed.black = Some(next_parse(&mut args, "--black")?),
+            "--white" => parsed.white = Some(next_parse(&mut args, "--white")?),
+            "--gamma" => parsed.gamma = Some(next_parse(&mut args, "--gamma")?),
+            "--brightness" => parsed.brightness = Some(next_parse(&mut args, "--brightness")?),
+            "--contrast" => parsed.contrast = Some(next_parse(&mut args, "--contrast")?),
+            "--hue" => parsed.hue = Some(next_parse(&mut args, "--hue")?),
+            "--saturation" => parsed.saturation = Some(next_parse(&mut args, "--saturation")?),
+            "--lightness" => parsed.lightness = Some(next_parse(&mut args, "--lightness")?),
+            "--amount" => parsed.amount = Some(next_parse(&mut args, "--amount")?),
             "--translate" => {
                 let (x, y) = parse_i32_pair(&next_text(&mut args, "--translate")?)?;
                 parsed.translate_x = x;
@@ -1121,6 +1275,19 @@ fn parse_resample(value: &str) -> Result<SceneAssetResampleFilter, String> {
         "lanczos3" => Ok(SceneAssetResampleFilter::Lanczos3),
         _ => Err(format!(
             "--resample value `{value}` is invalid; expected nearest or lanczos3"
+        )),
+    }
+}
+
+fn parse_channel(value: &str) -> Result<SceneAssetColorChannel, String> {
+    match value {
+        "rgb" => Ok(SceneAssetColorChannel::Rgb),
+        "r" => Ok(SceneAssetColorChannel::R),
+        "g" => Ok(SceneAssetColorChannel::G),
+        "b" => Ok(SceneAssetColorChannel::B),
+        "a" => Ok(SceneAssetColorChannel::A),
+        _ => Err(format!(
+            "--channel value `{value}` is invalid; expected rgb, r, g, b, or a"
         )),
     }
 }

@@ -820,6 +820,79 @@ pub struct SceneAssetTransformOptions {
     pub resample: SceneAssetResampleFilter,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SceneAssetColorChannel {
+    Rgb,
+    R,
+    G,
+    B,
+    A,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetLevelsOptions {
+    pub channel: SceneAssetColorChannel,
+    pub black: u8,
+    pub white: u8,
+    pub gamma: f32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub within_regions: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub within_polygons: Vec<Vec<SceneAssetNormalizedPoint>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub protect_regions: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetBrightnessContrastOptions {
+    pub brightness: f32,
+    pub contrast: f32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub within_regions: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub within_polygons: Vec<Vec<SceneAssetNormalizedPoint>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub protect_regions: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetHslOptions {
+    pub hue_degrees: f32,
+    pub saturation: f32,
+    pub lightness: f32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub within_regions: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub within_polygons: Vec<Vec<SceneAssetNormalizedPoint>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub protect_regions: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetBlurOptions {
+    pub radius: f32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub within_regions: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub within_polygons: Vec<Vec<SceneAssetNormalizedPoint>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub protect_regions: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetUnsharpMaskOptions {
+    pub radius: f32,
+    pub amount: f32,
+    pub threshold: u8,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub within_regions: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub within_polygons: Vec<Vec<SceneAssetNormalizedPoint>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub protect_regions: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SceneAssetEditError {
     #[error("image file error for `{path}`: {message}")]
@@ -1412,6 +1485,104 @@ fn run_scene_asset_pipeline_step(
                     flip_y: pipeline_bool_arg(&step.args, "flip_y", false)?,
                     resample: pipeline_resample_arg(&step.args)?,
                 },
+                options.force,
+            )?;
+            serde_json::to_value(report).map_err(|err| SceneAssetEditError::JsonFile {
+                path: report_path.display().to_string(),
+                message: err.to_string(),
+            })?
+        }
+        "levels" => {
+            let report = levels_scene_asset_image(
+                current_source,
+                &output_path,
+                SceneAssetLevelsOptions {
+                    channel: pipeline_channel_arg(&step.args)?,
+                    black: pipeline_u8_arg(&step.args, "black", 0)?,
+                    white: pipeline_u8_arg(&step.args, "white", 255)?,
+                    gamma: pipeline_f32_arg(&step.args, "gamma", 1.0)?,
+                    within_regions: pipeline_string_list_arg(&step.args, "within_regions")?,
+                    within_polygons: pipeline_polygons_arg(&step.args, "within_polygons")?,
+                    protect_regions: pipeline_string_list_arg(&step.args, "protect_regions")?,
+                },
+                feature_map.as_ref(),
+                options.force,
+            )?;
+            serde_json::to_value(report).map_err(|err| SceneAssetEditError::JsonFile {
+                path: report_path.display().to_string(),
+                message: err.to_string(),
+            })?
+        }
+        "brightness-contrast" => {
+            let report = brightness_contrast_scene_asset_image(
+                current_source,
+                &output_path,
+                SceneAssetBrightnessContrastOptions {
+                    brightness: pipeline_f32_arg(&step.args, "brightness", 0.0)?,
+                    contrast: pipeline_f32_arg(&step.args, "contrast", 0.0)?,
+                    within_regions: pipeline_string_list_arg(&step.args, "within_regions")?,
+                    within_polygons: pipeline_polygons_arg(&step.args, "within_polygons")?,
+                    protect_regions: pipeline_string_list_arg(&step.args, "protect_regions")?,
+                },
+                feature_map.as_ref(),
+                options.force,
+            )?;
+            serde_json::to_value(report).map_err(|err| SceneAssetEditError::JsonFile {
+                path: report_path.display().to_string(),
+                message: err.to_string(),
+            })?
+        }
+        "hsl" => {
+            let report = hsl_scene_asset_image(
+                current_source,
+                &output_path,
+                SceneAssetHslOptions {
+                    hue_degrees: pipeline_f32_arg(&step.args, "hue", 0.0)?,
+                    saturation: pipeline_f32_arg(&step.args, "saturation", 0.0)?,
+                    lightness: pipeline_f32_arg(&step.args, "lightness", 0.0)?,
+                    within_regions: pipeline_string_list_arg(&step.args, "within_regions")?,
+                    within_polygons: pipeline_polygons_arg(&step.args, "within_polygons")?,
+                    protect_regions: pipeline_string_list_arg(&step.args, "protect_regions")?,
+                },
+                feature_map.as_ref(),
+                options.force,
+            )?;
+            serde_json::to_value(report).map_err(|err| SceneAssetEditError::JsonFile {
+                path: report_path.display().to_string(),
+                message: err.to_string(),
+            })?
+        }
+        "blur" => {
+            let report = blur_scene_asset_image(
+                current_source,
+                &output_path,
+                SceneAssetBlurOptions {
+                    radius: pipeline_f32_arg(&step.args, "radius", 1.0)?,
+                    within_regions: pipeline_string_list_arg(&step.args, "within_regions")?,
+                    within_polygons: pipeline_polygons_arg(&step.args, "within_polygons")?,
+                    protect_regions: pipeline_string_list_arg(&step.args, "protect_regions")?,
+                },
+                feature_map.as_ref(),
+                options.force,
+            )?;
+            serde_json::to_value(report).map_err(|err| SceneAssetEditError::JsonFile {
+                path: report_path.display().to_string(),
+                message: err.to_string(),
+            })?
+        }
+        "unsharp-mask" => {
+            let report = unsharp_mask_scene_asset_image(
+                current_source,
+                &output_path,
+                SceneAssetUnsharpMaskOptions {
+                    radius: pipeline_f32_arg(&step.args, "radius", 1.0)?,
+                    amount: pipeline_f32_arg(&step.args, "amount", 1.0)?,
+                    threshold: pipeline_u8_arg(&step.args, "threshold", 0)?,
+                    within_regions: pipeline_string_list_arg(&step.args, "within_regions")?,
+                    within_polygons: pipeline_polygons_arg(&step.args, "within_polygons")?,
+                    protect_regions: pipeline_string_list_arg(&step.args, "protect_regions")?,
+                },
+                feature_map.as_ref(),
                 options.force,
             )?;
             serde_json::to_value(report).map_err(|err| SceneAssetEditError::JsonFile {
@@ -2333,6 +2504,225 @@ pub fn transform_scene_asset_image(
     })
 }
 
+pub fn levels_scene_asset_image(
+    source_path: &Path,
+    output_path: &Path,
+    options: SceneAssetLevelsOptions,
+    feature_map: Option<&SceneAssetFeatureMap>,
+    force: bool,
+) -> Result<SceneAssetPaintReport, SceneAssetEditError> {
+    if options.white <= options.black || !options.gamma.is_finite() || options.gamma <= 0.0 {
+        return Err(SceneAssetEditError::InvalidOperation(
+            "levels requires white > black and positive finite gamma".to_string(),
+        ));
+    }
+    let mut image = load_rgba_image(source_path)?;
+    let original = image.clone();
+    let mask = adjustment_mask(
+        image.width(),
+        image.height(),
+        &options.within_regions,
+        &options.within_polygons,
+        &options.protect_regions,
+        feature_map,
+    )?;
+    let black = options.black as f32;
+    let range = (options.white - options.black) as f32;
+    let gamma = 1.0 / options.gamma;
+    apply_masked_pixels(&mut image, mask.pixels(), |pixel| {
+        for &channel in color_channels(options.channel) {
+            let normalized = ((pixel[channel] as f32 - black) / range).clamp(0.0, 1.0);
+            pixel[channel] = (normalized.powf(gamma) * 255.0).round().clamp(0.0, 255.0) as u8;
+        }
+    });
+    let changed_pixels = changed_pixel_count(&original, &image);
+    save_rgba_image(&image, output_path, force)?;
+    Ok(SceneAssetPaintReport {
+        operation: "levels".to_string(),
+        source: source_path.display().to_string(),
+        output_path: output_path.display().to_string(),
+        changed_pixels,
+        report: inspect_scene_asset_image(output_path)?,
+    })
+}
+
+pub fn brightness_contrast_scene_asset_image(
+    source_path: &Path,
+    output_path: &Path,
+    options: SceneAssetBrightnessContrastOptions,
+    feature_map: Option<&SceneAssetFeatureMap>,
+    force: bool,
+) -> Result<SceneAssetPaintReport, SceneAssetEditError> {
+    if !options.brightness.is_finite() || !options.contrast.is_finite() || options.contrast <= -1.0
+    {
+        return Err(SceneAssetEditError::InvalidOperation(
+            "brightness-contrast requires finite brightness and contrast > -1".to_string(),
+        ));
+    }
+    let mut image = load_rgba_image(source_path)?;
+    let original = image.clone();
+    let mask = adjustment_mask(
+        image.width(),
+        image.height(),
+        &options.within_regions,
+        &options.within_polygons,
+        &options.protect_regions,
+        feature_map,
+    )?;
+    let factor = 1.0 + options.contrast;
+    apply_masked_pixels(&mut image, mask.pixels(), |pixel| {
+        for channel in 0..3 {
+            pixel[channel] =
+                (((pixel[channel] as f32 - 128.0) * factor) + 128.0 + options.brightness)
+                    .round()
+                    .clamp(0.0, 255.0) as u8;
+        }
+    });
+    let changed_pixels = changed_pixel_count(&original, &image);
+    save_rgba_image(&image, output_path, force)?;
+    Ok(SceneAssetPaintReport {
+        operation: "brightness_contrast".to_string(),
+        source: source_path.display().to_string(),
+        output_path: output_path.display().to_string(),
+        changed_pixels,
+        report: inspect_scene_asset_image(output_path)?,
+    })
+}
+
+pub fn hsl_scene_asset_image(
+    source_path: &Path,
+    output_path: &Path,
+    options: SceneAssetHslOptions,
+    feature_map: Option<&SceneAssetFeatureMap>,
+    force: bool,
+) -> Result<SceneAssetPaintReport, SceneAssetEditError> {
+    if !options.hue_degrees.is_finite()
+        || !options.saturation.is_finite()
+        || !options.lightness.is_finite()
+    {
+        return Err(SceneAssetEditError::InvalidOperation(
+            "hsl values must be finite".to_string(),
+        ));
+    }
+    let mut image = load_rgba_image(source_path)?;
+    let original = image.clone();
+    let mask = adjustment_mask(
+        image.width(),
+        image.height(),
+        &options.within_regions,
+        &options.within_polygons,
+        &options.protect_regions,
+        feature_map,
+    )?;
+    apply_masked_pixels(&mut image, mask.pixels(), |pixel| {
+        let (mut h, mut s, mut l) = rgb_to_hsl(pixel[0], pixel[1], pixel[2]);
+        h = (h + options.hue_degrees).rem_euclid(360.0);
+        s = (s + options.saturation).clamp(0.0, 1.0);
+        l = (l + options.lightness).clamp(0.0, 1.0);
+        let [r, g, b] = hsl_to_rgb(h, s, l);
+        pixel[0] = r;
+        pixel[1] = g;
+        pixel[2] = b;
+    });
+    let changed_pixels = changed_pixel_count(&original, &image);
+    save_rgba_image(&image, output_path, force)?;
+    Ok(SceneAssetPaintReport {
+        operation: "hsl".to_string(),
+        source: source_path.display().to_string(),
+        output_path: output_path.display().to_string(),
+        changed_pixels,
+        report: inspect_scene_asset_image(output_path)?,
+    })
+}
+
+pub fn blur_scene_asset_image(
+    source_path: &Path,
+    output_path: &Path,
+    options: SceneAssetBlurOptions,
+    feature_map: Option<&SceneAssetFeatureMap>,
+    force: bool,
+) -> Result<SceneAssetPaintReport, SceneAssetEditError> {
+    if !options.radius.is_finite() || options.radius < 0.0 {
+        return Err(SceneAssetEditError::InvalidOperation(
+            "blur radius must be finite and non-negative".to_string(),
+        ));
+    }
+    let mut image = load_rgba_image(source_path)?;
+    let original = image.clone();
+    let blurred = image::imageops::blur(&image, options.radius);
+    let mask = adjustment_mask(
+        image.width(),
+        image.height(),
+        &options.within_regions,
+        &options.within_polygons,
+        &options.protect_regions,
+        feature_map,
+    )?;
+    copy_masked_pixels(&blurred, &mut image, mask.pixels());
+    let changed_pixels = changed_pixel_count(&original, &image);
+    save_rgba_image(&image, output_path, force)?;
+    Ok(SceneAssetPaintReport {
+        operation: "blur".to_string(),
+        source: source_path.display().to_string(),
+        output_path: output_path.display().to_string(),
+        changed_pixels,
+        report: inspect_scene_asset_image(output_path)?,
+    })
+}
+
+pub fn unsharp_mask_scene_asset_image(
+    source_path: &Path,
+    output_path: &Path,
+    options: SceneAssetUnsharpMaskOptions,
+    feature_map: Option<&SceneAssetFeatureMap>,
+    force: bool,
+) -> Result<SceneAssetPaintReport, SceneAssetEditError> {
+    if !options.radius.is_finite() || options.radius < 0.0 || !options.amount.is_finite() {
+        return Err(SceneAssetEditError::InvalidOperation(
+            "unsharp-mask radius and amount must be finite".to_string(),
+        ));
+    }
+    let mut image = load_rgba_image(source_path)?;
+    let original = image.clone();
+    let blurred = image::imageops::blur(&image, options.radius);
+    let mask = adjustment_mask(
+        image.width(),
+        image.height(),
+        &options.within_regions,
+        &options.within_polygons,
+        &options.protect_regions,
+        feature_map,
+    )?;
+    for y in 0..image.height() {
+        for x in 0..image.width() {
+            if !mask.pixels()[mask_index(image.width(), x, y)] {
+                continue;
+            }
+            let source = original.get_pixel(x, y);
+            let blurred = blurred.get_pixel(x, y);
+            let pixel = image.get_pixel_mut(x, y);
+            for channel in 0..3 {
+                let diff = source[channel] as i16 - blurred[channel] as i16;
+                if diff.unsigned_abs() as u8 >= options.threshold {
+                    pixel[channel] = (source[channel] as f32 + options.amount * diff as f32)
+                        .round()
+                        .clamp(0.0, 255.0) as u8;
+                }
+            }
+            pixel[3] = source[3];
+        }
+    }
+    let changed_pixels = changed_pixel_count(&original, &image);
+    save_rgba_image(&image, output_path, force)?;
+    Ok(SceneAssetPaintReport {
+        operation: "unsharp_mask".to_string(),
+        source: source_path.display().to_string(),
+        output_path: output_path.display().to_string(),
+        changed_pixels,
+        report: inspect_scene_asset_image(output_path)?,
+    })
+}
+
 fn write_polished_selection_output(
     operation: &str,
     source_path: &Path,
@@ -2837,7 +3227,12 @@ fn validate_pipeline_command_name(command: &str) -> Result<(), SceneAssetEditErr
         | "stroke-path"
         | "crop"
         | "pad"
-        | "transform" => Ok(()),
+        | "transform"
+        | "levels"
+        | "brightness-contrast"
+        | "hsl"
+        | "blur"
+        | "unsharp-mask" => Ok(()),
         _ => Err(SceneAssetEditError::InvalidOperation(format!(
             "unsupported pipeline command `{command}`"
         ))),
@@ -3063,6 +3458,24 @@ fn pipeline_resample_arg(
         "lanczos3" => Ok(SceneAssetResampleFilter::Lanczos3),
         value => Err(SceneAssetEditError::InvalidOperation(format!(
             "pipeline arg `resample` value `{value}` is invalid"
+        ))),
+    }
+}
+
+fn pipeline_channel_arg(
+    args: &BTreeMap<String, serde_json::Value>,
+) -> Result<SceneAssetColorChannel, SceneAssetEditError> {
+    match pipeline_string_arg(args, "channel")?
+        .as_deref()
+        .unwrap_or("rgb")
+    {
+        "rgb" => Ok(SceneAssetColorChannel::Rgb),
+        "r" => Ok(SceneAssetColorChannel::R),
+        "g" => Ok(SceneAssetColorChannel::G),
+        "b" => Ok(SceneAssetColorChannel::B),
+        "a" => Ok(SceneAssetColorChannel::A),
+        value => Err(SceneAssetEditError::InvalidOperation(format!(
+            "pipeline arg `channel` value `{value}` is invalid"
         ))),
     }
 }
@@ -3801,6 +4214,26 @@ fn paint_bounds_mask(
     Ok(mask)
 }
 
+fn adjustment_mask(
+    width: u32,
+    height: u32,
+    within_regions: &[String],
+    within_polygons: &[Vec<SceneAssetNormalizedPoint>],
+    protect_regions: &[String],
+    feature_map: Option<&SceneAssetFeatureMap>,
+) -> Result<SceneAssetMask, SceneAssetEditError> {
+    let whole_image = within_regions.is_empty() && within_polygons.is_empty();
+    paint_bounds_mask(
+        width,
+        height,
+        whole_image,
+        within_regions,
+        within_polygons,
+        protect_regions,
+        feature_map,
+    )
+}
+
 fn paint_pixels(
     image: &mut RgbaImage,
     mask: &[bool],
@@ -3818,6 +4251,28 @@ fn paint_pixels(
         }
     }
     changed_pixels
+}
+
+fn apply_masked_pixels(image: &mut RgbaImage, mask: &[bool], mut apply: impl FnMut(&mut Rgba<u8>)) {
+    for y in 0..image.height() {
+        for x in 0..image.width() {
+            if !mask[mask_index(image.width(), x, y)] {
+                continue;
+            }
+            apply(image.get_pixel_mut(x, y));
+        }
+    }
+}
+
+fn copy_masked_pixels(source: &RgbaImage, target: &mut RgbaImage, mask: &[bool]) {
+    for y in 0..target.height() {
+        for x in 0..target.width() {
+            if !mask[mask_index(target.width(), x, y)] {
+                continue;
+            }
+            target.put_pixel(x, y, *source.get_pixel(x, y));
+        }
+    }
 }
 
 fn median_sample_color(image: &RgbaImage, x: u32, y: u32, radius: u32) -> Rgba<u8> {
@@ -5011,6 +5466,67 @@ fn changed_pixel_count(a: &RgbaImage, b: &RgbaImage) -> usize {
         .count()
 }
 
+fn color_channels(channel: SceneAssetColorChannel) -> &'static [usize] {
+    match channel {
+        SceneAssetColorChannel::Rgb => &[0, 1, 2],
+        SceneAssetColorChannel::R => &[0],
+        SceneAssetColorChannel::G => &[1],
+        SceneAssetColorChannel::B => &[2],
+        SceneAssetColorChannel::A => &[3],
+    }
+}
+
+fn rgb_to_hsl(r: u8, g: u8, b: u8) -> (f32, f32, f32) {
+    let r = r as f32 / 255.0;
+    let g = g as f32 / 255.0;
+    let b = b as f32 / 255.0;
+    let max = r.max(g).max(b);
+    let min = r.min(g).min(b);
+    let l = (max + min) / 2.0;
+    if (max - min).abs() < f32::EPSILON {
+        return (0.0, 0.0, l);
+    }
+    let d = max - min;
+    let s = if l > 0.5 {
+        d / (2.0 - max - min)
+    } else {
+        d / (max + min)
+    };
+    let h = if (max - r).abs() < f32::EPSILON {
+        60.0 * (((g - b) / d).rem_euclid(6.0))
+    } else if (max - g).abs() < f32::EPSILON {
+        60.0 * (((b - r) / d) + 2.0)
+    } else {
+        60.0 * (((r - g) / d) + 4.0)
+    };
+    (h, s, l)
+}
+
+fn hsl_to_rgb(h: f32, s: f32, l: f32) -> [u8; 3] {
+    let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
+    let h_prime = h / 60.0;
+    let x = c * (1.0 - (h_prime.rem_euclid(2.0) - 1.0).abs());
+    let (r1, g1, b1) = if h_prime < 1.0 {
+        (c, x, 0.0)
+    } else if h_prime < 2.0 {
+        (x, c, 0.0)
+    } else if h_prime < 3.0 {
+        (0.0, c, x)
+    } else if h_prime < 4.0 {
+        (0.0, x, c)
+    } else if h_prime < 5.0 {
+        (x, 0.0, c)
+    } else {
+        (c, 0.0, x)
+    };
+    let m = l - c / 2.0;
+    [
+        ((r1 + m) * 255.0).round().clamp(0.0, 255.0) as u8,
+        ((g1 + m) * 255.0).round().clamp(0.0, 255.0) as u8,
+        ((b1 + m) * 255.0).round().clamp(0.0, 255.0) as u8,
+    ]
+}
+
 fn point_in_rect(rect: SceneAssetPixelRect, point: SceneAssetNormalizedPoint) -> (i32, i32) {
     let x = rect.x as f32 + point.x.clamp(0.0, 1.0) * rect.w.saturating_sub(1) as f32;
     let y = rect.y as f32 + point.y.clamp(0.0, 1.0) * rect.h.saturating_sub(1) as f32;
@@ -5644,6 +6160,107 @@ mod tests {
         .unwrap();
         let transformed = load_rgba_image(&transform_output).unwrap();
         assert_equal!(*transformed.get_pixel(3, 2), Rgba([200u8, 40, 60, 255]));
+    }
+
+    #[test]
+    fn tonal_adjustments_can_be_bounded_and_preserve_alpha() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join("source.png");
+        let levels_output = dir.path().join("levels.png");
+        let hsl_output = dir.path().join("hsl.png");
+        let mut image = ImageBuffer::from_pixel(4, 4, Rgba([100u8, 100, 100, 200]));
+        image.put_pixel(3, 3, Rgba([200u8, 20, 20, 128]));
+        image.save(&source).unwrap();
+
+        levels_scene_asset_image(
+            &source,
+            &levels_output,
+            SceneAssetLevelsOptions {
+                channel: SceneAssetColorChannel::Rgb,
+                black: 50,
+                white: 200,
+                gamma: 1.0,
+                within_regions: Vec::new(),
+                within_polygons: vec![vec![
+                    SceneAssetNormalizedPoint { x: 0.0, y: 0.0 },
+                    SceneAssetNormalizedPoint { x: 0.5, y: 0.0 },
+                    SceneAssetNormalizedPoint { x: 0.5, y: 1.0 },
+                    SceneAssetNormalizedPoint { x: 0.0, y: 1.0 },
+                ]],
+                protect_regions: Vec::new(),
+            },
+            None,
+            false,
+        )
+        .unwrap();
+        let levels = load_rgba_image(&levels_output).unwrap();
+        assert_ne!(levels.get_pixel(0, 0)[0], 100);
+        assert_equal!(levels.get_pixel(0, 0)[3], 200);
+        assert_equal!(*levels.get_pixel(3, 3), Rgba([200u8, 20, 20, 128]));
+
+        hsl_scene_asset_image(
+            &source,
+            &hsl_output,
+            SceneAssetHslOptions {
+                hue_degrees: 120.0,
+                saturation: 0.0,
+                lightness: 0.0,
+                within_regions: Vec::new(),
+                within_polygons: Vec::new(),
+                protect_regions: Vec::new(),
+            },
+            None,
+            false,
+        )
+        .unwrap();
+        let hsl = load_rgba_image(&hsl_output).unwrap();
+        assert_ne!(*hsl.get_pixel(3, 3), Rgba([200u8, 20, 20, 128]));
+        assert_equal!(hsl.get_pixel(3, 3)[3], 128);
+    }
+
+    #[test]
+    fn blur_and_unsharp_preserve_dimensions() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join("source.png");
+        let blur_output = dir.path().join("blur.png");
+        let sharp_output = dir.path().join("sharp.png");
+        let mut image = ImageBuffer::from_pixel(5, 5, Rgba([0u8, 0, 0, 255]));
+        image.put_pixel(2, 2, Rgba([255u8, 255, 255, 255]));
+        image.save(&source).unwrap();
+
+        let blur_report = blur_scene_asset_image(
+            &source,
+            &blur_output,
+            SceneAssetBlurOptions {
+                radius: 1.0,
+                within_regions: Vec::new(),
+                within_polygons: Vec::new(),
+                protect_regions: Vec::new(),
+            },
+            None,
+            false,
+        )
+        .unwrap();
+        assert_equal!(blur_report.report.width, 5);
+        assert!(blur_report.changed_pixels > 0);
+
+        let sharp_report = unsharp_mask_scene_asset_image(
+            &blur_output,
+            &sharp_output,
+            SceneAssetUnsharpMaskOptions {
+                radius: 1.0,
+                amount: 1.0,
+                threshold: 0,
+                within_regions: Vec::new(),
+                within_polygons: Vec::new(),
+                protect_regions: Vec::new(),
+            },
+            None,
+            false,
+        )
+        .unwrap();
+        assert_equal!(sharp_report.report.height, 5);
+        assert!(sharp_report.changed_pixels > 0);
     }
 
     #[test]
