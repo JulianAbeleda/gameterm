@@ -1,13 +1,23 @@
 use image::imageops::FilterType;
-use image::{DynamicImage, ImageBuffer, Rgba, RgbaImage};
-use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
+use image::{ImageBuffer, Rgba, RgbaImage};
+use serde::Serialize;
 use std::collections::{BTreeMap, VecDeque};
 use std::convert::TryFrom;
 use std::path::{Path, PathBuf};
 
+mod io;
 mod model;
+mod roots;
+
+use io::{
+    load_json, load_rgba_image, read_file, save_rgba_image, sha256_hex, write_file, write_json,
+};
 pub use model::*;
+use roots::{
+    pipeline_report_path, resolve_asset_accept_output_path, resolve_asset_accept_source_path,
+    resolve_asset_operation_source_path, resolve_asset_prefixed_path, resolve_pipeline_input_path,
+    resolve_pipeline_output_path, resolve_recipe_path,
+};
 
 pub fn inspect_scene_asset_image(
     path: &Path,
@@ -209,21 +219,7 @@ pub fn write_scene_asset_json(
     pretty: bool,
     force: bool,
 ) -> Result<(), SceneAssetEditError> {
-    if path.exists() && !force {
-        return Err(SceneAssetEditError::OutputExists(
-            path.display().to_string(),
-        ));
-    }
-    let json = if pretty {
-        serde_json::to_string_pretty(value)
-    } else {
-        serde_json::to_string(value)
-    }
-    .map_err(|err| SceneAssetEditError::JsonFile {
-        path: path.display().to_string(),
-        message: err.to_string(),
-    })?;
-    write_file(path, format!("{json}\n").as_bytes(), force)
+    write_json(path, value, pretty, force)
 }
 
 pub fn run_scene_asset_pipeline(
@@ -3366,99 +3362,6 @@ fn validate_normalized_rect(
     Ok(())
 }
 
-fn load_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T, SceneAssetEditError> {
-    let json = std::fs::read_to_string(path).map_err(|err| SceneAssetEditError::JsonFile {
-        path: path.display().to_string(),
-        message: err.to_string(),
-    })?;
-    serde_json::from_str(&json).map_err(|err| SceneAssetEditError::JsonParse {
-        path: path.display().to_string(),
-        message: err.to_string(),
-    })
-}
-
-fn resolve_pipeline_input_path(roots: &SceneAssetPipelineRoots, path: &str) -> PathBuf {
-    let path = PathBuf::from(path);
-    if path.is_absolute() {
-        path
-    } else {
-        roots.input_root.join(path)
-    }
-}
-
-fn resolve_asset_operation_source_path(roots: &SceneAssetPipelineRoots, path: &str) -> PathBuf {
-    let path = PathBuf::from(path);
-    if path.is_absolute() {
-        return path;
-    }
-    let mut components = path.components();
-    if matches!(components.next(), Some(std::path::Component::Normal(prefix)) if prefix == "Transformation")
-    {
-        return roots.transformation_root.join(components.as_path());
-    }
-    let mut components = path.components();
-    if matches!(components.next(), Some(std::path::Component::Normal(prefix)) if prefix == "Output")
-    {
-        return roots.output_root.join(components.as_path());
-    }
-    roots.input_root.join(path)
-}
-
-fn resolve_asset_prefixed_path(
-    roots: &SceneAssetPipelineRoots,
-    path: &Path,
-    default_root: &Path,
-) -> PathBuf {
-    if path.is_absolute() {
-        return path.to_path_buf();
-    }
-    if let Ok(rest) = path.strip_prefix("Input") {
-        return roots.input_root.join(rest);
-    }
-    if let Ok(rest) = path.strip_prefix("Transformation") {
-        return roots.transformation_root.join(rest);
-    }
-    if let Ok(rest) = path.strip_prefix("Output") {
-        return roots.output_root.join(rest);
-    }
-    default_root.join(path)
-}
-
-fn resolve_asset_accept_source_path(roots: &SceneAssetPipelineRoots, path: &Path) -> PathBuf {
-    resolve_asset_prefixed_path(roots, path, &roots.transformation_root)
-}
-
-fn resolve_asset_accept_output_path(roots: &SceneAssetPipelineRoots, path: &Path) -> PathBuf {
-    if path.is_absolute() {
-        return path.to_path_buf();
-    }
-    if let Ok(rest) = path.strip_prefix("Output") {
-        return roots.output_root.join(rest);
-    }
-    roots.output_root.join(path)
-}
-
-fn resolve_pipeline_output_path(roots: &SceneAssetPipelineRoots, path: &str) -> PathBuf {
-    let path = PathBuf::from(path);
-    if path.is_absolute() {
-        return path;
-    }
-    let mut components = path.components();
-    if matches!(components.next(), Some(std::path::Component::Normal(prefix)) if prefix == "Output")
-    {
-        return roots.output_root.join(components.as_path());
-    }
-    roots.transformation_root.join(path)
-}
-
-fn pipeline_report_path(output_path: &PathBuf) -> PathBuf {
-    let stem = output_path
-        .file_stem()
-        .map(|stem| stem.to_string_lossy())
-        .unwrap_or_else(|| "step".into());
-    output_path.with_file_name(format!("{stem}.report.json"))
-}
-
 fn pipeline_command_advances_source(command: &str) -> bool {
     !matches!(command, "sample" | "mask-preview" | "mask-export")
 }
@@ -4304,65 +4207,6 @@ fn parse_normalized_point_text(
         ))
     })?;
     Ok(SceneAssetNormalizedPoint { x, y })
-}
-
-fn read_file(path: &Path, kind: &str) -> Result<Vec<u8>, SceneAssetEditError> {
-    std::fs::read(path).map_err(|err| SceneAssetEditError::ImageFile {
-        path: path.display().to_string(),
-        message: format!("{kind}: {err}"),
-    })
-}
-
-fn write_file(path: &Path, bytes: &[u8], force: bool) -> Result<(), SceneAssetEditError> {
-    if path.exists() && !force {
-        return Err(SceneAssetEditError::OutputExists(
-            path.display().to_string(),
-        ));
-    }
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|err| SceneAssetEditError::ImageFile {
-            path: parent.display().to_string(),
-            message: err.to_string(),
-        })?;
-    }
-    std::fs::write(path, bytes).map_err(|err| SceneAssetEditError::ImageFile {
-        path: path.display().to_string(),
-        message: err.to_string(),
-    })
-}
-
-fn load_rgba_image(path: &Path) -> Result<RgbaImage, SceneAssetEditError> {
-    image::ImageReader::open(path)
-        .map_err(|err| SceneAssetEditError::ImageFile {
-            path: path.display().to_string(),
-            message: err.to_string(),
-        })?
-        .decode()
-        .map(DynamicImage::into_rgba8)
-        .map_err(|err| SceneAssetEditError::ImageFile {
-            path: path.display().to_string(),
-            message: err.to_string(),
-        })
-}
-
-fn save_rgba_image(image: &RgbaImage, path: &Path, force: bool) -> Result<(), SceneAssetEditError> {
-    if path.exists() && !force {
-        return Err(SceneAssetEditError::OutputExists(
-            path.display().to_string(),
-        ));
-    }
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|err| SceneAssetEditError::ImageFile {
-            path: parent.display().to_string(),
-            message: err.to_string(),
-        })?;
-    }
-    image
-        .save(path)
-        .map_err(|err| SceneAssetEditError::ImageFile {
-            path: path.display().to_string(),
-            message: err.to_string(),
-        })
 }
 
 fn content_bounds(image: &RgbaImage) -> Option<SceneAssetPixelRect> {
@@ -5645,16 +5489,6 @@ fn pixel_index(image: &RgbaImage, x: u32, y: u32) -> usize {
     y as usize * image.width() as usize + x as usize
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    hasher
-        .finalize()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
-}
-
 fn parse_rgba(color: &str) -> Result<Rgba<u8>, SceneAssetEditError> {
     let trimmed = color.trim();
     let hex = trimmed.strip_prefix('#').unwrap_or(trimmed);
@@ -6202,16 +6036,6 @@ fn point_in_rect(rect: SceneAssetPixelRect, point: SceneAssetNormalizedPoint) ->
     let x = rect.x as f32 + point.x.clamp(0.0, 1.0) * rect.w.saturating_sub(1) as f32;
     let y = rect.y as f32 + point.y.clamp(0.0, 1.0) * rect.h.saturating_sub(1) as f32;
     (x.round() as i32, y.round() as i32)
-}
-
-fn resolve_recipe_path(path: &str, base_dir: Option<&Path>) -> PathBuf {
-    let path = PathBuf::from(path);
-    if path.is_absolute() {
-        return path;
-    }
-    base_dir
-        .map(|base_dir| base_dir.join(&path))
-        .unwrap_or(path)
 }
 
 fn continuity_drift_status(
