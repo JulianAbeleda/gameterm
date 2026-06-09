@@ -1,6 +1,7 @@
 use crate::{VisualSpriteDefinition, VisualSpriteManifest, VisualSpriteManifestError};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
+use std::fmt;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -31,7 +32,7 @@ pub struct VnAssetCatalogSource {
     pub license: String,
     pub license_url: String,
     pub source_disclosure: String,
-    pub repo_policy: String,
+    pub repo_policy: VnAssetRepoPolicy,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attribution: Option<String>,
     #[serde(default)]
@@ -72,7 +73,7 @@ pub struct VnAssetAttributionSource {
     pub source_url: String,
     pub license: String,
     pub license_url: String,
-    pub repo_policy: String,
+    pub repo_policy: VnAssetRepoPolicy,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attribution: Option<String>,
     #[serde(default)]
@@ -119,6 +120,69 @@ pub enum VnAssetIntakeWarningKind {
     UnsupportedImageFormat,
     OutputExists,
     DuplicateSpriteId,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VnAssetRepoPolicy {
+    AllowedWithProvenance,
+    AllowedWithAttribution,
+    LocalOnly,
+    Blocked,
+    Unknown(String),
+}
+
+impl VnAssetRepoPolicy {
+    fn as_str(&self) -> &str {
+        match self {
+            Self::AllowedWithProvenance => "allowed_with_provenance",
+            Self::AllowedWithAttribution => "allowed_with_attribution",
+            Self::LocalOnly => "local_only",
+            Self::Blocked => "blocked",
+            Self::Unknown(value) => value.as_str(),
+        }
+    }
+
+    fn from_catalog_value(value: &str) -> Self {
+        match value {
+            "allowed_with_provenance" => Self::AllowedWithProvenance,
+            "allowed_with_attribution" => Self::AllowedWithAttribution,
+            "local_only" => Self::LocalOnly,
+            "blocked" => Self::Blocked,
+            other => Self::Unknown(other.to_string()),
+        }
+    }
+
+    fn is_allowed(&self) -> bool {
+        matches!(
+            self,
+            Self::AllowedWithProvenance | Self::AllowedWithAttribution | Self::LocalOnly
+        )
+    }
+}
+
+impl fmt::Display for VnAssetRepoPolicy {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for VnAssetRepoPolicy {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for VnAssetRepoPolicy {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Ok(Self::from_catalog_value(value.as_str()))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -299,9 +363,12 @@ fn source_is_allowed(
     source: &VnAssetCatalogSource,
     warnings: &mut Vec<VnAssetIntakeWarning>,
 ) -> bool {
-    match source.repo_policy.as_str() {
-        "allowed_with_provenance" | "allowed_with_attribution" | "local_only" => true,
-        "blocked" => {
+    if source.repo_policy.is_allowed() {
+        return true;
+    }
+
+    match &source.repo_policy {
+        VnAssetRepoPolicy::Blocked => {
             warnings.push(warning(
                 Some(source.id.clone()),
                 VnAssetIntakeWarningKind::BlockedSource,
@@ -309,14 +376,17 @@ fn source_is_allowed(
             ));
             false
         }
-        _ => {
+        VnAssetRepoPolicy::Unknown(value) => {
             warnings.push(warning(
                 Some(source.id.clone()),
                 VnAssetIntakeWarningKind::BlockedSource,
-                format!("unknown repo_policy `{}` skipped", source.repo_policy),
+                format!("unknown repo_policy `{value}` skipped"),
             ));
             false
         }
+        VnAssetRepoPolicy::AllowedWithProvenance
+        | VnAssetRepoPolicy::AllowedWithAttribution
+        | VnAssetRepoPolicy::LocalOnly => true,
     }
 }
 
@@ -760,5 +830,89 @@ mod tests {
             .sprites
             .iter()
             .any(|sprite| sprite.id == "vn.background.school_classroom"));
+    }
+
+    #[test]
+    fn vn_asset_repo_policy_preserves_catalog_strings() {
+        let catalog = serde_json::from_str::<VnAssetCatalog>(
+            r#"{
+  "asset_catalog_version": 1,
+  "purpose": "test",
+  "policy": {
+    "default": "test"
+  },
+  "sources": [
+    {
+      "id": "source",
+      "role": "school_background",
+      "title": "Source",
+      "author": "GameTerm",
+      "source_url": "https://example.test/source",
+      "download_name": "source.zip",
+      "license": "CC0-1.0",
+      "license_url": "https://example.test/license",
+      "source_disclosure": "Source page disclosure recorded",
+      "repo_policy": "allowed_with_attribution"
+    }
+  ]
+}"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            catalog.sources[0].repo_policy,
+            VnAssetRepoPolicy::AllowedWithAttribution
+        );
+        assert_eq!(
+            serde_json::to_value(&catalog.sources[0].repo_policy).unwrap(),
+            serde_json::json!("allowed_with_attribution")
+        );
+    }
+
+    #[test]
+    fn vn_asset_intake_warns_for_unknown_repo_policy() {
+        let tmp = tempfile::tempdir().unwrap();
+        let catalog_path = tmp.path().join("catalog.json");
+        write_file(
+            &catalog_path,
+            br#"{
+  "asset_catalog_version": 1,
+  "purpose": "test",
+  "policy": {
+    "default": "test"
+  },
+  "sources": [
+    {
+      "id": "unknown",
+      "role": "school_background",
+      "title": "Unknown",
+      "author": "GameTerm",
+      "source_url": "https://example.test/unknown",
+      "download_name": "unknown.zip",
+      "license": "unknown",
+      "license_url": "https://example.test/license",
+      "source_disclosure": "Source page disclosure recorded",
+      "repo_policy": "maybe_later"
+    }
+  ]
+}"#,
+        );
+
+        let report = run_vn_asset_intake(VnAssetIntakeOptions {
+            catalog_path,
+            source_root: tmp.path().join("source"),
+            output_root: tmp.path().join("output"),
+            sprite_manifest_path: None,
+            base_manifest_path: None,
+            force: false,
+        })
+        .unwrap();
+
+        assert!(report.sprite_manifest.sprites.is_empty());
+        assert!(report.warnings.iter().any(|warning| {
+            warning.source_id.as_deref() == Some("unknown")
+                && warning.kind == VnAssetIntakeWarningKind::BlockedSource
+                && warning.detail.contains("maybe_later")
+        }));
     }
 }

@@ -111,7 +111,7 @@ pub use vn_asset_intake::{
     run_vn_asset_intake, VnAssetAttributionManifest, VnAssetBindingCharacter, VnAssetBindings,
     VnAssetCatalog, VnAssetCatalogPolicy, VnAssetCatalogSource, VnAssetIntakeError,
     VnAssetIntakeOptions, VnAssetIntakeReport, VnAssetIntakeWarning, VnAssetIntakeWarningKind,
-    VnAssetUsedAsset,
+    VnAssetRepoPolicy, VnAssetUsedAsset,
 };
 pub use vn_layout::*;
 pub use vn_text::{
