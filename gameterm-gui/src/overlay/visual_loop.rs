@@ -250,8 +250,9 @@ pub(super) fn show_visual_scene_overlay_with_source(
                             }
                             SceneComposeAction::Submitted(prompt) => {
                                 if session.compose_backend_running {
-                                    runtime
-                                        .mark_compose_failed("Compose backend is already running");
+                                    // Status feedback only, matching the voice
+                                    // path: the running turn must not be failed
+                                    // and the typed prompt stays in the dock.
                                     runtime.mark_action_status(
                                         "Compose busy: finish the current reply first",
                                     );

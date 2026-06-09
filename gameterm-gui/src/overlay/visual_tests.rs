@@ -28,6 +28,7 @@ use super::visual_scene_debug_input::handle_scene_debug_session_input;
 use super::visual_scene_files::*;
 use super::visual_scene_patches::*;
 use super::visual_voice_debug::{SceneVoiceDebugState, VoiceDebugMenuEffect};
+use super::visual_voice_events::apply_stt_result;
 use gameterm_term::TerminalSize;
 use gameterm_visual::{
     vn_overlay_layout, SceneRuntime, VisualInput, VisualInteractiveDebugMenu, VisualMode,
@@ -1163,6 +1164,46 @@ fn compose_patch_only_reply_leaves_visible_system_trace() {
     while runtime.advance_compose_reveal(usize::MAX) {}
     let frame = runtime.render_text_frame(120, 40);
     assert!(frame.contains("Codex succeeded"));
+}
+
+#[test]
+fn busy_compose_submit_keeps_running_turn_and_history_intact() {
+    // Voice and typed busy submits share the same contract: status feedback
+    // only, no failure of the running turn, no history mutation, and the
+    // pending prompt text survives. The typed path in visual_loop.rs uses the
+    // same status-only behavior this test pins for the voice path.
+    let mut runtime = SceneRuntime::new(staged_vn_scene()).unwrap();
+    runtime.mark_compose_running("Codex running", "long question");
+    let history_before = runtime.compose_history_len();
+
+    let mut compose_dock = SceneComposeDock::default();
+    let mut stt_state = SceneSttState::default();
+    let mut compose_backend_running = true;
+    let (compose_tx, compose_rx) = mpsc::channel();
+    apply_stt_result(
+        &mut runtime,
+        &mut compose_dock,
+        &mut stt_state,
+        SceneSttResult {
+            status: "STT succeeded".to_string(),
+            transcript: Some("follow up question".to_string()),
+            auto_submit: true,
+            error: None,
+        },
+        &mut compose_backend_running,
+        &compose_tx,
+        Path::new("scene.json"),
+        7,
+    );
+
+    assert!(compose_backend_running);
+    assert!(compose_rx.try_recv().is_err());
+    assert_eq!(runtime.compose_history_len(), history_before);
+    assert_eq!(compose_dock.buffer, "follow up question");
+    assert_eq!(
+        runtime.render_snapshot().status,
+        "Voice transcript ready: compose busy"
+    );
 }
 
 #[test]
