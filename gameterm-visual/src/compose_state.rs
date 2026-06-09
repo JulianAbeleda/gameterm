@@ -54,7 +54,7 @@ impl VisualComposeMessage {
             (&self.role, self.visibility),
             (
                 VisualComposeRole::Assistant | VisualComposeRole::System,
-                VisualComposeVisibility::Speaking
+                VisualComposeVisibility::Queued | VisualComposeVisibility::Speaking
             )
         )
     }
