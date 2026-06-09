@@ -258,6 +258,15 @@ pub struct SceneAssetEditSessionRunReport {
     pub operations: Vec<SceneAssetOperationRunReport>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetAcceptOutputReport {
+    pub operation: String,
+    pub source_path: String,
+    pub output_path: String,
+    pub status: String,
+    pub image: SceneAssetImageReport,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SceneAssetOperationErrorReport {
     pub operation: String,
@@ -2066,6 +2075,33 @@ pub fn compare_scene_asset_images(
         changed_bounds,
         before,
         after,
+    })
+}
+
+pub fn accept_scene_asset_output(
+    source: &Path,
+    output: &Path,
+    roots: &SceneAssetPipelineRoots,
+    force: bool,
+) -> Result<SceneAssetAcceptOutputReport, SceneAssetEditError> {
+    let source_path = resolve_asset_accept_source_path(roots, source);
+    if !source_path.is_file() {
+        return Err(SceneAssetEditError::ImageFile {
+            path: source_path.display().to_string(),
+            message: "accepted source does not exist".to_string(),
+        });
+    }
+    inspect_scene_asset_image(&source_path)?;
+    let output_path = resolve_asset_accept_output_path(roots, output);
+    let bytes = read_file(&source_path, "image")?;
+    write_file(&output_path, &bytes, force)?;
+    let image = inspect_scene_asset_image(&output_path)?;
+    Ok(SceneAssetAcceptOutputReport {
+        operation: "accept_output".to_string(),
+        source_path: source_path.display().to_string(),
+        output_path: output_path.display().to_string(),
+        status: "ok".to_string(),
+        image,
     })
 }
 
@@ -3972,6 +4008,40 @@ fn resolve_asset_operation_source_path(roots: &SceneAssetPipelineRoots, path: &s
         return roots.output_root.join(components.as_path());
     }
     roots.input_root.join(path)
+}
+
+fn resolve_asset_prefixed_path(
+    roots: &SceneAssetPipelineRoots,
+    path: &Path,
+    default_root: &Path,
+) -> PathBuf {
+    if path.is_absolute() {
+        return path.to_path_buf();
+    }
+    if let Ok(rest) = path.strip_prefix("Input") {
+        return roots.input_root.join(rest);
+    }
+    if let Ok(rest) = path.strip_prefix("Transformation") {
+        return roots.transformation_root.join(rest);
+    }
+    if let Ok(rest) = path.strip_prefix("Output") {
+        return roots.output_root.join(rest);
+    }
+    default_root.join(path)
+}
+
+fn resolve_asset_accept_source_path(roots: &SceneAssetPipelineRoots, path: &Path) -> PathBuf {
+    resolve_asset_prefixed_path(roots, path, &roots.transformation_root)
+}
+
+fn resolve_asset_accept_output_path(roots: &SceneAssetPipelineRoots, path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        return path.to_path_buf();
+    }
+    if let Ok(rest) = path.strip_prefix("Output") {
+        return roots.output_root.join(rest);
+    }
+    roots.output_root.join(path)
 }
 
 fn resolve_pipeline_output_path(roots: &SceneAssetPipelineRoots, path: &str) -> PathBuf {
@@ -6965,6 +7035,60 @@ mod tests {
         assert_equal!(report.status, "error");
         assert_equal!(report.code, "unknown_region");
         assert!(report.hint.unwrap().contains("map-template"));
+    }
+
+    #[test]
+    fn accept_output_writes_report_and_refuses_overwrite_without_force() {
+        let dir = tempdir().unwrap();
+        let input_root = dir.path().join("Input");
+        let transformation_root = dir.path().join("Transformation");
+        let output_root = dir.path().join("Output");
+        std::fs::create_dir_all(&input_root).unwrap();
+        std::fs::create_dir_all(&transformation_root).unwrap();
+        std::fs::create_dir_all(&output_root).unwrap();
+
+        let reviewed = transformation_root.join("reviewed.png");
+        let image = ImageBuffer::from_pixel(2, 2, Rgba([7u8, 8, 9, 255]));
+        image.save(&reviewed).unwrap();
+        let roots = SceneAssetPipelineRoots {
+            input_root,
+            transformation_root: transformation_root.clone(),
+            output_root: output_root.clone(),
+        };
+
+        let report = accept_scene_asset_output(
+            Path::new("reviewed.png"),
+            Path::new("accepted.png"),
+            &roots,
+            false,
+        )
+        .unwrap();
+
+        let accepted = output_root.join("accepted.png");
+        assert_equal!(report.operation, "accept_output");
+        assert_equal!(report.status, "ok");
+        assert_equal!(report.source_path, reviewed.display().to_string());
+        assert_equal!(report.output_path, accepted.display().to_string());
+        assert!(accepted.is_file());
+        assert_equal!(report.image.width, 2);
+        assert_equal!(report.image.height, 2);
+
+        let overwrite = accept_scene_asset_output(
+            Path::new("reviewed.png"),
+            Path::new("accepted.png"),
+            &roots,
+            false,
+        )
+        .unwrap_err();
+        assert!(matches!(overwrite, SceneAssetEditError::OutputExists(_)));
+
+        accept_scene_asset_output(
+            Path::new("Transformation/reviewed.png"),
+            Path::new("Output/accepted.png"),
+            &roots,
+            true,
+        )
+        .unwrap();
     }
 
     #[test]

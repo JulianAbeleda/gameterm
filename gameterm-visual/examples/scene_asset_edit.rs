@@ -1,8 +1,8 @@
 use gameterm_visual::{
-    alpha_paint_scene_asset_region, blur_scene_asset_image, brightness_contrast_scene_asset_image,
-    channel_matte_erase_scene_asset_image, cleanup_scene_asset_hair_edges,
-    clone_stamp_scene_asset_region, color_range_erase_scene_asset_image,
-    compare_scene_asset_images, composite_scene_asset_layers,
+    accept_scene_asset_output, alpha_paint_scene_asset_region, blur_scene_asset_image,
+    brightness_contrast_scene_asset_image, channel_matte_erase_scene_asset_image,
+    cleanup_scene_asset_hair_edges, clone_stamp_scene_asset_region,
+    color_range_erase_scene_asset_image, compare_scene_asset_images, composite_scene_asset_layers,
     continuity_report_for_scene_asset_frames, create_scene_asset_state_manifest,
     crop_scene_asset_image, default_scene_asset_feature_map, draw_scene_asset_shape,
     export_scene_asset_source_images, fill_scene_asset_region, generate_scene_asset_animation,
@@ -43,6 +43,7 @@ struct CliArgs {
     expression: Option<String>,
     animation: Option<String>,
     output: Option<PathBuf>,
+    report: Option<PathBuf>,
     cutout: Option<PathBuf>,
     output_dir: Option<PathBuf>,
     output_source_root: Option<PathBuf>,
@@ -142,6 +143,7 @@ fn usage() {
   cargo run -p gameterm-visual --example scene_asset_edit -- operation-run --operation OPERATION.json --input-root DIR --transformation-root DIR --output-root DIR [--output REPORT.json] [--preview] [--dry-run] [--force] [--pretty]
   cargo run -p gameterm-visual --example scene_asset_edit -- session-run --session SESSION.json --input-root DIR --transformation-root DIR --output-root DIR [--output REPORT.json] [--dry-run] [--force] [--pretty]
   cargo run -p gameterm-visual --example scene_asset_edit -- compare --before BEFORE.png --after AFTER.png [--output REPORT.json] [--pretty]
+  cargo run -p gameterm-visual --example scene_asset_edit -- accept-output --source IMAGE --output IMAGE --input-root DIR --transformation-root DIR --output-root DIR [--report REPORT.json] [--force] [--pretty]
   cargo run -p gameterm-visual --example scene_asset_edit -- sample --source IMAGE [--point X,Y ...] [--within-polygon X,Y;X,Y;X,Y] [--within-regions CSV] [--protect FEATURE_MAP] [--output REPORT] [--pretty]
   cargo run -p gameterm-visual --example scene_asset_edit -- point-report --source IMAGE --point X,Y [--point X,Y ...] [--pretty]
   cargo run -p gameterm-visual --example scene_asset_edit -- grid-preview --source IMAGE --output PATH [--step N] [--force]
@@ -187,6 +189,7 @@ Options:
   --expression NAME          Expression to generate.
   --animation NAME           Animation to generate.
   --output PATH              Output JSON or PNG path.
+  --report PATH              Report path for commands where --output is an image path.
   --cutout PATH              Damaged transparent cutout for restore-from-source.
   --output-dir PATH          Output directory for generated animation frames.
   --output-source-root PATH  Source-root layout used by scene_vn_asset_intake.
@@ -296,6 +299,7 @@ fn main() {
         Some("operation-run") => run_operation(args),
         Some("session-run") => run_session(args),
         Some("compare") => run_compare(args),
+        Some("accept-output") => run_accept_output(args),
         Some("sample") => run_sample(args),
         Some("point-report") => run_point_report(args),
         Some("grid-preview") => run_grid_preview(args),
@@ -432,6 +436,26 @@ fn run_compare(args: CliArgs) -> Result<(), String> {
     let after = required_path(args.after.clone(), "--after")?;
     let report = compare_scene_asset_images(&before, &after).map_err(|err| err.to_string())?;
     write_json(args.output.as_deref(), &report, args.pretty, args.force)
+}
+
+fn run_accept_output(args: CliArgs) -> Result<(), String> {
+    let source = required_path(args.source.clone(), "--source")?;
+    let output = required_path(args.output.clone(), "--output")?;
+    let report = accept_scene_asset_output(
+        &source,
+        &output,
+        &SceneAssetPipelineRoots {
+            input_root: required_path(args.input_root.clone(), "--input-root")?,
+            transformation_root: required_path(
+                args.transformation_root.clone(),
+                "--transformation-root",
+            )?,
+            output_root: required_path(args.output_root.clone(), "--output-root")?,
+        },
+        args.force,
+    )
+    .map_err(|err| err.to_string())?;
+    write_json(args.report.as_deref(), &report, args.pretty, args.force)
 }
 
 fn run_sample(args: CliArgs) -> Result<(), String> {
@@ -1166,6 +1190,7 @@ fn parse_args() -> Result<CliArgs, String> {
             "--expression" => parsed.expression = Some(next_text(&mut args, "--expression")?),
             "--animation" => parsed.animation = Some(next_text(&mut args, "--animation")?),
             "--output" | "-o" => parsed.output = Some(next_path(&mut args, "--output")?),
+            "--report" => parsed.report = Some(next_path(&mut args, "--report")?),
             "--cutout" => parsed.cutout = Some(next_path(&mut args, "--cutout")?),
             "--output-dir" => parsed.output_dir = Some(next_path(&mut args, "--output-dir")?),
             "--output-source-root" => {
