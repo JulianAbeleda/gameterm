@@ -71,6 +71,9 @@ Scene Mode currently has:
 - a first-pass AI/human Scene asset operation layer with versioned operation
   JSON, preview/diff artifacts, structured diagnostics, before/after compare
   reports, and ordered edit session files
+- first-pass primitive tightening for explicit output acceptance,
+  write-free operation validation, durable mask export/import/composite,
+  protected-region assertions, and richer review previews
 
 Latest verification baseline:
 
@@ -93,6 +96,9 @@ Latest verification baseline:
   [GameTerm Scene Mode Smoke Report](gameterm-scene-smoke-report.md)
 - Live smoke: PASS for `vn-compose` with the real local Codex CLI backend,
   recorded in
+  [GameTerm Scene Mode Smoke Report](gameterm-scene-smoke-report.md)
+- Primitive smoke: PASS for Scene asset validate, preview, mask,
+  mask-composite, review, and accept-output commands, recorded in
   [GameTerm Scene Mode Smoke Report](gameterm-scene-smoke-report.md)
 
 Known non-blocking warning noise remains outside Scene Mode scope:
@@ -128,7 +134,7 @@ implementation details.
 | Character selection tools | [Asset Selection Tools Scope](gameterm-scene-asset-selection-tools-scope.md) | Second-pass implemented |
 | Scene asset editor cookbook | [Scene Asset Editor Cookbook](gameterm-scene-asset-editor-cookbook.md) | Non-GUI substrate complete |
 | Scene asset AI/human operation layer | [Scene Asset Editor AI/Human Operation Scope](gameterm-scene-asset-editor-ai-operation-scope.md) | First-pass implemented |
-| Scene asset primitive tightening | [Scene Asset Primitive Tightening Scope](gameterm-scene-asset-primitive-tightening-scope.md) | Scoped |
+| Scene asset primitive tightening | [Scene Asset Primitive Tightening Scope](gameterm-scene-asset-primitive-tightening-scope.md) | First-pass implemented |
 | Rounded VN panel renderer | [Rounded Panel Renderer Scope](gameterm-scene-rounded-panel-renderer-scope.md) | Scoped |
 | Scene debug view separation | [Debug View Separation Scope](gameterm-scene-debug-view-separation-scope.md) | Scoped |
 | Codex compose bridge | [Codex Compose Bridge Scope](gameterm-scene-codex-compose-bridge-scope.md) | First-pass implemented |

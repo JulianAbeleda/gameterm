@@ -8,13 +8,13 @@ deeper product context.
 
 - Date: 2026-06-09
 - Branch: `main`
-- Latest behavior commit: `8c4f0aaf9 [visual] add Scene asset edit sessions`
+- Latest behavior commit: `0891c8942 [visual] add Scene asset review previews`
 - Latest refactor commit: `017ddf309 [gui] NFC - move SceneRuntime test import`
 - Latest tooling commit: `ec1b29b8e [tools] add local CT2 Scene translation helper`
 - Remote state at handoff time: local branch is ahead of `origin/main` by the
-  Scene TTS polish, Scene asset editor, and Scene asset operation commits listed
-  below
-- Worktree state at handoff time: clean after asset editor docs commit
+  Scene TTS polish, Scene asset editor, Scene asset operation, and Scene asset
+  primitive-tightening commits listed below
+- Worktree state at handoff time: clean after primitive workflow docs commit
 - Local app bundle refreshed: `/Users/julianabeleda/Applications/GameTerm.app`
 - Persistent Scene compose config:
   `/Users/julianabeleda/.config/gameterm/scene-compose.json`
@@ -27,12 +27,14 @@ normal macOS GameTerm app without shell-only setup.
 
 Current next priority:
 
-- Scene asset editor non-GUI substrate and the first-pass AI/human operation
-  layer are complete. The command cookbook is recorded in
+- Scene asset editor non-GUI substrate, first-pass AI/human operation layer,
+  and primitive-tightening pass are complete. The command cookbook is recorded in
   [Scene Asset Editor Cookbook](gameterm-scene-asset-editor-cookbook.md), the
   operation contract is recorded in
   [Scene Asset Editor AI/Human Operation Scope](gameterm-scene-asset-editor-ai-operation-scope.md),
-  and the completion scope is recorded in
+  the primitive-tightening pass is recorded in
+  [Scene Asset Primitive Tightening Scope](gameterm-scene-asset-primitive-tightening-scope.md),
+  and the original completion scope is recorded in
   `structure/Development/scene-asset-edit-feature-scope.md`.
 - TTS polish first pass is implemented. The scope and remaining dogfood items
   are recorded in [Scene TTS Polish Scope](gameterm-scene-tts-polish-scope.md).
@@ -45,6 +47,12 @@ Current next priority:
 
 Recent committed work:
 
+- `0891c8942 [visual] add Scene asset review previews`
+- `c1907b9a8 [visual] assert Scene asset protected regions`
+- `e5e9e0577 [visual] add Scene asset mask roundtrip`
+- `2935b00f5 [visual] add Scene asset operation validation`
+- `42184062a [visual] add Scene asset output acceptance`
+- `897945771 [docs] scope Scene asset primitive tightening`
 - `8c4f0aaf9 [visual] add Scene asset edit sessions`
 - `ce40e36fe [visual] add Scene asset operation diagnostics`
 - `2a26cf563 [visual] add Scene asset operation previews`
@@ -92,6 +100,19 @@ Recent committed work:
 
 Latest behavior change:
 
+- Scene asset editing now has explicit `accept-output` semantics. Intermediate
+  work stays in `Transformation`; reviewed files enter `Output` only through an
+  acceptance command that writes a report with image metadata and SHA-256.
+- Scene asset editing now has write-free `validate-operation`, so a human or
+  AI can validate operation JSON, roots, feature maps, protected regions,
+  command arguments, and overwrite policy before previewing or running.
+- Scene asset editing now treats masks as durable artifacts through
+  `mask-export`, `mask-apply-alpha`, and `mask-composite`.
+- Scene asset operation reports can assert protected regions after an edit using
+  `must_preserve_regions` and `max_changed_pixels_in_protected_regions`.
+- Scene asset review previews now include raw diff, overlay diff, alpha diff,
+  checkerboard, dark-background, and contact-sheet artifacts. `operation-run
+  --preview` emits the richer paths.
 - Scene asset editing now has a versioned AI/human operation layer. A user or
   agent can run a single JSON operation through `operation-run`, preview it
   without accepting the requested output, inspect a diff artifact, and receive a
@@ -205,11 +226,19 @@ Scene asset editor status:
   substrate. It can sample, run pipelines, mask/cutout, fill/paint/clone/draw,
   crop/pad/transform, adjust/filter, composite, and render character state
   sheets.
+- Primitive tightening is first-pass complete: validation, explicit
+  acceptance, durable mask roundtrip, protected-region assertions, and richer
+  review previews are implemented and documented.
 - Local Kiki smokes wrote artifacts `24` through `40` under:
   `/Users/julianabeleda/Desktop/gameterm-vn-ai-emotion-sprites/Image Editor/Transformation`.
+- Repo-safe primitive smokes wrote validation, preview, mask, composite,
+  review, and accepted-output artifacts under:
+  `/tmp/gameterm-scene-asset-primitive-smoke`.
 - The scope doc marks the first-pass non-GUI substrate as 100% complete. The
-  remaining work is GUI surface area: file browser, point picking, lasso/polygon
-  drawing, drag handles, live previews, and state/timeline UI.
+  primitive-tightening scope marks the safe no-GUI loop as first-pass complete.
+  The user has paused GUI work for now; remaining GUI surface area is file
+  browser, point picking, lasso/polygon drawing, drag handles, live previews,
+  and state/timeline UI.
 - Optional ML helpers such as detection, matting, upscaling, or inpainting are
   explicitly post-100 extensions.
 
@@ -317,6 +346,22 @@ Results:
 - `visual_speech_blocks`: 6 passed, 0 failed.
 - `visual_tts_`: 10 passed, 0 failed.
 - `scene_debug_menu_tts_test`: 1 passed, 0 failed.
+- `git diff --check`: clean.
+
+Latest asset primitive verification:
+
+```sh
+cargo test -p gameterm-visual asset_edit
+cargo check -p gameterm-visual --examples
+cargo test -p gameterm-visual
+git diff --check
+```
+
+Results:
+
+- `asset_edit`: 52 passed, 0 failed.
+- `gameterm-visual`: 239 passed, 0 failed.
+- `cargo check -p gameterm-visual --examples`: passed.
 - `git diff --check`: clean.
 
 Smoke captures:

@@ -76,8 +76,21 @@ Use operation files when an AI or human should describe one edit as data rather
 than as a long command line. The stable loop is:
 
 ```text
-inspect -> write operation JSON -> dry-run or preview -> run -> compare
--> keep editing or accept the output
+inspect -> write operation JSON -> validate -> preview -> compare/review
+-> run or revise -> accept the output
+```
+
+Validate an operation before writing the requested output:
+
+```sh
+cargo run -q -p gameterm-visual --example scene_asset_edit -- validate-operation \
+  --operation ci/fixtures/gameterm-scene/kiki-asset-operation-draw-shape.json \
+  --input-root ci/fixtures/gameterm-scene/vn-asset-source \
+  --transformation-root "$TX" \
+  --output-root "$OUT" \
+  --output "$TX/41-operation-validation.json" \
+  --pretty \
+  --force
 ```
 
 Run one operation from a JSON envelope:
@@ -111,7 +124,12 @@ Preview mode writes review artifacts such as:
 
 ```text
 kiki-fixture-draw-shape.preview.png
+kiki-fixture-draw-shape.raw-diff.png
 kiki-fixture-draw-shape.diff.png
+kiki-fixture-draw-shape.alpha-diff.png
+kiki-fixture-draw-shape.checkerboard.png
+kiki-fixture-draw-shape.dark-preview.png
+kiki-fixture-draw-shape.review.png
 ```
 
 Run an ordered edit session:
@@ -138,6 +156,33 @@ cargo run -q -p gameterm-visual --example scene_asset_edit -- compare \
   --force
 ```
 
+Write a standalone review sheet:
+
+```sh
+cargo run -q -p gameterm-visual --example scene_asset_edit -- diff-preview \
+  --before ci/fixtures/gameterm-scene/vn-asset-source/4cher_set4_vn_sprites/kiki-neutral.png \
+  --after "$TX/42-operation-alpha-debug.png" \
+  --output "$TX/44-review-sheet.png" \
+  --mode contact-sheet \
+  --report "$TX/44-review-sheet.json" \
+  --pretty \
+  --force
+```
+
+Accept a reviewed transformation into `Output`:
+
+```sh
+cargo run -q -p gameterm-visual --example scene_asset_edit -- accept-output \
+  --source 42-operation-alpha-debug.png \
+  --output kiki-neutral-reviewed.png \
+  --input-root ci/fixtures/gameterm-scene/vn-asset-source \
+  --transformation-root "$TX" \
+  --output-root "$OUT" \
+  --report "$TX/45-accept-kiki-neutral.json" \
+  --pretty \
+  --force
+```
+
 Operation JSON shape:
 
 ```json
@@ -156,6 +201,8 @@ Operation JSON shape:
   },
   "expectations": {
     "max_changed_pixel_ratio": 0.03,
+    "must_preserve_regions": ["face", "eyes", "mouth"],
+    "max_changed_pixels_in_protected_regions": 0,
     "review_points": ["0.03,0.03"]
   }
 }
@@ -199,7 +246,10 @@ Rules:
 - Write outputs to Transformation unless I explicitly ask to accept into Output.
 - Prefer bounded regions or polygons over whole-image edits.
 - Protect face, eyes, mouth, and body unless the goal explicitly edits them.
+- Add must_preserve_regions and max_changed_pixels_in_protected_regions when an
+  edit should not touch specific mapped features.
 - Include a max_changed_pixel_ratio and review_points.
+- I will run validate-operation before previewing or running the operation.
 - Do not invent hidden files or run network/ML tools.
 
 Available commands:
@@ -223,6 +273,46 @@ cargo run -q -p gameterm-visual --example scene_asset_edit -- mask-preview \
   --selection-mode color-range \
   --tolerance 10 \
   --within-polygon '0.64,0.20;0.90,0.20;0.90,0.86;0.62,0.86' \
+  --force
+```
+
+Export a durable selection mask:
+
+```sh
+cargo run -q -p gameterm-visual --example scene_asset_edit -- mask-export \
+  --source "$IN" \
+  --output "$TX/02-hair-pocket-mask.png" \
+  --selection-mode color-range \
+  --tolerance 10 \
+  --within-polygon '0.64,0.20;0.90,0.20;0.90,0.86;0.62,0.86' \
+  --report "$TX/02-hair-pocket-mask.json" \
+  --pretty \
+  --force
+```
+
+Apply alpha through an exported mask:
+
+```sh
+cargo run -q -p gameterm-visual --example scene_asset_edit -- mask-apply-alpha \
+  --source "$IN" \
+  --mask "$TX/02-hair-pocket-mask.png" \
+  --output "$TX/03-hair-pocket-alpha-applied.png" \
+  --alpha 0 \
+  --report "$TX/03-hair-pocket-alpha-applied.json" \
+  --pretty \
+  --force
+```
+
+Composite repaired pixels from a patch through a mask:
+
+```sh
+cargo run -q -p gameterm-visual --example scene_asset_edit -- mask-composite \
+  --source "$IN" \
+  --patch "$TX/22-sample-fill-debug.png" \
+  --mask "$TX/02-hair-pocket-mask.png" \
+  --output "$TX/04-hair-pocket-composited.png" \
+  --report "$TX/04-hair-pocket-composited.json" \
+  --pretty \
   --force
 ```
 
@@ -485,6 +575,8 @@ The first-pass completion smoke generated local artifacts:
 41-operation-*.json / 41-operation-draw-shape-debug.png
 42-operation-alpha-debug.png / 42-session-report.json
 43-compare-report.json
+44-review-sheet.png / 44-review-sheet.json
+45-accept-kiki-neutral.json
 ```
 
 Repo verification:

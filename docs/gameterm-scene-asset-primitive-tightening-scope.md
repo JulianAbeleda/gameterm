@@ -2,7 +2,16 @@
 
 Date: 2026-06-09
 
-Status: scoped.
+Status: first-pass implemented.
+
+Implemented commits:
+
+- `897945771 [docs] scope Scene asset primitive tightening`
+- `42184062a [visual] add Scene asset output acceptance`
+- `2935b00f5 [visual] add Scene asset operation validation`
+- `e5e9e0577 [visual] add Scene asset mask roundtrip`
+- `c1907b9a8 [visual] assert Scene asset protected regions`
+- `0891c8942 [visual] add Scene asset review previews`
 
 ## Purpose
 
@@ -151,6 +160,9 @@ Definition of done:
 - acceptance report is JSON-serializable
 - cookbook includes the acceptance workflow
 
+Result: complete. `accept-output` writes an explicit acceptance report and
+refuses to overwrite accepted outputs without `--force`.
+
 Commit:
 
 - `[visual] add Scene asset output acceptance`
@@ -201,6 +213,10 @@ Definition of done:
 - validation does not write operation output PNGs
 - tests cover valid operation, unknown command, missing source, unsafe output,
   invalid args, and unknown protected region
+
+Result: complete. `validate-operation` validates the operation envelope,
+command arguments, roots, feature maps, protected regions, and overwrite policy
+without writing the requested output PNG.
 
 Commit:
 
@@ -282,6 +298,9 @@ Definition of done:
 - future external inpainting tools can use this bridge without changing core
   editor commands
 
+Result: complete. `mask-export`, `mask-apply-alpha`, and `mask-composite` make
+selection masks durable artifacts that can leave and re-enter GameTerm.
+
 Commit:
 
 - `[visual] add Scene asset mask roundtrip`
@@ -336,6 +355,10 @@ Definition of done:
 - docs explain that `protect_regions` is mask-time protection while
   `must_preserve_regions` is report-time assertion
 
+Result: complete. Operation reports now include protected-region checks when
+expectations request them, and expectation failures name the protected regions
+that changed.
+
 Commit:
 
 - `[visual] assert Scene asset protected regions`
@@ -384,6 +407,10 @@ Definition of done:
 - tests cover color-only diff, alpha-only diff, no-op diff, and transparent
   checkerboard preview
 
+Result: complete. `diff-preview` supports raw diff, overlay diff, alpha diff,
+checkerboard, dark-background, and contact-sheet modes. `operation-run
+--preview` emits the same review artifacts alongside the legacy preview path.
+
 Commit:
 
 - `[visual] add Scene asset review previews`
@@ -419,6 +446,11 @@ Definition of done:
 - CI remains independent of local desktop assets
 - repo fixture tests still use small safe PNGs
 
+Result: complete for repo-safe primitive smoke. The smoke report records a
+fixture-backed validation, preview, mask, composite, review, and acceptance
+loop under `/tmp/gameterm-scene-asset-primitive-smoke`. Real desktop Kiki asset
+smokes remain optional because the desktop assets are local user files.
+
 Commit:
 
 - `[docs] record Scene asset primitive smoke`
@@ -442,6 +474,8 @@ Definition of done:
 - every new command has one copy-pasteable example
 - the roadmap marks primitive tightening as first-pass implemented after the
   implementation commits land
+
+Result: complete in the docs follow-up for this scope.
 
 Commit:
 
@@ -473,13 +507,12 @@ Rust tests:
 
 - `accept_output_writes_report_and_refuses_overwrite_without_force`
 - `validate_operation_reports_success_without_writing_output`
-- `validate_operation_reports_unknown_command`
-- `mask_export_roundtrips_through_apply_alpha`
+- `validate_operation_rejects_unknown_protected_region`
+- `mask_export_roundtrips_through_apply_alpha_and_composite`
 - `mask_composite_rejects_dimension_mismatch`
 - `protected_region_assertion_fails_when_region_changes`
 - `protected_region_assertion_passes_when_region_is_restored`
-- `diff_preview_highlights_color_changes`
-- `diff_preview_highlights_alpha_changes`
+- `diff_preview_highlights_color_and_alpha_changes`
 - `review_contact_sheet_preserves_dimensions`
 
 CLI smoke:
@@ -513,6 +546,9 @@ This scope is complete when:
 - review previews are rich enough to inspect alpha and pixel changes from a
   terminal file path
 - docs give both a human and an AI the same reproducible workflow
+
+Completion status: met for the first pass. The remaining work is product
+ergonomics around these primitives, not missing core edit commands.
 
 ## After This Scope
 

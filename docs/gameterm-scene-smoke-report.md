@@ -1451,3 +1451,137 @@ Transformation/kiki-fixture-draw-shape.preview.png
 Transformation/kiki-fixture-draw-shape.preview.report.json
 Transformation/kiki-fixture-draw-shape.diff.png
 ```
+
+## Scene Asset Primitive Tightening Smoke
+
+Date: 2026-06-09.
+
+Scope:
+
+```text
+docs/gameterm-scene-asset-primitive-tightening-scope.md
+897945771..0891c8942
+```
+
+Temporary smoke roots:
+
+```text
+/tmp/gameterm-scene-asset-primitive-smoke/Transformation
+/tmp/gameterm-scene-asset-primitive-smoke/Output
+```
+
+Commands:
+
+```sh
+rm -rf /tmp/gameterm-scene-asset-primitive-smoke
+mkdir -p /tmp/gameterm-scene-asset-primitive-smoke/Transformation \
+  /tmp/gameterm-scene-asset-primitive-smoke/Output
+
+cargo run -q -p gameterm-visual --example scene_asset_edit -- validate-operation \
+  --operation ci/fixtures/gameterm-scene/kiki-asset-operation-draw-shape.json \
+  --input-root ci/fixtures/gameterm-scene/vn-asset-source \
+  --transformation-root /tmp/gameterm-scene-asset-primitive-smoke/Transformation \
+  --output-root /tmp/gameterm-scene-asset-primitive-smoke/Output \
+  --output /tmp/gameterm-scene-asset-primitive-smoke/Transformation/01-validate.json \
+  --pretty \
+  --force
+
+cargo run -q -p gameterm-visual --example scene_asset_edit -- operation-run \
+  --operation ci/fixtures/gameterm-scene/kiki-asset-operation-draw-shape.json \
+  --input-root ci/fixtures/gameterm-scene/vn-asset-source \
+  --transformation-root /tmp/gameterm-scene-asset-primitive-smoke/Transformation \
+  --output-root /tmp/gameterm-scene-asset-primitive-smoke/Output \
+  --output /tmp/gameterm-scene-asset-primitive-smoke/Transformation/02-operation-preview.json \
+  --preview \
+  --pretty \
+  --force
+
+cargo run -q -p gameterm-visual --example scene_asset_edit -- mask-export \
+  --source ci/fixtures/gameterm-scene/vn-asset-source/4cher_set4_vn_sprites/kiki-neutral.png \
+  --output /tmp/gameterm-scene-asset-primitive-smoke/Transformation/03-mask.png \
+  --selection-mode magic-add \
+  --seed 0.03,0.03 \
+  --tolerance 255 \
+  --pretty \
+  --force
+
+cargo run -q -p gameterm-visual --example scene_asset_edit -- mask-apply-alpha \
+  --source ci/fixtures/gameterm-scene/vn-asset-source/4cher_set4_vn_sprites/kiki-neutral.png \
+  --mask /tmp/gameterm-scene-asset-primitive-smoke/Transformation/03-mask.png \
+  --output /tmp/gameterm-scene-asset-primitive-smoke/Transformation/04-alpha.png \
+  --alpha 0 \
+  --pretty \
+  --force
+
+cargo run -q -p gameterm-visual --example scene_asset_edit -- fill-region \
+  --source ci/fixtures/gameterm-scene/vn-asset-source/4cher_set4_vn_sprites/kiki-neutral.png \
+  --output /tmp/gameterm-scene-asset-primitive-smoke/Transformation/05-patch.png \
+  --color '#ff0000ff' \
+  --whole-image \
+  --force
+
+cargo run -q -p gameterm-visual --example scene_asset_edit -- mask-composite \
+  --source ci/fixtures/gameterm-scene/vn-asset-source/4cher_set4_vn_sprites/kiki-neutral.png \
+  --patch /tmp/gameterm-scene-asset-primitive-smoke/Transformation/05-patch.png \
+  --mask /tmp/gameterm-scene-asset-primitive-smoke/Transformation/03-mask.png \
+  --output /tmp/gameterm-scene-asset-primitive-smoke/Transformation/06-composite.png \
+  --pretty \
+  --force
+
+cargo run -q -p gameterm-visual --example scene_asset_edit -- diff-preview \
+  --before ci/fixtures/gameterm-scene/vn-asset-source/4cher_set4_vn_sprites/kiki-neutral.png \
+  --after /tmp/gameterm-scene-asset-primitive-smoke/Transformation/06-composite.png \
+  --output /tmp/gameterm-scene-asset-primitive-smoke/Transformation/07-review.png \
+  --mode contact-sheet \
+  --report /tmp/gameterm-scene-asset-primitive-smoke/Transformation/07-review.json \
+  --pretty \
+  --force
+
+cargo run -q -p gameterm-visual --example scene_asset_edit -- accept-output \
+  --source 06-composite.png \
+  --output accepted-kiki.png \
+  --input-root ci/fixtures/gameterm-scene/vn-asset-source \
+  --transformation-root /tmp/gameterm-scene-asset-primitive-smoke/Transformation \
+  --output-root /tmp/gameterm-scene-asset-primitive-smoke/Output \
+  --report /tmp/gameterm-scene-asset-primitive-smoke/Transformation/08-accept.json \
+  --pretty \
+  --force
+```
+
+Result: PASS.
+
+Summary:
+
+- `validate-operation` returned `status: ok` without writing the requested
+  output PNG.
+- `operation-run --preview` wrote the legacy preview plus raw diff, overlay
+  diff, alpha diff, checkerboard, dark-background, and contact-sheet review
+  artifacts.
+- `mask-export`, `mask-apply-alpha`, and `mask-composite` round-tripped a
+  durable mask through an alpha edit and a patch composite.
+- `diff-preview --mode contact-sheet` wrote a standalone review sheet.
+- `accept-output` copied the reviewed transformation into the explicit
+  `Output` root and wrote an acceptance report with PNG metadata and SHA-256.
+
+Generated smoke artifacts:
+
+```text
+Output/accepted-kiki.png
+Transformation/01-validate.json
+Transformation/02-operation-preview.json
+Transformation/03-mask.png
+Transformation/04-alpha.png
+Transformation/05-patch.png
+Transformation/06-composite.png
+Transformation/07-review.png
+Transformation/07-review.json
+Transformation/08-accept.json
+Transformation/kiki-fixture-draw-shape.preview.png
+Transformation/kiki-fixture-draw-shape.preview.report.json
+Transformation/kiki-fixture-draw-shape.raw-diff.png
+Transformation/kiki-fixture-draw-shape.diff.png
+Transformation/kiki-fixture-draw-shape.alpha-diff.png
+Transformation/kiki-fixture-draw-shape.checkerboard.png
+Transformation/kiki-fixture-draw-shape.dark-preview.png
+Transformation/kiki-fixture-draw-shape.review.png
+```
