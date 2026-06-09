@@ -27,6 +27,7 @@ use super::visual_render::apply_voice_debug_frame;
 use super::visual_scene_debug_input::handle_scene_debug_session_input;
 use super::visual_scene_files::*;
 use super::visual_scene_patches::*;
+use super::visual_event_drain::drain_compose_results;
 use super::visual_voice_debug::{SceneVoiceDebugState, VoiceDebugMenuEffect};
 use super::visual_voice_events::apply_stt_result;
 use gameterm_term::TerminalSize;
@@ -1025,6 +1026,88 @@ fn compose_reply_blocks_reveal_via_ticks_without_voice_events() {
     assert!(frame.contains("First turn prose reply."));
     assert!(frame.contains("Future turn prose reply."));
     assert!(frame.contains("Second paragraph."));
+}
+
+#[test]
+fn compose_future_turns_render_like_first_turn_across_reply_shapes() {
+    let mut runtime = SceneRuntime::new(staged_vn_scene()).unwrap();
+
+    // Turn 1: prose. Turn 2: technical-only. Turn 3: patch-only.
+    // Turn 4: prose again. Every turn must leave visible transcript content.
+    runtime.mark_compose_running("Codex running", "hello there");
+    let _ = apply_compose_backend_result(
+        &mut runtime,
+        succeeded_codex_result("hello there", "Hello! Scene Mode is ready."),
+        true,
+    );
+
+    runtime.mark_compose_running("Codex running", "where is the scene config");
+    let _ = apply_compose_backend_result(
+        &mut runtime,
+        succeeded_codex_result(
+            "where is the scene config",
+            "~/.config/gameterm/scenes/default.json",
+        ),
+        true,
+    );
+
+    runtime.mark_compose_running("Codex running", "update the scene");
+    let _ = apply_compose_backend_result(
+        &mut runtime,
+        succeeded_codex_result("update the scene", r#"{"status":"Scene updated"}"#),
+        true,
+    );
+
+    runtime.mark_compose_running("Codex running", "what changed");
+    let _ = apply_compose_backend_result(
+        &mut runtime,
+        succeeded_codex_result("what changed", "The render task label changed."),
+        true,
+    );
+
+    while runtime.advance_compose_reveal(usize::MAX) {}
+    let frame = runtime.render_text_frame(120, 50);
+    assert!(frame.contains("> what changed"));
+    assert!(frame.contains("The render task label changed."));
+    assert!(frame.contains("default.json"));
+    assert!(frame.contains("Scene updated"));
+}
+
+#[test]
+fn compose_result_drain_resets_scroll_and_records_reply() {
+    let (tts_tx, _tts_rx) = mpsc::channel();
+    let mut session = VisualOverlaySession::new(
+        SceneTtsConfig::voicevox_default(),
+        tts_tx,
+        SceneSttConfig::whisper_default(),
+    );
+    session.tts_state.toggle_muted();
+    let mut runtime = Some(SceneRuntime::new(staged_vn_scene()).unwrap());
+    runtime
+        .as_mut()
+        .unwrap()
+        .mark_compose_running("Codex running", "future prompt");
+    let history_before = runtime.as_ref().unwrap().compose_history_len();
+    session.dialogue_scroll.offset = 5;
+    session.compose_backend_running = true;
+
+    let (compose_tx, compose_rx) = mpsc::channel();
+    compose_tx
+        .send(succeeded_codex_result(
+            "future prompt",
+            "Future turn reply lands at the bottom.",
+        ))
+        .unwrap();
+    let needs_render = drain_compose_results(&compose_rx, &mut runtime, &mut session);
+
+    assert!(needs_render);
+    assert!(!session.compose_backend_running);
+    assert_eq!(session.dialogue_scroll.offset, 0);
+    let runtime = runtime.as_mut().unwrap();
+    assert!(runtime.compose_history_len() > history_before);
+    while runtime.advance_compose_reveal(usize::MAX) {}
+    let frame = runtime.render_text_frame(120, 40);
+    assert!(frame.contains("Future turn reply lands at the bottom."));
 }
 
 #[test]
