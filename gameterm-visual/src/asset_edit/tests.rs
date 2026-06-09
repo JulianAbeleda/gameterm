@@ -4,6 +4,7 @@ use super::selection_ops::apply_transparency_mask;
 use super::*;
 use image::{ImageBuffer, Rgba};
 use k9::assert_equal;
+use std::path::PathBuf;
 use tempfile::tempdir;
 
 fn write_test_image(path: &Path) {
