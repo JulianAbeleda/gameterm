@@ -160,6 +160,73 @@ pub struct SceneAssetPipelineStepReport {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetOperation {
+    pub asset_operation_version: u64,
+    pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intent: Option<String>,
+    pub source: String,
+    pub output: String,
+    pub command: String,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub args: BTreeMap<String, serde_json::Value>,
+    #[serde(
+        default,
+        skip_serializing_if = "SceneAssetOperationExpectations::is_empty"
+    )]
+    pub expectations: SceneAssetOperationExpectations,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetOperationExpectations {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_changed_pixel_ratio: Option<f32>,
+    #[serde(default)]
+    pub must_preserve_alpha_outside_region: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub review_points: Vec<String>,
+}
+
+impl SceneAssetOperationExpectations {
+    fn is_empty(&self) -> bool {
+        self.max_changed_pixel_ratio.is_none()
+            && !self.must_preserve_alpha_outside_region
+            && self.review_points.is_empty()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SceneAssetOperationRunOptions {
+    pub force: bool,
+    pub dry_run: bool,
+    pub pretty: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetOperationRunReport {
+    pub operation: String,
+    pub id: String,
+    pub command: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intent: Option<String>,
+    pub source: String,
+    pub output_path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub report_path: Option<String>,
+    pub dry_run: bool,
+    pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub before: Option<SceneAssetImageReport>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub after: Option<SceneAssetImageReport>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compare: Option<SceneAssetCompareReport>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub expectation_failures: Vec<String>,
+    pub step: SceneAssetPipelineStepReport,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SceneAssetAnimationRecipe {
     pub fps: u32,
     pub frames: Vec<SceneAssetAnimationFrame>,
@@ -676,6 +743,21 @@ pub struct SceneAssetPaintReport {
     pub output_path: String,
     pub changed_pixels: usize,
     pub report: SceneAssetImageReport,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetCompareReport {
+    pub operation: String,
+    pub before_path: String,
+    pub after_path: String,
+    pub same_dimensions: bool,
+    pub changed_pixels: usize,
+    pub changed_pixel_ratio: f32,
+    pub alpha_changed_pixels: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub changed_bounds: Option<SceneAssetPixelRect>,
+    pub before: SceneAssetImageReport,
+    pub after: SceneAssetImageReport,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1706,6 +1788,179 @@ fn run_scene_asset_pipeline_step(
         dry_run: false,
         report: Some(report),
     })
+}
+
+pub fn run_scene_asset_operation(
+    operation_path: &Path,
+    roots: &SceneAssetPipelineRoots,
+    options: SceneAssetOperationRunOptions,
+) -> Result<SceneAssetOperationRunReport, SceneAssetEditError> {
+    let operation: SceneAssetOperation = load_json(operation_path)?;
+    if operation.asset_operation_version != 1 {
+        return Err(SceneAssetEditError::InvalidOperation(format!(
+            "unsupported asset_operation_version {}; expected 1",
+            operation.asset_operation_version
+        )));
+    }
+    if operation.id.trim().is_empty() {
+        return Err(SceneAssetEditError::InvalidOperation(
+            "asset operation id is required".to_string(),
+        ));
+    }
+    if operation.output.trim().is_empty() {
+        return Err(SceneAssetEditError::InvalidOperation(
+            "asset operation output is required".to_string(),
+        ));
+    }
+    validate_pipeline_command_name(&operation.command)?;
+
+    let source_path = resolve_pipeline_input_path(roots, &operation.source);
+    if !source_path.is_file() {
+        return Err(SceneAssetEditError::ImageFile {
+            path: source_path.display().to_string(),
+            message: "operation source does not exist".to_string(),
+        });
+    }
+    let before = inspect_scene_asset_image(&source_path)?;
+    let step = SceneAssetPipelineStep {
+        command: operation.command.clone(),
+        output: Some(operation.output.clone()),
+        args: operation.args.clone(),
+    };
+    let step_report = run_scene_asset_pipeline_step(
+        0,
+        &step,
+        roots,
+        &source_path,
+        &SceneAssetPipelineRunOptions {
+            force: options.force,
+            dry_run: options.dry_run,
+            pretty: options.pretty,
+        },
+    )?;
+    let output_path = step_report.output_path.clone().unwrap_or_else(|| {
+        resolve_pipeline_output_path(roots, &operation.output)
+            .display()
+            .to_string()
+    });
+    let compare = if !options.dry_run && step_report.advanced_source {
+        Some(compare_scene_asset_images(
+            &source_path,
+            Path::new(&output_path),
+        )?)
+    } else {
+        None
+    };
+    let after = compare.as_ref().map(|report| report.after.clone());
+    let expectation_failures =
+        operation_expectation_failures(&operation.expectations, compare.as_ref());
+    let status = if options.dry_run {
+        "validated"
+    } else if expectation_failures.is_empty() {
+        "ok"
+    } else {
+        "expectation_failed"
+    }
+    .to_string();
+    Ok(SceneAssetOperationRunReport {
+        operation: "operation_run".to_string(),
+        id: operation.id,
+        command: operation.command,
+        intent: operation.intent,
+        source: source_path.display().to_string(),
+        output_path,
+        report_path: step_report.report_path.clone(),
+        dry_run: options.dry_run,
+        status,
+        before: Some(before),
+        after,
+        compare,
+        expectation_failures,
+        step: step_report,
+    })
+}
+
+pub fn compare_scene_asset_images(
+    before_path: &Path,
+    after_path: &Path,
+) -> Result<SceneAssetCompareReport, SceneAssetEditError> {
+    let before = inspect_scene_asset_image(before_path)?;
+    let after = inspect_scene_asset_image(after_path)?;
+    let before_image = load_rgba_image(before_path)?;
+    let after_image = load_rgba_image(after_path)?;
+    if before_image.dimensions() != after_image.dimensions() {
+        return Ok(SceneAssetCompareReport {
+            operation: "compare".to_string(),
+            before_path: before_path.display().to_string(),
+            after_path: after_path.display().to_string(),
+            same_dimensions: false,
+            changed_pixels: pixel_len(&before_image).max(pixel_len(&after_image)),
+            changed_pixel_ratio: 1.0,
+            alpha_changed_pixels: 0,
+            changed_bounds: None,
+            before,
+            after,
+        });
+    }
+
+    let mut changed_pixels = 0;
+    let mut alpha_changed_pixels = 0;
+    let mut min_x = before_image.width();
+    let mut min_y = before_image.height();
+    let mut max_x = 0;
+    let mut max_y = 0;
+    for y in 0..before_image.height() {
+        for x in 0..before_image.width() {
+            let before_pixel = before_image.get_pixel(x, y);
+            let after_pixel = after_image.get_pixel(x, y);
+            if before_pixel.0 == after_pixel.0 {
+                continue;
+            }
+            changed_pixels += 1;
+            if before_pixel[3] != after_pixel[3] {
+                alpha_changed_pixels += 1;
+            }
+            min_x = min_x.min(x);
+            min_y = min_y.min(y);
+            max_x = max_x.max(x);
+            max_y = max_y.max(y);
+        }
+    }
+    let changed_bounds = (changed_pixels > 0).then_some(SceneAssetPixelRect {
+        x: min_x,
+        y: min_y,
+        w: max_x.saturating_sub(min_x).saturating_add(1),
+        h: max_y.saturating_sub(min_y).saturating_add(1),
+    });
+    let total_pixels = pixel_len(&before_image).max(1);
+    Ok(SceneAssetCompareReport {
+        operation: "compare".to_string(),
+        before_path: before_path.display().to_string(),
+        after_path: after_path.display().to_string(),
+        same_dimensions: true,
+        changed_pixels,
+        changed_pixel_ratio: rounded_f32(changed_pixels as f32 / total_pixels as f32),
+        alpha_changed_pixels,
+        changed_bounds,
+        before,
+        after,
+    })
+}
+
+fn operation_expectation_failures(
+    expectations: &SceneAssetOperationExpectations,
+    compare: Option<&SceneAssetCompareReport>,
+) -> Vec<String> {
+    let mut failures = Vec::new();
+    if let (Some(max_ratio), Some(compare)) = (expectations.max_changed_pixel_ratio, compare) {
+        if compare.changed_pixel_ratio > max_ratio {
+            failures.push(format!(
+                "changed_pixel_ratio {} exceeded max_changed_pixel_ratio {}",
+                compare.changed_pixel_ratio, max_ratio
+            ));
+        }
+    }
+    failures
 }
 
 pub fn generate_scene_asset_expression(
@@ -6233,6 +6488,114 @@ mod tests {
             load_json::<SceneAssetSampleReport>(&transformation_root.join("03-sample.json"))
                 .unwrap();
         assert_equal!(sample.points[0].rgba, [255, 0, 0, 255]);
+    }
+
+    #[test]
+    fn compare_report_counts_changed_pixels_and_bounds() {
+        let dir = tempdir().unwrap();
+        let before = dir.path().join("before.png");
+        let after = dir.path().join("after.png");
+        let image = ImageBuffer::from_pixel(4, 4, Rgba([0u8, 0, 0, 255]));
+        image.save(&before).unwrap();
+        let mut changed = image.clone();
+        changed.put_pixel(1, 1, Rgba([255u8, 0, 0, 255]));
+        changed.put_pixel(2, 3, Rgba([0u8, 0, 0, 0]));
+        changed.save(&after).unwrap();
+
+        let report = compare_scene_asset_images(&before, &after).unwrap();
+
+        assert!(report.same_dimensions);
+        assert_equal!(report.changed_pixels, 2);
+        assert_equal!(report.alpha_changed_pixels, 1);
+        assert_equal!(report.changed_pixel_ratio, 0.125);
+        assert_equal!(
+            report.changed_bounds,
+            Some(SceneAssetPixelRect {
+                x: 1,
+                y: 1,
+                w: 2,
+                h: 3
+            })
+        );
+    }
+
+    #[test]
+    fn operation_run_executes_single_step_and_supports_dry_run() {
+        let dir = tempdir().unwrap();
+        let input_root = dir.path().join("Input");
+        let transformation_root = dir.path().join("Transformation");
+        let output_root = dir.path().join("Output");
+        std::fs::create_dir_all(&input_root).unwrap();
+        std::fs::create_dir_all(&transformation_root).unwrap();
+        std::fs::create_dir_all(&output_root).unwrap();
+
+        let source = input_root.join("source.png");
+        let image = ImageBuffer::from_pixel(4, 4, Rgba([0u8, 0, 0, 255]));
+        image.save(&source).unwrap();
+
+        let operation = SceneAssetOperation {
+            asset_operation_version: 1,
+            id: "fill-right-half".to_string(),
+            intent: Some("paint the right half red".to_string()),
+            source: "source.png".to_string(),
+            output: "01-filled.png".to_string(),
+            command: "fill-region".to_string(),
+            args: BTreeMap::from([
+                ("color".to_string(), serde_json::json!("#ff0000ff")),
+                (
+                    "within_polygons".to_string(),
+                    serde_json::json!(["0.5,0.0;1.0,0.0;1.0,1.0;0.5,1.0"]),
+                ),
+            ]),
+            expectations: SceneAssetOperationExpectations {
+                max_changed_pixel_ratio: Some(0.6),
+                ..Default::default()
+            },
+        };
+        let operation_path = dir.path().join("operation.json");
+        write_scene_asset_json(&operation_path, &operation, true, false).unwrap();
+
+        let roots = SceneAssetPipelineRoots {
+            input_root: input_root.clone(),
+            transformation_root: transformation_root.clone(),
+            output_root: output_root.clone(),
+        };
+        let report = run_scene_asset_operation(
+            &operation_path,
+            &roots,
+            SceneAssetOperationRunOptions {
+                force: false,
+                dry_run: false,
+                pretty: true,
+            },
+        )
+        .unwrap();
+
+        assert_equal!(report.status, "ok");
+        assert_equal!(report.id, "fill-right-half");
+        assert_equal!(report.compare.as_ref().unwrap().changed_pixels, 8);
+        assert!(transformation_root.join("01-filled.png").is_file());
+        assert!(transformation_root.join("01-filled.report.json").is_file());
+
+        let dry_operation = SceneAssetOperation {
+            output: "02-dry-run.png".to_string(),
+            ..operation
+        };
+        let dry_operation_path = dir.path().join("dry-operation.json");
+        write_scene_asset_json(&dry_operation_path, &dry_operation, true, false).unwrap();
+        let dry_report = run_scene_asset_operation(
+            &dry_operation_path,
+            &roots,
+            SceneAssetOperationRunOptions {
+                force: false,
+                dry_run: true,
+                pretty: true,
+            },
+        )
+        .unwrap();
+
+        assert_equal!(dry_report.status, "validated");
+        assert!(!transformation_root.join("02-dry-run.png").exists());
     }
 
     #[test]
