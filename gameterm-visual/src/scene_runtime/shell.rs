@@ -7,7 +7,7 @@ use super::SceneRuntime;
 use crate::vn_text::truncate_to_screen;
 use crate::{VisualInput, VisualModeOutcome, VisualView};
 
-const MAIN_MENU_ITEMS: &[&str] = &["Continue", "New Session", "Settings"];
+const MAIN_MENU_ITEMS: &[&str] = &["Continue", "New Session", "Settings", "Native Terminal"];
 
 const MODE_TABS: &[(VisualView, &str)] = &[
     (VisualView::CharacterSelect, "Character Select"),
@@ -105,6 +105,9 @@ impl SceneRuntime {
                     // pass; the resume/reset difference is wired later.
                     Some("Continue") | Some("New Session") => self.enter_scene(),
                     Some("Settings") => self.open_layout_debugger(),
+                    // Native Terminal closes the Scene overlay, dropping back to
+                    // the plain terminal underneath.
+                    Some("Native Terminal") => return VisualModeOutcome::Exit,
                     _ => {}
                 }
                 VisualModeOutcome::Continue
@@ -281,6 +284,21 @@ mod tests {
     }
 
     #[test]
+    fn main_menu_native_terminal_exits_overlay() {
+        let mut rt = runtime();
+        rt.enter_boot();
+        rt.handle_shell_input(VisualInput::Activate); // -> MainMenu
+        // Cursor up from Continue wraps to the last item, Native Terminal.
+        rt.handle_shell_input(VisualInput::Previous);
+        let frame = rt.render_text_frame(80, 24);
+        assert!(frame.contains("Native Terminal"));
+        assert_eq!(
+            rt.handle_shell_input(VisualInput::Activate),
+            VisualModeOutcome::Exit
+        );
+    }
+
+    #[test]
     fn main_menu_cursor_wraps_and_routes_each_item() {
         let mut rt = runtime();
         rt.enter_boot();
@@ -291,10 +309,11 @@ mod tests {
         rt.handle_shell_input(VisualInput::Activate);
         assert_eq!(rt.view(), VisualView::Scene);
 
-        // Settings routes to the layout debugger.
+        // Settings (index 2) routes to the layout debugger.
         rt.enter_boot();
         rt.handle_shell_input(VisualInput::Activate); // MainMenu
-        rt.handle_shell_input(VisualInput::Previous); // wrap up to Settings
+        rt.handle_shell_input(VisualInput::Next); // New Session
+        rt.handle_shell_input(VisualInput::Next); // Settings
         rt.handle_shell_input(VisualInput::Activate);
         assert_eq!(rt.view(), VisualView::VnLayoutDebugger);
     }

@@ -2456,19 +2456,17 @@ impl TermWindow {
             return;
         }
 
-        let mux = Mux::get();
-        let tab = match mux.get_active_tab_for_window(self.mux_window_id) {
-            Some(tab) => tab,
-            None => return,
-        };
-        let tab_id = tab.tab_id();
-        let window = self.window.as_ref().unwrap().clone();
-        let boot_window = window.clone();
-        let (overlay, future) = start_overlay(self, &tab, move |_tab_id, term| {
-            crate::overlay::boot_menu(term, boot_window)
-        });
-        self.assign_overlay(tab_id, overlay);
-        promise::spawn::spawn(future).detach();
+        // Cozy-game entry: open straight into Scene Mode, which presents the
+        // boot "press start" screen and its main menu (Continue / New Session
+        // / Settings / Native Terminal). Voice is configured by default and can
+        // be muted in-scene; the legacy plain boot menu is no longer shown on
+        // startup. Fall back to the non-voice scene if voice config fails.
+        let opened = self
+            .show_game_term_scene_voicevox_overlay()
+            .or_else(|_| self.show_game_term_scene_overlay());
+        if let Err(err) = opened {
+            log::error!("failed to open Scene Mode boot screen on startup: {err:#}");
+        }
     }
 
     fn show_launcher_impl(&mut self, args: LauncherActionArgs, initial_choice_idx: usize) {
