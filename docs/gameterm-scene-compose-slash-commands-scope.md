@@ -1,6 +1,31 @@
 # GameTerm Scene Mode Compose Slash Commands Scope
 
-Status: SCOPED.
+Status: IMPLEMENTED (lanes 1-4 landed; live dogfood pending).
+
+Implementation record (2026-06-09):
+
+- `[visual] resolve Scene Codex model from config and argv`
+- `[visual] parse Scene compose slash commands`
+- `[visual] route Scene compose slash commands and model override`
+- `[visual] hint Scene compose slash commands in the dock`
+
+Verification record:
+
+- `cargo test -p gameterm-gui compose --bin gameterm-gui`: 61 passed
+- `cargo test -p gameterm-visual`: 242 passed
+- `cargo check -p gameterm-gui`: no errors
+- `ci/gameterm-scene-verify.sh --all`: all functional checks print `ok`;
+  the run exits 101 on a pre-existing broken-pipe panic in the verifier's
+  trailing step, reproduced identically on the pre-change baseline commit
+  `21f3c9ffe`, so it is unrelated to this work.
+
+Scope trim: the dock footer hint shows a generic command list rather than the
+active model name, to avoid threading session model state into the render
+signatures. The active model is reported on demand by `/model` with no
+argument.
+
+Remaining: live dogfood (`/model spark`, confirm faster reply, `/model`
+reports model, `/help`, `/clear`).
 
 This scope adds local slash commands to the Scene Mode composer. The driving
 need is runtime model switching: the operator is low on Codex tokens and needs
