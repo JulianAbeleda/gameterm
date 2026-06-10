@@ -24,7 +24,6 @@ mod visual_stt_backend;
 mod visual_tts;
 pub(crate) mod visual_voice_hold;
 
-pub use boot_menu::boot_menu;
 pub use confirm_close_pane::{
     confirm_close_pane, confirm_close_tab, confirm_close_window, confirm_quit_program,
 };

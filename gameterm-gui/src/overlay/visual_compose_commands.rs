@@ -62,11 +62,6 @@ pub(super) fn scene_compose_help_text() -> &'static str {
     "Commands: /model <name> switch model, /clear transcript, /help"
 }
 
-/// Footer hint shown while the composer draft is a slash command.
-pub(super) fn scene_compose_slash_hint(active_model: &str) -> String {
-    format!("slash: /model {active_model} · /clear · /help")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
