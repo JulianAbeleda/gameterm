@@ -38,17 +38,20 @@ impl TermWindow {
         // The other interactive debug sections are text panes and suppress
         // the VN overlay surfaces so the selected pane is visually isolated.
         let suppress_stage_art = matches!(snapshot.view, VisualView::VnLayoutDebugger);
-        let suppress_vn_panels = matches!(
-            (snapshot.view, snapshot.interactive_debug_menu),
-            (
-                VisualView::VnLayoutDebugger,
-                VisualInteractiveDebugMenu::TileDebugMenu
-                    | VisualInteractiveDebugMenu::Text
-                    | VisualInteractiveDebugMenu::Voice
-                    | VisualInteractiveDebugMenu::Compose
-                    | VisualInteractiveDebugMenu::Runtime
-            )
-        );
+        // Shell screens (boot, menu, mode cycle) keep the cozy background but
+        // suppress the dialogue panel so it does not overlay the menu text.
+        let suppress_vn_panels = snapshot.view.is_shell()
+            || matches!(
+                (snapshot.view, snapshot.interactive_debug_menu),
+                (
+                    VisualView::VnLayoutDebugger,
+                    VisualInteractiveDebugMenu::TileDebugMenu
+                        | VisualInteractiveDebugMenu::Text
+                        | VisualInteractiveDebugMenu::Voice
+                        | VisualInteractiveDebugMenu::Compose
+                        | VisualInteractiveDebugMenu::Runtime
+                )
+            );
 
         let stage_rect = stage_viewport_rect(params, cell_height);
         if !suppress_stage_art {

@@ -45,6 +45,11 @@ impl SceneRuntime {
             VisualView::CommandSelection => self.render_command_selection(cols, rows),
             VisualView::TileDebugger => self.render_interactive_debugger(cols, rows),
             VisualView::VnLayoutDebugger => self.render_interactive_debugger(cols, rows),
+            VisualView::Boot
+            | VisualView::MainMenu
+            | VisualView::CharacterSelect
+            | VisualView::StageSelect
+            | VisualView::SettingMode => self.render_shell_screen(cols, rows),
         }
     }
 

@@ -9,6 +9,7 @@ mod input;
 mod lifecycle;
 mod patch;
 mod selection;
+mod shell;
 mod snapshot;
 mod status_methods;
 mod story_state;
@@ -57,6 +58,7 @@ pub struct SceneRuntime {
     vn_layout_debug: Option<VnOverlayDebugOverrides>,
     interactive_debug_menu: VisualInteractiveDebugMenu,
     debug_selected_row: usize,
+    shell_cursor: usize,
 }
 
 impl SceneRuntime {
@@ -106,6 +108,7 @@ impl SceneRuntime {
             vn_layout_debug: None,
             interactive_debug_menu: VisualInteractiveDebugMenu::SceneLayout,
             debug_selected_row: 0,
+            shell_cursor: 0,
         };
         runtime.run_mode_enter_hooks();
         Ok(runtime)
@@ -226,8 +229,18 @@ impl VisualMode for SceneRuntime {
     }
 
     fn handle_input(&mut self, input: VisualInput) -> VisualModeOutcome {
+        if self.view.is_shell() {
+            return self.handle_shell_input(input);
+        }
         if self.view == VisualView::VnLayoutDebugger {
             return self.handle_vn_layout_debug_input(input);
+        }
+        // Tab in a scene opens the navigation mode cycle (Character/Stage/
+        // Setting select) instead of the layout debugger; the debugger stays
+        // reachable through the main menu Settings entry.
+        if self.view == VisualView::Scene && input == VisualInput::ToggleDebug {
+            self.enter_mode_cycle();
+            return VisualModeOutcome::Continue;
         }
 
         if let Some(outcome) = self.handle_layer_input(input) {

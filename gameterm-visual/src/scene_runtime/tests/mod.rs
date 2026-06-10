@@ -1691,11 +1691,17 @@ fn mode_toggle_debug_input_changes_view_and_generation() {
     let mut runtime = SceneRuntime::new(VisualScene::demo()).unwrap();
     let initial_generation = runtime.generation();
 
+    // Tab in a scene now opens the Tab-cycle mode screens (starting at
+    // Character Select). The layout debugger is reached via Main Menu ->
+    // Settings, and `toggle_debugger()` still opens it directly.
     let outcome = runtime.handle_input(VisualInput::ToggleDebug);
 
     assert_eq!(outcome, VisualModeOutcome::Continue);
-    assert_eq!(runtime.view(), VisualView::VnLayoutDebugger);
+    assert_eq!(runtime.view(), VisualView::CharacterSelect);
     assert!(runtime.generation() > initial_generation);
+
+    runtime.toggle_debugger();
+    assert_eq!(runtime.view(), VisualView::VnLayoutDebugger);
 }
 
 #[test]

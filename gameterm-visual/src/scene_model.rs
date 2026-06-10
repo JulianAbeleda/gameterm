@@ -1340,6 +1340,36 @@ pub enum VisualView {
     CommandSelection,
     TileDebugger,
     VnLayoutDebugger,
+    /// Cozy-game navigation shell: a boot "press start" screen, the main menu,
+    /// and the in-scene Tab-cycle mode screens.
+    Boot,
+    MainMenu,
+    CharacterSelect,
+    StageSelect,
+    SettingMode,
+}
+
+impl VisualView {
+    /// True for the navigation-shell screens (boot, menu, and mode cycle),
+    /// which own keyboard input directly instead of the compose dock.
+    pub fn is_shell(self) -> bool {
+        matches!(
+            self,
+            Self::Boot
+                | Self::MainMenu
+                | Self::CharacterSelect
+                | Self::StageSelect
+                | Self::SettingMode
+        )
+    }
+
+    /// True for the Tab-cycle mode screens reached from within a scene.
+    pub fn is_mode_cycle(self) -> bool {
+        matches!(
+            self,
+            Self::CharacterSelect | Self::StageSelect | Self::SettingMode
+        )
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

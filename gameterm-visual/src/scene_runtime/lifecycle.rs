@@ -60,17 +60,24 @@ impl SceneRuntime {
     }
 
     pub fn toggle_debugger(&mut self) {
-        self.view = match self.view {
-            VisualView::Scene | VisualView::CommandSelection | VisualView::TileDebugger => {
-                if self.vn_layout_debug.is_none() {
-                    self.vn_layout_debug = Some(VnOverlayDebugOverrides::default());
-                }
-                self.interactive_debug_menu = VisualInteractiveDebugMenu::SceneLayout;
-                self.debug_selected_row = self.debug_selected_row.min(self.debug_menu_row_count());
-                VisualView::VnLayoutDebugger
+        match self.view {
+            VisualView::VnLayoutDebugger => {
+                self.view = VisualView::Scene;
+                self.bump_generation();
             }
-            VisualView::VnLayoutDebugger => VisualView::Scene,
-        };
+            _ => self.open_layout_debugger(),
+        }
+    }
+
+    /// Enter the layout debugger from any view. Shared by the Tab toggle and
+    /// the main-menu Settings entry.
+    pub(super) fn open_layout_debugger(&mut self) {
+        if self.vn_layout_debug.is_none() {
+            self.vn_layout_debug = Some(VnOverlayDebugOverrides::default());
+        }
+        self.interactive_debug_menu = VisualInteractiveDebugMenu::SceneLayout;
+        self.debug_selected_row = self.debug_selected_row.min(self.debug_menu_row_count());
+        self.view = VisualView::VnLayoutDebugger;
         self.bump_generation();
     }
 
@@ -97,11 +104,11 @@ impl SceneRuntime {
     }
 
     pub fn toggle_command_selection(&mut self) {
+        // Shell/menu views never reach command selection; only toggle from the
+        // scene-side views.
         self.view = match self.view {
             VisualView::CommandSelection => VisualView::Scene,
-            VisualView::Scene | VisualView::TileDebugger | VisualView::VnLayoutDebugger => {
-                VisualView::CommandSelection
-            }
+            _ => VisualView::CommandSelection,
         };
         self.bump_generation();
     }

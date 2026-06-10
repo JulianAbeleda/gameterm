@@ -90,6 +90,11 @@ pub(super) fn show_visual_scene_overlay_with_source(
             Some((scene, source_label, action_base_dir))
         }
     };
+    // Cozy-game entry: open to the boot "press start" screen, which advances to
+    // the main menu and then into the scene.
+    if let Some(runtime) = runtime.as_mut() {
+        runtime.enter_boot();
+    }
     let mut file_watcher = if generated_scene.is_some() {
         SceneFileWatcher::disabled()
     } else {
@@ -258,7 +263,10 @@ pub(super) fn show_visual_scene_overlay_with_source(
                     // key. The compose dock must not intercept text/navigation
                     // input before the debugger can select, adjust, or edit.
                     let in_layout_debug = runtime.view() == VisualView::VnLayoutDebugger;
-                    if !runtime.scene().stage.is_empty() && !in_layout_debug {
+                    // Boot, menu, and mode-cycle screens own keyboard input
+                    // directly; the compose dock must not intercept it.
+                    let in_shell = runtime.view().is_shell();
+                    if !runtime.scene().stage.is_empty() && !in_layout_debug && !in_shell {
                         match session.compose_dock.handle_key(key) {
                             SceneComposeAction::Consumed => {
                                 render_runtime_with_compose_and_scroll(
@@ -390,6 +398,11 @@ pub(super) fn show_visual_scene_overlay_with_source(
                 let in_layout_debug = runtime.as_ref().map_or(false, |runtime| {
                     runtime.view() == VisualView::VnLayoutDebugger
                 });
+                // Shell screens route Close/Reload through handle_input (Esc on
+                // the menu backs up a level rather than closing the overlay),
+                // so do not let the loop's own Close/Reload shortcuts fire.
+                let in_shell =
+                    runtime.as_ref().map_or(false, |runtime| runtime.view().is_shell());
                 if !in_layout_debug {
                     if let Some(runtime) = runtime.as_ref() {
                         if handle_dialogue_scroll_key(
@@ -409,10 +422,10 @@ pub(super) fn show_visual_scene_overlay_with_source(
                         }
                     }
                 }
-                if visual_input == VisualInput::Close && !in_layout_debug {
+                if visual_input == VisualInput::Close && !in_layout_debug && !in_shell {
                     break;
                 }
-                if visual_input == VisualInput::Reload && !in_layout_debug {
+                if visual_input == VisualInput::Reload && !in_layout_debug && !in_shell {
                     if let Some((scene, source_label, action_base_dir)) = &generated_scene {
                         reload_generated_scene(
                             &mut term,
