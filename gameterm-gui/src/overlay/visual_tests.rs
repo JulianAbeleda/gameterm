@@ -1667,6 +1667,7 @@ fn compose_backend_config_selects_codex_explicitly() {
         workspace: PathBuf::from("/workspace"),
         sandbox: "read-only".to_string(),
         approval: "on-request".to_string(),
+        reasoning_effort: None,
         json: true,
         timeout: std::time::Duration::from_secs(90),
     };
@@ -1696,6 +1697,7 @@ fn codex_compose_argv_uses_structured_arguments() {
         workspace: PathBuf::from("/workspace with spaces"),
         sandbox: "read-only".to_string(),
         approval: "on-request".to_string(),
+        reasoning_effort: None,
         json: true,
         timeout: std::time::Duration::from_secs(90),
     };
@@ -1767,6 +1769,7 @@ fn codex_backend_fake_command_updates_dialogue_status() {
         workspace: dir.path().to_path_buf(),
         sandbox: "read-only".to_string(),
         approval: "on-request".to_string(),
+        reasoning_effort: None,
         json: true,
         timeout: std::time::Duration::from_secs(90),
     };

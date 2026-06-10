@@ -16,6 +16,7 @@ const COMPOSE_CODEX_WORKSPACE_ENV: &str = "GAMETERM_SCENE_COMPOSE_WORKSPACE";
 const COMPOSE_CODEX_SANDBOX_ENV: &str = "GAMETERM_SCENE_COMPOSE_CODEX_SANDBOX";
 const COMPOSE_CODEX_APPROVAL_ENV: &str = "GAMETERM_SCENE_COMPOSE_CODEX_APPROVAL";
 const COMPOSE_CODEX_TIMEOUT_ENV: &str = "GAMETERM_SCENE_COMPOSE_CODEX_TIMEOUT_SECONDS";
+const COMPOSE_CODEX_REASONING_ENV: &str = "GAMETERM_SCENE_COMPOSE_CODEX_REASONING";
 const COMPOSE_CONFIG_FILE_NAME: &str = "scene-compose.json";
 const DEFAULT_CODEX_APPROVAL_POLICY: &str = "on-request";
 const COMPOSE_BACKEND_TIMEOUT: Duration = Duration::from_secs(15);
@@ -181,6 +182,7 @@ pub(super) struct CodexComposeConfig {
     pub(super) workspace: PathBuf,
     pub(super) sandbox: String,
     pub(super) approval: String,
+    pub(super) reasoning_effort: Option<String>,
     pub(super) json: bool,
     pub(super) timeout: Duration,
 }
@@ -203,6 +205,8 @@ struct SceneComposeConfigFile {
     codex_approval: Option<String>,
     #[serde(default)]
     codex_timeout_seconds: Option<u64>,
+    #[serde(default)]
+    codex_reasoning_effort: Option<String>,
 }
 
 pub(super) fn compose_running_status(prompt: &str) -> String {
@@ -345,6 +349,7 @@ struct SceneComposeEnv {
     codex_sandbox: Option<String>,
     codex_approval: Option<String>,
     codex_timeout_seconds: Option<String>,
+    codex_reasoning_effort: Option<String>,
 }
 
 impl SceneComposeEnv {
@@ -358,6 +363,7 @@ impl SceneComposeEnv {
             codex_sandbox: non_empty_env(COMPOSE_CODEX_SANDBOX_ENV),
             codex_approval: non_empty_env(COMPOSE_CODEX_APPROVAL_ENV),
             codex_timeout_seconds: non_empty_env(COMPOSE_CODEX_TIMEOUT_ENV),
+            codex_reasoning_effort: non_empty_env(COMPOSE_CODEX_REASONING_ENV),
         }
     }
 }
@@ -430,6 +436,12 @@ fn codex_compose_config_from_sources(
         .as_deref()
         .or(file_config.codex_approval.as_deref())
         .unwrap_or(DEFAULT_CODEX_APPROVAL_POLICY);
+    let reasoning_effort = env
+        .codex_reasoning_effort
+        .as_deref()
+        .or(file_config.codex_reasoning_effort.as_deref())
+        .map(validate_codex_reasoning_effort)
+        .transpose()?;
     Ok(CodexComposeConfig {
         program: env
             .codex_bin
@@ -444,6 +456,7 @@ fn codex_compose_config_from_sources(
             .unwrap_or_else(|| PathBuf::from(".")),
         sandbox: validate_codex_sandbox(sandbox)?,
         approval: validate_codex_approval(approval)?,
+        reasoning_effort,
         json: true,
         timeout: codex_timeout_from_sources(file_config, env)?,
     })
@@ -454,6 +467,15 @@ fn validate_codex_sandbox(value: &str) -> Result<String, String> {
         "read-only" | "workspace-write" | "danger-full-access" => Ok(value.trim().to_string()),
         other => Err(format!(
             "invalid Scene Codex sandbox `{other}`; expected read-only, workspace-write, or danger-full-access"
+        )),
+    }
+}
+
+fn validate_codex_reasoning_effort(value: &str) -> Result<String, String> {
+    match value.trim() {
+        "minimal" | "low" | "medium" | "high" | "xhigh" => Ok(value.trim().to_string()),
+        other => Err(format!(
+            "invalid Scene Codex reasoning effort `{other}`; expected minimal, low, medium, high, or xhigh"
         )),
     }
 }
@@ -607,6 +629,10 @@ pub(super) fn codex_compose_argv(
         "-c".to_string(),
         format!("approval_policy=\"{}\"", config.approval),
     ];
+    if let Some(effort) = config.reasoning_effort.as_deref() {
+        argv.push("-c".to_string());
+        argv.push(format!("model_reasoning_effort=\"{effort}\""));
+    }
     if config.json {
         argv.push("--json".to_string());
     }
@@ -799,6 +825,33 @@ mod tests {
     }
 
     #[test]
+    fn codex_compose_argv_includes_reasoning_effort_when_configured() {
+        let mut config = CodexComposeConfig {
+            program: "codex".to_string(),
+            workspace: PathBuf::from("/workspace"),
+            sandbox: "read-only".to_string(),
+            approval: "never".to_string(),
+            reasoning_effort: Some("low".to_string()),
+            json: true,
+            timeout: DEFAULT_CODEX_TIMEOUT,
+        };
+        let argv = codex_compose_argv(&config, Path::new("/tmp/out.txt"), "hi");
+        let joined = argv.join(" ");
+        assert!(joined.contains("model_reasoning_effort=\"low\""));
+
+        config.reasoning_effort = None;
+        let argv = codex_compose_argv(&config, Path::new("/tmp/out.txt"), "hi");
+        assert!(!argv.join(" ").contains("model_reasoning_effort"));
+    }
+
+    #[test]
+    fn codex_reasoning_effort_rejects_unknown_values() {
+        assert!(validate_codex_reasoning_effort("low").is_ok());
+        assert!(validate_codex_reasoning_effort("xhigh").is_ok());
+        assert!(validate_codex_reasoning_effort("turbo").is_err());
+    }
+
+    #[test]
     fn wait_for_child_output_cancel_kills_backend() {
         let mut command = Command::new("/bin/sh");
         command
@@ -840,6 +893,7 @@ mod tests {
             workspace: PathBuf::from("/workspace"),
             sandbox: "read-only".to_string(),
             approval: DEFAULT_CODEX_APPROVAL_POLICY.to_string(),
+            reasoning_effort: None,
             json: true,
             timeout: DEFAULT_CODEX_TIMEOUT,
         };
@@ -869,6 +923,7 @@ mod tests {
             workspace: PathBuf::from("/workspace"),
             sandbox: "read-only".to_string(),
             approval: DEFAULT_CODEX_APPROVAL_POLICY.to_string(),
+            reasoning_effort: None,
             json: true,
             timeout: DEFAULT_CODEX_TIMEOUT,
         };
@@ -1025,6 +1080,7 @@ mod tests {
             workspace: PathBuf::from("/workspace with spaces"),
             sandbox: "read-only".to_string(),
             approval: "on-request".to_string(),
+            reasoning_effort: None,
             json: true,
             timeout: DEFAULT_CODEX_TIMEOUT,
         };
@@ -1082,6 +1138,7 @@ mod tests {
             workspace: dir.path().to_path_buf(),
             sandbox: "read-only".to_string(),
             approval: "on-request".to_string(),
+            reasoning_effort: None,
             json: true,
             timeout: DEFAULT_CODEX_TIMEOUT,
         };
@@ -1117,6 +1174,7 @@ mod tests {
                 workspace: PathBuf::from("/workspace"),
                 sandbox: "workspace-write".to_string(),
                 approval: "never".to_string(),
+                reasoning_effort: None,
                 json: true,
                 timeout: Duration::from_secs(120),
             })
@@ -1149,6 +1207,7 @@ mod tests {
                 workspace: PathBuf::from("/env-workspace"),
                 sandbox: "read-only".to_string(),
                 approval: "on-request".to_string(),
+                reasoning_effort: None,
                 json: true,
                 timeout: Duration::from_secs(30),
             })
