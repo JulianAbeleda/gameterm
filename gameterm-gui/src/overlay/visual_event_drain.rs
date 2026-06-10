@@ -127,6 +127,7 @@ pub(super) fn drain_stt_results(
                     result,
                     &mut session.compose_backend_running,
                     &mut session.compose_cancel,
+                    session.compose_model.as_deref(),
                     compose_tx,
                     scene_path,
                     pane_id,

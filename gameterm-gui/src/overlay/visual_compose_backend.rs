@@ -30,6 +30,9 @@ pub(super) struct ComposeBackendRequest {
     pub(super) backend_prompt: String,
     pub(super) scene_path: Option<String>,
     pub(super) pane_id: Option<usize>,
+    /// Session-local model override from `/model`. Wins over the configured
+    /// model when set; otherwise the configured/global model is used.
+    pub(super) model_override: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -589,9 +592,12 @@ fn parse_compose_backend_argv(command: &str) -> Result<Vec<String>, String> {
 
 pub(super) fn run_codex_compose_backend(
     request: ComposeBackendRequest,
-    config: CodexComposeConfig,
+    mut config: CodexComposeConfig,
     cancel: &ComposeBackendCancel,
 ) -> ComposeBackendResult {
+    if request.model_override.is_some() {
+        config.model = request.model_override.clone();
+    }
     let output_file = std::env::temp_dir().join(format!(
         "gameterm-scene-codex-{}-{}.txt",
         std::process::id(),
@@ -825,6 +831,7 @@ mod tests {
             backend_prompt: prompt.to_string(),
             scene_path: Some("scene.json".to_string()),
             pane_id: Some(7),
+            model_override: None,
         }
     }
 

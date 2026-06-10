@@ -48,6 +48,7 @@ pub(super) fn apply_stt_result(
     result: SceneSttResult,
     compose_backend_running: &mut bool,
     compose_cancel: &mut Option<ComposeBackendCancel>,
+    compose_model: Option<&str>,
     compose_tx: &mpsc::Sender<ComposeBackendResult>,
     scene_path: &Path,
     pane_id: mux::pane::PaneId,
@@ -79,6 +80,7 @@ pub(super) fn apply_stt_result(
                     backend_prompt,
                     scene_path: Some(scene_path.display().to_string()),
                     pane_id: Some(pane_id),
+                    model_override: compose_model.map(str::to_string),
                 },
                 compose_tx.clone(),
             ));

@@ -17,6 +17,9 @@ use super::super::visual_stt::SceneSttConfig;
 use super::super::visual_tts::SceneTtsConfig;
 use super::super::visual_voice_hold::set_scene_voice_hold_active;
 use super::visual_command_dispatch::{dispatch_pending_action, RunCommandDispatch};
+use super::visual_compose_commands::{
+    parse_scene_compose_command, scene_compose_help_text, SceneComposeCommand,
+};
 use super::visual_compose_dock::SceneComposeAction;
 use super::visual_compose_result::{apply_compose_backend_result, fake_codex_compose_result};
 use super::visual_dialogue_scroll::{handle_dialogue_scroll_key, handle_dialogue_scroll_wheel};
@@ -268,6 +271,46 @@ pub(super) fn show_visual_scene_overlay_with_source(
                                 continue;
                             }
                             SceneComposeAction::Submitted(prompt) => {
+                                // Slash commands are local composer actions:
+                                // they never spawn the backend and run even
+                                // while a turn is in flight.
+                                if let Some(command) = parse_scene_compose_command(&prompt) {
+                                    session.compose_dock.mark_submitted(&prompt);
+                                    match command {
+                                        SceneComposeCommand::Model { name: Some(name) } => {
+                                            runtime.mark_action_status(format!(
+                                                "Compose model: {name}"
+                                            ));
+                                            session.compose_model = Some(name);
+                                        }
+                                        SceneComposeCommand::Model { name: None } => {
+                                            runtime.mark_action_status(format!(
+                                                "Compose model: {}",
+                                                session.active_compose_model_label()
+                                            ));
+                                        }
+                                        SceneComposeCommand::Clear => {
+                                            runtime.clear_compose_history();
+                                            session.dialogue_scroll.reset_to_bottom();
+                                        }
+                                        SceneComposeCommand::Help => {
+                                            runtime.mark_action_status(scene_compose_help_text());
+                                        }
+                                        SceneComposeCommand::Unknown(name) => {
+                                            runtime.mark_action_status(format!(
+                                                "Unknown command /{name}; try /help"
+                                            ));
+                                        }
+                                    }
+                                    render_runtime_with_compose_and_scroll(
+                                        &mut term,
+                                        runtime,
+                                        &sprite_manifest,
+                                        &session.compose_dock,
+                                        &session.dialogue_scroll,
+                                    )?;
+                                    continue;
+                                }
                                 if session.compose_backend_running {
                                     // Status feedback only, matching the voice
                                     // path: the running turn must not be failed
@@ -322,6 +365,7 @@ pub(super) fn show_visual_scene_overlay_with_source(
                                         backend_prompt,
                                         scene_path: Some(scene_path.display().to_string()),
                                         pane_id: Some(pane_id),
+                                        model_override: session.compose_model.clone(),
                                     },
                                     compose_tx.clone(),
                                 ));

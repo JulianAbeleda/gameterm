@@ -1319,6 +1319,7 @@ fn busy_compose_submit_keeps_running_turn_and_history_intact() {
         },
         &mut compose_backend_running,
         &mut compose_cancel,
+        None,
         &compose_tx,
         Path::new("scene.json"),
         7,
@@ -1765,6 +1766,7 @@ fn codex_backend_fake_command_updates_dialogue_status() {
         backend_prompt: "look at roadmap".to_string(),
         scene_path: Some("scene.json".to_string()),
         pane_id: Some(7),
+        model_override: None,
     };
     let config = CodexComposeConfig {
         program: fake_codex.display().to_string(),
@@ -1792,6 +1794,52 @@ fn codex_backend_fake_command_updates_dialogue_status() {
     assert_eq!(snapshot.dialogue_speaker, "Codex");
     assert_eq!(snapshot.dialogue, "Codex says: look at roadmap");
     assert_eq!(snapshot.status, "Codex succeeded");
+}
+
+#[test]
+fn codex_backend_request_model_override_wins_over_config() {
+    let dir = tempfile::tempdir().unwrap();
+    let argv_dump = dir.path().join("argv.txt");
+    let fake_codex = dir.path().join("fake-codex.sh");
+    std::fs::write(
+        &fake_codex,
+        format!(
+            "#!/usr/bin/env sh\nprintf '%s\\n' \"$@\" > {}\nwhile [ \"$1\" != \"\" ]; do\n  if [ \"$1\" = \"--output-last-message\" ]; then\n    shift\n    printf 'ok\\n' > \"$1\"\n  fi\n  shift || exit 0\ndone\n",
+            argv_dump.display()
+        ),
+    )
+    .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut permissions = std::fs::metadata(&fake_codex).unwrap().permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&fake_codex, permissions).unwrap();
+    }
+
+    let request = ComposeBackendRequest {
+        prompt: "switch test".to_string(),
+        backend_prompt: "switch test".to_string(),
+        scene_path: Some("scene.json".to_string()),
+        pane_id: Some(7),
+        model_override: Some("gpt-5.3-codex-spark".to_string()),
+    };
+    let config = CodexComposeConfig {
+        program: fake_codex.display().to_string(),
+        workspace: dir.path().to_path_buf(),
+        sandbox: "read-only".to_string(),
+        approval: "never".to_string(),
+        reasoning_effort: None,
+        model: Some("expensive-default".to_string()),
+        json: true,
+        timeout: std::time::Duration::from_secs(90),
+    };
+    let result = run_codex_compose_backend(request, config, &ComposeBackendCancel::new());
+
+    assert_eq!(result.exit_code, Some(0));
+    let argv = std::fs::read_to_string(&argv_dump).unwrap();
+    assert!(argv.lines().any(|line| line == "gpt-5.3-codex-spark"));
+    assert!(!argv.lines().any(|line| line == "expensive-default"));
 }
 
 #[test]

@@ -51,6 +51,7 @@ pub(super) struct VisualOverlaySession {
     pub(super) compose_debug_backend: SceneComposeDebugBackend,
     pub(super) compose_backend_running: bool,
     pub(super) compose_cancel: Option<ComposeBackendCancel>,
+    pub(super) compose_model: Option<String>,
     last_compose_wait_second: Option<u64>,
     pub(super) tts_worker: SceneTtsWorker,
     pub(super) tts_state: SceneTtsState,
@@ -89,6 +90,7 @@ impl VisualOverlaySession {
             compose_debug_backend: SceneComposeDebugBackend::RealCodex,
             compose_backend_running: false,
             compose_cancel: None,
+            compose_model: None,
             last_compose_wait_second: None,
             tts_worker,
             tts_state,
@@ -156,6 +158,12 @@ impl VisualOverlaySession {
         self.dialogue_scroll
             .voice_debug
             .sync_microphones(&config, &self.mic_devices, &label);
+    }
+
+    /// Label for the active compose model: the `/model` runtime override when
+    /// set, otherwise the configured/global default.
+    pub(super) fn active_compose_model_label(&self) -> &str {
+        self.compose_model.as_deref().unwrap_or("default")
     }
 
     pub(super) fn interrupt_tts_queue(&mut self) -> String {
