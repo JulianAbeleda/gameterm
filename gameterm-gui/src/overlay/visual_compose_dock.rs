@@ -100,6 +100,15 @@ impl SceneComposeDock {
             .map(|seconds| format!(" waiting for reply... {seconds}s · esc cancels"))
     }
 
+    fn draft_is_slash_command(&self) -> bool {
+        let trimmed = self.buffer.trim_start();
+        trimmed.starts_with('/') && trimmed.len() > 1
+    }
+
+    fn slash_hint(&self) -> &'static str {
+        "  · /model /clear /help"
+    }
+
     pub(super) fn insert_transcript(&mut self, transcript: &str) {
         let transcript = transcript.trim();
         if transcript.is_empty() {
@@ -124,6 +133,8 @@ impl SceneComposeDock {
                 Some(waiting) => line.push_str(&format!(" {}", waiting.trim_start())),
                 None => line.push_str("  type here; enter submits"),
             }
+        } else if self.draft_is_slash_command() {
+            line.push_str(self.slash_hint());
         }
         clip_text(&line, cols.max(1))
     }
@@ -136,6 +147,8 @@ impl SceneComposeDock {
                 Some(waiting) => line.push_str(&waiting),
                 None => line.push_str(" type here; enter submits"),
             }
+        } else if self.draft_is_slash_command() {
+            line.push_str(self.slash_hint());
         }
         let content_width = rect.width.min(cols.saturating_sub(rect.col)).max(1);
         let indent = " ".repeat(rect.col.min(cols.saturating_sub(1)));

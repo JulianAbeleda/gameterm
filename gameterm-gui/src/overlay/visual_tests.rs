@@ -1098,6 +1098,25 @@ fn compose_dock_shows_wait_seconds_until_reply() {
 }
 
 #[test]
+fn compose_dock_hints_slash_commands_while_typing_a_command() {
+    let mut dock = SceneComposeDock::default();
+    for ch in "/mod".chars() {
+        dock.handle_key(KeyCode::Char(ch));
+    }
+    let line = dock.render_line(120);
+    assert!(line.contains("/model"));
+    assert!(line.contains("/clear"));
+    assert!(line.contains("/help"));
+
+    // A normal prompt does not get the slash hint.
+    let mut prose = SceneComposeDock::default();
+    for ch in "hello".chars() {
+        prose.handle_key(KeyCode::Char(ch));
+    }
+    assert!(!prose.render_line(120).contains("/model"));
+}
+
+#[test]
 fn compose_wait_render_tick_fires_once_per_second() {
     let (tts_tx, _tts_rx) = mpsc::channel();
     let mut session = VisualOverlaySession::new(
