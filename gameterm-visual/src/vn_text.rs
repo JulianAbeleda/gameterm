@@ -464,8 +464,10 @@ fn split_flattened_list_line(line: &str) -> Vec<String> {
 
 fn split_at_inline_markers(line: &str) -> Vec<String> {
     let mut starts = Vec::new();
-    let mut idx = 0;
-    while idx < line.len() {
+    // Walk char boundaries directly: indexing `line` at any `idx` produced by
+    // `char_indices` is always valid, which a manual byte cursor is not (a
+    // multi-byte char such as an em dash would otherwise be sliced mid-byte).
+    for (idx, _) in line.char_indices() {
         let rest = &line[idx..];
         let at_boundary = idx == 0
             || line[..idx]
@@ -475,10 +477,6 @@ fn split_at_inline_markers(line: &str) -> Vec<String> {
         if at_boundary && (starts_numbered_marker(rest) || starts_bullet_marker(rest)) {
             starts.push(idx);
         }
-        let Some((next_idx, ch)) = rest.char_indices().nth(1) else {
-            break;
-        };
-        idx += next_idx.max(ch.len_utf8());
     }
 
     if starts.len() <= 1 {
@@ -590,6 +588,23 @@ mod tests {
             visibility: crate::compose_state::VisualComposeVisibility::Done,
             revealed_chars: None,
         }
+    }
+
+    #[test]
+    fn inline_marker_split_handles_multibyte_chars_without_panicking() {
+        // Regression: an em dash (3 UTF-8 bytes) once caused a mid-char slice
+        // panic that killed the Scene overlay thread.
+        let line = "Click registered. Nothing new is linked to that action yet—tell me what you want to click next.";
+        let segments = split_at_inline_markers(line);
+        assert_eq!(segments, vec![line.to_string()]);
+
+        // Real multibyte list content must still split on its markers.
+        let listed = split_at_inline_markers("Options— 1. café au lait 2. thé vert");
+        assert!(listed.len() >= 2);
+
+        // Whole-reply path must not panic on em-dash prose either.
+        let blocks = dialogue_text_blocks(line);
+        assert!(!blocks.is_empty());
     }
 
     #[test]
