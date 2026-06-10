@@ -5,6 +5,8 @@ use window::Window;
 
 #[path = "visual_command_dispatch.rs"]
 mod visual_command_dispatch;
+#[path = "visual_compose_commands.rs"]
+mod visual_compose_commands;
 #[path = "visual_compose_dock.rs"]
 mod visual_compose_dock;
 #[path = "visual_compose_result.rs"]
