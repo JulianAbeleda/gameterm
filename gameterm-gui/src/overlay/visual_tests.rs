@@ -1668,6 +1668,7 @@ fn compose_backend_config_selects_codex_explicitly() {
         sandbox: "read-only".to_string(),
         approval: "on-request".to_string(),
         reasoning_effort: None,
+        model: None,
         json: true,
         timeout: std::time::Duration::from_secs(90),
     };
@@ -1698,6 +1699,7 @@ fn codex_compose_argv_uses_structured_arguments() {
         sandbox: "read-only".to_string(),
         approval: "on-request".to_string(),
         reasoning_effort: None,
+        model: None,
         json: true,
         timeout: std::time::Duration::from_secs(90),
     };
@@ -1770,6 +1772,7 @@ fn codex_backend_fake_command_updates_dialogue_status() {
         sandbox: "read-only".to_string(),
         approval: "on-request".to_string(),
         reasoning_effort: None,
+        model: None,
         json: true,
         timeout: std::time::Duration::from_secs(90),
     };

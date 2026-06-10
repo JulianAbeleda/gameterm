@@ -17,6 +17,7 @@ const COMPOSE_CODEX_SANDBOX_ENV: &str = "GAMETERM_SCENE_COMPOSE_CODEX_SANDBOX";
 const COMPOSE_CODEX_APPROVAL_ENV: &str = "GAMETERM_SCENE_COMPOSE_CODEX_APPROVAL";
 const COMPOSE_CODEX_TIMEOUT_ENV: &str = "GAMETERM_SCENE_COMPOSE_CODEX_TIMEOUT_SECONDS";
 const COMPOSE_CODEX_REASONING_ENV: &str = "GAMETERM_SCENE_COMPOSE_CODEX_REASONING";
+const COMPOSE_CODEX_MODEL_ENV: &str = "GAMETERM_SCENE_COMPOSE_CODEX_MODEL";
 const COMPOSE_CONFIG_FILE_NAME: &str = "scene-compose.json";
 const DEFAULT_CODEX_APPROVAL_POLICY: &str = "on-request";
 const COMPOSE_BACKEND_TIMEOUT: Duration = Duration::from_secs(15);
@@ -183,6 +184,7 @@ pub(super) struct CodexComposeConfig {
     pub(super) sandbox: String,
     pub(super) approval: String,
     pub(super) reasoning_effort: Option<String>,
+    pub(super) model: Option<String>,
     pub(super) json: bool,
     pub(super) timeout: Duration,
 }
@@ -207,6 +209,8 @@ struct SceneComposeConfigFile {
     codex_timeout_seconds: Option<u64>,
     #[serde(default)]
     codex_reasoning_effort: Option<String>,
+    #[serde(default)]
+    codex_model: Option<String>,
 }
 
 pub(super) fn compose_running_status(prompt: &str) -> String {
@@ -350,6 +354,7 @@ struct SceneComposeEnv {
     codex_approval: Option<String>,
     codex_timeout_seconds: Option<String>,
     codex_reasoning_effort: Option<String>,
+    codex_model: Option<String>,
 }
 
 impl SceneComposeEnv {
@@ -364,6 +369,7 @@ impl SceneComposeEnv {
             codex_approval: non_empty_env(COMPOSE_CODEX_APPROVAL_ENV),
             codex_timeout_seconds: non_empty_env(COMPOSE_CODEX_TIMEOUT_ENV),
             codex_reasoning_effort: non_empty_env(COMPOSE_CODEX_REASONING_ENV),
+            codex_model: non_empty_env(COMPOSE_CODEX_MODEL_ENV),
         }
     }
 }
@@ -442,6 +448,10 @@ fn codex_compose_config_from_sources(
         .or(file_config.codex_reasoning_effort.as_deref())
         .map(validate_codex_reasoning_effort)
         .transpose()?;
+    let model = env
+        .codex_model
+        .clone()
+        .or_else(|| file_config.codex_model.clone());
     Ok(CodexComposeConfig {
         program: env
             .codex_bin
@@ -457,6 +467,7 @@ fn codex_compose_config_from_sources(
         sandbox: validate_codex_sandbox(sandbox)?,
         approval: validate_codex_approval(approval)?,
         reasoning_effort,
+        model,
         json: true,
         timeout: codex_timeout_from_sources(file_config, env)?,
     })
@@ -632,6 +643,10 @@ pub(super) fn codex_compose_argv(
     if let Some(effort) = config.reasoning_effort.as_deref() {
         argv.push("-c".to_string());
         argv.push(format!("model_reasoning_effort=\"{effort}\""));
+    }
+    if let Some(model) = config.model.as_deref() {
+        argv.push("-m".to_string());
+        argv.push(model.to_string());
     }
     if config.json {
         argv.push("--json".to_string());
@@ -832,12 +847,14 @@ mod tests {
             sandbox: "read-only".to_string(),
             approval: "never".to_string(),
             reasoning_effort: Some("low".to_string()),
+            model: Some("gpt-5.3-codex-spark".to_string()),
             json: true,
             timeout: DEFAULT_CODEX_TIMEOUT,
         };
         let argv = codex_compose_argv(&config, Path::new("/tmp/out.txt"), "hi");
         let joined = argv.join(" ");
         assert!(joined.contains("model_reasoning_effort=\"low\""));
+        assert!(joined.contains("-m gpt-5.3-codex-spark"));
 
         config.reasoning_effort = None;
         let argv = codex_compose_argv(&config, Path::new("/tmp/out.txt"), "hi");
@@ -894,6 +911,7 @@ mod tests {
             sandbox: "read-only".to_string(),
             approval: DEFAULT_CODEX_APPROVAL_POLICY.to_string(),
             reasoning_effort: None,
+            model: None,
             json: true,
             timeout: DEFAULT_CODEX_TIMEOUT,
         };
@@ -924,6 +942,7 @@ mod tests {
             sandbox: "read-only".to_string(),
             approval: DEFAULT_CODEX_APPROVAL_POLICY.to_string(),
             reasoning_effort: None,
+            model: None,
             json: true,
             timeout: DEFAULT_CODEX_TIMEOUT,
         };
@@ -1081,6 +1100,7 @@ mod tests {
             sandbox: "read-only".to_string(),
             approval: "on-request".to_string(),
             reasoning_effort: None,
+            model: None,
             json: true,
             timeout: DEFAULT_CODEX_TIMEOUT,
         };
@@ -1139,6 +1159,7 @@ mod tests {
             sandbox: "read-only".to_string(),
             approval: "on-request".to_string(),
             reasoning_effort: None,
+            model: None,
             json: true,
             timeout: DEFAULT_CODEX_TIMEOUT,
         };
@@ -1175,6 +1196,7 @@ mod tests {
                 sandbox: "workspace-write".to_string(),
                 approval: "never".to_string(),
                 reasoning_effort: None,
+                model: None,
                 json: true,
                 timeout: Duration::from_secs(120),
             })
@@ -1208,6 +1230,7 @@ mod tests {
                 sandbox: "read-only".to_string(),
                 approval: "on-request".to_string(),
                 reasoning_effort: None,
+                model: None,
                 json: true,
                 timeout: Duration::from_secs(30),
             })
