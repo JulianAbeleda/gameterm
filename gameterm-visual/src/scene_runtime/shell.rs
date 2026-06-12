@@ -284,6 +284,23 @@ mod tests {
     }
 
     #[test]
+    fn plain_backdrop_covers_shell_and_debug_views_only() {
+        for view in [
+            VisualView::Boot,
+            VisualView::MainMenu,
+            VisualView::CharacterSelect,
+            VisualView::StageSelect,
+            VisualView::SettingMode,
+            VisualView::TileDebugger,
+            VisualView::VnLayoutDebugger,
+        ] {
+            assert!(view.uses_plain_backdrop(), "{:?}", view);
+        }
+        assert!(!VisualView::Scene.uses_plain_backdrop());
+        assert!(!VisualView::CommandSelection.uses_plain_backdrop());
+    }
+
+    #[test]
     fn main_menu_native_terminal_exits_overlay() {
         let mut rt = runtime();
         rt.enter_boot();
