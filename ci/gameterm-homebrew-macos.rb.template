@@ -16,11 +16,13 @@ cask "gameterm" do
   # depends_on macos: ">= :sierra"
 
   app "GameTerm.app"
+  # strip-ansi-escapes is deliberately not linked: the name is shared with
+  # WezTerm's cask and other packages, and a foreign binary at that path
+  # aborts the whole install. It remains available inside the app bundle.
   [
     "gameterm",
     "gameterm-gui",
-    "gameterm-mux-server",
-    "strip-ansi-escapes"
+    "gameterm-mux-server"
   ].each do |tool|
     binary "#{appdir}/GameTerm.app/Contents/MacOS/#{tool}"
   end
