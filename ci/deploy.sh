@@ -84,7 +84,16 @@ case $OSTYPE in
       security default-keychain -d user -s $def_keychain
       echo "Remove build.keychain"
       security delete-keychain build.keychain || true
+    else
+      # Assembling the bundle around linker-signed binaries leaves a broken
+      # resource seal ("damaged" dialog on install). Without a Developer ID,
+      # re-seal ad-hoc the same way ci/install-macos-dev-app.sh does.
+      codesign --force --deep --sign - \
+        --entitlements ci/macos-entitlement.plist $zipdir/GameTerm.app
     fi
+
+    # Release gate: never ship a bundle that fails strict verification.
+    codesign --verify --deep --strict --verbose=2 $zipdir/GameTerm.app
 
     set -x
     zip -r $zipname $zipdir

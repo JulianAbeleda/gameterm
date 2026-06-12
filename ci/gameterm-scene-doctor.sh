@@ -5,7 +5,8 @@ usage() {
   cat <<'EOF'
 Usage: ci/gameterm-scene-doctor.sh [OPTIONS]
 
-Checks Scene Mode scene and sprite authoring health.
+Checks Scene Mode scene and sprite authoring health. On macOS, also checks
+the installed app bundle for signature validity and quarantine state.
 
 Options:
   --scene PATH          Scene file to check. Default: config default.json.
@@ -374,11 +375,48 @@ check_scene_sprite_coverage() {
   rm -f "${scene_sprite_ids}" "${manifest_sprite_ids}"
 }
 
+check_app_bundle() {
+  if [[ "$(uname)" != "Darwin" ]]; then
+    return
+  fi
+
+  local app_path=""
+  for candidate in "${GAMETERM_APP_PATH:-}" \
+    "/Applications/GameTerm.app" \
+    "${HOME}/Applications/GameTerm.app"; do
+    if [[ -n "${candidate}" && -d "${candidate}" ]]; then
+      app_path="${candidate}"
+      break
+    fi
+  done
+
+  if [[ -z "${app_path}" ]]; then
+    warn "no installed GameTerm.app found"
+    suggest "brew install --cask julianabeleda/tap/gameterm (or set GAMETERM_APP_PATH)"
+    return
+  fi
+
+  # A broken seal is the macOS "damaged" dialog; quarantine alone is the
+  # ordinary Gatekeeper first-launch block and only needs the bypass.
+  if codesign --verify --deep --strict "${app_path}" >/dev/null 2>&1; then
+    if xattr -p com.apple.quarantine "${app_path}" >/dev/null 2>&1; then
+      warn "app bundle is valid but quarantined; first launch will be blocked by Gatekeeper: ${app_path}"
+      suggest "right-click GameTerm.app and choose Open once, or run: xattr -dr com.apple.quarantine \"${app_path}\""
+    else
+      ok "app bundle signature valid and not quarantined: ${app_path}"
+    fi
+  else
+    error "app bundle fails signature verification (macOS will report it as damaged): ${app_path}"
+    suggest "reinstall: brew reinstall --cask julianabeleda/tap/gameterm"
+  fi
+}
+
 echo "Scene Mode doctor"
 echo "Scene: ${scene_path}"
 echo "Sprites: ${sprites_path}"
 echo
 
+check_app_bundle
 validate_scene
 check_navigate_targets
 check_open_file_targets
