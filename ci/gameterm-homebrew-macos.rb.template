@@ -9,10 +9,8 @@ cask "gameterm" do
 
   url "https://github.com/JulianAbeleda/gameterm/releases/download/#{version}/GameTerm-macos-#{version}.zip"
   name "GameTerm"
-  desc "A GPU-accelerated cross-platform terminal emulator and multiplexer written by @wez and implemented in Rust"
-  homepage "https://gameterm.org/"
-
-  conflicts_with cask: "gameterm/gameterm/gameterm-nightly"
+  desc "GPU-accelerated terminal emulator with a built-in scene engine, forked from WezTerm"
+  homepage "https://github.com/JulianAbeleda/gameterm"
 
   # Unclear what the minimal OS version is
   # depends_on macos: ">= :sierra"
@@ -47,6 +45,11 @@ cask "gameterm" do
       /opt/homebrew/bin/ for M1 Mac.
 
     Removal of them is ensured by 'brew uninstall --cask #{token}'.
+
+    GameTerm.app is ad-hoc signed (not notarized), so macOS Gatekeeper
+    may block the first launch. Either right-click the app and choose
+    Open once, or install with:
+      brew install --cask --no-quarantine #{token}
   EOS
   end
 end
