@@ -839,6 +839,13 @@ pub struct Config {
     #[dynamic(default)]
     pub visual_bell: VisualBell,
 
+    /// Backdrop behind the Scene Mode shell screens (boot, main menu, mode
+    /// cycle) and the debug panes. `"Scene"` keeps stage art, tiles, and
+    /// sprites visible; `"Black"` draws a plain black backdrop for
+    /// troubleshooting or user preference.
+    #[dynamic(default)]
+    pub scene_shell_backdrop: SceneShellBackdrop,
+
     #[dynamic(default)]
     pub audible_bell: AudibleBell,
 
@@ -1892,6 +1899,16 @@ fn default_inactive_pane_hsb() -> HsbTransform {
         saturation: 0.9,
         hue: 1.0,
     }
+}
+
+#[derive(FromDynamic, ToDynamic, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SceneShellBackdrop {
+    /// Render the scene's stage art, tiles, and sprites behind the shell
+    /// and debug screens.
+    #[default]
+    Scene,
+    /// Plain black backdrop.
+    Black,
 }
 
 #[derive(FromDynamic, ToDynamic, Clone, Copy, Debug, Default)]

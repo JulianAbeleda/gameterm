@@ -1370,6 +1370,14 @@ impl VisualView {
             Self::CharacterSelect | Self::StageSelect | Self::SettingMode
         )
     }
+
+    /// True for the screens eligible for the plain-backdrop preference
+    /// (`scene_shell_backdrop = "Black"`): the navigation shell and the
+    /// debug panes. The preference itself lives in the GUI config; this only
+    /// names which screens it applies to.
+    pub fn uses_plain_backdrop(self) -> bool {
+        self.is_shell() || matches!(self, Self::TileDebugger | Self::VnLayoutDebugger)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

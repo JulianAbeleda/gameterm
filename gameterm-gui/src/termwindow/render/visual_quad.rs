@@ -18,7 +18,18 @@ use gameterm_visual::{
 };
 use termwiz::color::LinearRgba;
 
+/// Plain backdrop drawn behind the shell and debug screens when
+/// `scene_shell_backdrop = "Black"` is configured.
+const PLAIN_BACKDROP_COLOR: LinearRgba = LinearRgba(0., 0., 0., 1.);
+
 impl TermWindow {
+    /// True when the configured backdrop preference replaces stage art and
+    /// tiles with a plain black fill for this snapshot's view.
+    pub(super) fn visual_plain_backdrop(&self, snapshot: &VisualRenderSnapshot) -> bool {
+        self.config.scene_shell_backdrop == config::SceneShellBackdrop::Black
+            && snapshot.view.uses_plain_backdrop()
+    }
+
     pub(super) fn populate_visual_stage(
         &self,
         snapshot: &VisualRenderSnapshot,
@@ -27,6 +38,16 @@ impl TermWindow {
         cell_height: f32,
         hsv: Option<HsbTransform>,
     ) -> anyhow::Result<()> {
+        let plain_backdrop = self.visual_plain_backdrop(snapshot);
+        if plain_backdrop {
+            let mut quad = self.filled_rectangle(
+                layers,
+                0,
+                stage_viewport_rect(params, cell_height),
+                PLAIN_BACKDROP_COLOR,
+            )?;
+            quad.set_hsv(hsv);
+        }
         if snapshot.stage.is_empty() {
             return Ok(());
         }
@@ -37,7 +58,8 @@ impl TermWindow {
         // Scene Layout keeps panels and nameplates visible for live tuning.
         // The other interactive debug sections are text panes and suppress
         // the VN overlay surfaces so the selected pane is visually isolated.
-        let suppress_stage_art = matches!(snapshot.view, VisualView::VnLayoutDebugger);
+        let suppress_stage_art =
+            plain_backdrop || matches!(snapshot.view, VisualView::VnLayoutDebugger);
         // Shell screens (boot, menu, mode cycle) keep the cozy background but
         // suppress the dialogue panel so it does not overlay the menu text.
         let suppress_vn_panels = snapshot.view.is_shell()

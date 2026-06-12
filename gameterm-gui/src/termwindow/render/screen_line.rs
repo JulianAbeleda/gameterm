@@ -194,7 +194,7 @@ impl crate::TermWindow {
             }
             // Staged VN scenes own the full visual surface; the grid renderer is
             // reserved for non-staged RPG/overworld-style scenes.
-            if snapshot.stage.is_empty() {
+            if snapshot.stage.is_empty() && !self.visual_plain_backdrop(snapshot) {
                 for tile in visible_tiles_for_row(snapshot, row, 0..num_cols) {
                     self.populate_visual_tile(tile, layers, &params, cell_width, cell_height, hsv)
                         .context("populate_visual_tile")?;
@@ -727,7 +727,7 @@ impl crate::TermWindow {
         }
 
         if let (Some(snapshot), Some(row)) = (params.visual_snapshot, params.visual_row) {
-            if snapshot.stage.is_empty() {
+            if snapshot.stage.is_empty() && !self.visual_plain_backdrop(snapshot) {
                 for entity in intersecting_entities_for_row(snapshot, row, 0..num_cols) {
                     self.populate_visual_entity(entity, layers, &params, cell_width, cell_height, hsv)
                         .context("populate_visual_entity")?;
