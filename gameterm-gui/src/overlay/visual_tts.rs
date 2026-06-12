@@ -919,15 +919,17 @@ fn ct2_translation_command() -> Option<Vec<String>> {
             .filter(|argv| !argv.is_empty());
     }
 
+    // Auto-discovery convenience only; GAMETERM_SCENE_TTS_CT2_COMMAND is the
+    // canonical override. Looks in the current directory, then the default
+    // checkout location under the user's home.
     let candidate = std::env::current_dir()
         .ok()
         .map(|cwd| cwd.join("ci/scene-tts/ct2-en-to-ja.sh"))
         .filter(|path| path.exists())
         .or_else(|| {
-            Some(PathBuf::from(
-                "/Users/julianabeleda/env/gameterm/ci/scene-tts/ct2-en-to-ja.sh",
-            ))
-            .filter(|path| path.exists())
+            dirs_next::home_dir()
+                .map(|home| home.join("env/gameterm/ci/scene-tts/ct2-en-to-ja.sh"))
+                .filter(|path| path.exists())
         })?;
 
     if Command::new(&candidate)
