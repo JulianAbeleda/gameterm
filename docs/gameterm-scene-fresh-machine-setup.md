@@ -58,6 +58,22 @@ directory that exists.
 
 First voice use triggers the macOS microphone permission prompt for GameTerm.
 
+## Gatekeeper on First Launch
+
+GameTerm releases are ad-hoc signed, not notarized. A cask install is valid
+but quarantined, so macOS blocks the first launch with the standard
+unidentified-developer dialog. Either right-click GameTerm.app and choose
+Open once, or run:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/GameTerm.app
+```
+
+If macOS instead reports the app as "damaged", the bundle signature is
+broken — that is a packaging defect, not a quarantine issue. Reinstall with
+`brew reinstall --cask julianabeleda/tap/gameterm` and report it.
+`ci/gameterm-scene-doctor.sh` distinguishes the two states.
+
 ## Degradation Behavior
 
 Each layer fails independently and visibly; none block the others:

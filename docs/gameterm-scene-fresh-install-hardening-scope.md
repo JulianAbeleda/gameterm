@@ -82,6 +82,9 @@ Required behavior:
 ## Decisions Required Before Work Starts
 
 1. Release signing model (gates Lane 1 and Milestones 1 and 4):
+   **DECIDED 2026-06-12: Option B** (ad-hoc, documented bypass). Revisit when
+   GameTerm has users beyond the operator's own machines; the deploy script's
+   `MACOS_TEAM_ID` hooks make switching to Option A a configuration change.
    - Option A: Apple Developer ID + notarization. Paid program. Eliminates the
      Gatekeeper block entirely; `spctl -a` becomes a meaningful release gate.
    - Option B: stay ad-hoc signed. Free. Gatekeeper will always block first
