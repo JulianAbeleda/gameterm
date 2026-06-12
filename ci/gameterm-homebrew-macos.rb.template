@@ -48,8 +48,11 @@ cask "gameterm" do
 
     GameTerm.app is ad-hoc signed (not notarized), so macOS Gatekeeper
     may block the first launch. Either right-click the app and choose
-    Open once, or install with:
-      brew install --cask --no-quarantine #{token}
+    Open once, or clear the quarantine attribute:
+      xattr -dr com.apple.quarantine /Applications/GameTerm.app
+
+    Homebrew 6+ requires trusting this tap before install:
+      brew trust julianabeleda/tap
   EOS
   end
 end
