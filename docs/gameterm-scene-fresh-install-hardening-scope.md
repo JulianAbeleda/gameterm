@@ -1,6 +1,8 @@
 # GameTerm Scene Fresh Install Hardening Scope
 
-Status: scoped from Air fresh-install dogfood on 2026-06-12.
+Status: scoped from Air fresh-install dogfood on 2026-06-12; revised same day
+after audit (signing decision gate, doc cross-links, restoration option
+trimmed, verification matrix tagged auto/manual).
 
 ## Problem
 
@@ -67,29 +69,70 @@ Required behavior:
 - Hide optional setup behind opaque automatic network downloads.
 - Replace existing Scene authoring helpers in this pass.
 
+## Related Docs
+
+- `gameterm-scene-fresh-machine-setup.md` is the current-state manual setup
+  baseline (source-verified dependency matrix, setup commands, degradation
+  behavior). When the doctor lands, its `FIX` output must match that doc
+  exactly; the doc and the doctor share one rule source and must not drift.
+- The translation-helper hardcoded developer path was already fixed in
+  `27820fe56` (home-derived fallback, env var canonical override). Lane checks
+  should verify the env var path, not reintroduce absolute paths.
+
+## Decisions Required Before Work Starts
+
+1. Release signing model (gates Lane 1 and Milestones 1 and 4):
+   - Option A: Apple Developer ID + notarization. Paid program. Eliminates the
+     Gatekeeper block entirely; `spctl -a` becomes a meaningful release gate.
+   - Option B: stay ad-hoc signed. Free. Gatekeeper will always block first
+     launch of a downloaded artifact; the lane goal then becomes "the bundle is
+     never broken" plus a documented, tested bypass path. `spctl -a` can never
+     pass and must not be an acceptance criterion.
+
+   The "damaged" dialog observed on the Air is the broken/modified-signature
+   failure, which Option B can and must still fix. The ordinary
+   unidentified-developer block is only fixable by Option A.
+
 ## Implementation Lanes
 
 ### Lane 1: Release App Validity
 
 Goal: installed macOS app opens without Gatekeeper repair.
 
-Work:
+Work (both options):
 
-- Ensure release packaging produces a valid app signature layout.
+- Ensure release packaging produces a valid app signature layout; the zip and
+  cask flow must never modify the bundle after signing.
 - Confirm cask installation does not leave a broken-signature/quarantine
   combination.
 - Add release verification:
   - `codesign --verify --deep --strict --verbose=4 GameTerm.app`
-  - `spctl -a -vv GameTerm.app` for release artifacts
   - `open GameTerm.app` smoke on a clean machine or CI runner
 - Keep `ci/install-macos-dev-app.sh` ad-hoc signing for local development, but
-  separate dev signing from release notarization expectations.
+  separate dev signing from release signing expectations.
+
+Work (Option A only):
+
+- Wire `MACOS_TEAM_ID` signing + notarization in `ci/deploy.sh` (the hooks
+  already exist) with release credentials.
+- Add `spctl -a -vv GameTerm.app` to release verification.
+- Remove the quarantine-bypass caveat from the cask.
+
+Work (Option B only):
+
+- Treat the quarantine bypass as product surface: cask caveats, fresh-machine
+  doc, and doctor output give the same right-click-Open / `xattr` guidance.
+- Add a doctor check distinguishing "valid but quarantined" (expected WARN +
+  FIX) from "broken signature" (ERROR).
 
 Acceptance:
 
-- A downloaded/cask-installed app does not trigger the macOS "damaged" dialog.
+- The macOS "damaged" dialog never appears for a cask-installed artifact.
+- Option A: no Gatekeeper interaction at all; `spctl -a` passes in CI.
+- Option B: first launch is blocked only by the standard Gatekeeper flow, and
+  the documented bypass works verbatim.
 - `gameterm --version` and `open GameTerm.app` both work immediately after
-  install.
+  install (and after the Option B bypass).
 
 ### Lane 2: Portable Default Scene Install
 
@@ -250,8 +293,8 @@ Work:
   - Voice output: ready/VOICEVOX unreachable
 - Add actions that either run safe repairs or copy/show the exact command.
 - Ensure macOS saved-state restoration does not bypass the intended first-run
-  readiness surface. Options:
-  - disable restorable windows for the app
+  readiness surface. Preferred options (window restoration is a feature for a
+  daily terminal; do not disable it globally to fix a first-run issue):
   - always open Scene shell after restored window creation
   - show readiness when Scene is opened manually with `Ctrl+G`
 
@@ -265,20 +308,25 @@ Acceptance:
 
 Goal: fresh install reliability is tested, not anecdotal.
 
-Add deterministic test fixtures for these machine states:
+Cover these machine states. Each is tagged `[auto]` (deterministic fixture a
+test or doctor self-test can simulate, e.g. via `HOME`/env redirection and
+stub endpoints) or `[manual]` (needs a real machine, service, or GUI; lives on
+the release checklist instead). Claiming "tested" for a `[manual]` state
+requires a recorded run, not a fixture.
 
-1. No user config, no Codex, no Whisper model, no VOICEVOX.
-2. Config present, scene assets missing.
-3. Config present with absolute repo paths.
-4. Codex installed but workspace missing.
-5. Codex installed and signed in, generated workspace exists.
-6. Whisper model missing.
-7. Whisper model present.
-8. VOICEVOX unreachable.
-9. VOICEVOX reachable but bad speaker id.
-10. VOICEVOX reachable and synthesis succeeds.
-11. macOS app has quarantine/signature issue.
-12. macOS app valid and first launch opens Scene shell.
+1. `[auto]` No user config, no Codex, no Whisper model, no VOICEVOX.
+2. `[auto]` Config present, scene assets missing.
+3. `[auto]` Config present with absolute repo paths.
+4. `[auto]` Codex installed but workspace missing (stub codex binary).
+5. `[manual]` Codex installed and signed in, generated workspace exists.
+6. `[auto]` Whisper model missing.
+7. `[auto]` Whisper model present (placeholder file for existence checks;
+   real transcription stays manual).
+8. `[auto]` VOICEVOX unreachable.
+9. `[auto]` VOICEVOX reachable but bad speaker id (stub HTTP server).
+10. `[manual]` VOICEVOX reachable and synthesis succeeds.
+11. `[manual]` macOS app has quarantine/signature issue.
+12. `[manual]` macOS app valid and first launch opens Scene shell.
 
 Verification commands:
 
@@ -304,7 +352,8 @@ Verification commands:
 - Add Compose/STT/TTS readiness checks.
 - Add generated compose workspace.
 - Add clear in-Scene unavailable statuses.
-- Add setup docs that match doctor output exactly.
+- Align `gameterm-scene-fresh-machine-setup.md` with doctor output exactly
+  (extend the existing doc; do not create a second setup doc).
 
 ### Milestone 3: One-Command Repair
 

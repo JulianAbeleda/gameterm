@@ -2,6 +2,11 @@
 
 Status: VERIFIED AGAINST SOURCE 2026-06-12.
 
+This is the current-state manual baseline. The planned product work that
+automates these checks and repairs is scoped in
+`gameterm-scene-fresh-install-hardening-scope.md`; when the doctor lands, its
+FIX output must match this doc exactly.
+
 What a new Mac actually needs to run the full Scene Mode voice and compose
 suite, and what it does not. The base terminal, Scene/VN rendering, and shell
 screens need nothing beyond the installed app
