@@ -387,11 +387,25 @@ fn line_is_path_or_identifier_heavy(line: &str) -> bool {
         .count();
     let identifier_heavy = identifier_chars * 100 / total_chars > 85
         && line.split_whitespace().count() <= 4
-        && !line.contains(' ');
+        && !line.contains(' ')
+        && !line_looks_like_short_natural_reply(line);
     let punctuation_heavy =
         line.chars().filter(|ch| ch.is_ascii_punctuation()).count() * 100 / total_chars > 45;
 
     path_like || identifier_heavy || punctuation_heavy
+}
+
+fn line_looks_like_short_natural_reply(line: &str) -> bool {
+    let trimmed = line.trim();
+    if trimmed.split_whitespace().count() > 3 {
+        return false;
+    }
+    let bare = trimmed.trim_matches(|ch: char| matches!(ch, '.' | '!' | '?' | ',' | '\'' | '"'));
+    !bare.is_empty()
+        && bare.chars().any(|ch| ch.is_ascii_alphabetic())
+        && bare
+            .chars()
+            .all(|ch| ch.is_ascii_alphabetic() || ch == '-' || ch == '\'')
 }
 
 fn replace_display_urls(text: &str) -> String {

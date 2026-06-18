@@ -8,6 +8,7 @@ use super::super::visual_compose::{
 };
 use super::super::visual_stt::{SceneSttResult, SceneSttState};
 use super::super::visual_tts::{SceneTtsEvent, SceneTtsResult, SceneTtsState};
+use super::super::visual_voice_trace::{trace_voice_event, SceneVoiceTraceEvent};
 use super::visual_compose_dock::SceneComposeDock;
 
 pub(super) fn apply_tts_result(
@@ -16,6 +17,30 @@ pub(super) fn apply_tts_result(
     result: SceneTtsResult,
 ) {
     let accepted = tts_state.accepts_result(&result);
+    let mut trace = SceneVoiceTraceEvent::new(if accepted {
+        "tts_result_applied"
+    } else {
+        "stale_tts_event_ignored"
+    })
+    .with_text(result.segment.text.clone());
+    trace.turn_id = Some(result.segment.turn_id);
+    trace.block_index = Some(result.segment.block_index);
+    trace.generation = Some(result.generation);
+    trace.speaker = result.segment.speaker.clone();
+    trace.status = Some(result.status.clone());
+    trace.error = result.error.clone();
+    trace.output_path = result
+        .output_path
+        .as_ref()
+        .map(|path| path.display().to_string());
+    trace.timing = Some(serde_json::json!({
+        "translation_ms": result.timing.translation_ms,
+        "query_ms": result.timing.query_ms,
+        "synthesis_ms": result.timing.synthesis_ms,
+        "player_ms": result.timing.player_ms,
+        "total_ms": result.timing.total_ms,
+    }));
+    trace_voice_event(trace);
     if accepted {
         match result.event {
             SceneTtsEvent::Started => {
@@ -55,6 +80,15 @@ pub(super) fn apply_stt_result(
 ) {
     let status = stt_state.apply_result(&result);
     let succeeded = result.succeeded();
+    let mut trace = SceneVoiceTraceEvent::new("stt_result_applied");
+    trace.status = Some(status.clone());
+    trace.error = result.error.clone();
+    trace.text = result.transcript.clone();
+    trace.text_sha256 = result
+        .transcript
+        .as_deref()
+        .map(super::super::visual_voice_trace::text_sha256);
+    trace_voice_event(trace);
     if succeeded {
         let Some(transcript) = result.transcript else {
             return;

@@ -2441,6 +2441,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "sha2",
  "shared_library",
  "shlex",
  "smol",

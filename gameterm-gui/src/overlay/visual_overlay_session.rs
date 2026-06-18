@@ -11,8 +11,10 @@ use super::super::visual_stt::{
 use super::super::visual_tts::{
     SceneTtsConfig, SceneTtsRequest, SceneTtsResult, SceneTtsState, SceneTtsWorker,
 };
+use super::super::visual_voice_trace::{trace_voice_event, SceneVoiceTraceEvent};
 use super::visual_compose_dock::SceneComposeDock;
 use super::visual_dialogue_scroll::SceneDialogueScrollback;
+use super::visual_text_selection::SceneTextSelection;
 use super::visual_voice_debug::SceneVoiceDebugState;
 
 const DIALOGUE_REVEAL_INTERVAL: Duration = Duration::from_millis(90);
@@ -48,6 +50,7 @@ impl SceneComposeDebugBackend {
 pub(super) struct VisualOverlaySession {
     pub(super) compose_dock: SceneComposeDock,
     pub(super) dialogue_scroll: SceneDialogueScrollback,
+    pub(super) text_selection: SceneTextSelection,
     pub(super) compose_debug_backend: SceneComposeDebugBackend,
     pub(super) compose_backend_running: bool,
     pub(super) compose_cancel: Option<ComposeBackendCancel>,
@@ -87,6 +90,7 @@ impl VisualOverlaySession {
         Self {
             compose_dock: SceneComposeDock::default(),
             dialogue_scroll,
+            text_selection: SceneTextSelection::default(),
             compose_debug_backend: SceneComposeDebugBackend::RealCodex,
             compose_backend_running: false,
             compose_cancel: None,
@@ -169,6 +173,10 @@ impl VisualOverlaySession {
     pub(super) fn interrupt_tts_queue(&mut self) -> String {
         let status = self.tts_state.begin_new_generation();
         self.tts_worker.set_generation(self.tts_state.generation());
+        let mut event = SceneVoiceTraceEvent::new("tts_queue_reset");
+        event.generation = Some(self.tts_state.generation());
+        event.status = Some(status.clone());
+        trace_voice_event(event);
         self.sync_tts_debug();
         status
     }
@@ -183,6 +191,14 @@ impl VisualOverlaySession {
         let generation = self.tts_state.generation();
         self.tts_worker.set_generation(generation);
         for segment in segments {
+            let mut event =
+                SceneVoiceTraceEvent::new("tts_segment_enqueued").with_text(segment.text.clone());
+            event.turn_id = Some(segment.turn_id);
+            event.block_index = Some(segment.block_index);
+            event.generation = Some(generation);
+            event.speaker = segment.speaker.clone();
+            event.status = Some(status.clone());
+            trace_voice_event(event);
             self.tts_worker.speak(SceneTtsRequest {
                 segment,
                 generation,

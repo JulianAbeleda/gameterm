@@ -3,6 +3,7 @@ use super::super::visual_compose::{
     CodexComposeConfig, ComposeBackendCancel, ComposeBackendConfig, ComposeBackendLabel,
     ComposeBackendRequest, ComposeBackendResult,
 };
+use super::super::visual_speech_blocks::{SpeakableSegment, SpeakableSource, SpeechBlockKind};
 use super::super::visual_stt::{SceneMicDevice, SceneSttConfig, SceneSttResult, SceneSttState};
 use super::super::visual_tts::{SceneTtsConfig, SceneTtsEvent};
 use super::visual_command_dispatch::{
@@ -1599,6 +1600,43 @@ fn scene_debug_menu_tts_test_and_stop_are_voice_section_actions() {
         .join("\n");
     assert!(lines.contains("Stop TTS playback"));
     assert!(lines.contains("TTS queue generation: 2"));
+}
+
+#[test]
+fn scene_voice_tts_enqueue_traces_short_yes_reply() {
+    let dir = tempfile::tempdir().unwrap();
+    let trace_path = dir.path().join("voice-trace.jsonl");
+    std::env::set_var("GAMETERM_SCENE_TRACE_FILE", &trace_path);
+    std::env::remove_var("GAMETERM_SCENE_TRACE");
+
+    let (tts_tx, _tts_rx) = mpsc::channel();
+    let mut session = VisualOverlaySession::new(
+        SceneTtsConfig::built_in_silent_for_test(),
+        tts_tx,
+        SceneSttConfig::whisper_default(),
+    );
+    let segments =
+        compose_result_speakable_segments(&fake_codex_compose_result("Yes.".to_string()));
+    assert_eq!(segments.len(), 1);
+    assert_eq!(segments[0].text, "Fake Codex received: Yes.");
+
+    session.enqueue_tts_segments(vec![SpeakableSegment {
+        turn_id: 2,
+        block_index: 1,
+        speaker: Some("Codex".to_string()),
+        display_text: "Yes.".to_string(),
+        text: "Yes.".to_string(),
+        kind: SpeechBlockKind::Prose,
+        source: SpeakableSource::ComposeReply,
+    }]);
+
+    let trace = std::fs::read_to_string(&trace_path).unwrap();
+    assert!(trace.contains(r#""event":"tts_segment_enqueued""#));
+    assert!(trace.contains(r#""text":"Yes.""#));
+    assert!(trace.contains(r#""turn_id":2"#));
+    assert!(trace.contains(r#""block_index":1"#));
+
+    std::env::remove_var("GAMETERM_SCENE_TRACE_FILE");
 }
 
 #[test]

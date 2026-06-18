@@ -3,13 +3,25 @@ use gameterm_visual::VnOverlayRect;
 use std::time::Instant;
 use termwiz::input::KeyCode;
 
+const LARGE_PASTE_CHAR_THRESHOLD: usize = 4_000;
+const LARGE_PASTE_LINE_THRESHOLD: usize = 80;
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(super) struct SceneComposeDock {
     pub(super) buffer: String,
     pub(super) cursor: usize,
     pub(super) history: Vec<String>,
+    compact_pastes: Vec<CompactPasteRange>,
     history_index: Option<usize>,
     backend_wait_started: Option<Instant>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CompactPasteRange {
+    start: usize,
+    end: usize,
+    char_count: usize,
+    line_count: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -125,6 +137,30 @@ impl SceneComposeDock {
         }
     }
 
+    pub(super) fn insert_paste(&mut self, paste: &str) {
+        if paste.is_empty() {
+            return;
+        }
+        self.invalidate_compact_paste_at_cursor();
+        let start = self.cursor;
+        let byte_idx = self.cursor_byte_idx();
+        self.buffer.insert_str(byte_idx, paste);
+        let char_count = paste.chars().count();
+        let line_count = paste_line_count(paste);
+        self.shift_compact_pastes_after(start, char_count);
+        self.cursor += char_count;
+        if should_compact_paste(char_count, line_count) {
+            self.compact_pastes.push(CompactPasteRange {
+                start,
+                end: start + char_count,
+                char_count,
+                line_count,
+            });
+            self.compact_pastes.sort_by_key(|range| range.start);
+        }
+        self.history_index = None;
+    }
+
     pub(super) fn render_line(&self, cols: usize) -> String {
         let mut line = String::from(" Compose: ");
         line.push_str(&self.buffer_with_cursor());
@@ -169,8 +205,10 @@ impl SceneComposeDock {
     }
 
     fn insert_char(&mut self, ch: char) {
+        self.invalidate_compact_paste_at_cursor();
         let byte_idx = self.cursor_byte_idx();
         self.buffer.insert(byte_idx, ch);
+        self.shift_compact_pastes_after(self.cursor, 1);
         self.cursor += 1;
         self.history_index = None;
     }
@@ -179,15 +217,18 @@ impl SceneComposeDock {
         if self.cursor == 0 {
             return;
         }
+        self.invalidate_compact_paste_range(self.cursor - 1, self.cursor);
         let start = self.cursor_to_byte_idx(self.cursor - 1);
         let end = self.cursor_byte_idx();
         self.buffer.replace_range(start..end, "");
+        self.shift_compact_pastes_after_delete(self.cursor - 1, 1);
         self.cursor -= 1;
         self.history_index = None;
     }
 
     fn clear_buffer(&mut self) {
         self.buffer.clear();
+        self.compact_pastes.clear();
         self.cursor = 0;
         self.history_index = None;
     }
@@ -217,16 +258,40 @@ impl SceneComposeDock {
     fn set_history_index(&mut self, index: usize) {
         self.history_index = Some(index);
         self.buffer = self.history[index].clone();
+        self.compact_pastes.clear();
         self.cursor = self.buffer_char_len();
     }
 
     fn buffer_with_cursor(&self) -> String {
         let mut out = String::new();
+        let mut ranges = self.compact_pastes.iter().peekable();
+        let mut skip_until = None;
         for (idx, ch) in self.buffer.chars().enumerate() {
+            if skip_until.is_some_and(|end| idx < end) {
+                continue;
+            }
+            skip_until = None;
+            while ranges.peek().is_some_and(|range| range.end <= idx) {
+                ranges.next();
+            }
+            if let Some(range) = ranges.peek().filter(|range| range.start == idx) {
+                if idx == self.cursor {
+                    out.push('_');
+                }
+                out.push_str(&format!(
+                    "[Pasted Content {} chars, {} lines]",
+                    range.char_count, range.line_count
+                ));
+                skip_until = Some(range.end);
+                if self.cursor == range.end {
+                    out.push('_');
+                }
+                continue;
+            }
             if idx == self.cursor {
                 out.push('_');
             }
-            out.push(ch);
+            out.push(display_compose_char(ch));
         }
         if self.cursor >= self.buffer_char_len() {
             out.push('_');
@@ -249,8 +314,86 @@ impl SceneComposeDock {
     fn buffer_char_len(&self) -> usize {
         self.buffer.chars().count()
     }
+
+    fn invalidate_compact_paste_at_cursor(&mut self) {
+        let cursor = self.cursor;
+        self.compact_pastes
+            .retain(|range| cursor <= range.start || cursor >= range.end);
+    }
+
+    fn invalidate_compact_paste_range(&mut self, start: usize, end: usize) {
+        self.compact_pastes
+            .retain(|range| end <= range.start || start >= range.end);
+    }
+
+    fn shift_compact_pastes_after(&mut self, cursor: usize, amount: usize) {
+        for range in &mut self.compact_pastes {
+            if range.start >= cursor {
+                range.start += amount;
+                range.end += amount;
+            }
+        }
+    }
+
+    fn shift_compact_pastes_after_delete(&mut self, cursor: usize, amount: usize) {
+        for range in &mut self.compact_pastes {
+            if range.start >= cursor {
+                range.start = range.start.saturating_sub(amount);
+                range.end = range.end.saturating_sub(amount);
+            }
+        }
+    }
 }
 
 fn is_compose_char(ch: char) -> bool {
     !ch.is_control()
+}
+
+fn display_compose_char(ch: char) -> char {
+    if ch.is_control() {
+        ' '
+    } else {
+        ch
+    }
+}
+
+fn paste_line_count(paste: &str) -> usize {
+    if paste.is_empty() {
+        0
+    } else {
+        paste.matches('\n').count() + 1
+    }
+}
+
+fn should_compact_paste(char_count: usize, line_count: usize) -> bool {
+    char_count > LARGE_PASTE_CHAR_THRESHOLD || line_count > LARGE_PASTE_LINE_THRESHOLD
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SceneComposeDock;
+
+    #[test]
+    fn scene_compose_dock_compacts_large_paste_for_display() {
+        let mut dock = SceneComposeDock::default();
+        let paste = "x".repeat(4_001);
+
+        dock.insert_paste(&paste);
+
+        assert_eq!(dock.buffer, paste);
+        assert!(dock
+            .render_line(120)
+            .contains("[Pasted Content 4001 chars, 1 lines]"));
+    }
+
+    #[test]
+    fn scene_compose_dock_keeps_small_paste_inline() {
+        let mut dock = SceneComposeDock::default();
+
+        dock.insert_paste("small paste");
+
+        assert_eq!(dock.buffer, "small paste");
+        assert!(dock.render_line(120).contains("small paste"));
+        assert!(!dock.render_line(120).contains("[Pasted Content"));
+    }
 }

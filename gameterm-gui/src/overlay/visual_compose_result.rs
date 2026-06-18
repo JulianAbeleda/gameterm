@@ -2,6 +2,7 @@ use crate::overlay::visual_compose::{ComposeBackendLabel, ComposeBackendResult};
 use crate::overlay::visual_speech_blocks::{
     extract_compose_reply_blocks, ComposeReplyBlocks, SpeakableSegment, SpeakableSource,
 };
+use crate::overlay::visual_voice_trace::{trace_voice_event, SceneVoiceTraceEvent};
 use gameterm_visual::{SceneRuntime, VisualSceneDialoguePatch, VisualScenePatch};
 use serde::Deserialize;
 
@@ -9,7 +10,9 @@ pub(super) const COMPOSE_OUTPUT_LIMIT: usize = 1200;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum StructuredComposeOutcome {
-    NoReply { status: String },
+    NoReply {
+        status: String,
+    },
     WithReply {
         speaker: String,
         dialogue_text: String,
@@ -141,15 +144,32 @@ fn stamp_runtime_blocks(
         mut segments,
         segment_block_ordinals,
     } = extract_compose_reply_blocks(Some(speaker), dialogue_text, SpeakableSource::ComposeReply);
+    trace_voice_event(
+        SceneVoiceTraceEvent::new("compose_result_parsed").with_text(dialogue_text.to_string()),
+    );
     if display_blocks.is_empty() {
         runtime.mark_compose_succeeded(speaker, dialogue_text);
         return Vec::new();
     }
     let ids = runtime.mark_compose_succeeded_blocks(speaker, &display_blocks, !voice_block_sync);
+    for (block, (turn_id, block_index)) in display_blocks.iter().zip(ids.iter().copied()) {
+        let mut event =
+            SceneVoiceTraceEvent::new("compose_visible_block_stamped").with_text(block.to_string());
+        event.turn_id = Some(turn_id);
+        event.block_index = Some(block_index);
+        event.speaker = Some(speaker.to_string());
+        trace_voice_event(event);
+    }
     for (segment, block_ordinal) in segments.iter_mut().zip(segment_block_ordinals) {
         if let Some((turn_id, block_index)) = ids.get(block_ordinal).copied() {
             segment.turn_id = turn_id;
             segment.block_index = block_index;
+            let mut event = SceneVoiceTraceEvent::new("speakable_segment_extracted")
+                .with_text(segment.text.clone());
+            event.turn_id = Some(turn_id);
+            event.block_index = Some(block_index);
+            event.speaker = segment.speaker.clone();
+            trace_voice_event(event);
         }
     }
     segments

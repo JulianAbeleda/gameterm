@@ -8,7 +8,7 @@ use std::time::Duration;
 use termwiz::input::{InputEvent, KeyCode, KeyEvent, MouseButtons, MouseEvent};
 use termwiz::surface::Change;
 use termwiz::terminal::Terminal;
-use window::Window;
+use window::{Clipboard, Window, WindowOps};
 
 use super::super::visual_compose::{
     compose_running_status, spawn_compose_backend, ComposeBackendRequest,
@@ -32,7 +32,7 @@ use super::visual_input_keys::{
 };
 use super::visual_kiki_idle::{current_kiki_idle_sprite, runtime_has_kiki_idle_animation};
 use super::visual_overlay_session::VisualOverlaySession;
-use super::visual_render::{render_error, render_runtime_with_compose_and_scroll};
+use super::visual_render::{render_error, render_runtime_with_compose_scroll_selection};
 use super::visual_scene_debug_input::handle_scene_debug_session_input;
 use super::visual_scene_files::{
     default_scene_path, default_sprite_manifest_path, initial_generated_scene_state,
@@ -44,6 +44,7 @@ use super::visual_scene_patches::{
     apply_scene_patch_file, apply_scene_patch_json, ActiveSceneOverlay, ScenePatchInbox,
     ScenePatchNotificationSubscription,
 };
+use super::visual_text_selection::SceneTextCell;
 use super::visual_voice_hold_flow::reconcile_scene_voice_hold_state;
 
 pub(super) fn show_visual_scene_overlay_with_source(
@@ -142,12 +143,13 @@ pub(super) fn show_visual_scene_overlay_with_source(
         }
         if needs_render {
             if let Some(runtime) = runtime.as_ref() {
-                render_runtime_with_compose_and_scroll(
+                render_runtime_with_compose_scroll_selection(
                     &mut term,
                     runtime,
                     &sprite_manifest,
                     &session.compose_dock,
                     &session.dialogue_scroll,
+                    Some(&mut session.text_selection),
                 )?;
             }
         }
@@ -189,12 +191,13 @@ pub(super) fn show_visual_scene_overlay_with_source(
                 let sprite = current_kiki_idle_sprite(&sprite_manifest);
                 if runtime_has_kiki_idle_animation(runtime, &sprite_manifest) {
                     if session.last_idle_sprite != sprite {
-                        render_runtime_with_compose_and_scroll(
+                        render_runtime_with_compose_scroll_selection(
                             &mut term,
                             runtime,
                             &sprite_manifest,
                             &session.compose_dock,
                             &session.dialogue_scroll,
+                            Some(&mut session.text_selection),
                         )?;
                         session.last_idle_sprite = sprite;
                     }
@@ -207,6 +210,35 @@ pub(super) fn show_visual_scene_overlay_with_source(
         match input {
             InputEvent::Key(KeyEvent { key, modifiers }) => {
                 if let Some(runtime) = runtime.as_mut() {
+                    if session.text_selection.is_active() && matches!(key, KeyCode::Escape) {
+                        session.text_selection.clear();
+                        render_runtime_with_compose_scroll_selection(
+                            &mut term,
+                            runtime,
+                            &sprite_manifest,
+                            &session.compose_dock,
+                            &session.dialogue_scroll,
+                            Some(&mut session.text_selection),
+                        )?;
+                        continue;
+                    }
+                    if is_copy_selection_key(key, modifiers) {
+                        if let (Some(window), Some(text)) =
+                            (gui_window.as_ref(), session.text_selection.selected_text())
+                        {
+                            window.set_clipboard(Clipboard::Clipboard, text);
+                            runtime.mark_action_status("Scene selection copied");
+                            render_runtime_with_compose_scroll_selection(
+                                &mut term,
+                                runtime,
+                                &sprite_manifest,
+                                &session.compose_dock,
+                                &session.dialogue_scroll,
+                                Some(&mut session.text_selection),
+                            )?;
+                            continue;
+                        }
+                    }
                     if session.stt_state.is_running() && matches!(key, KeyCode::Escape) {
                         if let Some(stt_session) = session.stt_session.take() {
                             stt_session.cancel();
@@ -218,12 +250,13 @@ pub(super) fn show_visual_scene_overlay_with_source(
                             .dialogue_scroll
                             .voice_debug
                             .sync_status(session.stt_state.last_status());
-                        render_runtime_with_compose_and_scroll(
+                        render_runtime_with_compose_scroll_selection(
                             &mut term,
                             runtime,
                             &sprite_manifest,
                             &session.compose_dock,
                             &session.dialogue_scroll,
+                            Some(&mut session.text_selection),
                         )?;
                         continue;
                     }
@@ -236,12 +269,13 @@ pub(super) fn show_visual_scene_overlay_with_source(
                             cancel.cancel();
                         }
                         runtime.mark_action_status("Compose cancel requested");
-                        render_runtime_with_compose_and_scroll(
+                        render_runtime_with_compose_scroll_selection(
                             &mut term,
                             runtime,
                             &sprite_manifest,
                             &session.compose_dock,
                             &session.dialogue_scroll,
+                            Some(&mut session.text_selection),
                         )?;
                         continue;
                     }
@@ -250,12 +284,13 @@ pub(super) fn show_visual_scene_overlay_with_source(
                     {
                         runtime.mark_action_status(session.tts_state.toggle_muted());
                         session.sync_tts_debug();
-                        render_runtime_with_compose_and_scroll(
+                        render_runtime_with_compose_scroll_selection(
                             &mut term,
                             runtime,
                             &sprite_manifest,
                             &session.compose_dock,
                             &session.dialogue_scroll,
+                            Some(&mut session.text_selection),
                         )?;
                         continue;
                     }
@@ -269,12 +304,13 @@ pub(super) fn show_visual_scene_overlay_with_source(
                     if !runtime.scene().stage.is_empty() && !in_layout_debug && !in_shell {
                         match session.compose_dock.handle_key(key) {
                             SceneComposeAction::Consumed => {
-                                render_runtime_with_compose_and_scroll(
+                                render_runtime_with_compose_scroll_selection(
                                     &mut term,
                                     runtime,
                                     &sprite_manifest,
                                     &session.compose_dock,
                                     &session.dialogue_scroll,
+                                    Some(&mut session.text_selection),
                                 )?;
                                 continue;
                             }
@@ -310,12 +346,13 @@ pub(super) fn show_visual_scene_overlay_with_source(
                                             ));
                                         }
                                     }
-                                    render_runtime_with_compose_and_scroll(
+                                    render_runtime_with_compose_scroll_selection(
                                         &mut term,
                                         runtime,
                                         &sprite_manifest,
                                         &session.compose_dock,
                                         &session.dialogue_scroll,
+                                        Some(&mut session.text_selection),
                                     )?;
                                     continue;
                                 }
@@ -326,12 +363,13 @@ pub(super) fn show_visual_scene_overlay_with_source(
                                     runtime.mark_action_status(
                                         "Compose busy: finish the current reply first",
                                     );
-                                    render_runtime_with_compose_and_scroll(
+                                    render_runtime_with_compose_scroll_selection(
                                         &mut term,
                                         runtime,
                                         &sprite_manifest,
                                         &session.compose_dock,
                                         &session.dialogue_scroll,
+                                        Some(&mut session.text_selection),
                                     )?;
                                     continue;
                                 }
@@ -357,12 +395,13 @@ pub(super) fn show_visual_scene_overlay_with_source(
                                     } else {
                                         session.sync_tts_debug();
                                     }
-                                    render_runtime_with_compose_and_scroll(
+                                    render_runtime_with_compose_scroll_selection(
                                         &mut term,
                                         runtime,
                                         &sprite_manifest,
                                         &session.compose_dock,
                                         &session.dialogue_scroll,
+                                        Some(&mut session.text_selection),
                                     )?;
                                     continue;
                                 }
@@ -378,12 +417,13 @@ pub(super) fn show_visual_scene_overlay_with_source(
                                     compose_tx.clone(),
                                 ));
                                 session.compose_dock.begin_backend_wait();
-                                render_runtime_with_compose_and_scroll(
+                                render_runtime_with_compose_scroll_selection(
                                     &mut term,
                                     runtime,
                                     &sprite_manifest,
                                     &session.compose_dock,
                                     &session.dialogue_scroll,
+                                    Some(&mut session.text_selection),
                                 )?;
                                 continue;
                             }
@@ -401,8 +441,9 @@ pub(super) fn show_visual_scene_overlay_with_source(
                 // Shell screens route Close/Reload through handle_input (Esc on
                 // the menu backs up a level rather than closing the overlay),
                 // so do not let the loop's own Close/Reload shortcuts fire.
-                let in_shell =
-                    runtime.as_ref().map_or(false, |runtime| runtime.view().is_shell());
+                let in_shell = runtime
+                    .as_ref()
+                    .map_or(false, |runtime| runtime.view().is_shell());
                 if !in_layout_debug {
                     if let Some(runtime) = runtime.as_ref() {
                         if handle_dialogue_scroll_key(
@@ -411,12 +452,13 @@ pub(super) fn show_visual_scene_overlay_with_source(
                             visual_input,
                             term.get_screen_size()?,
                         ) {
-                            render_runtime_with_compose_and_scroll(
+                            render_runtime_with_compose_scroll_selection(
                                 &mut term,
                                 runtime,
                                 &sprite_manifest,
                                 &session.compose_dock,
                                 &session.dialogue_scroll,
+                                Some(&mut session.text_selection),
                             )?;
                             continue;
                         }
@@ -465,12 +507,13 @@ pub(super) fn show_visual_scene_overlay_with_source(
                             if debug_effect.reset_compose_dialogue {
                                 session.dialogue_scroll.reset_to_bottom();
                             }
-                            render_runtime_with_compose_and_scroll(
+                            render_runtime_with_compose_scroll_selection(
                                 &mut term,
                                 runtime,
                                 &sprite_manifest,
                                 &session.compose_dock,
                                 &session.dialogue_scroll,
+                                Some(&mut session.text_selection),
                             )?;
                             continue;
                         }
@@ -508,12 +551,13 @@ pub(super) fn show_visual_scene_overlay_with_source(
                     )?;
                     file_watcher.refresh(&scene_path, &sprite_manifest_path);
                     patch_inbox.refresh();
-                    render_runtime_with_compose_and_scroll(
+                    render_runtime_with_compose_scroll_selection(
                         &mut term,
                         runtime,
                         &sprite_manifest,
                         &session.compose_dock,
                         &session.dialogue_scroll,
+                        Some(&mut session.text_selection),
                     )?;
                 }
             }
@@ -535,12 +579,72 @@ pub(super) fn show_visual_scene_overlay_with_source(
                         y,
                         mouse_buttons,
                     ) {
-                        render_runtime_with_compose_and_scroll(
+                        render_runtime_with_compose_scroll_selection(
                             &mut term,
                             runtime,
                             &sprite_manifest,
                             &session.compose_dock,
                             &session.dialogue_scroll,
+                            Some(&mut session.text_selection),
+                        )?;
+                        continue;
+                    }
+                }
+            }
+            InputEvent::Mouse(MouseEvent {
+                x,
+                y,
+                mouse_buttons,
+                ..
+            }) => {
+                if let Some(runtime) = runtime.as_mut() {
+                    let cell = SceneTextCell {
+                        col: x.saturating_sub(1) as usize,
+                        row: y.saturating_sub(1) as usize,
+                    };
+                    if mouse_buttons.contains(MouseButtons::LEFT) {
+                        if session.text_selection.is_dragging() {
+                            session.text_selection.update(cell);
+                        } else {
+                            session.text_selection.begin(cell);
+                        }
+                        render_runtime_with_compose_scroll_selection(
+                            &mut term,
+                            runtime,
+                            &sprite_manifest,
+                            &session.compose_dock,
+                            &session.dialogue_scroll,
+                            Some(&mut session.text_selection),
+                        )?;
+                        continue;
+                    }
+                    if mouse_buttons == MouseButtons::NONE && session.text_selection.is_dragging() {
+                        session.text_selection.finish(cell);
+                        render_runtime_with_compose_scroll_selection(
+                            &mut term,
+                            runtime,
+                            &sprite_manifest,
+                            &session.compose_dock,
+                            &session.dialogue_scroll,
+                            Some(&mut session.text_selection),
+                        )?;
+                        continue;
+                    }
+                }
+            }
+            InputEvent::Paste(paste) => {
+                if let Some(runtime) = runtime.as_mut() {
+                    let in_layout_debug = runtime.view() == VisualView::VnLayoutDebugger;
+                    let in_shell = runtime.view().is_shell();
+                    if !runtime.scene().stage.is_empty() && !in_layout_debug && !in_shell {
+                        session.compose_dock.insert_paste(&paste);
+                        render_runtime_with_compose_scroll_selection(
+                            &mut term,
+                            runtime,
+                            &sprite_manifest,
+                            &session.compose_dock,
+                            &session.dialogue_scroll,
+                            Some(&mut session.text_selection),
                         )?;
                         continue;
                     }
@@ -555,12 +659,13 @@ pub(super) fn show_visual_scene_overlay_with_source(
                         session.dialogue_scroll.offset,
                     );
                     session.dialogue_scroll.clamp(metrics.max_scroll_offset);
-                    render_runtime_with_compose_and_scroll(
+                    render_runtime_with_compose_scroll_selection(
                         &mut term,
                         runtime,
                         &sprite_manifest,
                         &session.compose_dock,
                         &session.dialogue_scroll,
+                        Some(&mut session.text_selection),
                     )?;
                 } else {
                     let error = load_error
@@ -579,4 +684,11 @@ pub(super) fn show_visual_scene_overlay_with_source(
     }
 
     Ok(())
+}
+
+fn is_copy_selection_key(key: KeyCode, modifiers: termwiz::input::Modifiers) -> bool {
+    matches!(key, KeyCode::Copy)
+        || (matches!(key, KeyCode::Char('c') | KeyCode::Char('C'))
+            && (modifiers.contains(termwiz::input::Modifiers::SUPER)
+                || modifiers.contains(termwiz::input::Modifiers::CTRL)))
 }

@@ -5,6 +5,7 @@ use std::sync::mpsc;
 use super::super::visual_compose::ComposeBackendResult;
 use super::super::visual_stt::{SceneMicTestResult, SceneSttResult};
 use super::super::visual_tts::SceneTtsResult;
+use super::super::visual_voice_trace::{trace_voice_event, SceneVoiceTraceEvent};
 use super::visual_command_dispatch::RunCommandResult;
 use super::visual_compose_result::apply_compose_backend_result;
 use super::visual_dialogue_scroll::SceneDialogueScrollback;
@@ -117,6 +118,20 @@ pub(super) fn drain_stt_results(
                         .as_deref()
                         .is_some_and(|transcript| !transcript.trim().is_empty())
                     && !session.compose_backend_running;
+                let mut event = SceneVoiceTraceEvent::new("stt_result_drained");
+                event.status = Some(result.status.clone());
+                event.error = result.error.clone();
+                event.text = result.transcript.clone();
+                event.text_sha256 = result
+                    .transcript
+                    .as_deref()
+                    .map(super::super::visual_voice_trace::text_sha256);
+                event.timing = Some(serde_json::json!({
+                    "auto_submit": result.auto_submit,
+                    "will_auto_submit": will_auto_submit,
+                    "compose_backend_running": session.compose_backend_running,
+                }));
+                trace_voice_event(event);
                 if will_auto_submit {
                     session.interrupt_tts_queue();
                 }

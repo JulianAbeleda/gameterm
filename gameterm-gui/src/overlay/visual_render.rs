@@ -14,6 +14,7 @@ use super::visual_compose_dock::SceneComposeDock;
 use super::visual_dialogue_scroll::SceneDialogueScrollback;
 use super::visual_frame::{clip_text, replace_last_screen_line, replace_screen_line};
 use super::visual_kiki_idle::{apply_kiki_idle_animation, current_kiki_idle_sprite};
+use super::visual_text_selection::SceneTextSelection;
 use super::visual_voice_debug::SceneVoiceDebugState;
 
 pub(super) fn render_runtime(
@@ -45,6 +46,24 @@ pub(super) fn render_runtime_with_compose_and_scroll(
     sprite_manifest: &VisualSpriteManifestStatus,
     compose_dock: &SceneComposeDock,
     dialogue_scroll: &SceneDialogueScrollback,
+) -> anyhow::Result<()> {
+    render_runtime_with_compose_scroll_selection(
+        term,
+        runtime,
+        sprite_manifest,
+        compose_dock,
+        dialogue_scroll,
+        None,
+    )
+}
+
+pub(super) fn render_runtime_with_compose_scroll_selection(
+    term: &mut TermWizTerminal,
+    runtime: &SceneRuntime,
+    sprite_manifest: &VisualSpriteManifestStatus,
+    compose_dock: &SceneComposeDock,
+    dialogue_scroll: &SceneDialogueScrollback,
+    mut text_selection: Option<&mut SceneTextSelection>,
 ) -> anyhow::Result<()> {
     let size = term.get_screen_size()?;
     let mut snapshot = runtime.render_snapshot();
@@ -148,9 +167,16 @@ pub(super) fn render_runtime_with_compose_and_scroll(
             .into(),
         );
     }
+    let selection_changes = if let Some(selection) = text_selection.as_deref_mut() {
+        selection.set_frame_text(&frame, size.cols, size.rows);
+        selection.render_changes(size.cols, size.rows)
+    } else {
+        Vec::new()
+    };
     changes.push(Change::Text(truncate_to_screen(
         frame, size.cols, size.rows,
     )));
+    changes.extend(selection_changes);
     if runtime.view() == VisualView::VnLayoutDebugger {
         changes.push(Change::AllAttributes(CellAttributes::default()));
     }

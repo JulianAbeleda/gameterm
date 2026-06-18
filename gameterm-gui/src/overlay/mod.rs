@@ -23,6 +23,7 @@ mod visual_stt;
 mod visual_stt_backend;
 mod visual_tts;
 pub(crate) mod visual_voice_hold;
+mod visual_voice_trace;
 
 pub use confirm_close_pane::{
     confirm_close_pane, confirm_close_tab, confirm_close_window, confirm_quit_program,

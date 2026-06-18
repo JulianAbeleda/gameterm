@@ -1,6 +1,7 @@
 use super::visual_speech_blocks::SpeakableSegment;
 #[cfg(test)]
 use super::visual_speech_blocks::{SpeakableSource, SpeechBlockKind};
+use super::visual_voice_trace::{trace_voice_event, SceneVoiceTraceEvent};
 use std::io::Read;
 use std::io::Write;
 use std::net::{TcpStream, ToSocketAddrs};
@@ -386,9 +387,23 @@ impl SceneTtsWorker {
                                 Some("speech queue generation changed".to_string()),
                                 SceneTtsTiming::default(),
                             );
+                            trace_tts_request_event(
+                                "tts_worker_skipped_stale_request",
+                                &request,
+                                Some("TTS skipped stale block"),
+                                Some("speech queue generation changed"),
+                                None,
+                            );
                             let _ = result_tx.send(result);
                             continue;
                         }
+                        trace_tts_request_event(
+                            "tts_worker_started",
+                            &request,
+                            Some("TTS speaking"),
+                            None,
+                            None,
+                        );
                         let _ = result_tx.send(SceneTtsResult {
                             event: SceneTtsEvent::Started,
                             segment: request.segment.clone(),
@@ -534,6 +549,17 @@ fn run_voicevox_tts_backend(
         voicevox.speaker,
         percent_encode_query_value(&text)
     );
+    trace_tts_request_event(
+        "voicevox_audio_query_start",
+        &request,
+        None,
+        None,
+        Some(serde_json::json!({
+            "voicevox_host": voicevox.host,
+            "voicevox_port": voicevox.port,
+            "speaker_id": voicevox.speaker,
+        })),
+    );
     let query_started = Instant::now();
     let query_json = match voicevox_http_request(
         voicevox,
@@ -544,9 +570,28 @@ fn run_voicevox_tts_backend(
     ) {
         Ok(body) => {
             timing.query_ms = Some(query_started.elapsed().as_millis());
+            trace_tts_request_event(
+                "voicevox_audio_query_success",
+                &request,
+                Some("VOICEVOX audio_query succeeded"),
+                None,
+                Some(serde_json::json!({
+                    "query_ms": timing.query_ms,
+                    "response_bytes": body.len(),
+                })),
+            );
             body
         }
         Err(err) => {
+            trace_tts_request_event(
+                "voicevox_audio_query_failure",
+                &request,
+                Some("VOICEVOX audio_query failed"),
+                Some(&err),
+                Some(serde_json::json!({
+                    "query_ms": query_started.elapsed().as_millis(),
+                })),
+            );
             return finished_tts_result(
                 &request,
                 "TTS failed",
@@ -557,6 +602,13 @@ fn run_voicevox_tts_backend(
         }
     };
     if serde_json::from_slice::<serde_json::Value>(&query_json).is_err() {
+        trace_tts_request_event(
+            "voicevox_audio_query_failure",
+            &request,
+            Some("VOICEVOX audio_query returned invalid JSON"),
+            Some("VOICEVOX audio_query returned invalid JSON"),
+            None,
+        );
         return finished_tts_result(
             &request,
             "TTS failed",
@@ -567,6 +619,15 @@ fn run_voicevox_tts_backend(
     }
 
     let synthesis_path = format!("/synthesis?speaker={}", voicevox.speaker);
+    trace_tts_request_event(
+        "voicevox_synthesis_start",
+        &request,
+        None,
+        None,
+        Some(serde_json::json!({
+            "speaker_id": voicevox.speaker,
+        })),
+    );
     let synthesis_started = Instant::now();
     let wav = match voicevox_http_request(
         voicevox,
@@ -577,9 +638,28 @@ fn run_voicevox_tts_backend(
     ) {
         Ok(body) => {
             timing.synthesis_ms = Some(synthesis_started.elapsed().as_millis());
+            trace_tts_request_event(
+                "voicevox_synthesis_success",
+                &request,
+                Some("VOICEVOX synthesis succeeded"),
+                None,
+                Some(serde_json::json!({
+                    "synthesis_ms": timing.synthesis_ms,
+                    "wav_bytes": body.len(),
+                })),
+            );
             body
         }
         Err(err) => {
+            trace_tts_request_event(
+                "voicevox_synthesis_failure",
+                &request,
+                Some("VOICEVOX synthesis failed"),
+                Some(&err),
+                Some(serde_json::json!({
+                    "synthesis_ms": synthesis_started.elapsed().as_millis(),
+                })),
+            );
             return finished_tts_result(
                 &request,
                 "TTS failed",
@@ -590,6 +670,13 @@ fn run_voicevox_tts_backend(
         }
     };
     if wav.is_empty() {
+        trace_tts_request_event(
+            "voicevox_synthesis_failure",
+            &request,
+            Some("VOICEVOX synthesis produced empty audio"),
+            Some("VOICEVOX synthesis produced empty audio"),
+            None,
+        );
         return finished_tts_result(
             &request,
             "TTS failed",
@@ -600,6 +687,15 @@ fn run_voicevox_tts_backend(
     }
 
     if let Err(err) = std::fs::write(&output_path, wav) {
+        trace_tts_request_event(
+            "wav_write_failure",
+            &request,
+            Some("failed to write TTS output"),
+            Some(&err.to_string()),
+            Some(serde_json::json!({
+                "output_path": output_path.display().to_string(),
+            })),
+        );
         return finished_tts_result(
             &request,
             "TTS failed",
@@ -608,10 +704,20 @@ fn run_voicevox_tts_backend(
             timing_with_total(timing, total_started),
         );
     }
+    trace_tts_request_event(
+        "wav_write_success",
+        &request,
+        Some("TTS output written"),
+        None,
+        Some(serde_json::json!({
+            "output_path": output_path.display().to_string(),
+        })),
+    );
 
     let played_audio = if let Some(player) = &config.player {
         let player_started = Instant::now();
         if let Err(err) = run_player_command(
+            &request,
             player.clone(),
             &output_path,
             config.timeout,
@@ -790,6 +896,7 @@ fn run_command_tts_backend(
     let played_audio = if let Some(player) = &config.player {
         let player_started = Instant::now();
         if let Err(err) = run_player_command(
+            &request,
             player.clone(),
             &output_path,
             config.timeout,
@@ -976,6 +1083,7 @@ fn wait_for_tts_output(
 }
 
 fn run_player_command(
+    request: &SceneTtsRequest,
     argv: Vec<String>,
     output_path: &PathBuf,
     timeout: Duration,
@@ -995,17 +1103,107 @@ fn run_player_command(
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|err| err.to_string())?;
-    let output = wait_for_tts_output(child, timeout, active_generation, generation)?;
+    let player_pid = child.id();
+    trace_tts_request_event(
+        "player_spawn",
+        request,
+        Some("TTS player spawned"),
+        None,
+        Some(serde_json::json!({
+            "output_path": output_path.display().to_string(),
+            "player_argv": argv,
+            "player_pid": player_pid,
+        })),
+    );
+    let output = match wait_for_tts_output(child, timeout, active_generation, generation) {
+        Ok(output) => output,
+        Err(err) => {
+            trace_tts_request_event(
+                "player_failure",
+                request,
+                Some("TTS player failed"),
+                Some(&err),
+                Some(serde_json::json!({
+                    "output_path": output_path.display().to_string(),
+                    "player_pid": player_pid,
+                })),
+            );
+            return Err(err);
+        }
+    };
     if output.status.success() {
+        trace_tts_request_event(
+            "player_success",
+            request,
+            Some("TTS player succeeded"),
+            None,
+            Some(serde_json::json!({
+                "output_path": output_path.display().to_string(),
+                "player_pid": player_pid,
+            })),
+        );
         Ok(())
     } else {
         let error = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        trace_tts_request_event(
+            "player_failure",
+            request,
+            Some("TTS player failed"),
+            Some(if error.is_empty() {
+                "player command failed"
+            } else {
+                &error
+            }),
+            Some(serde_json::json!({
+                "output_path": output_path.display().to_string(),
+                "player_pid": player_pid,
+            })),
+        );
         Err(if error.is_empty() {
             "player command failed".to_string()
         } else {
             error
         })
     }
+}
+
+fn trace_tts_request_event(
+    event: &'static str,
+    request: &SceneTtsRequest,
+    status: Option<&str>,
+    error: Option<&str>,
+    extra: Option<serde_json::Value>,
+) {
+    let mut trace = SceneVoiceTraceEvent::new(event).with_text(request.segment.text.clone());
+    trace.turn_id = Some(request.segment.turn_id);
+    trace.block_index = Some(request.segment.block_index);
+    trace.generation = Some(request.generation);
+    trace.speaker = request.segment.speaker.clone();
+    trace.status = status.map(ToOwned::to_owned);
+    trace.error = error.map(ToOwned::to_owned);
+    if let Some(extra) = extra.as_ref() {
+        trace.output_path = extra
+            .get("output_path")
+            .and_then(serde_json::Value::as_str)
+            .map(ToOwned::to_owned);
+        trace.player_argv = extra
+            .get("player_argv")
+            .and_then(serde_json::Value::as_array)
+            .map(|values| {
+                values
+                    .iter()
+                    .filter_map(serde_json::Value::as_str)
+                    .map(ToOwned::to_owned)
+                    .collect()
+            });
+        trace.player_pid = extra
+            .get("player_pid")
+            .and_then(serde_json::Value::as_u64)
+            .filter(|pid| *pid <= u32::MAX as u64)
+            .map(|pid| pid as u32);
+    }
+    trace.timing = extra;
+    trace_voice_event(trace);
 }
 
 fn tts_output_path(cache_dir: &PathBuf) -> PathBuf {

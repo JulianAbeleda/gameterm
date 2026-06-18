@@ -33,6 +33,8 @@ mod visual_scene_debug_input;
 mod visual_scene_files;
 #[path = "visual_scene_patches.rs"]
 mod visual_scene_patches;
+#[path = "visual_text_selection.rs"]
+mod visual_text_selection;
 #[path = "visual_voice_debug.rs"]
 mod visual_voice_debug;
 #[path = "visual_voice_events.rs"]
