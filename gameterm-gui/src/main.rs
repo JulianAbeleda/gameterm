@@ -838,6 +838,12 @@ fn main() {
     }
     Mux::shutdown();
     frontend::shutdown();
+    // The app is fully shut down here. Returning from main would let the Rust
+    // runtime run late static/TLS and GL/Cocoa destructor teardown after the
+    // window is already gone; on macOS that can fault, which the OS reports as
+    // "GameTerm quit unexpectedly" even though the app closed fine. Exit cleanly
+    // and skip that crash-prone teardown.
+    std::process::exit(0);
 }
 
 fn maybe_show_configuration_error_window() {
