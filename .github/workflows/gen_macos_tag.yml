@@ -31,9 +31,6 @@ jobs:
       - name: "Install Rust (ARM)"
         shell: bash
         run: "rustup target add aarch64-apple-darwin"
-      - name: "Install Rust (Intel)"
-        shell: bash
-        run: "rustup target add x86_64-apple-darwin"
       - name: "Compile with sccache"
         uses: mozilla-actions/sccache-action@v0.0.9
       - name: "Cache Rust Dependencies"
@@ -51,27 +48,15 @@ jobs:
       - name: "Install System Deps"
         shell: bash
         run: "env CI=yes PATH=$PATH ./get-deps"
-      - name: "Build gameterm (Release mode Intel)"
-        shell: bash
-        run: "cargo build --target x86_64-apple-darwin -p gameterm --release"
       - name: "Build gameterm (Release mode ARM)"
         shell: bash
         run: "cargo build --target aarch64-apple-darwin -p gameterm --release"
-      - name: "Build gameterm-gui (Release mode Intel)"
-        shell: bash
-        run: "cargo build --target x86_64-apple-darwin -p gameterm-gui --release"
       - name: "Build gameterm-gui (Release mode ARM)"
         shell: bash
         run: "cargo build --target aarch64-apple-darwin -p gameterm-gui --release"
-      - name: "Build gameterm-mux-server (Release mode Intel)"
-        shell: bash
-        run: "cargo build --target x86_64-apple-darwin -p gameterm-mux-server --release"
       - name: "Build gameterm-mux-server (Release mode ARM)"
         shell: bash
         run: "cargo build --target aarch64-apple-darwin -p gameterm-mux-server --release"
-      - name: "Build strip-ansi-escapes (Release mode Intel)"
-        shell: bash
-        run: "cargo build --target x86_64-apple-darwin -p strip-ansi-escapes --release"
       - name: "Build strip-ansi-escapes (Release mode ARM)"
         shell: bash
         run: "cargo build --target aarch64-apple-darwin -p strip-ansi-escapes --release"
@@ -85,7 +70,7 @@ jobs:
         # Exclude the wezterm-inherited SFTP symlink e2e tests: creating a symlink
         # over SFTP fails (SftpError(4) = SSH_FX_FAILURE) in the GitHub runner's
         # sandbox, unrelated to the release. Every other test still gates the build.
-        run: "cargo nextest run --all --no-fail-fast --target=x86_64-apple-darwin -E 'not test(/symlink_should_create_symlink_pointing_to/)'"
+        run: "cargo nextest run --all --no-fail-fast --target=aarch64-apple-darwin -E 'not test(/symlink_should_create_symlink_pointing_to/)'"
       - name: "Package"
         env:
           MACOS_APPLEID: ${{ secrets.MACOS_APPLEID }}

@@ -1000,27 +1000,17 @@ rustup default {toolchain}
         )
 
 
+# GameTerm ships macOS (Apple Silicon) only. The inherited WezTerm Linux/Windows
+# targets were dropped — see structure/Development/tiny-principle-audit.md (#2).
+#
+# WARNING: this generator is only PARTIALLY forked over from WezTerm. It still
+# emits the wez-era macOS arch/deployment/tap/naming. The operative macOS
+# workflows (gen_macos*.yml) are hand-maintained with the fork's fixes (ARM-only,
+# MACOSX_DEPLOYMENT_TARGET=11.0, semver tag trigger, JulianAbeleda/homebrew-tap,
+# tag-based naming). Do NOT regenerate gen_macos*.yml from this script until it
+# is fully forked over (tracked in tiny-principle-audit.md).
 TARGETS = [
-    Target(container="ubuntu:20.04", continuous_only=True, app_image=True),
-    Target(container="ubuntu:22.04", continuous_only=True),
-    Target(container="ubuntu:24.04", continuous_only=True),
-    # debian 8's wayland libraries are too old for wayland-client
-    # Target(container="debian:8.11", continuous_only=True, bootstrap_git=True),
-    # harfbuzz's C++ is too new for debian 9's toolchain
-    # Target(container="debian:9.12", continuous_only=True, bootstrap_git=True),
-    Target(container="debian:11", continuous_only=True),
-    Target(container="debian:12", continuous_only=True),
-    Target(name="centos9", container="quay.io/centos/centos:stream9"),
     Target(name="macos", os="macos-latest"),
-    # https://fedoraproject.org/wiki/End_of_life?rd=LifeCycle/EOL
-    Target(container="fedora:39"),
-    Target(container="fedora:40"),
-    Target(container="fedora:41"),
-    # Target(container="alpine:3.15"),
-
-    # Windows is on 2022 for the time being due to
-    # https://github.com/actions/runner-images/issues/11644
-    Target(name="windows", os="windows-2022", rust_target="x86_64-pc-windows-msvc"),
 ]
 
 
