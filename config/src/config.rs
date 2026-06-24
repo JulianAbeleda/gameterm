@@ -15,7 +15,6 @@ use crate::keyassignment::{
 };
 use crate::keys::{Key, LeaderKey, Mouse};
 use crate::lua::make_lua_context;
-use crate::ssh::{SshBackend, SshDomain};
 use crate::tls::{TlsDomainClient, TlsDomainServer};
 use crate::units::Dimension;
 use crate::unix::UnixDomain;
@@ -365,12 +364,6 @@ pub struct Config {
     #[dynamic(default = "UnixDomain::default_unix_domains")]
     pub unix_domains: Vec<UnixDomain>,
 
-    #[dynamic(default)]
-    pub ssh_domains: Option<Vec<SshDomain>>,
-
-    #[dynamic(default)]
-    pub ssh_backend: SshBackend,
-
     /// When running in server mode, defines configuration for
     /// each of the endpoints that we'll listen for connections
     #[dynamic(default)]
@@ -394,9 +387,6 @@ pub struct Config {
     /// high and the user experience will be laggy and less responsive.
     #[dynamic(default = "default_mux_output_parser_buffer_size")]
     pub mux_output_parser_buffer_size: usize,
-
-    #[dynamic(default = "default_true")]
-    pub mux_enable_ssh_agent: bool,
 
     #[dynamic(default)]
     pub default_ssh_auth_sock: Option<String>,
@@ -929,16 +919,6 @@ impl Config {
         Self::load_with_overrides(&gameterm_dynamic::Value::default())
     }
 
-    /// It is relatively expensive to parse all the ssh config files,
-    /// so we defer producing the default list until someone explicitly
-    /// asks for it
-    pub fn ssh_domains(&self) -> Vec<SshDomain> {
-        if let Some(domains) = &self.ssh_domains {
-            domains.clone()
-        } else {
-            SshDomain::default_domains()
-        }
-    }
 
     pub fn wsl_domains(&self) -> Vec<WslDomain> {
         if let Some(domains) = &self.wsl_domains {
@@ -1246,11 +1226,6 @@ impl Config {
 
         for d in &self.unix_domains {
             check_domain(&d.name, "unix domain")?;
-        }
-        if let Some(domains) = &self.ssh_domains {
-            for d in domains {
-                check_domain(&d.name, "ssh domain")?;
-            }
         }
         for d in &self.exec_domains {
             check_domain(&d.name, "exec domain")?;

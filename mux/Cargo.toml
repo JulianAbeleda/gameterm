@@ -45,7 +45,6 @@ textwrap.workspace = true
 thiserror.workspace = true
 url.workspace = true
 gameterm-dynamic.workspace = true
-gameterm-ssh.workspace = true
 gameterm-term = { workspace=true, features=["use_serde"] }
 
 [target."cfg(windows)".dependencies]

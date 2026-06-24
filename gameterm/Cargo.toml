@@ -13,7 +13,6 @@ chrono.workspace = true
 clap.workspace = true
 clap_complete.workspace = true
 clap_complete_fig.workspace = true
-codec.workspace = true
 config.workspace = true
 env-bootstrap.workspace = true
 filedescriptor.workspace = true
@@ -36,7 +35,6 @@ termwiz.workspace = true
 textwrap.workspace  =true
 umask.workspace = true
 url.workspace = true
-gameterm-client.workspace = true
 gameterm-gui-subcommands.workspace = true
 gameterm-term.workspace = true
 

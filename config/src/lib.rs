@@ -34,7 +34,6 @@ mod keys;
 pub mod lua;
 pub mod meta;
 mod scheme_data;
-mod ssh;
 mod terminal;
 mod tls;
 mod units;
@@ -53,7 +52,6 @@ pub use exec_domain::*;
 pub use font::*;
 pub use frontend::*;
 pub use keys::*;
-pub use ssh::*;
 pub use terminal::*;
 pub use tls::*;
 pub use units::*;
@@ -829,4 +827,13 @@ fn default_one_point_oh() -> f32 {
 
 fn default_true() -> bool {
     true
+}
+
+pub fn username_from_env() -> anyhow::Result<String> {
+    use anyhow::Context;
+    #[cfg(unix)]
+    const USER: &str = "USER";
+    #[cfg(windows)]
+    const USER: &str = "USERNAME";
+    std::env::var(USER).with_context(|| format!("while resolving {} env var", USER))
 }

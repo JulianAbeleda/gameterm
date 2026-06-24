@@ -470,9 +470,6 @@ impl LocalDomain {
             cmd.env("GAMETERM_UNIX_SOCKET", sock);
         }
         cmd.env("GAMETERM_PANE", pane_id.to_string());
-        if let Some(agent) = Mux::get().agent.as_ref() {
-            cmd.env("SSH_AUTH_SOCK", agent.path());
-        }
         self.fixup_command(&mut cmd).await?;
         Ok(cmd)
     }

@@ -17,7 +17,6 @@ use umask::UmaskSaver;
 use gameterm_gui_subcommands::*;
 
 mod asciicast;
-mod cli;
 
 //    let message = "; ❤ 😍🤢\n\x1b[91;mw00t\n\x1b[37;104;m bleet\x1b[0;m.";
 
@@ -106,9 +105,6 @@ enum SubCommand {
 
     #[command(name = "show-keys", about = "Show key assignments")]
     ShowKeys(ShowKeysCommand),
-
-    #[command(name = "cli", about = "Interact with experimental mux server")]
-    Cli(cli::CliCommand),
 
     #[command(name = "imgcat", about = "Output an image to the terminal")]
     ImageCat(ImgCatCommand),
@@ -740,7 +736,6 @@ fn run() -> anyhow::Result<()> {
         | SubCommand::ShowKeys(_) => delegate_to_gui(saver),
         SubCommand::ImageCat(cmd) => cmd.run(),
         SubCommand::SetCwd(cmd) => cmd.run(),
-        SubCommand::Cli(cli) => cli::run_cli(&opts, cli),
         SubCommand::Record(cmd) => cmd.run(init_config(&opts)?),
         SubCommand::Replay(cmd) => cmd.run(),
         SubCommand::ShellCompletion { shell } => {

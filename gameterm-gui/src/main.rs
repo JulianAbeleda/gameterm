@@ -26,11 +26,9 @@ use termwiz::cell::CellAttributes;
 use termwiz::surface::{Line, SEQ_ZERO};
 use unicode_normalization::UnicodeNormalization;
 use gameterm_bidi::Direction;
-use gameterm_client::domain::ClientDomain;
 use gameterm_font::shaper::PresentationWidth;
 use gameterm_font::FontConfiguration;
 use gameterm_gui_subcommands::*;
-use gameterm_mux_server_impl::update_mux_domains;
 use gameterm_toast_notification::*;
 
 mod colorease;
@@ -191,16 +189,6 @@ async fn spawn_tab_in_domain_if_mux_is_empty(
         return Ok(());
     }
 
-    let _config_subscription = config::subscribe_to_config_reload(move || {
-        promise::spawn::spawn_into_main_thread(async move {
-            if let Err(err) = update_mux_domains(&config::configuration()) {
-                log::error!("Error updating mux domains: {:#}", err);
-            }
-        })
-        .detach();
-        true
-    });
-
     let dpi = config.dpi.unwrap_or_else(|| ::window::default_dpi());
     let _tab = domain
         .spawn(
@@ -211,19 +199,6 @@ async fn spawn_tab_in_domain_if_mux_is_empty(
         )
         .await?;
     trigger_and_log_gui_attached(MuxDomain(domain.domain_id())).await;
-    Ok(())
-}
-
-async fn connect_to_auto_connect_domains() -> anyhow::Result<()> {
-    let mux = Mux::get();
-    let domains = mux.iter_domains();
-    for dom in domains {
-        if let Some(dom) = dom.downcast_ref::<ClientDomain>() {
-            if dom.connect_automatically() {
-                dom.attach(None).await?;
-            }
-        }
-    }
     Ok(())
 }
 
@@ -279,21 +254,10 @@ fn cell_pixel_dims(config: &ConfigHandle, dpi: f64) -> anyhow::Result<(usize, us
 async fn async_run_terminal_gui(
     cmd: Option<CommandBuilder>,
     opts: StartCommand,
-    should_publish: bool,
 ) -> anyhow::Result<()> {
-    let unix_socket_path =
-        config::RUNTIME_DIR.join(format!("gui-sock-{}", unsafe { libc::getpid() }));
-    std::env::set_var("GAMETERM_UNIX_SOCKET", unix_socket_path.clone());
     gameterm_blob_leases::register_storage(Arc::new(
         gameterm_blob_leases::simple_tempdir::SimpleTempDir::new_in(&*config::CACHE_DIR)?,
     ))?;
-    if let Err(err) = spawn_mux_server(unix_socket_path, should_publish) {
-        log::warn!("{:#}", err);
-    }
-
-    if !opts.no_auto_connect {
-        connect_to_auto_connect_domains().await?;
-    }
 
     let spawn_command = match &cmd {
         Some(cmd) => Some(SpawnCommand::from_command_builder(cmd)?),
@@ -363,187 +327,6 @@ async fn async_run_terminal_gui(
     spawn_tab_in_domain_if_mux_is_empty(cmd, is_connecting, domain, opts.workspace).await
 }
 
-#[derive(Debug)]
-enum Publish {
-    TryPathOrPublish(PathBuf),
-    NoConnectNoPublish,
-    NoConnectButPublish,
-}
-
-impl Publish {
-    pub fn resolve(mux: &Arc<Mux>, config: &ConfigHandle, always_new_process: bool) -> Self {
-        if mux.default_domain().domain_name() != config.default_domain.as_deref().unwrap_or("local")
-        {
-            return Self::NoConnectNoPublish;
-        }
-
-        if always_new_process {
-            return Self::NoConnectNoPublish;
-        }
-
-        if config::is_config_overridden() {
-            // They're using a specific config file: assume that it is
-            // different from the running gui
-            log::trace!("skip existing gui: config is different");
-            return Self::NoConnectNoPublish;
-        }
-
-        match gameterm_client::discovery::resolve_gui_sock_path(
-            &crate::termwindow::get_window_class(),
-        ) {
-            Ok(path) => Self::TryPathOrPublish(path),
-            Err(_) => Self::NoConnectButPublish,
-        }
-    }
-
-    pub fn should_publish(&self) -> bool {
-        match self {
-            Self::TryPathOrPublish(_) | Self::NoConnectButPublish => true,
-            Self::NoConnectNoPublish => false,
-        }
-    }
-
-    pub fn try_spawn(
-        &mut self,
-        cmd: Option<CommandBuilder>,
-        config: &ConfigHandle,
-        workspace: Option<&str>,
-        domain: SpawnTabDomain,
-        new_tab: bool,
-    ) -> anyhow::Result<bool> {
-        if let Publish::TryPathOrPublish(gui_sock) = &self {
-            let dom = config::UnixDomain {
-                socket_path: Some(gui_sock.clone()),
-                no_serve_automatically: true,
-                ..Default::default()
-            };
-            let mut ui = mux::connui::ConnectionUI::new_headless();
-            match gameterm_client::client::Client::new_unix_domain(None, &dom, false, &mut ui, true)
-            {
-                Ok(client) => {
-                    let executor = promise::spawn::ScopedExecutor::new();
-                    let command = cmd.clone();
-                    let res = block_on(executor.run(async move {
-                        let vers = client.verify_version_compat(&mut ui).await?;
-
-                        if vers.executable_path != std::env::current_exe().context("resolve executable path")? {
-                            *self = Publish::NoConnectNoPublish;
-                            anyhow::bail!(
-                                "Running GUI is a different executable from us, will start a new one");
-                        }
-                        if vers.config_file_path
-                            != std::env::var_os("GAMETERM_CONFIG_FILE").map(Into::into)
-                        {
-                            *self = Publish::NoConnectNoPublish;
-                            anyhow::bail!(
-                                "Running GUI has different config from us, will start a new one"
-                            );
-                        }
-
-                        let window_id = if new_tab || config.prefer_to_spawn_tabs {
-                            if let Ok(pane_id) = client.resolve_pane_id(None).await {
-                                let panes = client.list_panes().await?;
-
-                                let mut window_id = None;
-                                'outer: for tabroot in panes.tabs {
-                                    let mut cursor = tabroot.into_tree().cursor();
-
-                                    loop {
-                                        if let Some(entry) = cursor.leaf_mut() {
-                                            if entry.pane_id == pane_id {
-                                                window_id.replace(entry.window_id);
-                                                break 'outer;
-                                            }
-                                        }
-                                        match cursor.preorder_next() {
-                                            Ok(c) => cursor = c,
-                                            Err(_) => break,
-                                        }
-                                    }
-                                }
-                                window_id
-
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
-                        };
-
-                        client
-                            .spawn_v2(codec::SpawnV2 {
-                                domain,
-                                window_id,
-                                command,
-                                command_dir: None,
-                                size: config.initial_size(0, None),
-                                workspace: workspace.unwrap_or(
-                                    config
-                                        .default_workspace
-                                        .as_deref()
-                                        .unwrap_or(mux::DEFAULT_WORKSPACE)
-                                ).to_string(),
-                            })
-                            .await
-                    }));
-
-                    match res {
-                        Ok(res) => {
-                            log::info!(
-                                "Spawned your command via the existing GUI instance. \
-                             Use gameterm start --always-new-process if you do not want this behavior. \
-                             Result={:?}",
-                                res
-                            );
-                            Ok(true)
-                        }
-                        Err(err) => {
-                            log::trace!(
-                                "while attempting to ask existing instance to spawn: {:#}",
-                                err
-                            );
-                            Ok(false)
-                        }
-                    }
-                }
-                Err(err) => {
-                    // Couldn't connect: it's probably a stale symlink.
-                    // That's fine: we can continue with starting a fresh gui below.
-                    log::trace!("{:#}", err);
-                    Ok(false)
-                }
-            }
-        } else {
-            Ok(false)
-        }
-    }
-}
-
-fn spawn_mux_server(unix_socket_path: PathBuf, should_publish: bool) -> anyhow::Result<()> {
-    let mut listener =
-        gameterm_mux_server_impl::local::LocalListener::with_domain(&config::UnixDomain {
-            socket_path: Some(unix_socket_path.clone()),
-            ..Default::default()
-        })?;
-    std::thread::spawn(move || {
-        let name_holder;
-        if should_publish {
-            name_holder = gameterm_client::discovery::publish_gui_sock_path(
-                &unix_socket_path,
-                &crate::termwindow::get_window_class(),
-            );
-            if let Err(err) = &name_holder {
-                log::warn!("{:#}", err);
-            }
-        }
-
-        listener.run();
-        std::fs::remove_file(unix_socket_path).ok();
-    });
-
-    Ok(())
-}
-
 fn setup_mux(
     local_domain: Arc<dyn Domain>,
     config: &ConfigHandle,
@@ -563,7 +346,6 @@ fn setup_mux(
     );
     mux.set_active_workspace(&default_workspace_name);
     crate::update::load_last_release_info_and_set_banner();
-    update_mux_domains(config)?;
 
     let default_name =
         default_domain_name.unwrap_or(config.default_domain.as_deref().unwrap_or("local"));
@@ -618,39 +400,17 @@ fn run_terminal_gui(opts: StartCommand, default_domain_name: Option<String>) -> 
         None
     };
 
-    let mux = build_initial_mux(
+    let _mux = build_initial_mux(
         &config,
         default_domain_name.as_deref(),
         opts.workspace.as_deref(),
     )?;
 
-    // First, let's see if we can ask an already running gameterm to do this.
-    // We must do this before we start the gui frontend as the scheduler
-    // requirements are different.
-    let mut publish = Publish::resolve(
-        &mux,
-        &config,
-        opts.always_new_process || opts.position.is_some(),
-    );
-    log::trace!("{:?}", publish);
-    if publish.try_spawn(
-        cmd.clone(),
-        &config,
-        opts.workspace.as_deref(),
-        match &opts.domain {
-            Some(name) => SpawnTabDomain::DomainName(name.to_string()),
-            None => SpawnTabDomain::DefaultDomain,
-        },
-        opts.new_tab,
-    )? {
-        return Ok(());
-    }
-
     let gui = crate::frontend::try_new()?;
     let activity = Activity::new();
 
     promise::spawn::spawn(async move {
-        if let Err(err) = async_run_terminal_gui(cmd, opts, publish.should_publish()).await {
+        if let Err(err) = async_run_terminal_gui(cmd, opts).await {
             terminate_with_error(err);
         }
         drop(activity);

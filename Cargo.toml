@@ -11,11 +11,8 @@ members = [
   "gameterm-escape-parser",
   "gameterm-dynamic",
   "gameterm-gui",
-  "gameterm-mux-server",
   "gameterm-open-url",
-  "gameterm-ssh",
   "gameterm-surface",
-  "gameterm-uds",
   "gameterm-visual",
 ]
 resolver = "2"
@@ -65,7 +62,6 @@ clap_complete = "4.4"
 clap_complete_fig = "4.0"
 clipboard-win = "2.2"
 cocoa = "=0.25.0"
-codec = { path = "codec" }
 color-funcs = { path = "lua-api-crates/color-funcs" }
 colorgrad = "0.6"
 config = { path = "config" }
@@ -205,7 +201,6 @@ socket2 = "0.5"
 spa = "0.3.1"
 spawn-funcs = { path = "lua-api-crates/spawn-funcs" }
 sqlite-cache = "0.1.4"
-ssh-funcs = { path = "lua-api-crates/ssh-funcs" }
 ssh2 = "0.9.3"
 starship-battery = "0.10"
 strsim = "0.11"
@@ -244,7 +239,6 @@ gameterm-bidi = { version="0.2.3", path = "bidi", default-features=false}
 gameterm-blob-leases = { version="0.1.1", path = "gameterm-blob-leases"}
 gameterm-cell = { path = "gameterm-cell"}
 gameterm-char-props = { path = "gameterm-char-props", default-features=false }
-gameterm-client = { path = "gameterm-client" }
 gameterm-color-types = { version="0.3", path = "color-types", default-features=false }
 gameterm-config-derive = { version="0.1", path="config/derive" }
 gameterm-dynamic = { version = "0.2.1", path = "gameterm-dynamic", default-features=false }
@@ -253,13 +247,10 @@ gameterm-escape-parser = { version="0.1.0", path="gameterm-escape-parser" }
 gameterm-font = { path = "gameterm-font" }
 gameterm-gui-subcommands = { path = "gameterm-gui-subcommands" }
 gameterm-input-types = { version="0.1", path = "gameterm-input-types", default-features=false }
-gameterm-mux-server-impl = { path = "gameterm-mux-server-impl" }
 gameterm-open-url = { path = "gameterm-open-url" }
-gameterm-ssh = { path = "gameterm-ssh" }
 gameterm-surface = { path = "gameterm-surface" }
 gameterm-term = { path = "term" }
 gameterm-toast-notification = { path = "gameterm-toast-notification" }
-gameterm-uds = { path = "gameterm-uds" }
 gameterm-version = { path = "gameterm-version" }
 gameterm-visual = { path = "gameterm-visual" }
 wgpu = "25.0.2"

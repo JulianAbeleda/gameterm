@@ -178,7 +178,9 @@ fn update_checker() {
         // window: the one of us that sorts first in the list will
         // own doing that, so that if there are a dozen gui processes
         // running, we don't spam the user with a lot of notifications.
-        let socks = gameterm_client::discovery::discover_gui_socks();
+        // Remote/mux instance discovery was removed; this is always a single
+        // local instance, so it owns showing the update notification.
+        let socks: Vec<std::path::PathBuf> = Vec::new();
 
         if configuration().check_for_updates {
             if let Ok(latest) = get_latest_release_info() {

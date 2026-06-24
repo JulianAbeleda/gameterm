@@ -96,10 +96,3 @@ pub struct TlsDomainClient {
     pub overlay_lag_indicator: bool,
 }
 
-impl TlsDomainClient {
-    pub fn ssh_parameters(&self) -> Option<anyhow::Result<SshParameters>> {
-        self.bootstrap_via_ssh
-            .as_ref()
-            .map(|user_at_host_and_port| user_at_host_and_port.parse())
-    }
-}
