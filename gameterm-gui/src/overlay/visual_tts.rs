@@ -135,6 +135,11 @@ pub(crate) struct SceneVoicevoxConfig {
 pub(crate) enum SceneTranslationConfig {
     Off,
     Command(Vec<String>),
+    /// Translation was requested (implicitly via the default/ct2 backend, or
+    /// explicitly via a backend/command) but no usable translator is available.
+    /// Carries a human-readable reason so the absence is surfaced through the
+    /// normal TTS error path instead of silently degrading to untranslated text.
+    Unavailable { reason: String },
 }
 
 impl SceneTtsConfig {
@@ -201,7 +206,12 @@ impl SceneTranslationConfig {
                 .ok()
                 .filter(|argv| !argv.is_empty())
                 .map(SceneTranslationConfig::Command)
-                .unwrap_or(SceneTranslationConfig::Off);
+                .unwrap_or_else(|| SceneTranslationConfig::Unavailable {
+                    reason: format!(
+                        "{} is set but could not be parsed into a command",
+                        TTS_TRANSLATION_COMMAND_ENV
+                    ),
+                });
         }
 
         match env_first_non_empty(&[TTS_TRANSLATION_BACKEND_ENV])
@@ -214,11 +224,27 @@ impl SceneTranslationConfig {
                 .and_then(|value| parse_command_argv(&value).ok())
                 .filter(|argv| !argv.is_empty())
                 .map(SceneTranslationConfig::Command)
-                .unwrap_or(SceneTranslationConfig::Off),
+                .unwrap_or_else(|| SceneTranslationConfig::Unavailable {
+                    reason: format!(
+                        "{}=command but {} is unset or invalid",
+                        TTS_TRANSLATION_BACKEND_ENV, TTS_TRANSLATION_COMMAND_ENV
+                    ),
+                }),
+            // Default (unset) and explicit `ct2` both auto-discover the optional
+            // CT2 translator. When it isn't installed, surface that fact instead
+            // of silently collapsing to `Off` (which speaks untranslated text).
             Some("ct2") | None => ct2_translation_command()
                 .map(SceneTranslationConfig::Command)
-                .unwrap_or(SceneTranslationConfig::Off),
-            _ => SceneTranslationConfig::Off,
+                .unwrap_or_else(|| SceneTranslationConfig::Unavailable {
+                    reason: format!(
+                        "CT2 translator not installed; run ci/scene-tts/setup-ct2-en-ja.sh, \
+                         or set {} / {}. Set {}=off to speak untranslated text intentionally.",
+                        TTS_CT2_COMMAND_ENV, TTS_TRANSLATION_COMMAND_ENV, TTS_TRANSLATION_BACKEND_ENV
+                    ),
+                }),
+            Some(other) => SceneTranslationConfig::Unavailable {
+                reason: format!("unknown {} value `{}`", TTS_TRANSLATION_BACKEND_ENV, other),
+            },
         }
     }
 }
@@ -765,6 +791,9 @@ fn translate_text(
         SceneTranslationConfig::Command(argv) => {
             run_translation_command(text, argv.clone(), timeout, active_generation, generation)
         }
+        // Requested but no translator available: surface it through the normal
+        // TTS error path rather than speaking untranslated text.
+        SceneTranslationConfig::Unavailable { reason } => Err(reason.clone()),
     }
 }
 
