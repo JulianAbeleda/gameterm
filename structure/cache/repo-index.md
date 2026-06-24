@@ -17,16 +17,20 @@ Re-run after structural changes; the verdicts below are reviewed when
 
 | class | lines | share | maintenance burden |
 |---|--:|--:|---|
-| **Owned** | 224,717 | 45% | the real surface a human maintains |
-| **Generated** | 220,754 | 44% | tables; ~zero burden (never hand-edited) |
-| **Vendored** | 41,476 | 8% | upstream code in `deps/`; not ours to maintain |
-| **Test** | 9,562 | 2% | separate test files/dirs (excl. inline tests) |
-| **Total** | 496,509 | 100% | |
+| **Owned** | 205,942 | 43% | the real surface a human maintains |
+| **Generated** | 220,754 | 46% | tables; ~zero burden (never hand-edited) |
+| **Vendored** | 41,476 | 9% | upstream code in `deps/`; not ours to maintain |
+| **Test** | 7,777 | 2% | separate test files/dirs (excl. inline tests) |
+| **Total** | 475,949 | 100% | |
 
-**The headline:** the repo *looks* like ~500k lines but **only 45% is
+**The headline:** the repo *looks* like ~476k lines but **only 43% is
 hand-maintained**, and most of *that* is a legitimate inherited terminal
 emulator. GameTerm's own product surface (`gameterm-visual`) is **~20k**. "Too
-large" was mostly generated tables (44%) hiding in the LOC count.
+large" was mostly generated tables (46%) hiding in the LOC count.
+
+> **Updated after the remote/SSH cut:** owned dropped from 224,717 → 205,942
+> (−18,775) when the inherited multiplexer/remote/SSH subsystem (7 crates) was
+> removed. The cut crates' rows below have been struck.
 
 ## Justification index (owned LOC; verdict tied to product-scope)
 
@@ -68,23 +72,21 @@ a renderer of these; the Scene engine renders through their cell/surface/image t
 | `bintree` / `rangeset` / `promise` / `tabout` / `base91` / `frecency` / `ratelim` / `env-bootstrap` / `luahelper` / `async_ossl` | ~4,000 | small shared primitives used across the core |
 | `gameterm-char-props` | 170 | Unicode width/emoji/nerdfont lookup — **99.8% generated** (79k tables) |
 
-### Remote access — out of scope → CUT (~14.4k owned)
-Product-scope no longer retains remote access. These are never-exercised inherited
-WezTerm networking. See the cut plan in `../Development/tiny-principle-audit.md`.
+### Remote access — REMOVED ✅ (was ~18.8k owned)
+Product-scope no longer retains remote access. The inherited WezTerm
+multiplexer/remote/SSH subsystem was removed entirely (commits `749d6e9`,
+`81415f7`, `29e1519`). See `../Development/tiny-principle-audit.md`.
 
-| crate | owned | verdict |
-|---|--:|---|
-| `gameterm-ssh` | 6,113 | **CUT** — SSH domains; also retires the flaky `gameterm_ssh.yml` e2e job |
-| `gameterm-client` | 4,476 | **CUT** — remote mux client |
-| `gameterm-mux-server-impl` | 1,704 | **CUT** — mux server impl |
-| `codec` | 1,280 | **CUT** — remote mux wire format |
-| `gameterm-mux-server` | 687 | **CUT** — mux server binary |
-| `gameterm-uds` | 147 | **CUT** — unix-socket helper for the mux server |
-| serial domain (lives in `mux`/`config`) | ~300 | **CUT** — serial-port domain + subcommand |
+Removed crates: ~~`gameterm-ssh`~~, ~~`gameterm-client`~~,
+~~`gameterm-mux-server-impl`~~, ~~`codec`~~, ~~`gameterm-mux-server`~~,
+~~`gameterm-uds`~~, ~~`lua-api-crates/ssh-funcs`~~. Also removed: the `mux`-core
+SSH integration (`Mux.agent`/`AgentProxy`, `ssh.rs`/`ssh_agent.rs`), the
+`gameterm cli` control surface, the config SSH/serial surface, the serial domain,
+and the flaky `gameterm_ssh.yml` CI job.
 
-> Note: `mux` **core** stays — only the *remote* pieces (server/client/codec/uds)
-> and the SSH/serial *domains* are cut. Cutting them edits `mux`'s deps and a few
-> startup/subcommand sites, not the pane/tab model.
+> `mux` **core** (local pane/tab/domain model) and `mux/src/client.rs` (local
+> `ClientId`/`ClientInfo` bookkeeping, not the remote crate) stay — verified by a
+> green `cargo check --workspace`.
 
 ### Generated — label, do not count as burden (KEEP, untouched)
 | file / crate | generated | note |
@@ -104,8 +106,8 @@ WezTerm networking. See the cut plan in `../Development/tiny-principle-audit.md`
 
 - **Maintained surface ≈ 224k, not 500k.** Of that, GameTerm-owned product is
   ~20k; the rest is a deliberately-kept terminal emulator.
-- **The only indefensible weight is remote access (~14.4k owned + a flaky CI
-  job)** — out of scope, slated to cut.
+- **Remote access — the only indefensible weight — has been removed** (~18.8k
+  owned + 7 crates + the flaky CI job, gone).
 - Everything else has a one-line reason tied to product-scope. If a crate can't
   earn a justification here, it's a cut candidate.
 
