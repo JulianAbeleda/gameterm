@@ -101,15 +101,6 @@ enum SubCommand {
     #[command(short_flag_alias = 'e', hide = true)]
     BlockingStart(StartCommand),
 
-    #[command(name = "ssh", about = "Establish an ssh session")]
-    Ssh(SshCommand),
-
-    #[command(name = "serial", about = "Open a serial port")]
-    Serial(SerialCommand),
-
-    #[command(name = "connect", about = "Connect to gameterm multiplexer")]
-    Connect(ConnectCommand),
-
     #[command(name = "ls-fonts", about = "Display information about fonts")]
     LsFonts(LsFontsCommand),
 
@@ -746,10 +737,7 @@ fn run() -> anyhow::Result<()> {
         SubCommand::Start(_)
         | SubCommand::BlockingStart(_)
         | SubCommand::LsFonts(_)
-        | SubCommand::ShowKeys(_)
-        | SubCommand::Ssh(_)
-        | SubCommand::Serial(_)
-        | SubCommand::Connect(_) => delegate_to_gui(saver),
+        | SubCommand::ShowKeys(_) => delegate_to_gui(saver),
         SubCommand::ImageCat(cmd) => cmd.run(),
         SubCommand::SetCwd(cmd) => cmd.run(),
         SubCommand::Cli(cli) => cli::run_cli(&opts, cli),
