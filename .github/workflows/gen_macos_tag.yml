@@ -3,7 +3,9 @@ name: macos_tag
 on:
   push:
     tags:
-      - "20*"
+      # Semver release tags (e.g. 0.1.3). Excludes date-style nightly tags and
+      # component tags like vtparse-0.7.0.
+      - "[0-9]*.[0-9]*.[0-9]*"
 
 jobs:
   build:
@@ -14,6 +16,9 @@ jobs:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
       MACOSX_DEPLOYMENT_TARGET: "10.12"
+      # Name the zip/cask from the pushed tag (e.g. 0.1.3) instead of the
+      # date-based default in ci/deploy.sh, so it matches the cask URL.
+      TAG_NAME: ${{ github.ref_name }}
 
     steps:
       - name: "checkout repo"
@@ -88,12 +93,15 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: "macos"
-          path: "GameTerm-*.zip"
+          path: |
+            GameTerm-*.zip
+            gameterm.rb
 
   upload:
     runs-on: ubuntu-latest
     needs: build
-    if: github.repository == 'gameterm/gameterm'
+    # No repository gate: this fork is the canonical repo, only its owner pushes
+    # tags here, and the tap push needs a GH_PAT a random fork wouldn't have.
     permissions:
       contents: write
       pages: write
@@ -102,20 +110,6 @@ jobs:
     steps:
       - name: "checkout repo"
         uses: actions/checkout@v4
-      - name: "Checkout homebrew tap"
-        uses: actions/checkout@v4
-        with:
-          repository: "wez/homebrew-gameterm"
-          path: "homebrew-gameterm"
-          token: "${{ secrets.GH_PAT }}"
-      - name: "Update homebrew tap formula"
-        shell: bash
-        run: "cp gameterm.rb homebrew-gameterm/Casks/gameterm.rb"
-      - name: "Commit homebrew tap changes"
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "Automated update to match latest tag"
-          repository: "homebrew-gameterm"
       - name: "Download artifact"
         uses: actions/download-artifact@v4
         with:
@@ -123,13 +117,35 @@ jobs:
       - name: "Checksum"
         shell: bash
         run: "for f in GameTerm-*.zip ; do sha256sum $f > $f.sha256 ; done"
-      - name: "Create pre-release"
+      # Publish the release first, using the built-in token, so it always
+      # succeeds regardless of the optional tap-update step below.
+      - name: "Create release"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
-        run: "bash ci/retry.sh bash ci/create-release.sh $(ci/tag-name.sh)"
+        run: "bash ci/retry.sh bash ci/create-release.sh ${{ github.ref_name }}"
       - name: "Upload to Tagged Release"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
-        run: "bash ci/retry.sh gh release upload --clobber $(ci/tag-name.sh) GameTerm-*.zip *.sha256"
+        run: "bash ci/retry.sh gh release upload --clobber ${{ github.ref_name }} GameTerm-*.zip *.sha256"
+      # Best-effort: bump the Homebrew cask in the tap. Requires a GH_PAT secret
+      # with write access to JulianAbeleda/homebrew-tap. If it's missing the
+      # release above is unaffected; bump Casks/gameterm.rb manually.
+      - name: "Checkout homebrew tap"
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          repository: "JulianAbeleda/homebrew-tap"
+          path: "homebrew-tap"
+          token: "${{ secrets.GH_PAT }}"
+      - name: "Update homebrew tap cask"
+        continue-on-error: true
+        shell: bash
+        run: "cp gameterm.rb homebrew-tap/Casks/gameterm.rb"
+      - name: "Commit homebrew tap changes"
+        continue-on-error: true
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "gameterm ${{ github.ref_name }}"
+          repository: "homebrew-tap"
