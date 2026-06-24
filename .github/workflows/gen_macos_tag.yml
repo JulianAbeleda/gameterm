@@ -54,9 +54,6 @@ jobs:
       - name: "Build gameterm-gui (Release mode ARM)"
         shell: bash
         run: "cargo build --target aarch64-apple-darwin -p gameterm-gui --release"
-      - name: "Build gameterm-mux-server (Release mode ARM)"
-        shell: bash
-        run: "cargo build --target aarch64-apple-darwin -p gameterm-mux-server --release"
       - name: "Build strip-ansi-escapes (Release mode ARM)"
         shell: bash
         run: "cargo build --target aarch64-apple-darwin -p strip-ansi-escapes --release"

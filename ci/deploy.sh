@@ -37,7 +37,7 @@ case $OSTYPE in
     cp -r assets/shell-completion $zipdir/GameTerm.app/Contents/Resources
     tic -xe gameterm -o $zipdir/GameTerm.app/Contents/Resources/terminfo termwiz/data/gameterm.terminfo
 
-    for bin in gameterm gameterm-mux-server gameterm-gui strip-ansi-escapes ; do
+    for bin in gameterm gameterm-gui strip-ansi-escapes ; do
       # If the user ran a simple `cargo build --release`, then we want to allow
       # a single-arch package to be built
       if [[ -f $TARGET_DIR/release/$bin ]] ; then

@@ -21,8 +21,7 @@ cask "gameterm" do
   # aborts the whole install. It remains available inside the app bundle.
   [
     "gameterm",
-    "gameterm-gui",
-    "gameterm-mux-server"
+    "gameterm-gui"
   ].each do |tool|
     binary "#{appdir}/GameTerm.app/Contents/MacOS/#{tool}"
   end
@@ -41,8 +40,8 @@ cask "gameterm" do
   ]
 
   def caveats; <<~EOS
-    Cask #{token} related executables like 'gameterm', 'gameterm-gui',
-    'gameterm-mux-server', are linked into
+    Cask #{token} related executables like 'gameterm', 'gameterm-gui'
+    are linked into
       /usr/local/bin/    for x86 Mac,
       /opt/homebrew/bin/ for M1 Mac.
 
