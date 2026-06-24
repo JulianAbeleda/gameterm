@@ -192,7 +192,6 @@ serde-funcs = { path = "lua-api-crates/serde-funcs" }
 serde_json = "1.0"
 serde_with = {version="2.0", features = ["chrono_0_4"]}
 serde_yaml = "0.9"
-serial2 = "0.2"
 sha2 = "0.10"
 share-data = { path = "lua-api-crates/share-data" }
 shared_library = "0.1"
