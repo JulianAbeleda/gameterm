@@ -22,6 +22,7 @@ mod visual_speech_blocks;
 mod visual_stt;
 mod visual_stt_backend;
 mod visual_tts;
+mod voice_settings;
 pub(crate) mod visual_voice_hold;
 mod visual_voice_trace;
 
