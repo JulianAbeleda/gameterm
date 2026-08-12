@@ -61,6 +61,8 @@ pub(super) struct VisualOverlaySession {
     pub(super) stt_config: SceneSttConfig,
     pub(super) stt_state: SceneSttState,
     pub(super) stt_session: Option<SceneSttSession>,
+    pub(super) active_stt_request_id: Option<u64>,
+    next_stt_request_id: u64,
     pub(super) mic_devices: Vec<SceneMicDevice>,
     pub(super) selected_mic_index: usize,
     pub(super) mic_test_running: bool,
@@ -101,6 +103,8 @@ impl VisualOverlaySession {
             stt_config,
             stt_state,
             stt_session: None,
+            active_stt_request_id: None,
+            next_stt_request_id: 1,
             mic_devices,
             selected_mic_index: 0,
             mic_test_running: false,
@@ -140,6 +144,22 @@ impl VisualOverlaySession {
     pub(super) fn selected_stt_config(&self) -> SceneSttConfig {
         self.stt_config
             .with_input_device(self.selected_mic_device())
+    }
+
+    pub(super) fn next_stt_request_id(&mut self) -> u64 {
+        let request_id = self.next_stt_request_id;
+        self.next_stt_request_id = self.next_stt_request_id.saturating_add(1).max(1);
+        self.active_stt_request_id = Some(request_id);
+        request_id
+    }
+
+    pub(super) fn accept_stt_result(&mut self, request_id: u64) -> bool {
+        if self.active_stt_request_id != Some(request_id) {
+            return false;
+        }
+        self.active_stt_request_id = None;
+        self.stt_session = None;
+        true
     }
 
     pub(super) fn cycle_selected_mic(&mut self, delta: isize) -> String {

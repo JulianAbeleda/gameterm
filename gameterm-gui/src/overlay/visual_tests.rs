@@ -18,7 +18,7 @@ use super::visual_dialogue_scroll::{
     apply_dialogue_scroll_key, apply_dialogue_scroll_wheel, handle_dialogue_scroll_wheel,
     SceneDialogueScrollback,
 };
-use super::visual_event_drain::drain_compose_results;
+use super::visual_event_drain::{drain_compose_results, drain_stt_results};
 use super::visual_frame::{replace_last_screen_line, replace_screen_line};
 use super::visual_input_keys::{
     is_tts_toggle_key, visual_input_from_key, visual_input_resets_dialogue_scroll,
@@ -1332,6 +1332,7 @@ fn busy_compose_submit_keeps_running_turn_and_history_intact() {
         &mut compose_dock,
         &mut stt_state,
         SceneSttResult {
+            request_id: 0,
             status: "STT succeeded".to_string(),
             transcript: Some("follow up question".to_string()),
             auto_submit: true,
@@ -1353,6 +1354,68 @@ fn busy_compose_submit_keeps_running_turn_and_history_intact() {
         runtime.render_snapshot().status,
         "Voice transcript ready: compose busy"
     );
+}
+
+#[test]
+fn stale_stt_result_does_not_clear_newer_voice_turn() {
+    let mut runtime = Some(SceneRuntime::new(staged_vn_scene()).unwrap());
+    let (tts_tx, _tts_rx) = mpsc::channel();
+    let mut session = VisualOverlaySession::new(
+        SceneTtsConfig::voicevox_default(),
+        tts_tx,
+        SceneSttConfig::whisper_voice_compose_default(),
+    );
+    session.active_stt_request_id = Some(2);
+
+    let (stt_tx, stt_rx) = mpsc::channel();
+    let (compose_tx, compose_rx) = mpsc::channel();
+    stt_tx
+        .send(SceneSttResult {
+            request_id: 1,
+            status: "Voice transcript ready".to_string(),
+            transcript: Some("old turn".to_string()),
+            auto_submit: true,
+            error: None,
+        })
+        .unwrap();
+
+    assert!(!drain_stt_results(
+        &stt_rx,
+        &mut runtime,
+        &mut session,
+        &compose_tx,
+        Path::new("scene.json"),
+        7,
+    ));
+    assert_eq!(session.active_stt_request_id, Some(2));
+    assert!(session.compose_dock.buffer.is_empty());
+    assert!(compose_rx.try_recv().is_err());
+
+    stt_tx
+        .send(SceneSttResult {
+            request_id: 2,
+            status: "Voice transcript ready".to_string(),
+            transcript: Some("current turn".to_string()),
+            auto_submit: true,
+            error: None,
+        })
+        .unwrap();
+
+    assert!(drain_stt_results(
+        &stt_rx,
+        &mut runtime,
+        &mut session,
+        &compose_tx,
+        Path::new("scene.json"),
+        7,
+    ));
+    assert_eq!(session.active_stt_request_id, None);
+    assert_eq!(session.compose_dock.history, vec!["current turn"]);
+    // The accepted STT result starts the compose worker asynchronously. The
+    // worker publishes only after the external backend exits, so this test
+    // must assert the launch state rather than wait for backend output.
+    assert!(session.compose_backend_running);
+    assert!(compose_rx.try_recv().is_err());
 }
 
 #[test]
@@ -1428,6 +1491,7 @@ fn scene_voice_debug_test_mode_records_transcript_without_hiding_config() {
     let mut debug = SceneVoiceDebugState::new(&config, &state);
     assert_eq!(debug.toggle_voice_test_mode(), "Voice test mode enabled");
     debug.apply_result(&SceneSttResult {
+        request_id: 0,
         status: "Voice transcript ready".to_string(),
         transcript: Some("hello scene".to_string()),
         auto_submit: false,

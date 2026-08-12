@@ -27,6 +27,7 @@ static WHISPER_CONTEXT_CACHE: LazyLock<Mutex<Option<(PathBuf, Arc<WhisperContext
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct SceneSttResult {
+    pub(super) request_id: u64,
     pub(super) status: String,
     pub(super) transcript: Option<String>,
     pub(super) auto_submit: bool,
@@ -36,6 +37,11 @@ pub(super) struct SceneSttResult {
 impl SceneSttResult {
     pub(super) fn succeeded(&self) -> bool {
         self.error.is_none() && self.transcript.is_some()
+    }
+
+    fn with_request_id(mut self, request_id: u64) -> Self {
+        self.request_id = request_id;
+        self
     }
 }
 
@@ -145,12 +151,13 @@ enum SceneSttControl {
 }
 
 pub(super) fn spawn_stt_backend(
+    request_id: u64,
     config: SceneSttConfig,
     tx: mpsc::Sender<SceneSttResult>,
 ) -> SceneSttSession {
     let (control_tx, control_rx) = mpsc::channel();
     thread::spawn(move || {
-        let result = run_stt_backend(config, control_rx);
+        let result = run_stt_backend(config, control_rx).with_request_id(request_id);
         let _ = tx.send(result);
     });
     SceneSttSession { tx: control_tx }
@@ -384,6 +391,7 @@ fn run_stt_backend(
 ) -> SceneSttResult {
     match &config.backend {
         SceneSttBackend::Disabled => SceneSttResult {
+            request_id: 0,
             status: "Voice disabled".to_string(),
             transcript: None,
             auto_submit: false,
@@ -403,6 +411,7 @@ fn run_command_stt_backend(
 ) -> SceneSttResult {
     let Some((program, args)) = argv.split_first() else {
         return SceneSttResult {
+            request_id: 0,
             status: "Voice failed".to_string(),
             transcript: None,
             auto_submit: false,
@@ -421,6 +430,7 @@ fn run_command_stt_backend(
         Ok(child) => child,
         Err(err) => {
             return SceneSttResult {
+                request_id: 0,
                 status: "Voice failed".to_string(),
                 transcript: None,
                 auto_submit: false,
@@ -434,6 +444,7 @@ fn run_command_stt_backend(
         if matches!(control_rx.try_recv(), Ok(SceneSttControl::Cancel)) {
             let _ = child.kill();
             return SceneSttResult {
+                request_id: 0,
                 status: "Voice canceled".to_string(),
                 transcript: None,
                 auto_submit: false,
@@ -445,6 +456,7 @@ fn run_command_stt_backend(
             Ok(None) if started.elapsed() >= config.timeout => {
                 let _ = child.kill();
                 return SceneSttResult {
+                    request_id: 0,
                     status: "Voice failed".to_string(),
                     transcript: None,
                     auto_submit: false,
@@ -455,6 +467,7 @@ fn run_command_stt_backend(
             Err(err) => {
                 let _ = child.kill();
                 return SceneSttResult {
+                    request_id: 0,
                     status: "Voice failed".to_string(),
                     transcript: None,
                     auto_submit: false,
@@ -475,6 +488,7 @@ fn run_command_stt_backend(
     let status = child.wait().ok();
     if !status.as_ref().is_some_and(|status| status.success()) {
         return SceneSttResult {
+            request_id: 0,
             status: "Voice failed".to_string(),
             transcript: None,
             auto_submit: false,
@@ -485,6 +499,7 @@ fn run_command_stt_backend(
     let transcript = sanitize_transcript(&stdout);
     if transcript.is_empty() {
         return SceneSttResult {
+            request_id: 0,
             status: "Voice failed".to_string(),
             transcript: None,
             auto_submit: false,
@@ -493,6 +508,7 @@ fn run_command_stt_backend(
     }
 
     SceneSttResult {
+        request_id: 0,
         status: "Voice transcript ready".to_string(),
         transcript: Some(transcript),
         auto_submit: config.auto_submit,
@@ -507,6 +523,7 @@ fn run_whisper_stt_backend(
 ) -> SceneSttResult {
     if !whisper.model_path.exists() {
         return SceneSttResult {
+            request_id: 0,
             status: "Voice failed".to_string(),
             transcript: None,
             auto_submit: false,
@@ -525,6 +542,7 @@ fn run_whisper_stt_backend(
         Ok(Some(recording)) => recording,
         Ok(None) => {
             return SceneSttResult {
+                request_id: 0,
                 status: "Voice canceled".to_string(),
                 transcript: None,
                 auto_submit: false,
@@ -533,6 +551,7 @@ fn run_whisper_stt_backend(
         }
         Err(err) => {
             return SceneSttResult {
+                request_id: 0,
                 status: "Voice failed".to_string(),
                 transcript: None,
                 auto_submit: false,
@@ -548,6 +567,7 @@ fn run_whisper_stt_backend(
     );
     if samples.len() < (WHISPER_SAMPLE_RATE / 4) as usize {
         return SceneSttResult {
+            request_id: 0,
             status: "Voice failed".to_string(),
             transcript: None,
             auto_submit: false,
@@ -560,6 +580,7 @@ fn run_whisper_stt_backend(
             Ok(transcript) => sanitize_transcript(&transcript),
             Err(err) => {
                 return SceneSttResult {
+                    request_id: 0,
                     status: "Voice failed".to_string(),
                     transcript: None,
                     auto_submit: false,
@@ -569,6 +590,7 @@ fn run_whisper_stt_backend(
         };
     if transcript.is_empty() {
         return SceneSttResult {
+            request_id: 0,
             status: "Voice failed".to_string(),
             transcript: None,
             auto_submit: false,
@@ -577,6 +599,7 @@ fn run_whisper_stt_backend(
     }
 
     SceneSttResult {
+        request_id: 0,
         status: "Voice transcript ready".to_string(),
         transcript: Some(transcript),
         auto_submit: config.auto_submit,

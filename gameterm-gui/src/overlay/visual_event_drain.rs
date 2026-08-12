@@ -93,7 +93,9 @@ pub(super) fn drain_stt_results(
 ) -> bool {
     let mut needs_render = false;
     while let Ok(result) = stt_rx.try_recv() {
-        session.stt_session = None;
+        if !session.accept_stt_result(result.request_id) {
+            continue;
+        }
         session.dialogue_scroll.mark_voice_hold_result_finished();
         if let Some(runtime) = runtime.as_mut() {
             session.dialogue_scroll.voice_debug.apply_result(&result);

@@ -23,6 +23,7 @@ pub(super) fn reconcile_scene_voice_hold_state(
         SceneVoiceHoldTransition::None => false,
         SceneVoiceHoldTransition::Start => {
             if !session.stt_state.is_running() {
+                let request_id = session.next_stt_request_id();
                 runtime.mark_action_status(session.stt_state.mark_started());
                 if session.dialogue_scroll.voice_debug.test_mode {
                     runtime.mark_action_status("Voice test listening");
@@ -32,6 +33,7 @@ pub(super) fn reconcile_scene_voice_hold_state(
                     .voice_debug
                     .sync_status(session.stt_state.last_status());
                 session.stt_session = Some(spawn_stt_backend(
+                    request_id,
                     session.selected_stt_config(),
                     stt_tx.clone(),
                 ));
